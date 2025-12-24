@@ -56,22 +56,18 @@ const getPotBadgeStyle = (pot) => {
   return 'text-gray-500 font-medium';
 };
 
-// --- 고도화된 일정 생성기 (Perfect Distribution Algorithm) ---
+// --- 고도화된 일정 생성기 (백투백 완전 차단) ---
 const generateSchedule = (baronIds, elderIds) => {
   const week1Days = ['1.14 (수)', '1.15 (목)', '1.16 (금)', '1.17 (토)', '1.18 (일)'];
   const week2Days = ['1.21 (수)', '1.22 (목)', '1.23 (금)', '1.24 (토)', '1.25 (일)'];
   const week3Days = ['1.28 (수)', '1.29 (목)', '1.30 (금)', '1.31 (토)', '2.1 (일)'];
 
-  // 1. 매치업 풀 생성 (총 20경기: 각 팀당 4경기)
-  // Elder 그룹을 셔플해서 Baron 팀과 1:1 매칭 후 그 매칭만 제외하고 모두 경기
-  // 이렇게 하면 각 팀은 5개 중 1개를 제외한 4개 팀과 붙게 됨.
   const shuffledElder = [...elderIds].sort(() => Math.random() - 0.5);
   let allMatches = [];
   
   for (let i = 0; i < 5; i++) {
     const baronTeam = baronIds[i];
-    const skipElderTeam = shuffledElder[i]; // 각 Baron 팀마다 제외할 Elder 팀 지정
-    
+    const skipElderTeam = shuffledElder[i]; 
     for (let j = 0; j < 5; j++) {
       const elderTeam = elderIds[j];
       if (elderTeam !== skipElderTeam) {
@@ -79,28 +75,21 @@ const generateSchedule = (baronIds, elderIds) => {
       }
     }
   }
-  // 결과: 20 matches.
 
-  // 2. 주차별 분배 (Week 1: 10경기, Week 2: 10경기)
-  // 조건: 각 주에 모든 팀이 정확히 2경기씩 해야 함.
-  // 해결: 20개 매치 중 "모든 팀 ID가 2번씩 등장하는 10개 매치 조합"을 찾는다.
-  
+  // 주간 분배 (팀당 2경기 보장)
   const findPerfectWeekSplit = (matches) => {
-    // 랜덤 셔플 후 앞에서부터 채워보며 조건 만족하는지 확인 (재시도 방식)
     let attempts = 0;
-    while (attempts < 1000) {
+    while (attempts < 2000) {
       const pool = [...matches].sort(() => Math.random() - 0.5);
       const week1Candidate = pool.slice(0, 10);
       const week2Candidate = pool.slice(10, 20);
       
-      // 검증 함수
       const isValidWeek = (weekMatches) => {
         const counts = {};
         weekMatches.forEach(m => {
           counts[m.t1] = (counts[m.t1] || 0) + 1;
           counts[m.t2] = (counts[m.t2] || 0) + 1;
         });
-        // 10개 팀 모두 2번인지 확인
         return Object.keys(counts).length === 10 && Object.values(counts).every(c => c === 2);
       };
 
@@ -109,79 +98,85 @@ const generateSchedule = (baronIds, elderIds) => {
       }
       attempts++;
     }
-    // 실패시 (거의 없겠지만) 그냥 반환 (Fallback)
-    return [matches.slice(0, 10), matches.slice(10, 20)];
+    return null; // 실패 시 재시도
   };
 
-  const [week1Matches, week2Matches] = findPerfectWeekSplit(allMatches);
-
-  // 3. 일별 배정 (백투백 방지)
+  // 일별 배정 (백투백 완전 차단)
   const assignDays = (weekMatches, days) => {
-    let result = [];
     let dayIdx = 0;
     let pool = [...weekMatches];
-    
-    // 마지막 경기일 트래킹 (초기화)
-    let lastPlayedDay = {}; 
+    let result = [];
+    let lastPlayedDay = {}; // 팀별 이번 주 경기일 인덱스
 
-    // 요일별로 2경기씩 할당
     while (dayIdx < 5) {
       let dailyMatches = [];
-      
-      // 첫 번째 경기 뽑기
-      // 조건: 어제 경기 안 했어야 함 (dayIdx - lastPlayed > 1)
-      // 첫 날(dayIdx=0)은 상관없음
-      let m1Idx = pool.findIndex(m => {
-        const p1 = lastPlayedDay[m.t1];
-        const p2 = lastPlayedDay[m.t2];
-        return (p1 === undefined || dayIdx - p1 > 1) && (p2 === undefined || dayIdx - p2 > 1);
-      });
-      
-      // 만약 조건 만족하는게 없으면? (Back-to-back 불가피) -> 그냥 첫번째거 씀
-      if (m1Idx === -1) m1Idx = 0;
-      
-      const m1 = pool.splice(m1Idx, 1)[0];
-      dailyMatches.push(m1);
-      lastPlayedDay[m1.t1] = dayIdx;
-      lastPlayedDay[m1.t2] = dayIdx;
+      // 하루 2경기 뽑기
+      for (let k = 0; k < 2; k++) {
+        // 오늘 경기 안 잡힌 팀 & 어제 경기 안 한 팀
+        const matchIdx = pool.findIndex(m => {
+          const playedToday = dailyMatches.some(dm => dm.t1 === m.t1 || dm.t1 === m.t2 || dm.t2 === m.t1 || dm.t2 === m.t2);
+          if (playedToday) return false;
+          
+          const p1 = lastPlayedDay[m.t1];
+          const p2 = lastPlayedDay[m.t2];
+          // 어제 경기 여부 체크 (dayIdx - p1 > 1 이어야 함)
+          if (p1 !== undefined && dayIdx - p1 <= 1) return false;
+          if (p2 !== undefined && dayIdx - p2 <= 1) return false;
+          return true;
+        });
 
-      // 두 번째 경기 뽑기 (오늘 경기한 팀 제외 + 어제 경기한 팀 제외)
-      let m2Idx = pool.findIndex(m => {
-        const p1 = lastPlayedDay[m.t1];
-        const p2 = lastPlayedDay[m.t2];
-        // 오늘 이미 잡힌 팀이면 안됨 (당연히) -> lastPlayedDay가 방금 dayIdx로 업데이트 되었으므로 체크됨
-        // 어제 했는지 체크 -> dayIdx - p > 1 이어야 함. (p가 dayIdx인 경우는 방금 업데이트 했으니 dayIdx - dayIdx = 0 탈락)
-        return (p1 === undefined || dayIdx - p1 > 1) && (p2 === undefined || dayIdx - p2 > 1);
-      });
-
-      if (m2Idx === -1) m2Idx = 0; // Fallback
-
-      if (pool.length >= 0) { // pool might be empty if odd logic (not here though)
-         const m2 = pool.splice(m2Idx, 1)[0];
-         dailyMatches.push(m2);
-         lastPlayedDay[m2.t1] = dayIdx;
-         lastPlayedDay[m2.t2] = dayIdx;
+        if (matchIdx !== -1) {
+          const m = pool.splice(matchIdx, 1)[0];
+          dailyMatches.push(m);
+          lastPlayedDay[m.t1] = dayIdx;
+          lastPlayedDay[m.t2] = dayIdx;
+        } else {
+          return null; // 조건 만족하는 매치 없음 -> 이 조합은 실패
+        }
       }
-
-      result.push({ ...dailyMatches[0], date: days[dayIdx], time: '17:00' });
-      result.push({ ...dailyMatches[1], date: days[dayIdx], time: '19:30' });
       
+      // 시간 배정 (랜덤)
+      if (Math.random() > 0.5) {
+          result.push({ ...dailyMatches[0], date: days[dayIdx], time: '17:00' });
+          result.push({ ...dailyMatches[1], date: days[dayIdx], time: '19:30' });
+      } else {
+          result.push({ ...dailyMatches[1], date: days[dayIdx], time: '17:00' });
+          result.push({ ...dailyMatches[0], date: days[dayIdx], time: '19:30' });
+      }
       dayIdx++;
     }
     return result;
   };
 
-  const finalSchedule = [
-    ...assignDays(week1Matches, week1Days),
-    ...assignDays(week2Matches, week2Days)
-  ];
+  // 무한 루프 방지 및 재시도
+  let finalMatches = null;
+  let loopCount = 0;
+  while (!finalMatches && loopCount < 1000) {
+    const split = findPerfectWeekSplit(allMatches);
+    if (split) {
+      const [w1, w2] = split;
+      const s1 = assignDays(w1, week1Days);
+      if (s1) {
+        const s2 = assignDays(w2, week2Days);
+        if (s2) {
+          finalMatches = [...s1, ...s2];
+        }
+      }
+    }
+    loopCount++;
+  }
+  
+  if (!finalMatches) {
+      // 극악의 확률로 실패 시 Fallback (기존 단순 로직)
+      return allMatches.map((m, i) => ({...m, date: 'TBD', time: 'TBD'}));
+  }
 
-  // 4. 3주차 (TBD) 추가
+  // 3주차 (TBD)
   week3Days.forEach(day => {
-    finalSchedule.push({ t1: null, t2: null, date: day, time: '17:00', type: 'tbd' }); // TBD
+    finalMatches.push({ t1: null, t2: null, date: day, time: '17:00', type: 'tbd' });
   });
 
-  return finalSchedule;
+  return finalMatches;
 };
 
 
@@ -404,6 +399,10 @@ function Dashboard() {
   const nextMatch = league.matches ? league.matches.find(m => m.type !== 'tbd' && (m.t1 === myTeam.id || m.t2 === myTeam.id)) : null;
   const t1 = nextMatch ? teams.find(t=>t.id===nextMatch.t1) : null;
   const t2 = nextMatch ? teams.find(t=>t.id===nextMatch.t2) : null;
+  // 상대 팀 전적 계산을 위한 헬퍼 (현재는 0승0패지만 확장성 고려)
+  const getTeamStats = (teamId) => { return { wins: 0, losses: 0 }; }; 
+  const opponentId = nextMatch ? (nextMatch.t1 === myTeam.id ? nextMatch.t2 : nextMatch.t1) : null;
+  const opponentStats = opponentId ? getTeamStats(opponentId) : { wins: 0, losses: 0 };
 
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden font-sans relative">
@@ -482,11 +481,14 @@ function Dashboard() {
                    <h3 className="text-lg font-bold text-gray-800 mb-2">다음 경기 일정</h3>
                    <div className="flex items-center justify-between bg-gray-50 rounded-xl p-6 border">
                       <div className="text-center w-1/3"><div className="text-4xl font-black text-gray-800 mb-2">{myTeam.name}</div><div className="text-sm font-bold text-gray-500">0 - 0</div></div>
-                      <div className="text-center w-1/3"><div className="text-xs font-bold text-gray-400 uppercase">VS</div><div className="text-3xl font-bold text-gray-300 my-2">@</div>
+                      <div className="text-center w-1/3">
+                        <div className="text-xs font-bold text-gray-400 uppercase">VS</div>
+                        <div className="text-3xl font-bold text-gray-300 my-2">@</div>
                         {nextMatch ? (
                           <div className="mt-1 flex flex-col items-center">
                             <span className="text-xs font-bold text-blue-600">{nextMatch.date}</span>
                             <span className="text-[10px] text-gray-500">{nextMatch.time}</span>
+                            <span className="mt-2 text-[10px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">🏟️ 치지직 롤파크</span>
                           </div>
                         ) : <div className="text-xs font-bold text-blue-600">LCK 컵 1R</div>}
                       </div>
@@ -494,7 +496,7 @@ function Dashboard() {
                         {nextMatch ? (
                           <>
                             <div className="text-4xl font-black text-gray-800 mb-2">{myTeam.id === t1.id ? t2.name : t1.name}</div>
-                            <div className="text-sm font-bold text-gray-500">상대팀</div>
+                            <div className="text-sm font-bold text-gray-500">상대팀 <span className="text-xs font-normal">({opponentStats.wins}승 {opponentStats.losses}패)</span></div>
                           </>
                         ) : (
                           <>
@@ -509,9 +511,15 @@ function Dashboard() {
                    {hasDrafted ? (
                      <div className="bg-white rounded-lg border shadow-sm p-3 h-full overflow-y-auto">
                         <div className="text-xs font-bold text-gray-500 mb-2">바론 그룹</div>
-                        <table className="w-full text-xs mb-4"><tbody>{league.groups.baron.map((id, idx) => { const t = teams.find(team => team.id === id); return (<tr key={id} onClick={() => setViewingTeamId(id)} className={`cursor-pointer border-b last:border-0 ${myTeam.id === id ? 'bg-blue-100 border-l-4 border-blue-600' : 'hover:bg-gray-50'}`}><td className="p-2 text-center w-6 text-gray-500 font-bold">{idx+1}</td><td className="p-2 font-bold text-blue-600 hover:underline">{t.fullName}</td><td className="p-2 text-right">0</td><td className="p-2 text-right">0</td><td className="p-2 text-right text-gray-400">0</td></tr>); })}</tbody></table>
+                        <table className="w-full text-xs mb-4">
+                          <thead className="bg-gray-50 text-gray-400"><tr><th className="p-1">#</th><th className="p-1 text-left">팀</th><th className="p-1">승</th><th className="p-1">패</th><th className="p-1">득실</th></tr></thead>
+                          <tbody>{league.groups.baron.map((id, idx) => { const t = teams.find(team => team.id === id); return (<tr key={id} onClick={() => setViewingTeamId(id)} className={`cursor-pointer border-b last:border-0 ${myTeam.id === id ? 'bg-blue-100 border-l-4 border-blue-600' : 'hover:bg-gray-50'}`}><td className="p-2 text-center w-6 text-gray-500 font-bold">{idx+1}</td><td className="p-2 font-bold text-blue-600 hover:underline">{t.fullName}</td><td className="p-2 text-center">0</td><td className="p-2 text-center">0</td><td className="p-2 text-center text-gray-400">0</td></tr>); })}</tbody>
+                        </table>
                         <div className="text-xs font-bold text-gray-500 mb-2">장로 그룹</div>
-                        <table className="w-full text-xs"><tbody>{league.groups.elder.map((id, idx) => { const t = teams.find(team => team.id === id); return (<tr key={id} onClick={() => setViewingTeamId(id)} className={`cursor-pointer border-b last:border-0 ${myTeam.id === id ? 'bg-blue-100 border-l-4 border-blue-600' : 'hover:bg-gray-50'}`}><td className="p-2 text-center w-6 text-gray-500 font-bold">{idx+1}</td><td className="p-2 font-bold text-blue-600 hover:underline">{t.fullName}</td><td className="p-2 text-right">0</td><td className="p-2 text-right">0</td><td className="p-2 text-right text-gray-400">0</td></tr>); })}</tbody></table>
+                        <table className="w-full text-xs">
+                          <thead className="bg-gray-50 text-gray-400"><tr><th className="p-1">#</th><th className="p-1 text-left">팀</th><th className="p-1">승</th><th className="p-1">패</th><th className="p-1">득실</th></tr></thead>
+                          <tbody>{league.groups.elder.map((id, idx) => { const t = teams.find(team => team.id === id); return (<tr key={id} onClick={() => setViewingTeamId(id)} className={`cursor-pointer border-b last:border-0 ${myTeam.id === id ? 'bg-blue-100 border-l-4 border-blue-600' : 'hover:bg-gray-50'}`}><td className="p-2 text-center w-6 text-gray-500 font-bold">{idx+1}</td><td className="p-2 font-bold text-blue-600 hover:underline">{t.fullName}</td><td className="p-2 text-center">0</td><td className="p-2 text-center">0</td><td className="p-2 text-center text-gray-400">0</td></tr>); })}</tbody>
+                        </table>
                      </div>
                    ) : (
                      <div className="bg-white rounded-lg border shadow-sm p-0 flex-1 flex flex-col">
