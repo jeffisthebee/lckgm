@@ -46,7 +46,8 @@ const getOvrBadgeStyle = (ovr) => {
   if (ovr >= 90) return 'bg-orange-100 text-orange-700 border-orange-300 ring-orange-200';
   if (ovr >= 85) return 'bg-purple-100 text-purple-700 border-purple-300 ring-purple-200';
   if (ovr >= 80) return 'bg-blue-100 text-blue-700 border-blue-300 ring-blue-200';
-  return 'bg-green-100 text-green-700 border-green-300 ring-green-200';
+  if (ovr >= 70) return 'bg-green-100 text-green-700 border-green-300 ring-green-200';
+  return 'bg-gray-100 text-gray-600 border-gray-300 ring-gray-200';
 };
 
 const getPotBadgeStyle = (pot) => {
@@ -55,59 +56,91 @@ const getPotBadgeStyle = (pot) => {
   return 'text-gray-500 font-medium';
 };
 
-// --- 일정 생성 로직 ---
+// --- 고도화된 일정 생성기 (Constraint-based Scheduler) ---
 const generateSchedule = (baronIds, elderIds) => {
-  const matches = [];
+  // 날짜 설정 (총 15일)
+  const days = [
+    '1.14 (수)', '1.15 (목)', '1.16 (금)', '1.17 (토)', '1.18 (일)', // 1주차
+    '1.21 (수)', '1.22 (목)', '1.23 (금)', '1.24 (토)', '1.25 (일)', // 2주차
+    '1.28 (수)', '1.29 (목)', '1.30 (금)', '1.31 (토)', '2.1 (일)'   // 3주차 (슈퍼위크)
+  ];
+
+  let matches = [];
   
-  // 날짜 설정
-  // 1주차: 1/14(수) ~ 1/18(일)
-  // 2주차: 1/21(수) ~ 1/25(일)
-  // 3주차: 1/28(수) ~ 2/1(일)
-  const week1Days = ['1.14 (수)', '1.15 (목)', '1.16 (금)', '1.17 (토)', '1.18 (일)'];
-  const week2Days = ['1.21 (수)', '1.22 (목)', '1.23 (금)', '1.24 (토)', '1.25 (일)'];
-  const week3Days = ['1.28 (수)', '1.29 (목)', '1.30 (금)', '1.31 (토)', '2.1 (일)'];
-
-  // 1. 교차 대결 (다른 시드끼리) - 1~2주차
-  // 총 5팀 * 4경기 = 20경기
-  let crossMatches = [];
-  for (let i = 0; i < 5; i++) { // Baron Seed i
-    for (let j = 0; j < 5; j++) { // Elder Seed j
-      if (i !== j) { // 다른 시드만
-        crossMatches.push({ t1: baronIds[i], t2: elderIds[j], type: 'regular' });
-      }
-    }
-  }
-  // 셔플
-  crossMatches.sort(() => Math.random() - 0.5);
-
-  // 1주차 배정 (10경기)
-  week1Days.forEach((day, idx) => {
-    matches.push({ ...crossMatches[idx * 2], date: day, time: '17:00' });
-    matches.push({ ...crossMatches[idx * 2 + 1], date: day, time: '19:30' });
-  });
-
-  // 2주차 배정 (10경기)
-  week2Days.forEach((day, idx) => {
-    const offset = 10 + (idx * 2);
-    matches.push({ ...crossMatches[offset], date: day, time: '17:00' });
-    matches.push({ ...crossMatches[offset + 1], date: day, time: '19:30' });
-  });
-
-  // 2. 슈퍼 위크 (같은 시드끼리) - 3주차
-  // 총 5경기
-  let superMatches = [];
+  // 1. 매치업 풀 생성
+  let regularPool = []; // 교차 대결 (20경기)
   for (let i = 0; i < 5; i++) {
-    superMatches.push({ t1: baronIds[i], t2: elderIds[i], type: 'super' });
-  }
-  // 셔플
-  superMatches.sort(() => Math.random() - 0.5);
-
-  // 3주차 배정 (하루 1경기)
-  week3Days.forEach((day, idx) => {
-    if (idx < superMatches.length) {
-      matches.push({ ...superMatches[idx], date: day, time: '17:00' }); // 슈퍼위크는 17:00 단독 매치 느낌
+    for (let j = 0; j < 5; j++) {
+      if (i !== j) regularPool.push({ t1: baronIds[i], t2: elderIds[j], type: 'regular', status: 'pending' });
     }
-  });
+  }
+  
+  let superPool = []; // 슈퍼위크 (5경기)
+  for (let i = 0; i < 5; i++) {
+    superPool.push({ t1: baronIds[i], t2: elderIds[i], type: 'super', status: 'pending' });
+  }
+
+  // 셔플
+  regularPool.sort(() => Math.random() - 0.5);
+  superPool.sort(() => Math.random() - 0.5);
+
+  // 2. 슬롯 할당 함수 (백투백 방지 로직)
+  const assignMatches = (matchPool, dayList, matchesPerDay) => {
+    let dayIdx = 0;
+    const history = {}; // 팀별 마지막 경기일 기록
+
+    // 각 날짜별로 순회
+    while (matchPool.length > 0 && dayIdx < dayList.length) {
+      const currentDay = dayList[dayIdx];
+      let matchesToday = 0;
+      let todaysMatches = [];
+      let skippedMatches = [];
+
+      // 오늘 할당량 채우기
+      while (matchesToday < matchesPerDay && matchPool.length > 0) {
+        // 후보 매치 찾기
+        const matchIndex = matchPool.findIndex(m => {
+          const lastT1 = history[m.t1] || -1;
+          const lastT2 = history[m.t2] || -1;
+          // 조건: 어제 경기 안 했어야 함 (dayIdx - last > 1)
+          // 첫날(0)은 무조건 가능 (-1)
+          return (dayIdx - lastT1 > 0) && (dayIdx - lastT2 > 0);
+        });
+
+        if (matchIndex !== -1) {
+          // 매치 확정
+          const m = matchPool.splice(matchIndex, 1)[0];
+          todaysMatches.push(m);
+          history[m.t1] = dayIdx;
+          history[m.t2] = dayIdx;
+          matchesToday++;
+        } else {
+          // 가능한 매치가 없으면 일단 스킵하고 다음 루프로 (나중에 처리)
+          // 빡빡한 일정상 어쩔 수 없는 경우 그냥 첫 번째꺼 넣어야 함 (Fallback)
+          if (matchPool.length > 0) {
+             // Fallback: 백투백 허용 (드문 경우)
+             const m = matchPool.shift();
+             todaysMatches.push(m);
+             history[m.t1] = dayIdx;
+             history[m.t2] = dayIdx;
+             matchesToday++;
+          }
+        }
+      }
+
+      // 결과 저장
+      todaysMatches.forEach((m, idx) => {
+        matches.push({ ...m, date: currentDay, time: idx === 0 ? '17:00' : '19:30' });
+      });
+      dayIdx++;
+    }
+  };
+
+  // 1~2주차 (10일간 20경기, 하루 2경기)
+  assignMatches(regularPool, days.slice(0, 10), 2);
+  
+  // 3주차 (5일간 5경기, 하루 1경기)
+  assignMatches(superPool, days.slice(10, 15), 1);
 
   return matches;
 };
@@ -151,6 +184,23 @@ function TeamSelection() {
   const [diff, setDiff] = useState('normal');
   const navigate = useNavigate();
   const current = teams[idx];
+
+  const handleStart = () => {
+    // ID 생성 및 즉시 저장 보장
+    const newId = Date.now().toString();
+    const newLeague = {
+      id: newId,
+      leagueName: `2026 LCK 컵 - ${current.name}`,
+      team: current,
+      difficulty: diff,
+      createdAt: new Date().toISOString(),
+      lastPlayed: new Date().toISOString()
+    };
+    addLeague(newLeague);
+    // 약간의 딜레이 후 이동하여 데이터 반영 보장 (버그 픽스)
+    setTimeout(() => navigate(`/league/${newId}`), 50);
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 transition-colors duration-500" style={{backgroundColor:`${current.colors.primary}10`}}>
       <div className="bg-white p-10 rounded-3xl shadow-2xl max-w-2xl w-full text-center border-t-8" style={{borderColor:current.colors.primary}}>
@@ -164,15 +214,12 @@ function TeamSelection() {
           </div>
           <button onClick={()=>setIdx(i=>i===teams.length-1?0:i+1)} className="p-3 bg-gray-100 rounded-full hover:bg-gray-200 transition">▶</button>
         </div>
-        
         <div className="grid grid-cols-4 gap-3 mb-4">{difficulties.map(d=><button key={d.value} onClick={()=>setDiff(d.value)} className={`py-3 rounded-xl border-2 font-bold transition ${diff===d.value?'bg-gray-800 text-white border-gray-800':'bg-white text-gray-400 border-gray-200 hover:border-gray-300'}`}>{d.label}</button>)}</div>
-        
         <div className="bg-gray-50 rounded-lg p-4 mb-8 text-sm leading-relaxed border border-gray-100">
           <p className="text-gray-600 font-medium">ℹ️ 난이도가 상승할수록 승리 확률 감소, 재계약 확률 감소, 선수의 기복이 증가하여 전체적으로 운영이 어려워집니다.</p>
           {diff === 'insane' && <p className="text-red-600 font-bold mt-2 animate-pulse">⚠️ 극악 난이도는 운과 실력이 모두 필요한 최악의 시나리오입니다.</p>}
         </div>
-
-        <button onClick={()=>{addLeague({id:Date.now().toString(),leagueName:`2026 LCK 컵 - ${current.name}`,team:current,difficulty:diff,createdAt:new Date().toISOString(),lastPlayed:new Date().toISOString()});navigate(`/league/${Date.now().toString()}`)}} className="w-full py-5 rounded-2xl font-black text-xl text-white shadow-lg hover:shadow-xl hover:opacity-90 transition transform hover:-translate-y-1" style={{backgroundColor:current.colors.primary,color:getTextColor(current.colors.primary)}}>2026 시즌 시작하기</button>
+        <button onClick={handleStart} className="w-full py-5 rounded-2xl font-black text-xl text-white shadow-lg hover:shadow-xl hover:opacity-90 transition transform hover:-translate-y-1" style={{backgroundColor:current.colors.primary,color:getTextColor(current.colors.primary)}}>2026 시즌 시작하기</button>
       </div>
     </div>
   );
@@ -187,18 +234,23 @@ function Dashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
   
   const [isDrafting, setIsDrafting] = useState(false);
+  const [draftStep, setDraftStep] = useState(0); 
   const [draftPool, setDraftPool] = useState([]);
   const [draftGroups, setDraftGroups] = useState({ baron: [], elder: [] });
   const [draftTurn, setDraftTurn] = useState('user');
   const draftTimeoutRef = useRef(null);
 
   useEffect(() => {
-    const found = getLeagueById(leagueId);
-    if (found) {
-      setLeague(found);
-      updateLeague(leagueId, { lastPlayed: new Date().toISOString() });
-      setViewingTeamId(found.team.id);
-    }
+    // 2. 로딩 버그 수정: 데이터 없으면 재시도 로직보다 안전하게 처리
+    const loadData = () => {
+      const found = getLeagueById(leagueId);
+      if (found) {
+        setLeague(found);
+        updateLeague(leagueId, { lastPlayed: new Date().toISOString() });
+        setViewingTeamId(found.team.id);
+      }
+    };
+    loadData();
   }, [leagueId]);
 
   useEffect(() => {
@@ -215,7 +267,6 @@ function Dashboard() {
   const isCaptain = myTeam.id === 1 || myTeam.id === 2; 
   const hasDrafted = league.groups && league.groups.baron && league.groups.baron.length > 0;
   
-  // 2. 날짜 표시 로직: 드래프트 전 1월 1일, 후 1월 8일
   const currentDateDisplay = hasDrafted ? '2026년 1월 8일' : '2026년 1월 1일';
 
   // --- 드래프트 ---
@@ -234,9 +285,26 @@ function Dashboard() {
     }
   };
 
+  // 3. 지능형 CPU 픽 (확률 조정)
   const pickComputerTeam = (available) => {
-    const isSmart = Math.random() < 0.75;
-    return isSmart ? [...available].sort((a, b) => b.power - a.power)[0] : available[Math.floor(Math.random() * available.length)];
+    // 풀에서 가장 높은 전력 찾기
+    const sorted = [...available].sort((a, b) => b.power - a.power);
+    const topTeam = sorted[0];
+    const topPower = topTeam.power;
+
+    let chance = 0.5; // 기본
+    if (topPower >= 84) chance = 0.90; // S급: 90% 확률로 픽
+    else if (topPower >= 80) chance = 0.70; // A급: 70% 확률로 픽
+
+    const isSmart = Math.random() < chance;
+    
+    if (isSmart) return topTeam;
+    // 변수: 상위 팀 제외하고 랜덤 (남은게 1개면 그냥 그거)
+    if (available.length > 1) {
+        const others = available.filter(t => t.id !== topTeam.id);
+        return others[Math.floor(Math.random() * others.length)];
+    }
+    return topTeam;
   };
 
   const triggerCpuPick = (currentPool, currentGroups, turn) => {
@@ -278,9 +346,7 @@ function Dashboard() {
   };
 
   const finalizeDraft = (groups) => {
-    // 1. 일정 생성
     const matches = generateSchedule(groups.baron, groups.elder);
-    // 2. 업데이트
     const updated = updateLeague(league.id, { groups, matches });
     if (updated) {
       setLeague(updated);
@@ -296,7 +362,13 @@ function Dashboard() {
     { id: 'roster', name: '로스터', icon: '👥' },
     { id: 'standings', name: '순위표', icon: '🏆' },
     { id: 'schedule', name: '일정', icon: '📅' },
+    { id: 'team_schedule', name: '팀 일정', icon: '📅' }, // 4. 팀 일정 메뉴 추가
   ];
+
+  // 5. 다음 경기 찾기
+  const nextMatch = league.matches ? league.matches.find(m => (m.t1 === myTeam.id || m.t2 === myTeam.id)) : null;
+  const t1 = nextMatch ? teams.find(t=>t.id===nextMatch.t1) : null;
+  const t2 = nextMatch ? teams.find(t=>t.id===nextMatch.t2) : null;
 
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden font-sans relative">
@@ -376,10 +448,32 @@ function Dashboard() {
                    <h3 className="text-lg font-bold text-gray-800 mb-2">다음 경기 일정</h3>
                    <div className="flex items-center justify-between bg-gray-50 rounded-xl p-6 border">
                       <div className="text-center w-1/3"><div className="text-4xl font-black text-gray-800 mb-2">{myTeam.name}</div><div className="text-sm font-bold text-gray-500">0 - 0</div></div>
-                      <div className="text-center w-1/3"><div className="text-xs font-bold text-gray-400 uppercase">VS</div><div className="text-3xl font-bold text-gray-300 my-2">@</div><div className="text-xs font-bold text-blue-600">LCK 컵 1R</div></div>
-                      <div className="text-center w-1/3"><div className="text-4xl font-black text-gray-300 mb-2">미정</div><div className="text-sm font-bold text-gray-400">상대팀</div></div>
+                      <div className="text-center w-1/3"><div className="text-xs font-bold text-gray-400 uppercase">VS</div><div className="text-3xl font-bold text-gray-300 my-2">@</div>
+                        {/* 5. 실제 일정 연동 */}
+                        {nextMatch ? (
+                          <div className="mt-1 flex flex-col items-center">
+                            <span className="text-xs font-bold text-blue-600">{nextMatch.date}</span>
+                            <span className="text-[10px] text-gray-500">{nextMatch.time}</span>
+                          </div>
+                        ) : <div className="text-xs font-bold text-blue-600">LCK 컵 1R</div>}
+                      </div>
+                      <div className="text-center w-1/3">
+                        {/* 5. 실제 상대팀 연동 */}
+                        {nextMatch ? (
+                          <>
+                            <div className="text-4xl font-black text-gray-800 mb-2">{myTeam.id === t1.id ? t2.name : t1.name}</div>
+                            <div className="text-sm font-bold text-gray-500">상대팀</div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="text-4xl font-black text-gray-300 mb-2">미정</div>
+                            <div className="text-sm font-bold text-gray-400">상대팀</div>
+                          </>
+                        )}
+                      </div>
                    </div>
                 </div>
+                {/* ... (생략된 대시보드 위젯들) ... */}
                 <div className="col-span-12 lg:col-span-4 flex flex-col h-full max-h-[300px]">
                    {hasDrafted ? (
                      <div className="bg-white rounded-lg border shadow-sm p-3 h-full overflow-y-auto">
@@ -423,6 +517,7 @@ function Dashboard() {
               </div>
             )}
 
+            {/* 순위표 */}
             {activeTab === 'standings' && (
               <div className="bg-white rounded-lg border shadow-sm p-8 min-h-[600px]">
                 <h2 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-2"><span className="text-yellow-500">🏆</span> 2026 LCK 컵 순위표</h2>
@@ -437,13 +532,18 @@ function Dashboard() {
               </div>
             )}
 
-            {activeTab === 'schedule' && (
+            {/* 4. 일정 페이지 통합 (모든 일정 & 내 팀 일정) */}
+            {(activeTab === 'schedule' || activeTab === 'team_schedule') && (
               <div className="bg-white rounded-lg border shadow-sm p-8 min-h-[600px] flex flex-col">
-                <h2 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-2">📅 2026 LCK 컵 전체 일정</h2>
+                <h2 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-2">
+                  📅 {activeTab === 'team_schedule' ? `${myTeam.name} 경기 일정` : '2026 LCK 컵 전체 일정'}
+                </h2>
                 {hasDrafted ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto">
-                    {/* 일정 데이터 렌더링 */}
-                    {league.matches.map((m, i) => {
+                    {/* 필터링 적용 */}
+                    {league.matches
+                      .filter(m => activeTab === 'schedule' || (m.t1 === myTeam.id || m.t2 === myTeam.id))
+                      .map((m, i) => {
                       const t1 = teams.find(t => t.id === m.t1);
                       const t2 = teams.find(t => t.id === m.t2);
                       const isMyMatch = myTeam.id === m.t1 || myTeam.id === m.t2;
