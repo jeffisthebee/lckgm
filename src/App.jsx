@@ -30,11 +30,11 @@ const deleteLeague = (id) => { const l = getLeagues().filter(x => x.id !== id); 
 const getLeagueById = (id) => getLeagues().find(l => l.id === id);
 function getTextColor(hex) { const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16); return (r*299+g*587+b*114)/1000>128?'#000000':'#FFFFFF'; }
 
-// 2. OVR 색상 세분화 (80초반 vs 80후반)
+// OVR 색상 세분화
 const getOvrBadgeStyle = (ovr) => {
   if (ovr >= 95) return 'bg-red-100 text-red-700 border-red-300 ring-red-200'; // 월클
   if (ovr >= 90) return 'bg-orange-100 text-orange-700 border-orange-300 ring-orange-200'; // S급
-  if (ovr >= 85) return 'bg-purple-100 text-purple-700 border-purple-300 ring-purple-200'; // A+급 (New!)
+  if (ovr >= 85) return 'bg-purple-100 text-purple-700 border-purple-300 ring-purple-200'; // A+급
   if (ovr >= 80) return 'bg-blue-100 text-blue-700 border-blue-300 ring-blue-200'; // A급
   if (ovr >= 70) return 'bg-green-100 text-green-700 border-green-300 ring-green-200'; // B급
   return 'bg-gray-100 text-gray-600 border-gray-300 ring-gray-200';
@@ -46,7 +46,8 @@ const getPotBadgeStyle = (pot) => {
   return 'text-gray-500 font-medium';
 };
 
-// --- League Manager (Home) ---
+// --- 컴포넌트 ---
+
 function LeagueManager() {
   const [leagues, setLeagues] = useState(getLeagues());
   const navigate = useNavigate();
@@ -63,7 +64,6 @@ function LeagueManager() {
                 <div className="flex items-center gap-5">
                   <div className="w-14 h-14 rounded-full flex items-center justify-center font-bold text-white shadow-md text-lg" style={{backgroundColor:t.colors.primary}}>{t.name}</div>
                   <div>
-                    {/* 1. 팀 풀네임 표시 수정 */}
                     <h2 className="text-xl font-bold group-hover:text-blue-600 transition">{t.fullName}</h2> 
                     <p className="text-gray-500 font-medium text-sm">{l.leagueName} · {l.difficulty.toUpperCase()}</p>
                   </div>
@@ -82,7 +82,6 @@ function LeagueManager() {
   );
 }
 
-// --- Team Selection ---
 function TeamSelection() {
   const [idx, setIdx] = useState(0);
   const [diff, setDiff] = useState('normal');
@@ -104,7 +103,6 @@ function TeamSelection() {
         
         <div className="grid grid-cols-4 gap-3 mb-4">{difficulties.map(d=><button key={d.value} onClick={()=>setDiff(d.value)} className={`py-3 rounded-xl border-2 font-bold transition ${diff===d.value?'bg-gray-800 text-white border-gray-800':'bg-white text-gray-400 border-gray-200 hover:border-gray-300'}`}>{d.label}</button>)}</div>
         
-        {/* 5. 난이도 설명 문구 추가 */}
         <div className="bg-gray-50 rounded-lg p-4 mb-8 text-sm leading-relaxed border border-gray-100">
           <p className="text-gray-600 font-medium">
             ℹ️ 난이도가 상승할수록 승리 확률 감소, 재계약 확률 감소, 선수의 기복이 증가하여 전체적으로 운영이 어려워집니다.
@@ -157,7 +155,6 @@ function Dashboard() {
     setViewingTeamId(teams[nextIdx].id);
   };
 
-  // 3. FA 시장 삭제
   const menuItems = [
     { id: 'dashboard', name: '대시보드', icon: '📊' },
     { id: 'roster', name: '로스터', icon: '👥' },
@@ -198,6 +195,7 @@ function Dashboard() {
         <main className="flex-1 overflow-y-auto p-6 scroll-smooth">
           <div className="max-w-7xl mx-auto">
             
+            {/* 대시보드 뷰 */}
             {activeTab === 'dashboard' && (
               <div className="grid grid-cols-12 gap-6">
                 <div className="col-span-12 lg:col-span-8 bg-white rounded-lg border shadow-sm p-5 relative overflow-hidden">
@@ -216,14 +214,19 @@ function Dashboard() {
                       <table className="w-full text-xs">
                         <tbody>
                           {teams.map((t, i) => {
-                            const isSelected = viewingTeamId === t.id;
+                            // 내 팀인지 확인 (파란 배경 적용용)
+                            const isMyTeam = myTeam.id === t.id;
+                            // 현재 보고 있는 팀인지 확인 (회색 배경 적용용 - 선택적)
+                            const isViewing = viewingTeamId === t.id;
+                            
                             return (
                               <tr key={t.id} onClick={() => setViewingTeamId(t.id)} 
-                                  className={`cursor-pointer border-b last:border-0 transition-colors duration-150 ${isSelected ? 'bg-blue-50 border-l-4 border-blue-500' : 'hover:bg-gray-50 border-l-4 border-transparent'}`}>
+                                  className={`cursor-pointer border-b last:border-0 transition-colors duration-150 
+                                    ${isMyTeam ? 'bg-blue-100 border-l-4 border-blue-600' : (isViewing ? 'bg-gray-100' : 'hover:bg-gray-50')}
+                                  `}>
                                 <td className="p-2 font-bold text-gray-500 text-center w-8">{i + 1}</td>
                                 <td className="p-2 font-bold">
                                   <span className="text-blue-600 hover:text-blue-800 hover:underline decoration-blue-400 decoration-2 underline-offset-2">{t.fullName}</span>
-                                  {isSelected && <span className="ml-1 text-xs text-gray-500 font-normal">(선택됨)</span>}
                                 </td>
                                 <td className="p-2 text-right text-gray-500">0-0</td>
                               </tr>
@@ -264,6 +267,7 @@ function Dashboard() {
               </div>
             )}
 
+            {/* 로스터 뷰 */}
             {activeTab === 'roster' && (
               <div className="bg-white rounded-lg border shadow-sm flex flex-col">
                 <div className="p-6 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
@@ -319,7 +323,7 @@ function Dashboard() {
               </div>
             )}
 
-            {/* 4. 순위표 (선택된 팀 구분) */}
+            {/* 순위표 뷰 */}
             {activeTab === 'standings' && (
               <div className="bg-white rounded-lg border shadow-sm p-8 min-h-[600px]">
                 <h2 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-2"><span className="text-yellow-500">🏆</span> 2026 LCK 컵 순위표</h2>
@@ -330,16 +334,18 @@ function Dashboard() {
                     </thead>
                     <tbody className="divide-y divide-gray-200">
                       {teams.map((t, idx) => {
-                        const isSelected = viewingTeamId === t.id;
+                        const isMyTeam = myTeam.id === t.id;
+                        const isViewing = viewingTeamId === t.id;
                         return (
                           <tr key={t.id} onClick={() => setViewingTeamId(t.id)} 
-                              className={`hover:bg-blue-50 transition cursor-pointer group ${isSelected ? 'bg-blue-100 border-l-4 border-blue-600' : ''}`}>
+                              className={`cursor-pointer transition-colors duration-150 
+                                ${isMyTeam ? 'bg-blue-100 border-l-4 border-blue-600' : (isViewing ? 'bg-gray-100' : 'hover:bg-gray-50')}
+                              `}>
                             <td className="py-4 px-6 font-bold text-gray-500 text-lg">{idx + 1}</td>
                             <td className="py-4 px-6">
                               <div className="flex items-center gap-4">
                                 <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white shadow-sm text-xs" style={{backgroundColor:t.colors.primary}}>{t.name}</div>
                                 <span className="text-lg font-bold text-blue-600 underline-offset-4 decoration-2 group-hover:underline">{t.fullName}</span>
-                                {isSelected && <span className="ml-2 bg-blue-600 text-white text-xs px-2 py-1 rounded font-bold">(선택됨)</span>}
                               </div>
                             </td>
                             <td className="py-4 px-6 text-center text-gray-600 font-medium">0</td>
