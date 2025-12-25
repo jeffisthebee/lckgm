@@ -3,7 +3,7 @@ import { Routes, Route, useNavigate, useParams, Navigate } from 'react-router-do
 import playerList from './data/players.json';
 import championList from './data/champions.json';
 
-// --- 데이터 (팀 ID는 숫자형) ---
+// --- 데이터 ---
 const teams = [
   { id: 1, name: 'GEN', fullName: '젠지 (Gen.G)', power: 94, description: '안정적인 운영과 강력한 라인전', colors: { primary: '#D4AF37', secondary: '#000000' } },
   { id: 2, name: 'HLE', fullName: '한화생명 (HLE)', power: 93, description: '성장 가능성이 높은 팀', colors: { primary: '#FF6B00', secondary: '#FFFFFF' } },
@@ -24,13 +24,8 @@ const difficulties = [
   { value: 'insane', label: '극악', color: 'red' },
 ];
 
-// --- 유틸리티 (안전장치 강화) ---
-const getLeagues = () => { 
-    try {
-        const s = localStorage.getItem('lckgm_leagues'); 
-        return s ? JSON.parse(s) : []; 
-    } catch(e) { return []; }
-};
+// --- 유틸리티 ---
+const getLeagues = () => { const s = localStorage.getItem('lckgm_leagues'); return s ? JSON.parse(s) : []; };
 const saveLeagues = (l) => localStorage.setItem('lckgm_leagues', JSON.stringify(l));
 const addLeague = (l) => { const list = getLeagues(); list.push(l); saveLeagues(list); return list; };
 const updateLeague = (id, u) => { 
@@ -45,11 +40,7 @@ const updateLeague = (id, u) => {
 };
 const deleteLeague = (id) => { const l = getLeagues().filter(x => String(x.id) !== String(id)); saveLeagues(l); return l; };
 const getLeagueById = (id) => getLeagues().find(l => String(l.id) === String(id));
-function getTextColor(hex) { 
-    if(!hex) return '#000000';
-    const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16); 
-    return (r*299+g*587+b*114)/1000>128?'#000000':'#FFFFFF'; 
-}
+function getTextColor(hex) { const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16); return (r*299+g*587+b*114)/1000>128?'#000000':'#FFFFFF'; }
 
 const getOvrBadgeStyle = (ovr) => {
   if (ovr >= 95) return 'bg-red-100 text-red-700 border-red-300 ring-red-200';
@@ -65,7 +56,7 @@ const getPotBadgeStyle = (pot) => {
   return 'text-gray-500 font-medium';
 };
 
-// --- 스케줄러 (무한 루프 방지 및 안전 배정) ---
+// --- 스케줄러 (무한 루프 방지 로직 적용) ---
 const generateSchedule = (baronIds, elderIds) => {
   const week1Days = ['1.14 (수)', '1.15 (목)', '1.16 (금)', '1.17 (토)', '1.18 (일)'];
   const week2Days = ['1.21 (수)', '1.22 (목)', '1.23 (금)', '1.24 (토)', '1.25 (일)'];
@@ -90,7 +81,6 @@ const generateSchedule = (baronIds, elderIds) => {
     }
   }
   
-  // 총 경기수 20개 확인
   // 셔플
   allMatches = allMatches.sort(() => Math.random() - 0.5);
 
@@ -116,18 +106,12 @@ const generateSchedule = (baronIds, elderIds) => {
       }
   }
 
-  // 3. 3주차 TBD 추가
+  // 3. 3주차 TBD (BO5)
   week3Days.forEach(day => {
     finalSchedule.push({ t1: null, t2: null, date: day, time: '17:00', type: 'tbd', format: 'BO5' });
   });
 
-  // 날짜/시간 순 정렬
-  return finalSchedule.sort((a, b) => {
-    const dateA = allDays.indexOf(a.date) !== -1 ? allDays.indexOf(a.date) : 99;
-    const dateB = allDays.indexOf(b.date) !== -1 ? allDays.indexOf(b.date) : 99;
-    if (dateA !== dateB) return dateA - dateB;
-    return a.time.localeCompare(b.time);
-  });
+  return finalSchedule;
 };
 
 
@@ -136,30 +120,13 @@ const generateSchedule = (baronIds, elderIds) => {
 function LeagueManager() {
   const [leagues, setLeagues] = useState(getLeagues());
   const navigate = useNavigate();
-  
-  useEffect(() => {
-    setLeagues(getLeagues());
-  }, []);
-  
-  const handleClearData = () => {
-    if(window.confirm('오류 해결을 위해 저장된 데이터를 모두 삭제하고 초기화하시겠습니까?')){
-        localStorage.removeItem('lckgm_leagues');
-        window.location.reload();
-    }
-  };
-
+  useEffect(() => setLeagues(getLeagues()), []);
   return (
     <div className="min-h-screen bg-gray-100 p-8">
       <div className="max-w-4xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
-            <h1 className="text-4xl font-black text-gray-800 tracking-tight">LCK 매니저 2026</h1>
-            <button onClick={handleClearData} className="px-4 py-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 text-sm font-bold transition">⚠️ 데이터 초기화 (오류 해결)</button>
-        </div>
-        
+        <h1 className="text-4xl font-black mb-8 text-gray-800 tracking-tight">LCK 매니저 2026</h1>
         <div className="grid gap-4">
-          {leagues.length === 0 ? (
-              <div className="text-center py-10 text-gray-400">생성된 시즌이 없습니다. 새로운 시즌을 시작해보세요!</div>
-          ) : leagues.map(l => {
+          {leagues.map(l => {
             const t = teams.find(x => String(x.id) === String(l.team.id));
             if (!t) return null;
             return (
@@ -170,7 +137,7 @@ function LeagueManager() {
                 </div>
                 <div className="flex gap-3">
                   <button onClick={()=>{updateLeague(l.id,{lastPlayed:new Date().toISOString()});navigate(`/league/${l.id}`)}} className="bg-blue-600 text-white px-5 py-2.5 rounded-lg font-bold hover:bg-blue-700 shadow-sm transition">접속하기</button>
-                  <button onClick={()=>{if(window.confirm('정말 삭제하시겠습니까?')){deleteLeague(l.id);setLeagues(getLeagues())}}} className="bg-gray-100 text-gray-600 px-4 py-2.5 rounded-lg font-bold hover:bg-gray-200 transition">삭제</button>
+                  <button onClick={()=>{if(window.confirm('삭제하시겠습니까?')){deleteLeague(l.id);setLeagues(getLeagues())}}} className="bg-gray-100 text-gray-600 px-4 py-2.5 rounded-lg font-bold hover:bg-gray-200 transition">삭제</button>
                 </div>
               </div>
             );
@@ -201,8 +168,7 @@ function TeamSelection() {
       matches: []
     };
     addLeague(newLeague);
-    // 딜레이 없이 바로 이동해도 되지만 안정성을 위해 약간의 딜레이
-    setTimeout(() => navigate(`/league/${newId}`), 50);
+    navigate(`/league/${newId}`);
   };
 
   return (
@@ -220,6 +186,7 @@ function TeamSelection() {
         </div>
         <div className="grid grid-cols-4 gap-3 mb-4">{difficulties.map(d=><button key={d.value} onClick={()=>setDiff(d.value)} className={`py-3 rounded-xl border-2 font-bold transition ${diff===d.value?'bg-gray-800 text-white border-gray-800':'bg-white text-gray-400 border-gray-200 hover:border-gray-300'}`}>{d.label}</button>)}</div>
         
+        {/* 난이도 설명 문구 복구 */}
         <div className="bg-gray-50 rounded-lg p-4 mb-8 text-sm leading-relaxed border border-gray-100">
           <p className="text-gray-600 font-medium">ℹ️ 난이도가 상승할수록 승리 확률 감소, 재계약 확률 감소, 선수의 기복이 증가하여 전체적으로 운영이 어려워집니다.</p>
           {diff === 'insane' && <p className="text-red-600 font-bold mt-2 animate-pulse">⚠️ 극악 난이도는 운과 실력이 모두 필요한 최악의 시나리오입니다.</p>}
@@ -238,7 +205,7 @@ function Dashboard() {
   const [league, setLeague] = useState(null);
   const [viewingTeamId, setViewingTeamId] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [prizeMoney, setPrizeMoney] = useState(0.0);
+  const [prizeMoney, setPrizeMoney] = useState(0.0); // 4. 상금 추가
 
   // 드래프트 상태
   const [isDrafting, setIsDrafting] = useState(false);
@@ -251,11 +218,15 @@ function Dashboard() {
   const [metaRole, setMetaRole] = useState('TOP');
 
   useEffect(() => {
-    const found = getLeagueById(leagueId);
-    if (found) {
-      setLeague(found);
-      setViewingTeamId(found.team.id);
-    }
+    const loadData = () => {
+      const found = getLeagueById(leagueId);
+      if (found) {
+        setLeague(found);
+        updateLeague(leagueId, { lastPlayed: new Date().toISOString() });
+        setViewingTeamId(found.team.id);
+      }
+    };
+    loadData();
   }, [leagueId]);
 
   const handleMenuClick = (tabId) => {
@@ -272,12 +243,9 @@ function Dashboard() {
 
   if (!league) return <div className="flex h-screen items-center justify-center font-bold text-gray-500">데이터 로딩 중...</div>;
   
-  // 안전한 Team Lookup (Crash 방지)
-  const safeTeam = (id) => teams.find(t => String(t.id) === String(id)) || { name: 'Unknown', fullName: 'Unknown Team', colors: { primary: '#999' } };
-  
-  const myTeam = safeTeam(league.team.id);
-  const viewingTeam = safeTeam(viewingTeamId || myTeam.id);
-  
+  // 안전장치: String 비교
+  const myTeam = teams.find(t => String(t.id) === String(league.team.id)) || league.team;
+  const viewingTeam = teams.find(t => String(t.id) === String(viewingTeamId)) || myTeam;
   const currentRoster = (playerList || []).filter(p => p.팀 === viewingTeam.name);
   const isCaptain = String(myTeam.id) === "1" || String(myTeam.id) === "2"; 
   const hasDrafted = league.groups && league.groups.baron && league.groups.baron.length > 0;
@@ -287,7 +255,7 @@ function Dashboard() {
   const handleDraftStart = () => {
     if (hasDrafted) return;
     setIsDrafting(true);
-    const pool = teams.filter(t => t.id !== 1 && t.id !== 2);
+    const pool = teams.filter(t => String(t.id) !== "1" && String(t.id) !== "2");
     setDraftPool(pool);
     setDraftGroups({ baron: [1], elder: [2] }); 
 
@@ -351,17 +319,29 @@ function Dashboard() {
   const finalizeDraft = (groups) => {
     const matches = generateSchedule(groups.baron, groups.elder);
     const updated = updateLeague(league.id, { groups, matches });
-    setLeague({ ...updated }); // 상태 즉시 업데이트로 새로고침 현상 해결
+    // 상태 즉시 업데이트 (새로고침 문제 해결)
+    setLeague({ ...updated });
     setIsDrafting(false);
     setActiveTab('standings');
+    alert("팀 구성 및 일정이 완료되었습니다!");
   };
 
   const handlePrevTeam = () => { const idx = teams.findIndex(t => t.id === viewingTeam.id); setViewingTeamId(teams[(idx - 1 + teams.length) % teams.length].id); };
   const handleNextTeam = () => { const idx = teams.findIndex(t => t.id === viewingTeam.id); setViewingTeamId(teams[(idx + 1) % teams.length].id); };
 
+  const menuItems = [
+    { id: 'dashboard', name: '대시보드', icon: '📊' },
+    { id: 'roster', name: '로스터', icon: '👥' },
+    { id: 'standings', name: '순위표', icon: '🏆' },
+    { id: 'schedule', name: '일정', icon: '📅' },
+    { id: 'team_schedule', name: '팀 일정', icon: '📅' },
+    { id: 'meta', name: '16.01 패치 메타', icon: '📈' }, // 2. 메타 이름 변경
+  ];
+
   const nextMatch = league.matches ? league.matches.find(m => m.type !== 'tbd' && (String(m.t1) === String(myTeam.id) || String(m.t2) === String(myTeam.id))) : null;
-  const t1 = nextMatch ? safeTeam(nextMatch.t1) : null;
-  const t2 = nextMatch ? safeTeam(nextMatch.t2) : null;
+  const t1 = nextMatch ? teams.find(t=>String(t.id) === String(nextMatch.t1)) : null;
+  const t2 = nextMatch ? teams.find(t=>String(t.id) === String(nextMatch.t2)) : null;
+  const opponentId = nextMatch ? (nextMatch.t1 === myTeam.id ? nextMatch.t2 : nextMatch.t1) : null;
   const oppRecord = { w: 0, l: 0 }; 
 
   return (
@@ -370,7 +350,7 @@ function Dashboard() {
       {/* Draft Modal */}
       {isDrafting && (
         <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-8 max-w-4xl w-full text-center shadow-2xl flex flex-col min-h-[500px]">
+          <div className="bg-white rounded-2xl p-8 max-w-4xl w-full text-center shadow-2xl overflow-hidden relative min-h-[500px] flex flex-col">
             <h2 className="text-3xl font-black mb-2">{isCaptain ? "팀 드래프트 진행" : "조 추첨 진행 중..."}</h2>
             {!isCaptain ? (
                 <div className="flex-1 flex flex-col items-center justify-center">
@@ -382,12 +362,12 @@ function Dashboard() {
                     <div className="flex justify-between items-center bg-gray-100 p-4 rounded-lg mb-6">
                         <div className={`w-1/3 p-3 rounded-lg ${draftTurn === (String(myTeam.id)==="1"?'user':'cpu') ? 'bg-yellow-100 border-2 border-yellow-400' : 'bg-white'}`}>
                             <span className="font-bold text-lg block mb-1">GEN (Baron)</span>
-                            <div className="flex flex-wrap gap-1 justify-center">{draftGroups.baron.map(id => <span key={id} className="text-xs bg-gray-800 text-white px-2 py-1 rounded">{safeTeam(id).name}</span>)}</div>
+                            <div className="flex flex-wrap gap-1 justify-center">{draftGroups.baron.map(id => <span key={id} className="text-xs bg-gray-800 text-white px-2 py-1 rounded">{teams.find(t=>String(t.id)===String(id))?.name}</span>)}</div>
                         </div>
                         <div className="w-1/3 text-xl font-bold text-gray-400">VS</div>
                         <div className={`w-1/3 p-3 rounded-lg ${draftTurn === (String(myTeam.id)==="2"?'user':'cpu') ? 'bg-yellow-100 border-2 border-yellow-400' : 'bg-white'}`}>
                             <span className="font-bold text-lg block mb-1">HLE (Elder)</span>
-                            <div className="flex flex-wrap gap-1 justify-center">{draftGroups.elder.map(id => <span key={id} className="text-xs bg-gray-800 text-white px-2 py-1 rounded">{safeTeam(id).name}</span>)}</div>
+                            <div className="flex flex-wrap gap-1 justify-center">{draftGroups.elder.map(id => <span key={id} className="text-xs bg-gray-800 text-white px-2 py-1 rounded">{teams.find(t=>String(t.id)===String(id))?.name}</span>)}</div>
                         </div>
                     </div>
                     <div className="text-left mb-2 font-bold text-gray-700">{draftTurn === 'user' ? "👉 영입할 팀을 선택하세요!" : "🤖 상대가 고민 중입니다..."}</div>
@@ -423,6 +403,7 @@ function Dashboard() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
+        {/* Header - 상금 추가 */}
         <header className="bg-white border-b h-14 flex items-center justify-between px-6 shadow-sm z-10 flex-shrink-0">
           <div className="flex items-center gap-6 text-sm">
             <div className="flex items-center gap-2 font-bold text-gray-700"><span className="text-gray-400">📅</span> {currentDateDisplay}</div>
@@ -441,7 +422,6 @@ function Dashboard() {
             
             {activeTab === 'dashboard' && (
               <div className="grid grid-cols-12 gap-6">
-                {/* 3. 대시보드 - 다음 경기 + 순위표 (선정된 후에는 순위표 보여줌) */}
                 <div className="col-span-12 lg:col-span-8 bg-white rounded-lg border shadow-sm p-5 relative overflow-hidden">
                    <div className="absolute top-0 right-0 p-4 opacity-10 text-9xl">📅</div>
                    <h3 className="text-lg font-bold text-gray-800 mb-2">다음 경기 일정</h3>
@@ -451,8 +431,9 @@ function Dashboard() {
                         <div className="text-xs font-bold text-gray-400 uppercase">VS</div><div className="text-3xl font-bold text-gray-300 my-2">@</div>
                         {nextMatch ? (
                           <div className="mt-1 flex flex-col items-center">
-                            <span className="text-base font-black text-blue-600">{nextMatch.date}</span>
-                            <span className="text-sm font-bold text-gray-600">{nextMatch.time}</span>
+                            {/* 4. 날짜 시간 확대 & BO 배지 */}
+                            <span className="text-lg font-black text-blue-600">{nextMatch.date}</span>
+                            <span className="text-base font-bold text-gray-600">{nextMatch.time}</span>
                             <span className="mt-2 text-xs font-bold text-white bg-blue-600 px-3 py-1 rounded-full shadow-sm">{nextMatch.format}</span>
                             <span className="mt-1 text-[10px] font-bold text-gray-400">🏟️ 치지직 롤파크</span>
                           </div>
@@ -475,18 +456,18 @@ function Dashboard() {
                 </div>
                 
                 <div className="col-span-12 lg:col-span-4 flex flex-col h-full max-h-[300px]">
-                   {/* 3. 순위표 복구 (hasDrafted 조건 수정) */}
+                   {/* 3. 순위표 분리 복구 */}
                    {hasDrafted ? (
                      <div className="bg-white rounded-lg border shadow-sm p-3 h-full overflow-y-auto">
                         <div className="text-xs font-bold text-gray-500 mb-2 bg-gray-50 p-1 rounded">바론 그룹 (Baron)</div>
                         <table className="w-full text-xs mb-4">
                           <thead className="bg-gray-50 text-gray-400"><tr><th className="p-1 text-center w-6">#</th><th className="p-1 text-left">팀</th><th className="p-1 text-center">승</th><th className="p-1 text-center">패</th><th className="p-1 text-center">득실</th></tr></thead>
-                          <tbody>{league.groups.baron.map((id, idx) => { const t = safeTeam(id); return (<tr key={id} onClick={() => setViewingTeamId(id)} className={`cursor-pointer border-b last:border-0 ${String(myTeam.id) === String(id) ? 'bg-blue-100 border-l-4 border-blue-600' : 'hover:bg-gray-50'}`}><td className="p-2 text-center font-bold">{idx+1}</td><td className="p-2 font-bold text-blue-600 hover:underline">{t.fullName}</td><td className="p-2 text-center">0</td><td className="p-2 text-center">0</td><td className="p-2 text-center text-gray-400">0</td></tr>); })}</tbody>
+                          <tbody>{league.groups.baron.map((id, idx) => { const t = teams.find(team => String(team.id) === String(id)); if(!t) return null; return (<tr key={id} onClick={() => setViewingTeamId(id)} className={`cursor-pointer border-b last:border-0 ${myTeam.id === id ? 'bg-blue-100 border-l-4 border-blue-600' : 'hover:bg-gray-50'}`}><td className="p-2 text-center font-bold">{idx+1}</td><td className="p-2 font-bold text-blue-600 hover:underline">{t.fullName}</td><td className="p-2 text-center">0</td><td className="p-2 text-center">0</td><td className="p-2 text-center text-gray-400">0</td></tr>); })}</tbody>
                         </table>
                         <div className="text-xs font-bold text-gray-500 mb-2 bg-gray-50 p-1 rounded">장로 그룹 (Elder)</div>
                         <table className="w-full text-xs">
                           <thead className="bg-gray-50 text-gray-400"><tr><th className="p-1 text-center w-6">#</th><th className="p-1 text-left">팀</th><th className="p-1 text-center">승</th><th className="p-1 text-center">패</th><th className="p-1 text-center">득실</th></tr></thead>
-                          <tbody>{league.groups.elder.map((id, idx) => { const t = safeTeam(id); return (<tr key={id} onClick={() => setViewingTeamId(id)} className={`cursor-pointer border-b last:border-0 ${String(myTeam.id) === String(id) ? 'bg-blue-100 border-l-4 border-blue-600' : 'hover:bg-gray-50'}`}><td className="p-2 text-center font-bold">{idx+1}</td><td className="p-2 font-bold text-blue-600 hover:underline">{t.fullName}</td><td className="p-2 text-center">0</td><td className="p-2 text-center">0</td><td className="p-2 text-center text-gray-400">0</td></tr>); })}</tbody>
+                          <tbody>{league.groups.elder.map((id, idx) => { const t = teams.find(team => String(team.id) === String(id)); if(!t) return null; return (<tr key={id} onClick={() => setViewingTeamId(id)} className={`cursor-pointer border-b last:border-0 ${myTeam.id === id ? 'bg-blue-100 border-l-4 border-blue-600' : 'hover:bg-gray-50'}`}><td className="p-2 text-center font-bold">{idx+1}</td><td className="p-2 font-bold text-blue-600 hover:underline">{t.fullName}</td><td className="p-2 text-center">0</td><td className="p-2 text-center">0</td><td className="p-2 text-center text-gray-400">0</td></tr>); })}</tbody>
                         </table>
                      </div>
                    ) : (
@@ -503,14 +484,14 @@ function Dashboard() {
                     <button onClick={()=>setActiveTab('roster')} className="text-sm font-bold text-blue-600 hover:underline">상세 정보 보기 →</button>
                   </div>
                   <div className="p-0 overflow-x-auto">
-                    {/* 2 & 3. 나이, 경력 추가된 테이블 */}
-                    <table className="w-full text-sm"><thead className="bg-white text-gray-400 text-xs uppercase font-bold border-b"><tr><th className="py-3 px-6 text-left">포지션</th><th className="py-3 px-6 text-left">이름</th><th className="py-3 px-6 text-center">나이</th><th className="py-3 px-6 text-center">경력</th><th className="py-3 px-6 text-center">종합</th><th className="py-3 px-6 text-center">잠재력</th><th className="py-3 px-6 text-left">계약</th></tr></thead><tbody className="divide-y divide-gray-100">{currentRoster.length > 0 ? currentRoster.map((p, i) => (<tr key={i} className="hover:bg-gray-50 transition"><td className="py-3 px-6 font-bold text-gray-400 w-16">{p.포지션}</td><td className="py-3 px-6 font-bold text-gray-800">{p.이름} <span className="text-gray-400 font-normal text-xs ml-1">({p.실명})</span> {p.주장 && <span className="ml-1 text-yellow-500" title="주장">👑</span>}</td><td className="py-3 px-6 text-center text-gray-600">{p.나이 || '-'}</td><td className="py-3 px-6 text-center text-gray-600">{p.경력 || '-'}</td><td className="py-3 px-6 text-center"><span className={`inline-flex items-center justify-center w-10 h-8 rounded-lg font-black text-sm shadow-sm border ${getOvrBadgeStyle(p.종합)}`}>{p.종합}</span></td><td className="py-3 px-6 text-center"><span className={`text-xs ${getPotBadgeStyle(p.잠재력)}`}>{p.잠재력}</span></td><td className="py-3 px-6 text-gray-500 text-xs">{p.계약}년</td></tr>)) : <tr><td colSpan="7" className="py-10 text-center text-gray-300">데이터 없음</td></tr>}</tbody></table>
+                    {/* 1. 나이, 경력 추가된 테이블 */}
+                    <table className="w-full text-sm"><thead className="bg-white text-gray-400 text-xs uppercase font-bold border-b"><tr><th className="py-3 px-6 text-left">포지션</th><th className="py-3 px-6 text-left">이름</th><th className="py-3 px-6 text-center">나이</th><th className="py-3 px-6 text-center">경력</th><th className="py-3 px-6 text-center">종합</th><th className="py-3 px-6 text-center">잠재력</th><th className="py-3 px-6 text-left">계약</th></tr></thead><tbody className="divide-y divide-gray-100">{currentRoster.length > 0 ? currentRoster.map((p, i) => (<tr key={i} className="hover:bg-gray-50 transition"><td className="py-3 px-6 font-bold text-gray-400 w-16">{p.포지션}</td><td className="py-3 px-6 font-bold text-gray-800">{p.이름} <span className="text-gray-400 font-normal text-xs ml-1">({p.실명})</span> {p.주장 && <span className="ml-1 text-yellow-500" title="주장">👑</span>}</td><td className="py-3 px-6 text-center text-gray-600">{p.나이 || '-'}</td><td className="py-3 px-6 text-center text-gray-600">{p.경력 || '-'}</td><td className="py-3 px-6 text-center"><span className={`inline-flex items-center justify-center w-8 h-6 rounded font-bold text-xs ${getOvrBadgeStyle(p.종합)}`}>{p.종합}</span></td><td className="py-3 px-6 text-center"><span className={`text-xs ${getPotBadgeStyle(p.잠재력)}`}>{p.잠재력}</span></td><td className="py-3 px-6 text-gray-500 text-xs font-bold">{p.계약}년</td></tr>)) : <tr><td colSpan="7" className="py-10 text-center text-gray-300">데이터 없음</td></tr>}</tbody></table>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* View: Roster (상세 보기에도 나이, 경력 추가) */}
+            {/* View: Roster (나이, 경력 추가) */}
             {activeTab === 'roster' && (
               <div className="bg-white rounded-lg border shadow-sm flex flex-col">
                 <div className="p-6 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
@@ -531,8 +512,8 @@ function Dashboard() {
                 <h2 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-2"><span className="text-yellow-500">🏆</span> 2026 LCK 컵 순위표</h2>
                 {hasDrafted ? (
                   <div className="grid grid-cols-2 gap-8">
-                    <div><h3 className="text-lg font-bold text-gray-700 mb-3 border-b pb-2">바론 그룹 (Baron)</h3><table className="w-full text-sm border-collapse"><thead className="bg-gray-100 text-gray-600 uppercase text-xs font-bold"><tr><th className="py-3 px-4 text-center">#</th><th className="py-3 px-4 text-left">팀</th><th className="py-3 px-4 text-center">승</th><th className="py-3 px-4 text-center">패</th><th className="py-3 px-4 text-center">득실</th></tr></thead><tbody className="divide-y divide-gray-200">{league.groups.baron.map((id, idx) => { const t = safeTeam(id); return (<tr key={t.id} onClick={() => handleStandingsTeamClick(t.id)} className={`cursor-pointer ${String(myTeam.id) === String(t.id) ? 'bg-blue-100 border-l-4 border-blue-600' : 'hover:bg-gray-50'}`}><td className="py-3 px-4 font-bold text-center">{idx + 1}</td><td className="py-3 px-4 font-bold text-blue-600">{t.fullName} {String(myTeam.id) === String(t.id) && <span className="ml-1 text-[10px] bg-blue-600 text-white px-1 rounded">ME</span>}</td><td className="py-3 px-4 text-center">0</td><td className="py-3 px-4 text-center">0</td><td className="py-3 px-4 text-center text-gray-400">0</td></tr>); })}</tbody></table></div>
-                    <div><h3 className="text-lg font-bold text-gray-700 mb-3 border-b pb-2">장로 그룹 (Elder)</h3><table className="w-full text-sm border-collapse"><thead className="bg-gray-100 text-gray-600 uppercase text-xs font-bold"><tr><th className="py-3 px-4 text-center">#</th><th className="py-3 px-4 text-left">팀</th><th className="py-3 px-4 text-center">승</th><th className="py-3 px-4 text-center">패</th><th className="py-3 px-4 text-center">득실</th></tr></thead><tbody className="divide-y divide-gray-200">{league.groups.elder.map((id, idx) => { const t = safeTeam(id); return (<tr key={t.id} onClick={() => handleStandingsTeamClick(t.id)} className={`cursor-pointer ${String(myTeam.id) === String(t.id) ? 'bg-blue-100 border-l-4 border-blue-600' : 'hover:bg-gray-50'}`}><td className="py-3 px-4 font-bold text-center">{idx + 1}</td><td className="py-3 px-4 font-bold text-blue-600">{t.fullName} {String(myTeam.id) === String(t.id) && <span className="ml-1 text-[10px] bg-blue-600 text-white px-1 rounded">ME</span>}</td><td className="py-3 px-4 text-center">0</td><td className="py-3 px-4 text-center">0</td><td className="py-3 px-4 text-center text-gray-400">0</td></tr>); })}</tbody></table></div>
+                    <div><h3 className="text-lg font-bold text-gray-700 mb-3 border-b pb-2">바론 그룹 (Baron)</h3><table className="w-full text-sm border-collapse"><thead className="bg-gray-100 text-gray-600 uppercase text-xs font-bold"><tr><th className="py-3 px-4 text-center">#</th><th className="py-3 px-4 text-left">팀</th><th className="py-3 px-4 text-center">승</th><th className="py-3 px-4 text-center">패</th><th className="py-3 px-4 text-center">득실</th></tr></thead><tbody className="divide-y divide-gray-200">{league.groups.baron.map((id, idx) => { const t = teams.find(team => String(team.id) === String(id)); if(!t) return null; return (<tr key={t.id} onClick={() => handleStandingsTeamClick(t.id)} className={`cursor-pointer ${isMyTeam ? 'bg-blue-100 border-l-4 border-blue-600' : 'hover:bg-gray-50'}`}><td className="py-3 px-4 font-bold text-center">{idx + 1}</td><td className="py-3 px-4 font-bold text-blue-600">{t.fullName} {isMyTeam && <span className="ml-1 text-[10px] bg-blue-600 text-white px-1 rounded">ME</span>}</td><td className="py-3 px-4 text-center">0</td><td className="py-3 px-4 text-center">0</td><td className="py-3 px-4 text-center text-gray-400">0</td></tr>); })}</tbody></table></div>
+                    <div><h3 className="text-lg font-bold text-gray-700 mb-3 border-b pb-2">장로 그룹 (Elder)</h3><table className="w-full text-sm border-collapse"><thead className="bg-gray-100 text-gray-600 uppercase text-xs font-bold"><tr><th className="py-3 px-4 text-center">#</th><th className="py-3 px-4 text-left">팀</th><th className="py-3 px-4 text-center">승</th><th className="py-3 px-4 text-center">패</th><th className="py-3 px-4 text-center">득실</th></tr></thead><tbody className="divide-y divide-gray-200">{league.groups.elder.map((id, idx) => { const t = teams.find(team => String(team.id) === String(id)); if(!t) return null; return (<tr key={t.id} onClick={() => handleStandingsTeamClick(t.id)} className={`cursor-pointer ${isMyTeam ? 'bg-blue-100 border-l-4 border-blue-600' : 'hover:bg-gray-50'}`}><td className="py-3 px-4 font-bold text-center">{idx + 1}</td><td className="py-3 px-4 font-bold text-blue-600">{t.fullName} {isMyTeam && <span className="ml-1 text-[10px] bg-blue-600 text-white px-1 rounded">ME</span>}</td><td className="py-3 px-4 text-center">0</td><td className="py-3 px-4 text-center">0</td><td className="py-3 px-4 text-center text-gray-400">0</td></tr>); })}</tbody></table></div>
                   </div>
                 ) : (
                   <div className="overflow-x-auto"><table className="w-full text-sm border-collapse"><thead className="bg-gray-100 text-gray-600 uppercase text-xs font-bold"><tr><th className="py-4 px-6 text-left rounded-tl-lg">순위</th><th className="py-4 px-6 text-left">팀</th><th className="py-4 px-6 text-center">승</th><th className="py-4 px-6 text-center">패</th><th className="py-4 px-6 text-center">득실차</th><th className="py-4 px-6 text-center rounded-tr-lg">승률</th></tr></thead><tbody className="divide-y divide-gray-200">{teams.map((t, idx) => { const isMyTeam = myTeam.id === t.id; return (<tr key={t.id} onClick={() => handleStandingsTeamClick(t.id)} className={`cursor-pointer transition-colors duration-150 ${isMyTeam ? 'bg-blue-100 border-l-4 border-blue-600' : 'hover:bg-gray-50'}`}><td className="py-4 px-6 font-bold text-gray-500 text-lg">{idx + 1}</td><td className="py-4 px-6"><span className="text-lg font-bold text-blue-600">{t.fullName}</span>{isMyTeam && <span className="ml-2 bg-blue-600 text-white text-xs px-2 py-1 rounded font-bold">(선택됨)</span>}</td><td className="py-4 px-6 text-center">0</td><td className="py-4 px-6 text-center">0</td><td className="py-4 px-6 text-center">0</td><td className="py-4 px-6 text-center">0</td><td className="py-4 px-6 text-center font-bold text-gray-800">-</td></tr>); })}</tbody></table></div>
@@ -598,14 +579,14 @@ function Dashboard() {
               </div>
             )}
 
-            {/* View: Schedule ... (기존과 동일) */}
+            {/* View: Schedule (BO3, BO5 표시) */}
              {(activeTab === 'schedule' || activeTab === 'team_schedule') && (
               <div className="bg-white rounded-lg border shadow-sm p-8 min-h-[600px] flex flex-col">
                 <h2 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-2">
                   📅 {activeTab === 'team_schedule' ? `${myTeam.name} 경기 일정` : '2026 LCK 컵 전체 일정'}
                 </h2>
                 {hasDrafted ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto">
                     {league.matches
                       .filter(m => activeTab === 'schedule' || (String(m.t1) === String(myTeam.id) || String(m.t2) === String(myTeam.id)))
                       .map((m, i) => {
@@ -613,17 +594,18 @@ function Dashboard() {
                       const t2 = safeTeam(m.t2);
                       const isMyMatch = String(myTeam.id) === String(m.t1) || String(myTeam.id) === String(m.t2);
                       return (
-                        <div key={i} className={`p-4 rounded-lg border flex flex-col gap-2 ${isMyMatch ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-200' : 'bg-white border-gray-200'}`}>
-                          <div className="flex justify-between text-xs font-bold text-gray-500">
-                            <span>{m.date} {m.time}</span>
-                            <span>{m.type === 'super' ? '🔥 슈퍼위크' : (m.type === 'tbd' ? '🔒 미정' : '정규시즌')}</span>
+                        <div key={i} className={`p-5 rounded-lg border-2 flex flex-col gap-3 transition-transform hover:scale-[1.02] ${isMyMatch ? 'bg-blue-50 border-blue-400 shadow-md' : 'bg-white border-gray-100'}`}>
+                          <div className="flex justify-between items-center text-gray-500">
+                            <span className="text-sm font-black text-gray-800">{m.date}</span>
+                            <span className="text-sm font-bold text-gray-600">{m.time}</span>
+                            <span className={`text-xs font-black px-2 py-1 rounded-lg ${m.format === 'BO5' ? 'bg-red-600 text-white' : 'bg-gray-800 text-white'}`}>{m.format}</span>
                           </div>
-                          <div className="flex justify-between items-center mt-2">
-                            <div className="flex flex-col items-center w-1/3"><span className={`font-bold ${isMyMatch && String(myTeam.id) === String(m.t1) ? 'text-blue-600' : 'text-gray-800'}`}>{t1.name}</span></div>
-                            <div className="text-gray-400 font-bold">VS</div>
-                            <div className="flex flex-col items-center w-1/3"><span className={`font-bold ${isMyMatch && String(myTeam.id) === String(m.t2) ? 'text-blue-600' : 'text-gray-800'}`}>{t2.name}</span></div>
+                          <div className="flex justify-between items-center py-2">
+                            <div className="flex flex-col items-center w-1/3"><span className={`font-black text-lg ${isMyMatch && String(myTeam.id) === String(m.t1) ? 'text-blue-600' : 'text-gray-800'}`}>{t1.name}</span></div>
+                            <div className="text-gray-300 font-black italic text-xl">VS</div>
+                            <div className="flex flex-col items-center w-1/3"><span className={`font-black text-lg ${isMyMatch && String(myTeam.id) === String(m.t2) ? 'text-blue-600' : 'text-gray-800'}`}>{t2.name}</span></div>
                           </div>
-                          <span className="mt-2 text-xs font-bold text-white bg-blue-600 px-3 py-1 rounded-full shadow-sm w-fit mx-auto">{m.format}</span>
+                          <div className="text-center text-xs font-bold text-blue-600 bg-white border border-blue-200 py-1 rounded-full w-full">LIVE 예정</div>
                         </div>
                       );
                     })}
