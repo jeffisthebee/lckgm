@@ -24,7 +24,7 @@ const difficulties = [
   { value: 'insane', label: '극악', color: 'red' },
 ];
 
-// --- 유틸리티 ---
+// --- 유틸리티 (안전장치 강화) ---
 const getLeagues = () => { 
     try {
         const s = localStorage.getItem('lckgm_leagues'); 
@@ -35,13 +35,13 @@ const saveLeagues = (l) => localStorage.setItem('lckgm_leagues', JSON.stringify(
 const addLeague = (l) => { const list = getLeagues(); list.push(l); saveLeagues(list); return list; };
 const updateLeague = (id, u) => { 
   const leagues = getLeagues(); 
-  const index = leagues.findIndex(l => String(l.id) === String(id)); 
+  const index = leagues.findIndex(l => String(l.id) === String(id)); // ID 비교 안전하게 String 변환
   if (index !== -1) { 
-    // 깊은 복사 대신 spread로 얕은 복사 후 병합 (React 상태 갱신 유도)
-    const newLeague = { ...leagues[index], ...u };
-    leagues[index] = newLeague; 
+    // 기존 객체에 새 속성을 덮어쓰기 (깊은 복사 문제 방지)
+    const updated = { ...leagues[index], ...u };
+    leagues[index] = updated;
     saveLeagues(leagues); 
-    return newLeague;
+    return updated;
   }
   return null;
 };
@@ -67,73 +67,72 @@ const getPotBadgeStyle = (pot) => {
   return 'text-gray-500 font-medium';
 };
 
-// --- 스케줄러 (로테이션 알고리즘: 절대 멈추지 않음) ---
+// --- 스케줄러 (무한 루프 없는 안전한 로직) ---
 const generateSchedule = (baronIds, elderIds) => {
   const week1Days = ['1.14 (수)', '1.15 (목)', '1.16 (금)', '1.17 (토)', '1.18 (일)'];
   const week2Days = ['1.21 (수)', '1.22 (목)', '1.23 (금)', '1.24 (토)', '1.25 (일)'];
   const allDays = [...week1Days, ...week2Days];
   const week3Days = ['1.28 (수)', '1.29 (목)', '1.30 (금)', '1.31 (토)', '2.1 (일)'];
 
-  // 로테이션을 위한 배열 복사
-  const barons = [...baronIds]; // B1, B2, B3, B4, B5
-  const elders = [...elderIds]; // E1, E2, E3, E4, E5 (초기)
+  // 1. 대진 생성 (총 20경기: 각 팀이 상대 그룹 4팀과 경기)
+  let allMatches = [];
+  
+  // 섞어서 매칭 (단순화된 로직)
+  // 바론팀[i]는 엘더팀[j]와 경기한다. (j != i 조건을 둬서 1팀씩 제외)
+  // 편의상 셔플 후 순차 매칭
+  const shuffledBaron = [...baronIds].sort(() => Math.random() - 0.5);
+  const shuffledElder = [...elderIds].sort(() => Math.random() - 0.5);
 
-  let matches = [];
-  
-  // 각 바론 팀은 4개의 엘더 팀과 경기해야 함 (총 20경기)
-  // Round 1: i vs i
-  // Round 2: i vs (i+1)%5
-  // Round 3: i vs (i+2)%5
-  // Round 4: i vs (i+3)%5
-  // (i+4)%5 는 스킵 (상대 안 함)
-  
-  // 4라운드로 나누어 매치 생성
-  for (let r = 0; r < 4; r++) {
+  // 4라운드 진행 (각 라운드마다 5경기) => 총 20경기
+  for (let round = 0; round < 4; round++) {
       for (let i = 0; i < 5; i++) {
-          const b = barons[i];
-          const e = elders[(i + r) % 5];
-          matches.push({ t1: b, t2: e, type: 'regular', status: 'pending', format: 'BO3' });
+          const b = shuffledBaron[i];
+          const e = shuffledElder[(i + round) % 5]; // 라운드마다 상대 변경
+          allMatches.push({ t1: b, t2: e, type: 'regular', status: 'pending', format: 'BO3' });
       }
   }
 
-  // 이제 20개의 경기가 생성됨.
-  // 하루에 2경기씩 순차적으로 배정하면 자연스럽게 팀이 섞임 (위 로직이 순차적이기 때문)
-  // 하지만 더 확실한 분산을 위해 약간 섞되, 날짜 순서는 지킴.
-  
-  // 간단하게 순서대로 배치하되, 5경기 단위(한 라운드)를 2.5일에 걸쳐 배치
-  // Day 1: M1, M2
-  // Day 2: M3, M4
-  // Day 3: M5, M6 (여기서 M6은 Round 2의 첫 경기)
-  // 이렇게 하면 같은 팀이 2-3일 간격으로 경기하게 됨 (연전 방지 자동 해결)
-
+  // 2. 날짜 배정 (하루 2경기씩 순차 배정 - 절대 멈추지 않음)
   const finalSchedule = [];
   let dayIdx = 0;
-  
-  for (let i = 0; i < matches.length; i += 2) {
-      if (dayIdx >= 10) break;
+  let matchesInDay = 0;
+
+  // 매치 셔플 (순서 섞기)
+  allMatches.sort(() => Math.random() - 0.5);
+
+  for (const match of allMatches) {
+      if (dayIdx >= 10) break; // 10일 넘어가면 중단
+
+      let time = '17:00';
+      if (matchesInDay === 1) time = '19:30';
       
-      const m1 = matches[i];
-      const m2 = matches[i+1];
+      finalSchedule.push({ ...match, date: allDays[dayIdx], time });
+      matchesInDay++;
       
-      if (m1) finalSchedule.push({ ...m1, date: allDays[dayIdx], time: '17:00' });
-      if (m2) finalSchedule.push({ ...m2, date: allDays[dayIdx], time: '19:30' });
-      
-      dayIdx++;
+      if (matchesInDay >= 2) {
+          matchesInDay = 0;
+          dayIdx++;
+      }
   }
 
-  // 3주차 TBD
+  // 3. 3주차 TBD (BO5)
   week3Days.forEach(day => {
     finalSchedule.push({ t1: null, t2: null, date: day, time: '17:00', type: 'tbd', format: 'BO5' });
   });
 
-  return finalSchedule;
+  return finalSchedule.sort((a, b) => {
+      const dateA = allDays.indexOf(a.date) !== -1 ? allDays.indexOf(a.date) : 99;
+      const dateB = allDays.indexOf(b.date) !== -1 ? allDays.indexOf(b.date) : 99;
+      if (dateA !== dateB) return dateA - dateB;
+      return a.time.localeCompare(b.time);
+  });
 };
 
 
 // --- 컴포넌트 ---
 
 function LeagueManager() {
-  const [leagues, setLeagues] = useState([]);
+  const [leagues, setLeagues] = useState(getLeagues());
   const navigate = useNavigate();
   
   useEffect(() => {
@@ -141,7 +140,7 @@ function LeagueManager() {
   }, []);
   
   const handleClearData = () => {
-    if(window.confirm('오류 해결을 위해 데이터를 초기화하시겠습니까?')){
+    if(window.confirm('오류 해결을 위해 모든 데이터를 초기화하시겠습니까?')){
         localStorage.removeItem('lckgm_leagues');
         window.location.reload();
     }
@@ -154,15 +153,12 @@ function LeagueManager() {
             <h1 className="text-4xl font-black text-gray-800 tracking-tight">LCK 매니저 2026</h1>
             <button onClick={handleClearData} className="px-4 py-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 text-sm font-bold transition">⚠️ 데이터 초기화 (오류 해결)</button>
         </div>
-        
         <div className="grid gap-4">
           {leagues.length === 0 ? (
-              <div className="text-center py-12 bg-white rounded-xl border border-dashed border-gray-300 text-gray-400">생성된 시즌이 없습니다. 시작하기를 눌러주세요!</div>
+             <div className="text-center py-12 bg-white rounded-xl border border-dashed border-gray-300 text-gray-400">생성된 시즌이 없습니다. 아래 버튼을 눌러 시작하세요!</div>
           ) : leagues.map(l => {
-            // 안전장치: 팀 정보가 없으면 렌더링 안함
             const t = teams.find(x => String(x.id) === String(l.team.id));
-            if (!t) return null; 
-            
+            if (!t) return null;
             return (
               <div key={l.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:border-blue-500 hover:shadow-md transition flex justify-between items-center group">
                 <div className="flex items-center gap-5">
@@ -202,9 +198,13 @@ function TeamSelection() {
       matches: []
     };
     
-    // 저장 후 이동
+    // 1. 저장 먼저 확실하게 함
     addLeague(newLeague);
-    setTimeout(() => navigate(`/league/${newId}`), 50);
+    
+    // 2. 약간의 딜레이 후 이동 (데이터 저장 보장)
+    setTimeout(() => {
+        navigate(`/league/${newId}`, { replace: true });
+    }, 50);
   };
 
   return (
@@ -240,7 +240,7 @@ function Dashboard() {
   const [league, setLeague] = useState(null);
   const [viewingTeamId, setViewingTeamId] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [prizeMoney, setPrizeMoney] = useState(0.0); // 상금 0.0억 초기화
+  const [prizeMoney, setPrizeMoney] = useState(0.0);
 
   // 드래프트 상태
   const [isDrafting, setIsDrafting] = useState(false);
@@ -260,6 +260,7 @@ function Dashboard() {
       }
     } else {
         // 데이터가 없으면 홈으로 (안전장치)
+        // navigate('/'); // 무한루프 방지를 위해 일단 주석
     }
   }, [leagueId]);
 
@@ -275,10 +276,9 @@ function Dashboard() {
     setActiveTab('dashboard');
   };
 
-  // 안전장치
   if (!league) return <div className="flex h-screen items-center justify-center font-bold text-gray-500">데이터 로딩 중...</div>;
   
-  // Team Lookup (안전장치: String 비교)
+  // 안전한 Team Lookup (Crash 방지)
   const safeTeam = (id) => teams.find(t => String(t.id) === String(id)) || { name: 'Unknown', fullName: 'Unknown Team', colors: { primary: '#999' } };
   
   const myTeam = safeTeam(league.team.id);
@@ -356,20 +356,13 @@ function Dashboard() {
 
   const finalizeDraft = (groups) => {
     const matches = generateSchedule(groups.baron, groups.elder);
-    
-    // 1. LocalStorage 업데이트
     const updated = updateLeague(league.id, { groups, matches });
     
-    // 2. React State 강제 업데이트 (새로고침 없이 화면 전환 핵심)
-    if (updated) {
-        setLeague({ ...updated });
-        setIsDrafting(false);
-        setActiveTab('standings'); // 순위표 탭으로 이동
-        alert("팀 구성 및 일정이 완료되었습니다!");
-    } else {
-        alert("저장 중 오류가 발생했습니다.");
-        setIsDrafting(false);
-    }
+    // 중요: 상태 즉시 업데이트
+    setLeague({ ...updated });
+    setIsDrafting(false);
+    setActiveTab('standings');
+    alert("팀 구성 및 일정이 완료되었습니다!");
   };
 
   const handlePrevTeam = () => { const idx = teams.findIndex(t => t.id === viewingTeam.id); setViewingTeamId(teams[(idx - 1 + teams.length) % teams.length].id); };
@@ -435,6 +428,7 @@ function Dashboard() {
             <button key={item.id} onClick={() => handleMenuClick(item.id)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-all duration-200 ${activeTab === item.id ? 'bg-blue-600 text-white shadow-md translate-x-1' : 'hover:bg-gray-800 hover:text-white hover:translate-x-1'}`}><span>{item.icon}</span> {item.name}</button>
           ))}
         </div>
+        <div className="p-4 border-t border-gray-700 bg-gray-800"><button onClick={() => navigate('/')} className="w-full flex items-center justify-center gap-2 text-xs font-bold text-gray-400 hover:text-white transition"><span>🚪</span> 메인으로 나가기</button></div>
       </aside>
 
       {/* Main Content */}
@@ -445,7 +439,6 @@ function Dashboard() {
             <div className="h-4 w-px bg-gray-300"></div>
             <div className="flex items-center gap-2 font-bold text-gray-700"><span className="text-gray-400">🏆</span> 0승 0패</div>
             <div className="h-4 w-px bg-gray-300"></div>
-            {/* 상금 표시 */}
             <div className="flex items-center gap-2 font-bold text-gray-700"><span className="text-gray-400">💰</span> 상금: {prizeMoney.toFixed(1)}억</div>
           </div>
           <button onClick={handleDraftStart} disabled={hasDrafted} className={`px-6 py-1.5 rounded-full font-bold text-sm shadow-sm transition flex items-center gap-2 ${hasDrafted ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white animate-pulse'}`}>
@@ -467,10 +460,10 @@ function Dashboard() {
                         <div className="text-xs font-bold text-gray-400 uppercase">VS</div><div className="text-3xl font-bold text-gray-300 my-2">@</div>
                         {nextMatch ? (
                           <div className="mt-1 flex flex-col items-center">
-                            {/* BO 표시 및 폰트 수정 */}
-                            <span className="text-lg font-black text-blue-600">{nextMatch.date}</span>
+                            <span className="text-base font-black text-blue-600">{nextMatch.date}</span>
                             <span className="text-sm font-bold text-gray-600">{nextMatch.time}</span>
                             <span className="mt-2 text-xs font-bold text-white bg-blue-600 px-3 py-1 rounded-full shadow-sm">{nextMatch.format}</span>
+                            <span className="mt-1 text-[10px] font-bold text-gray-400">🏟️ 치지직 롤파크</span>
                           </div>
                         ) : <div className="text-xs font-bold text-blue-600">LCK 컵 1R</div>}
                       </div>
@@ -491,7 +484,6 @@ function Dashboard() {
                 </div>
                 
                 <div className="col-span-12 lg:col-span-4 flex flex-col h-full max-h-[300px]">
-                   {/* 순위표 분리 복구 */}
                    {hasDrafted ? (
                      <div className="bg-white rounded-lg border shadow-sm p-3 h-full overflow-y-auto">
                         <div className="text-xs font-bold text-gray-500 mb-2 bg-gray-50 p-1 rounded">바론 그룹 (Baron)</div>
@@ -519,14 +511,13 @@ function Dashboard() {
                     <button onClick={()=>setActiveTab('roster')} className="text-sm font-bold text-blue-600 hover:underline">상세 정보 보기 →</button>
                   </div>
                   <div className="p-0 overflow-x-auto">
-                    {/* 연차, 나이 포함된 로스터 테이블 */}
                     <table className="w-full text-sm"><thead className="bg-white text-gray-400 text-xs uppercase font-bold border-b"><tr><th className="py-3 px-6 text-left">포지션</th><th className="py-3 px-6 text-left">이름</th><th className="py-3 px-6 text-center">나이</th><th className="py-3 px-6 text-center">경력</th><th className="py-3 px-6 text-center">종합</th><th className="py-3 px-6 text-center">잠재력</th><th className="py-3 px-6 text-left">계약</th></tr></thead><tbody className="divide-y divide-gray-100">{currentRoster.length > 0 ? currentRoster.map((p, i) => (<tr key={i} className="hover:bg-gray-50 transition"><td className="py-3 px-6 font-bold text-gray-400 w-16">{p.포지션}</td><td className="py-3 px-6 font-bold text-gray-800">{p.이름} <span className="text-gray-400 font-normal text-xs ml-1">({p.실명})</span> {p.주장 && <span className="ml-1 text-yellow-500" title="주장">👑</span>}</td><td className="py-3 px-6 text-center text-gray-600">{p.나이 || '-'}</td><td className="py-3 px-6 text-center text-gray-600">{p.경력 || '-'}</td><td className="py-3 px-6 text-center"><span className={`inline-flex items-center justify-center w-8 h-6 rounded font-bold text-xs ${getOvrBadgeStyle(p.종합)}`}>{p.종합}</span></td><td className="py-3 px-6 text-center"><span className={`text-xs ${getPotBadgeStyle(p.잠재력)}`}>{p.잠재력}</span></td><td className="py-3 px-6 text-gray-500 text-xs">{p.계약}년</td></tr>)) : <tr><td colSpan="7" className="py-10 text-center text-gray-300">데이터 없음</td></tr>}</tbody></table>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* View: Roster (상세 보기에도 연차, 나이 추가) */}
+            {/* View: Roster (상세 보기에도 나이, 경력 추가) */}
             {activeTab === 'roster' && (
               <div className="bg-white rounded-lg border shadow-sm flex flex-col">
                 <div className="p-6 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
@@ -541,92 +532,55 @@ function Dashboard() {
               </div>
             )}
             
-            {/* View: Standings */}
+            {/* View: Standings (바론/장로 분리) */}
             {activeTab === 'standings' && (
-              <div className="bg-white rounded-lg border shadow-sm p-8 min-h-[600px]">
-                <h2 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-2"><span className="text-yellow-500">🏆</span> 2026 LCK 컵 순위표</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-white rounded-lg border shadow-sm p-8 min-h-[600px]">
+                <div className="col-span-2 flex justify-between items-center mb-4">
+                    <h2 className="text-2xl font-black text-gray-900 flex items-center gap-2">🏆 2026 LCK 컵 순위표</h2>
+                    <span className="text-sm font-bold text-gray-400 bg-gray-100 px-3 py-1 rounded-full">정규 시즌 1라운드</span>
+                </div>
                 {hasDrafted ? (
-                  <div className="grid grid-cols-2 gap-8">
-                    <div><h3 className="text-lg font-bold text-gray-700 mb-3 border-b pb-2">바론 그룹 (Baron)</h3><table className="w-full text-sm border-collapse"><thead className="bg-gray-100 text-gray-600 uppercase text-xs font-bold"><tr><th className="py-3 px-4 text-center">#</th><th className="py-3 px-4 text-left">팀</th><th className="py-3 px-4 text-center">승</th><th className="py-3 px-4 text-center">패</th><th className="py-3 px-4 text-center">득실</th></tr></thead><tbody className="divide-y divide-gray-200">{league.groups.baron.map((id, idx) => { const t = safeTeam(id); return (<tr key={id} onClick={() => handleStandingsTeamClick(id)} className={`cursor-pointer transition-colors ${String(myTeam.id) === String(id) ? 'bg-blue-100 border-l-4 border-blue-600' : 'hover:bg-white bg-white/50'}`}><td className="py-4 px-4 text-center">{idx + 1}</td><td className="py-4 px-4 font-bold text-gray-800">{t.fullName}</td><td className="py-4 px-4 text-center font-bold">0</td><td className="py-4 px-4 text-center font-bold">0</td><td className="py-4 px-4 text-center text-gray-500 font-bold">0</td></tr>); })}</tbody></table></div>
-                    <div><h3 className="text-lg font-bold text-gray-700 mb-3 border-b pb-2">장로 그룹 (Elder)</h3><table className="w-full text-sm border-collapse"><thead className="bg-gray-100 text-gray-600 uppercase text-xs font-bold"><tr><th className="py-3 px-4 text-center">#</th><th className="py-3 px-4 text-left">팀</th><th className="py-3 px-4 text-center">승</th><th className="py-3 px-4 text-center">패</th><th className="py-3 px-4 text-center">득실</th></tr></thead><tbody className="divide-y divide-gray-200">{league.groups.elder.map((id, idx) => { const t = safeTeam(id); return (<tr key={id} onClick={() => handleStandingsTeamClick(id)} className={`cursor-pointer transition-colors ${String(myTeam.id) === String(id) ? 'bg-blue-100 border-l-4 border-blue-600' : 'hover:bg-white bg-white/50'}`}><td className="py-4 px-4 text-center">{idx + 1}</td><td className="py-4 px-4 font-bold text-gray-800">{t.fullName}</td><td className="py-4 px-4 text-center font-bold">0</td><td className="py-4 px-4 text-center font-bold">0</td><td className="py-4 px-4 text-center text-gray-500 font-bold">0</td></tr>); })}</tbody></table></div>
-                  </div>
+                  <>
+                    <div className="border rounded-xl p-4 bg-blue-50/20"><h3 className="text-xl font-black text-blue-800 mb-4 pb-2 border-b-2 border-blue-100">바론 그룹 (Baron)</h3><table className="w-full text-sm border-collapse"><thead className="bg-blue-600 text-white uppercase text-xs font-bold"><tr><th className="py-3 px-4 text-center rounded-tl-lg">#</th><th className="py-3 px-4 text-left">팀</th><th className="py-3 px-4 text-center">승</th><th className="py-3 px-4 text-center">패</th><th className="py-3 px-4 text-center rounded-tr-lg">득실</th></tr></thead><tbody className="divide-y divide-gray-200">{league.groups.baron.map((id, idx) => { const t = safeTeam(id); return (<tr key={id} onClick={() => handleStandingsTeamClick(id)} className={`cursor-pointer transition-colors ${String(myTeam.id) === String(id) ? 'bg-blue-100 font-bold border-l-4 border-blue-600' : 'hover:bg-white bg-white/50'}`}><td className="py-4 px-4 text-center">{idx + 1}</td><td className="py-4 px-4 font-bold text-gray-800">{t.fullName}</td><td className="py-4 px-4 text-center font-bold">0</td><td className="py-4 px-4 text-center font-bold">0</td><td className="py-4 px-4 text-center text-gray-500 font-bold">0</td></tr>); })}</tbody></table></div>
+                    <div className="border rounded-xl p-4 bg-orange-50/20"><h3 className="text-xl font-black text-orange-800 mb-4 pb-2 border-b-2 border-orange-100">장로 그룹 (Elder)</h3><table className="w-full text-sm border-collapse"><thead className="bg-orange-600 text-white uppercase text-xs font-bold"><tr><th className="py-3 px-4 text-center rounded-tl-lg">#</th><th className="py-3 px-4 text-left">팀</th><th className="py-3 px-4 text-center">승</th><th className="py-3 px-4 text-center">패</th><th className="py-3 px-4 text-center rounded-tr-lg">득실</th></tr></thead><tbody className="divide-y divide-gray-200">{league.groups.elder.map((id, idx) => { const t = safeTeam(id); return (<tr key={id} onClick={() => handleStandingsTeamClick(id)} className={`cursor-pointer transition-colors ${String(myTeam.id) === String(id) ? 'bg-blue-100 font-bold border-l-4 border-blue-600' : 'hover:bg-white bg-white/50'}`}><td className="py-4 px-4 text-center">{idx + 1}</td><td className="py-4 px-4 font-bold text-gray-800">{t.fullName}</td><td className="py-4 px-4 text-center font-bold">0</td><td className="py-4 px-4 text-center font-bold">0</td><td className="py-4 px-4 text-center text-gray-500 font-bold">0</td></tr>); })}</tbody></table></div>
+                  </>
                 ) : (
-                  <div className="overflow-x-auto"><table className="w-full text-sm border-collapse"><thead className="bg-gray-100 text-gray-600 uppercase text-xs font-bold"><tr><th className="py-4 px-6 text-left rounded-tl-lg">순위</th><th className="py-4 px-6 text-left">팀</th><th className="py-4 px-6 text-center">승</th><th className="py-4 px-6 text-center">패</th><th className="py-4 px-6 text-center">득실차</th><th className="py-4 px-6 text-center rounded-tr-lg">승률</th></tr></thead><tbody className="divide-y divide-gray-200">{teams.map((t, idx) => { const isMyTeam = myTeam.id === t.id; return (<tr key={t.id} onClick={() => handleStandingsTeamClick(t.id)} className={`cursor-pointer transition-colors duration-150 ${isMyTeam ? 'bg-blue-100 border-l-4 border-blue-600' : 'hover:bg-gray-50'}`}><td className="py-4 px-6 font-bold text-gray-500 text-lg">{idx + 1}</td><td className="py-4 px-6"><span className="text-lg font-bold text-blue-600">{t.fullName}</span>{isMyTeam && <span className="ml-2 bg-blue-600 text-white text-xs px-2 py-1 rounded font-bold">(선택됨)</span>}</td><td className="py-4 px-6 text-center">0</td><td className="py-4 px-6 text-center">0</td><td className="py-4 px-6 text-center">0</td><td className="py-4 px-6 text-center">0</td><td className="py-4 px-6 text-center font-bold text-gray-800">-</td></tr>); })}</tbody></table></div>
+                  <div className="col-span-2 flex flex-col items-center justify-center text-gray-400 py-20"><div className="text-6xl mb-6">🗳️</div><div className="text-2xl font-bold">일정이 생성되지 않았습니다</div><p className="mt-2 text-lg">상단의 [조 확인하기]를 눌러 2026 LCK 컵 조 편성을 시작하세요!</p></div>
                 )}
               </div>
             )}
-            
-            {/* View: Meta Analysis (16.01 패치 메타로 수정) */}
+
+            {/* View: Meta Analysis (16.01 패치) */}
             {activeTab === 'meta' && (
               <div className="bg-white rounded-lg border shadow-sm p-8 min-h-[600px] flex flex-col">
                 <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-2xl font-black text-gray-900 flex items-center gap-2">
-                    <span className="text-purple-600">📈</span> 16.01 패치 메타
-                  </h2>
+                  <h2 className="text-2xl font-black text-gray-900 flex items-center gap-2"><span className="text-purple-600">📈</span> 16.01 패치 메타 분석</h2>
                   <div className="flex bg-gray-100 p-1 rounded-lg">
                     {['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(role => (
-                      <button
-                        key={role}
-                        onClick={() => setMetaRole(role)}
-                        className={`px-4 py-2 rounded-md text-sm font-bold transition ${metaRole === role ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                      >
-                        {role}
-                      </button>
+                      <button key={role} onClick={() => setMetaRole(role)} className={`px-4 py-2 rounded-md text-sm font-bold transition ${metaRole === role ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{role}</button>
                     ))}
                   </div>
                 </div>
-
                 <div className="grid grid-cols-1 gap-4">
-                  {championList
-                    .filter(c => c.role === metaRole)
-                    .map((champ, idx) => (
+                  {championList.filter(c => c.role === metaRole).map((champ, idx) => (
                       <div key={champ.id} className="border rounded-xl p-4 flex items-center justify-between hover:bg-gray-50 transition group">
-                        <div className="flex items-center gap-4 w-1/4">
-                          <span className={`text-2xl font-black w-10 text-center ${idx < 3 ? 'text-yellow-500' : 'text-gray-300'}`}>{idx + 1}</span>
-                          <div>
-                            <div className="font-bold text-lg text-gray-800">{champ.name}</div>
-                            <span className={`text-xs font-bold px-2 py-0.5 rounded ${champ.tier === 1 ? 'bg-purple-100 text-purple-600' : champ.tier === 2 ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
-                              {champ.tier} 티어
-                            </span>
-                          </div>
-                        </div>
-                        
-                        <div className="flex-1 px-8">
-                          <div className="flex justify-between text-xs text-gray-500 mb-1 font-medium">
-                            <span>초반 {champ.stats.early}</span>
-                            <span>중반 {champ.stats.mid}</span>
-                            <span>후반 {champ.stats.late}</span>
-                          </div>
-                          <div className="h-2.5 bg-gray-100 rounded-full flex overflow-hidden">
-                            <div className="bg-green-400 h-full" style={{width: `${champ.stats.early * 10}%`}} />
-                            <div className="bg-yellow-400 h-full" style={{width: `${champ.stats.mid * 10}%`}} />
-                            <div className="bg-red-400 h-full" style={{width: `${champ.stats.late * 10}%`}} />
-                          </div>
-                        </div>
-
-                        <div className="w-1/3 text-right">
-                          <div className="text-xs font-bold text-gray-400 mb-1 uppercase tracking-wide">Counter Picks</div>
-                          <div className="text-sm font-medium text-gray-700">{champ.counters.join(', ')}</div>
-                        </div>
+                        <div className="flex items-center gap-4 w-1/4"><span className={`text-2xl font-black w-10 text-center ${idx < 3 ? 'text-yellow-500' : 'text-gray-300'}`}>{idx + 1}</span><div><div className="font-bold text-lg text-gray-800">{champ.name}</div><span className={`text-xs font-bold px-2 py-0.5 rounded ${champ.tier === 1 ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-500'}`}>{champ.tier} 티어</span></div></div>
+                        <div className="flex-1 px-8"><div className="h-2.5 bg-gray-100 rounded-full flex overflow-hidden"><div className="bg-green-400 h-full" style={{width: `${champ.stats.early * 10}%`}} /><div className="bg-yellow-400 h-full" style={{width: `${champ.stats.mid * 10}%`}} /><div className="bg-red-400 h-full" style={{width: `${champ.stats.late * 10}%`}} /></div></div>
+                        <div className="w-1/3 text-right"><div className="text-xs font-bold text-gray-400 mb-1 uppercase tracking-wide">Counter Picks</div><div className="text-sm font-medium text-gray-700">{champ.counters.join(', ')}</div></div>
                       </div>
-                    ))}
+                  ))}
                 </div>
               </div>
             )}
 
-            {/* View: Schedule (BO3, BO5 표시) */}
-             {(activeTab === 'schedule' || activeTab === 'team_schedule') && (
+            {/* View: Schedule (BO3/BO5 배지 추가) */}
+            {(activeTab === 'schedule' || activeTab === 'team_schedule') && (
               <div className="bg-white rounded-lg border shadow-sm p-8 min-h-[600px] flex flex-col">
-                <h2 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-2">
-                  📅 {activeTab === 'team_schedule' ? `${myTeam.name} 경기 일정` : '2026 LCK 컵 전체 일정'}
-                </h2>
+                <h2 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-2">📅 {activeTab === 'team_schedule' ? `${myTeam.name} 경기 일정` : '2026 LCK 컵 전체 일정'}</h2>
                 {hasDrafted ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto">
-                    {league.matches
-                      .filter(m => activeTab === 'schedule' || (String(m.t1) === String(myTeam.id) || String(m.t2) === String(myTeam.id)))
-                      .map((m, i) => {
-                      const t1 = safeTeam(m.t1);
-                      const t2 = safeTeam(m.t2);
+                    {league.matches.filter(m => activeTab === 'schedule' || (String(m.t1) === String(myTeam.id) || String(m.t2) === String(myTeam.id))).map((m, i) => {
+                      const st1 = safeTeam(m.t1); const st2 = safeTeam(m.t2);
                       const isMyMatch = String(myTeam.id) === String(m.t1) || String(myTeam.id) === String(m.t2);
                       return (
                         <div key={i} className={`p-5 rounded-lg border-2 flex flex-col gap-3 transition-transform hover:scale-[1.02] ${isMyMatch ? 'bg-blue-50 border-blue-400 shadow-md' : 'bg-white border-gray-100'}`}>
@@ -636,9 +590,9 @@ function Dashboard() {
                             <span className={`text-xs font-black px-2 py-1 rounded-lg ${m.format === 'BO5' ? 'bg-red-600 text-white' : 'bg-gray-800 text-white'}`}>{m.format}</span>
                           </div>
                           <div className="flex justify-between items-center py-2">
-                            <div className="flex flex-col items-center w-1/3"><span className={`font-black text-lg ${isMyMatch && String(myTeam.id) === String(m.t1) ? 'text-blue-600' : 'text-gray-800'}`}>{t1.name}</span></div>
+                            <div className="flex flex-col items-center w-1/3"><span className={`font-black text-lg ${isMyMatch && String(myTeam.id) === String(m.t1) ? 'text-blue-600' : 'text-gray-800'}`}>{st1.name}</span></div>
                             <div className="text-gray-300 font-black italic text-xl">VS</div>
-                            <div className="flex flex-col items-center w-1/3"><span className={`font-black text-lg ${isMyMatch && String(myTeam.id) === String(m.t2) ? 'text-blue-600' : 'text-gray-800'}`}>{t2.name}</span></div>
+                            <div className="flex flex-col items-center w-1/3"><span className={`font-black text-lg ${isMyMatch && String(myTeam.id) === String(m.t2) ? 'text-blue-600' : 'text-gray-800'}`}>{st2.name}</span></div>
                           </div>
                           <div className="text-center text-xs font-bold text-blue-600 bg-white border border-blue-200 py-1 rounded-full w-full">LIVE 예정</div>
                         </div>
@@ -646,7 +600,7 @@ function Dashboard() {
                     })}
                   </div>
                 ) : (
-                  <div className="flex-1 flex flex-col items-center justify-center text-gray-400"><div className="text-4xl mb-4">🗳️</div><div className="text-xl font-bold">일정이 생성되지 않았습니다</div><p className="mt-2">먼저 조 추첨을 진행해주세요.</p></div>
+                  <div className="flex-1 flex flex-col items-center justify-center text-gray-400 py-20"><div className="text-6xl mb-6">📅</div><div className="text-2xl font-bold">일정이 생성되지 않았습니다</div></div>
                 )}
               </div>
             )}
