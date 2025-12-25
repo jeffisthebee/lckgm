@@ -56,7 +56,7 @@ const getPotBadgeStyle = (pot) => {
   return 'text-gray-500 font-medium';
 };
 
-// --- 스케줄러 (무한루프 방지 포함) ---
+// --- 스케줄러 ---
 const generateSchedule = (baronIds, elderIds) => {
   const week1Days = ['1.14 (수)', '1.15 (목)', '1.16 (금)', '1.17 (토)', '1.18 (일)'];
   const week2Days = ['1.21 (수)', '1.22 (목)', '1.23 (금)', '1.24 (토)', '1.25 (일)'];
@@ -509,10 +509,9 @@ function Dashboard() {
                    </div>
                 </div>
                 
-                {/* --- 우측 순위표 (요청하신 수정 반영) --- */}
+                {/* --- 대시보드 우측 미니 순위표 --- */}
                 <div className="col-span-12 lg:col-span-4 flex flex-col h-full max-h-[500px]">
                    {hasDrafted ? (
-                     // 선정 후: 그룹별 분리 (한글화)
                      <div className="bg-white rounded-lg border shadow-sm p-4 h-full overflow-y-auto">
                         <div className="mb-6">
                             <div className="flex items-center gap-2 mb-2 border-b pb-2">
@@ -567,7 +566,6 @@ function Dashboard() {
                         </div>
                      </div>
                    ) : (
-                     // 선정 전: 전체 10개 팀 (통합)
                      <div className="bg-white rounded-lg border shadow-sm p-0 flex-1 flex flex-col">
                        <div className="p-3 border-b bg-gray-50 font-bold text-sm text-gray-700 flex justify-between"><span>순위표 (프리시즌)</span><span onClick={()=>setActiveTab('standings')} className="text-xs text-blue-600 cursor-pointer hover:underline">전체 보기</span></div>
                        <div className="flex-1 overflow-y-auto p-0">
@@ -606,6 +604,136 @@ function Dashboard() {
                   </div>
                 </div>
               </div>
+            )}
+
+            {/* --- (수정됨) 메인 순위표 페이지 --- */}
+            {activeTab === 'standings' && (
+               <div className="flex flex-col gap-6">
+                 <h2 className="text-2xl font-black text-gray-900 flex items-center gap-2">
+                   🏆 2026 LCK 컵 순위표
+                 </h2>
+                 {hasDrafted ? (
+                    // 드래프트 후: 2개 그룹 병렬 배치
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* 바론 그룹 */}
+                        <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
+                           <div className="p-4 bg-purple-50 border-b border-purple-100 flex items-center gap-2">
+                              <span className="text-2xl">🟣</span>
+                              <h3 className="font-black text-lg text-purple-900">바론 그룹 (Baron Group)</h3>
+                           </div>
+                           <table className="w-full text-sm">
+                              <thead className="bg-gray-50 text-gray-500 font-bold border-b">
+                                <tr>
+                                  <th className="py-3 px-4 text-center">순위</th>
+                                  <th className="py-3 px-4 text-left">팀</th>
+                                  <th className="py-3 px-4 text-center">승</th>
+                                  <th className="py-3 px-4 text-center">패</th>
+                                  <th className="py-3 px-4 text-center">득실</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                {league.groups.baron.map((id, idx) => {
+                                  const t = teams.find(team => team.id === id);
+                                  const isMyTeam = myTeam.id === id;
+                                  return (
+                                    <tr key={id} onClick={() => setViewingTeamId(id)} className={`cursor-pointer hover:bg-gray-50 transition ${isMyTeam ? 'bg-purple-50' : ''}`}>
+                                      <td className="py-3 px-4 text-center font-bold text-gray-600">{idx + 1}</td>
+                                      <td className="py-3 px-4 font-bold text-gray-800 flex items-center gap-2">
+                                         <div className="w-6 h-6 rounded-full text-white text-[10px] flex items-center justify-center" style={{backgroundColor: t.colors.primary}}>{t.name}</div>
+                                         {t.fullName}
+                                      </td>
+                                      <td className="py-3 px-4 text-center font-bold text-blue-600">0</td>
+                                      <td className="py-3 px-4 text-center font-bold text-red-600">0</td>
+                                      <td className="py-3 px-4 text-center text-gray-500">0</td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                           </table>
+                        </div>
+
+                        {/* 장로 그룹 */}
+                        <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
+                           <div className="p-4 bg-red-50 border-b border-red-100 flex items-center gap-2">
+                              <span className="text-2xl">🔴</span>
+                              <h3 className="font-black text-lg text-red-900">장로 그룹 (Elder Group)</h3>
+                           </div>
+                           <table className="w-full text-sm">
+                              <thead className="bg-gray-50 text-gray-500 font-bold border-b">
+                                <tr>
+                                  <th className="py-3 px-4 text-center">순위</th>
+                                  <th className="py-3 px-4 text-left">팀</th>
+                                  <th className="py-3 px-4 text-center">승</th>
+                                  <th className="py-3 px-4 text-center">패</th>
+                                  <th className="py-3 px-4 text-center">득실</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                {league.groups.elder.map((id, idx) => {
+                                  const t = teams.find(team => team.id === id);
+                                  const isMyTeam = myTeam.id === id;
+                                  return (
+                                    <tr key={id} onClick={() => setViewingTeamId(id)} className={`cursor-pointer hover:bg-gray-50 transition ${isMyTeam ? 'bg-red-50' : ''}`}>
+                                      <td className="py-3 px-4 text-center font-bold text-gray-600">{idx + 1}</td>
+                                      <td className="py-3 px-4 font-bold text-gray-800 flex items-center gap-2">
+                                         <div className="w-6 h-6 rounded-full text-white text-[10px] flex items-center justify-center" style={{backgroundColor: t.colors.primary}}>{t.name}</div>
+                                         {t.fullName}
+                                      </td>
+                                      <td className="py-3 px-4 text-center font-bold text-blue-600">0</td>
+                                      <td className="py-3 px-4 text-center font-bold text-red-600">0</td>
+                                      <td className="py-3 px-4 text-center text-gray-500">0</td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                           </table>
+                        </div>
+                    </div>
+                 ) : (
+                    // 드래프트 전: 통합 순위표 (확장판)
+                    <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
+                       <div className="p-5 border-b bg-gray-50 flex justify-between items-center">
+                          <h3 className="font-bold text-gray-700">전체 팀 현황 (Pre-Season)</h3>
+                          <span className="text-xs font-bold text-gray-400">총 10개 팀</span>
+                       </div>
+                       <table className="w-full text-sm">
+                          <thead className="bg-white text-gray-500 font-bold border-b">
+                            <tr>
+                              <th className="py-4 px-6 text-center w-16">순위</th>
+                              <th className="py-4 px-6 text-left">팀 정보</th>
+                              <th className="py-4 px-6 text-center">승</th>
+                              <th className="py-4 px-6 text-center">패</th>
+                              <th className="py-4 px-6 text-center">득실</th>
+                              <th className="py-4 px-6 text-center">최근 5경기</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                             {teams.map((t, idx) => {
+                               const isMyTeam = myTeam.id === t.id;
+                               return (
+                                 <tr key={t.id} onClick={() => setViewingTeamId(t.id)} className={`cursor-pointer hover:bg-blue-50 transition ${isMyTeam ? 'bg-blue-50' : ''}`}>
+                                    <td className="py-4 px-6 text-center font-bold text-gray-600">{idx + 1}</td>
+                                    <td className="py-4 px-6">
+                                       <div className="flex items-center gap-4">
+                                          <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white shadow-md" style={{backgroundColor: t.colors.primary}}>{t.name}</div>
+                                          <div>
+                                             <div className="font-bold text-gray-900 text-base">{t.fullName}</div>
+                                             <div className="text-xs text-gray-400">{t.description}</div>
+                                          </div>
+                                       </div>
+                                    </td>
+                                    <td className="py-4 px-6 text-center font-bold text-gray-400">-</td>
+                                    <td className="py-4 px-6 text-center font-bold text-gray-400">-</td>
+                                    <td className="py-4 px-6 text-center font-bold text-gray-400">-</td>
+                                    <td className="py-4 px-6 text-center text-xs text-gray-400">기록 없음</td>
+                                 </tr>
+                               );
+                             })}
+                          </tbody>
+                       </table>
+                    </div>
+                 )}
+               </div>
             )}
 
             {activeTab === 'roster' && (
