@@ -56,7 +56,7 @@ const getPotBadgeStyle = (pot) => {
   return 'text-gray-500 font-medium';
 };
 
-// --- 스케줄러 (연전 금지 + 주 2회 균등 + 3주차 TBD) ---
+// --- 스케줄러 (안전장치 추가됨) ---
 const generateSchedule = (baronIds, elderIds) => {
   const week1Days = ['1.14 (수)', '1.15 (목)', '1.16 (금)', '1.17 (토)', '1.18 (일)'];
   const week2Days = ['1.21 (수)', '1.22 (목)', '1.23 (금)', '1.24 (토)', '1.25 (일)'];
@@ -71,13 +71,11 @@ const generateSchedule = (baronIds, elderIds) => {
     for (let j = 0; j < 5; j++) {
       const elderTeam = elderIds[j];
       if (elderTeam !== skipElderTeam) {
-        // 정규 시즌은 BO3
         allMatches.push({ t1: baronTeam, t2: elderTeam, type: 'regular', status: 'pending', format: 'BO3' });
       }
     }
   }
 
-  // 주간 분배 및 일별 배정 (재시도 로직)
   const attemptFullSchedule = () => {
     const pool = [...allMatches].sort(() => Math.random() - 0.5);
     let week1Matches = [], week2Matches = [];
@@ -100,7 +98,6 @@ const generateSchedule = (baronIds, elderIds) => {
     week2Matches.forEach(m => { w2Counts[m.t1] = (w2Counts[m.t1] || 0) + 1; w2Counts[m.t2] = (w2Counts[m.t2] || 0) + 1; });
     if (Object.values(w2Counts).some(c => c !== 2)) return null;
 
-    // 일별 배정
     const assignDays = (matches, days) => {
       let schedule = [];
       let dayIdx = 0;
@@ -114,7 +111,6 @@ const generateSchedule = (baronIds, elderIds) => {
             if (todays.some(tm => tm.t1 === m.t1 || tm.t1 === m.t2 || tm.t2 === m.t1 || tm.t2 === m.t2)) return false;
             const p1 = lastPlayed[m.t1];
             const p2 = lastPlayed[m.t2];
-            // 백투백 방지
             if (p1 !== undefined && dayIdx - p1 <= 1) return false;
             if (p2 !== undefined && dayIdx - p2 <= 1) return false;
             return true;
@@ -126,7 +122,7 @@ const generateSchedule = (baronIds, elderIds) => {
             lastPlayed[m.t1] = dayIdx;
             lastPlayed[m.t2] = dayIdx;
           } else {
-            return null; // 실패
+            return null;
           }
         }
         schedule.push({ ...todays[0], date: days[dayIdx], time: '17:00' });
@@ -144,12 +140,26 @@ const generateSchedule = (baronIds, elderIds) => {
     return [...s1, ...s2];
   };
 
+  // *수정됨*: 무한 루프 방지 (최대 100번 시도)
   let finalSchedule = null;
-  while (!finalSchedule) {
+  let attempts = 0;
+  while (!finalSchedule && attempts < 100) {
     finalSchedule = attemptFullSchedule();
+    attempts++;
+  }
+  
+  // 실패 시 기본 스케줄 생성 (오류 방지)
+  if (!finalSchedule) {
+     finalSchedule = [];
+     const days = [...week1Days, ...week2Days];
+     allMatches.forEach((m, i) => {
+         if(i < days.length * 2) {
+            finalSchedule.push({...m, date: days[Math.floor(i/2)], time: i%2===0?'17:00':'19:30'});
+         }
+     });
   }
 
-  // 3주차 TBD (BO5 예시)
+  // 3주차 TBD
   week3Days.forEach(day => {
     finalSchedule.push({ t1: null, t2: null, date: day, time: '17:00', type: 'tbd', format: 'BO5' });
   });
@@ -165,7 +175,6 @@ function LeagueManager() {
   const navigate = useNavigate();
   useEffect(() => setLeagues(getLeagues()), []);
   
-  // 데이터 초기화 버튼 (오류 해결용)
   const handleClearData = () => {
     if(window.confirm('저장된 모든 데이터를 초기화하시겠습니까? 실행 후 접속 오류가 해결됩니다.')){
         localStorage.removeItem('lckgm_leagues');
@@ -183,7 +192,7 @@ function LeagueManager() {
         <div className="grid gap-4">
           {leagues.map(l => {
             const t = teams.find(x => x.id === l.team.id);
-            if (!t) return null; // 팀 정보 매칭 실패 시 렌더링 스킵 (에러 방지)
+            if (!t) return null;
             return (
               <div key={l.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:border-blue-500 hover:shadow-md transition flex justify-between items-center group">
                 <div className="flex items-center gap-5">
@@ -239,13 +248,10 @@ function TeamSelection() {
           <button onClick={()=>setIdx(i=>i===teams.length-1?0:i+1)} className="p-3 bg-gray-100 rounded-full hover:bg-gray-200 transition">▶</button>
         </div>
         <div className="grid grid-cols-4 gap-3 mb-4">{difficulties.map(d=><button key={d.value} onClick={()=>setDiff(d.value)} className={`py-3 rounded-xl border-2 font-bold transition ${diff===d.value?'bg-gray-800 text-white border-gray-800':'bg-white text-gray-400 border-gray-200 hover:border-gray-300'}`}>{d.label}</button>)}</div>
-        
-        {/* 난이도 안내 문구 */}
         <div className="bg-gray-50 rounded-lg p-4 mb-8 text-sm leading-relaxed border border-gray-100">
           <p className="text-gray-600 font-medium">ℹ️ 난이도가 상승할수록 승리 확률 감소, 재계약 확률 감소, 선수의 기복이 증가하여 전체적으로 운영이 어려워집니다.</p>
           {diff === 'insane' && <p className="text-red-600 font-bold mt-2 animate-pulse">⚠️ 극악 난이도는 운과 실력이 모두 필요한 최악의 시나리오입니다.</p>}
         </div>
-
         <button onClick={handleStart} className="w-full py-5 rounded-2xl font-black text-xl text-white shadow-lg hover:shadow-xl hover:opacity-90 transition transform hover:-translate-y-1" style={{backgroundColor:current.colors.primary,color:getTextColor(current.colors.primary)}}>2026 시즌 시작하기</button>
       </div>
     </div>
@@ -253,7 +259,6 @@ function TeamSelection() {
 }
 
 // --- Dashboard ---
-// --- Dashboard (수정됨) ---
 function Dashboard() {
   const { leagueId } = useParams();
   const navigate = useNavigate();
@@ -303,11 +308,10 @@ function Dashboard() {
   const currentRoster = (playerList || []).filter(p => p.팀 === viewingTeam.name);
   
   const isCaptain = myTeam.id === 1 || myTeam.id === 2; 
-  // 그룹 데이터 존재 여부 확인 강화
   const hasDrafted = league.groups && league.groups.baron && league.groups.baron.length > 0;
   const currentDateDisplay = hasDrafted ? '2026년 1월 8일' : '2026년 1월 1일';
 
-  // --- 드래프트 로직 (기존 유지) ---
+  // --- 드래프트 로직 ---
   const handleDraftStart = () => {
     if (hasDrafted) return;
     setIsDrafting(true);
@@ -399,41 +403,10 @@ function Dashboard() {
   const opponentId = nextMatch ? (nextMatch.t1 === myTeam.id ? nextMatch.t2 : nextMatch.t1) : null;
   const oppRecord = { w: 0, l: 0 }; 
 
-  // --- 순위표 렌더링 헬퍼 컴포넌트 ---
-  const GroupTable = ({ groupName, teamIds, colorClass, headerColor }) => (
-    <div className="mb-2 last:mb-0">
-        <div className={`px-3 py-1.5 text-xs font-black text-white flex justify-between items-center ${headerColor}`}>
-            <span>{groupName}</span>
-            <span>W - L (Diff)</span>
-        </div>
-        <table className="w-full text-xs">
-            <tbody className="divide-y divide-gray-100">
-                {teamIds.map((id, idx) => {
-                    const t = teams.find(team => team.id === id);
-                    if (!t) return null;
-                    const isMy = myTeam.id === id;
-                    return (
-                        <tr key={id} onClick={() => setViewingTeamId(id)} className={`cursor-pointer transition ${isMy ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
-                            <td className={`p-2 w-8 text-center font-bold ${idx < 2 ? colorClass : 'text-gray-400'}`}>{idx + 1}</td>
-                            <td className="p-2 font-bold text-gray-700">
-                                {t.fullName}
-                                {isMy && <span className="ml-1 text-[10px] text-blue-500 border border-blue-200 px-1 rounded">ME</span>}
-                            </td>
-                            <td className="p-2 text-right font-medium text-gray-500">
-                                0 - 0 <span className="text-gray-300 text-[10px] ml-1">(0)</span>
-                            </td>
-                        </tr>
-                    );
-                })}
-            </tbody>
-        </table>
-    </div>
-  );
-
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden font-sans relative">
       
-      {/* Draft Modal (기존 유지) */}
+      {/* Draft Modal */}
       {isDrafting && (
         <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-8 max-w-4xl w-full text-center shadow-2xl overflow-hidden relative min-h-[500px] flex flex-col">
@@ -473,7 +446,7 @@ function Dashboard() {
         </div>
       )}
 
-      {/* Sidebar (기존 유지) */}
+      {/* Sidebar */}
       <aside className="w-64 bg-gray-900 text-gray-300 flex-shrink-0 flex flex-col shadow-xl z-20">
         <div className="p-5 bg-gray-800 border-b border-gray-700 flex items-center gap-3">
           <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white text-xs shadow-lg" style={{backgroundColor: myTeam.colors.primary}}>{myTeam.name}</div>
@@ -539,37 +512,66 @@ function Dashboard() {
                    </div>
                 </div>
                 
-                {/* [수정] 대시보드 순위표 위젯: 바론/장로 분리 및 가시성 개선 */}
-                <div className="col-span-12 lg:col-span-4 flex flex-col h-full max-h-[300px]">
+                {/* --- 순위표 픽스된 부분 --- */}
+                <div className="col-span-12 lg:col-span-4 flex flex-col h-full max-h-[500px]">
                    {hasDrafted ? (
-                     <div className="bg-white rounded-lg border shadow-sm flex flex-col h-full overflow-hidden">
-                        <div className="p-3 bg-gray-50 border-b flex justify-between items-center">
-                            <span className="font-bold text-sm text-gray-700">🏆 조별 예선 순위</span>
-                            <button onClick={()=>setActiveTab('standings')} className="text-xs text-blue-600 hover:underline">전체 보기</button>
+                     <div className="bg-white rounded-lg border shadow-sm p-4 h-full overflow-y-auto custom-scrollbar">
+                        <div className="mb-6">
+                            <div className="flex items-center gap-2 mb-2 border-b pb-2">
+                                <span className="text-lg">🟣</span>
+                                <span className="font-black text-sm text-gray-700">BARON GROUP</span>
+                            </div>
+                            <table className="w-full text-xs">
+                              <thead className="bg-gray-50 text-gray-400">
+                                <tr><th className="p-2 text-center w-8">#</th><th className="p-2 text-left">팀</th><th className="p-2 text-center w-8">승</th><th className="p-2 text-center w-8">패</th><th className="p-2 text-center w-10">득실</th></tr>
+                              </thead>
+                              <tbody>
+                                {(league.groups.baron || []).map((id, idx) => {
+                                   const t = teams.find(team => team.id === id);
+                                   if(!t) return null;
+                                   const isMyTeam = myTeam.id === id;
+                                   return (
+                                     <tr key={id} onClick={() => setViewingTeamId(id)} className={`cursor-pointer border-b last:border-0 transition-colors ${isMyTeam ? 'bg-blue-50 border-l-2 border-blue-500' : 'hover:bg-gray-50'}`}>
+                                       <td className="p-2 text-center font-bold text-gray-500">{idx+1}</td>
+                                       <td className="p-2 font-bold"><span className={`${isMyTeam ? 'text-blue-700' : 'text-gray-800'} hover:underline`}>{t.fullName}</span></td>
+                                       <td className="p-2 text-center">0</td><td className="p-2 text-center">0</td><td className="p-2 text-center text-gray-400">0</td>
+                                     </tr>
+                                   );
+                                })}
+                              </tbody>
+                            </table>
                         </div>
-                        <div className="flex-1 overflow-y-auto p-0">
-                           {/* Baron Group */}
-                           <GroupTable 
-                             groupName="BARON GROUP" 
-                             teamIds={league.groups.baron} 
-                             colorClass="text-yellow-600" 
-                             headerColor="bg-gray-800"
-                           />
-                           {/* Elder Group */}
-                           <GroupTable 
-                             groupName="ELDER GROUP" 
-                             teamIds={league.groups.elder} 
-                             colorClass="text-red-600" 
-                             headerColor="bg-gray-600"
-                           />
+
+                        <div>
+                            <div className="flex items-center gap-2 mb-2 border-b pb-2">
+                                <span className="text-lg">🔴</span>
+                                <span className="font-black text-sm text-gray-700">ELDER GROUP</span>
+                            </div>
+                            <table className="w-full text-xs">
+                              <thead className="bg-gray-50 text-gray-400">
+                                <tr><th className="p-2 text-center w-8">#</th><th className="p-2 text-left">팀</th><th className="p-2 text-center w-8">승</th><th className="p-2 text-center w-8">패</th><th className="p-2 text-center w-10">득실</th></tr>
+                              </thead>
+                              <tbody>
+                                {(league.groups.elder || []).map((id, idx) => {
+                                   const t = teams.find(team => team.id === id);
+                                   if(!t) return null;
+                                   const isMyTeam = myTeam.id === id;
+                                   return (
+                                     <tr key={id} onClick={() => setViewingTeamId(id)} className={`cursor-pointer border-b last:border-0 transition-colors ${isMyTeam ? 'bg-blue-50 border-l-2 border-blue-500' : 'hover:bg-gray-50'}`}>
+                                       <td className="p-2 text-center font-bold text-gray-500">{idx+1}</td>
+                                       <td className="p-2 font-bold"><span className={`${isMyTeam ? 'text-blue-700' : 'text-gray-800'} hover:underline`}>{t.fullName}</span></td>
+                                       <td className="p-2 text-center">0</td><td className="p-2 text-center">0</td><td className="p-2 text-center text-gray-400">0</td>
+                                     </tr>
+                                   );
+                                })}
+                              </tbody>
+                            </table>
                         </div>
                      </div>
                    ) : (
                      <div className="bg-white rounded-lg border shadow-sm p-0 flex-1 flex flex-col">
                        <div className="p-3 border-b bg-gray-50 font-bold text-sm text-gray-700 flex justify-between"><span>순위표</span><span onClick={()=>setActiveTab('standings')} className="text-xs text-blue-600 cursor-pointer hover:underline">전체 보기</span></div>
-                       <div className="flex-1 overflow-y-auto p-0 flex items-center justify-center text-gray-400 text-xs">
-                          아직 조 추첨이 진행되지 않았습니다.
-                       </div>
+                       <div className="flex-1 overflow-y-auto p-0"><table className="w-full text-xs"><tbody>{teams.map((t, i) => { const isMyTeam = myTeam.id === t.id; return (<tr key={t.id} onClick={() => setViewingTeamId(t.id)} className={`cursor-pointer border-b last:border-0 transition-colors duration-150 ${isMyTeam ? 'bg-blue-100 border-l-4 border-blue-600' : 'hover:bg-gray-50'}`}><td className="p-2 font-bold text-gray-500 text-center w-8">{i + 1}</td><td className="p-2 font-bold"><span className="text-blue-600 hover:text-blue-800 hover:underline decoration-blue-400 decoration-2 underline-offset-2">{t.fullName}</span>{isMyTeam && <span className="ml-1 text-xs text-gray-500 font-normal">(선택됨)</span>}</td><td className="p-2 text-right text-gray-500">0-0</td></tr>); })}</tbody></table></div>
                      </div>
                    )}
                 </div>
@@ -600,7 +602,6 @@ function Dashboard() {
               </div>
             )}
 
-            {/* [수정] 메타 분석 탭 (기존 유지) */}
             {activeTab === 'meta' && (
               <div className="bg-white rounded-lg border shadow-sm p-8 min-h-[600px] flex flex-col">
                 <div className="flex justify-between items-center mb-6">
@@ -609,54 +610,56 @@ function Dashboard() {
                   </h2>
                   <div className="flex bg-gray-100 p-1 rounded-lg">
                     {['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(role => (
-                      <button key={role} onClick={() => setMetaRole(role)} className={`px-4 py-2 rounded-md text-sm font-bold transition ${metaRole === role ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                      <button
+                        key={role}
+                        onClick={() => setMetaRole(role)}
+                        className={`px-4 py-2 rounded-md text-sm font-bold transition ${metaRole === role ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                      >
                         {role}
                       </button>
                     ))}
                   </div>
                 </div>
+
                 <div className="grid grid-cols-1 gap-4">
-                  {championList.filter(c => c.role === metaRole).map((champ, idx) => (
+                  {championList
+                    .filter(c => c.role === metaRole)
+                    .map((champ, idx) => (
                       <div key={champ.id} className="border rounded-xl p-4 flex items-center justify-between hover:bg-gray-50 transition group">
                         <div className="flex items-center gap-4 w-1/4">
                           <span className={`text-2xl font-black w-10 text-center ${idx < 3 ? 'text-yellow-500' : 'text-gray-300'}`}>{idx + 1}</span>
-                          <div><div className="font-bold text-lg text-gray-800">{champ.name}</div><span className={`text-xs font-bold px-2 py-0.5 rounded ${champ.tier === 1 ? 'bg-purple-100 text-purple-600' : champ.tier === 2 ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>{champ.tier} 티어</span></div>
+                          <div>
+                            <div className="font-bold text-lg text-gray-800">{champ.name}</div>
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded ${champ.tier === 1 ? 'bg-purple-100 text-purple-600' : champ.tier === 2 ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
+                              {champ.tier} 티어
+                            </span>
+                          </div>
                         </div>
+                        
                         <div className="flex-1 px-8">
-                          <div className="flex justify-between text-xs text-gray-500 mb-1 font-medium"><span>초반 {champ.stats.early}</span><span>중반 {champ.stats.mid}</span><span>후반 {champ.stats.late}</span></div>
-                          <div className="h-2.5 bg-gray-100 rounded-full flex overflow-hidden"><div className="bg-green-400 h-full" style={{width: `${champ.stats.early * 10}%`}} /><div className="bg-yellow-400 h-full" style={{width: `${champ.stats.mid * 10}%`}} /><div className="bg-red-400 h-full" style={{width: `${champ.stats.late * 10}%`}} /></div>
+                          <div className="flex justify-between text-xs text-gray-500 mb-1 font-medium">
+                            <span>초반 {champ.stats.early}</span>
+                            <span>중반 {champ.stats.mid}</span>
+                            <span>후반 {champ.stats.late}</span>
+                          </div>
+                          <div className="h-2.5 bg-gray-100 rounded-full flex overflow-hidden">
+                            <div className="bg-green-400 h-full" style={{width: `${champ.stats.early * 10}%`}} />
+                            <div className="bg-yellow-400 h-full" style={{width: `${champ.stats.mid * 10}%`}} />
+                            <div className="bg-red-400 h-full" style={{width: `${champ.stats.late * 10}%`}} />
+                          </div>
                         </div>
-                        <div className="w-1/3 text-right"><div className="text-xs font-bold text-gray-400 mb-1 uppercase tracking-wide">Counter Picks</div><div className="text-sm font-medium text-gray-700">{champ.counters.join(', ')}</div></div>
+
+                        <div className="w-1/3 text-right">
+                          <div className="text-xs font-bold text-gray-400 mb-1 uppercase tracking-wide">Counter Picks</div>
+                          <div className="text-sm font-medium text-gray-700">{champ.counters.join(', ')}</div>
+                        </div>
                       </div>
-                  ))}
+                    ))}
                 </div>
               </div>
             )}
 
-            {/* [수정] 순위표 탭 확장 (기존에는 일렬이었으나 대시보드처럼 양쪽 분할로 변경) */}
-            {activeTab === 'standings' && (
-                <div className="bg-white rounded-lg border shadow-sm p-6 min-h-[600px] flex flex-col">
-                    <h2 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-2">🏆 LCK 컵 그룹 스테이지 순위</h2>
-                    {hasDrafted ? (
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            <div className="border rounded-xl overflow-hidden shadow-sm">
-                                <GroupTable groupName="BARON GROUP" teamIds={league.groups.baron} colorClass="text-yellow-600" headerColor="bg-gray-800 text-lg py-3" />
-                            </div>
-                            <div className="border rounded-xl overflow-hidden shadow-sm">
-                                <GroupTable groupName="ELDER GROUP" teamIds={league.groups.elder} colorClass="text-red-600" headerColor="bg-gray-600 text-lg py-3" />
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-                             <div className="text-6xl mb-4">🧊</div>
-                             <div className="text-xl font-bold">아직 조 추첨이 완료되지 않았습니다.</div>
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* 일정 탭 (기존 유지) */}
-             {(activeTab === 'schedule' || activeTab === 'team_schedule') && (
+            {(activeTab === 'schedule' || activeTab === 'team_schedule') && (
               <div className="bg-white rounded-lg border shadow-sm p-8 min-h-[600px] flex flex-col">
                 <h2 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-2">
                   📅 {activeTab === 'team_schedule' ? `${myTeam.name} 경기 일정` : '2026 LCK 컵 전체 일정'}
@@ -694,5 +697,16 @@ function Dashboard() {
         </main>
       </div>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<LeagueManager />} />
+      <Route path="/new-league" element={<TeamSelection />} />
+      <Route path="/league/:leagueId" element={<Dashboard />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
