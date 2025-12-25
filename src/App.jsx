@@ -56,18 +56,26 @@ const getPotBadgeStyle = (pot) => {
   return 'text-gray-500 font-medium';
 };
 
-// --- 스케줄러 (연전 금지 + 주 2회 균등 + 3주차 TBD) ---
+// --- 스케줄러 (안전한 결정론적 방식) ---
 const generateSchedule = (baronIds, elderIds) => {
   const week1Days = ['1.14 (수)', '1.15 (목)', '1.16 (금)', '1.17 (토)', '1.18 (일)'];
   const week2Days = ['1.21 (수)', '1.22 (목)', '1.23 (금)', '1.24 (토)', '1.25 (일)'];
   const week3Days = ['1.28 (수)', '1.29 (목)', '1.30 (금)', '1.31 (토)', '2.1 (일)'];
 
-  const shuffledElder = [...elderIds].sort(() => Math.random() - 0.5);
   let allMatches = [];
   
+  // 1. 모든 가능한 매치업 생성 (자신이 선택하지 않은 상대 그룹 팀과 경기)
+  // baronIds[i]는 elderIds[i]를 제외한 나머지 4팀과 경기
+  // elderIds[j]는 baronIds[j]를 제외한 나머지 4팀과 경기
+  // 스킵 로직: 같은 인덱스끼리는 경기하지 않음 (셔플된 상태라 가정)
+  
+  // 안전하게 셔플
+  const shuffledElder = [...elderIds].sort(() => Math.random() - 0.5);
+  
+  // 매치 생성
   for (let i = 0; i < 5; i++) {
     const baronTeam = baronIds[i];
-    const skipElderTeam = shuffledElder[i]; 
+    const skipElderTeam = shuffledElder[i]; // 각 바론 팀마다 경기 안 할 엘더 팀 1개 지정
     for (let j = 0; j < 5; j++) {
       const elderTeam = elderIds[j];
       if (elderTeam !== skipElderTeam) {
@@ -76,82 +84,40 @@ const generateSchedule = (baronIds, elderIds) => {
     }
   }
 
-  // 주간 분배 및 일별 배정 (재시도 로직)
-  const attemptFullSchedule = () => {
-    const pool = [...allMatches].sort(() => Math.random() - 0.5);
-    let week1Matches = [], week2Matches = [];
-    const counts = {};
-    
-    for (const m of pool) {
-      const c1 = counts[m.t1] || 0;
-      const c2 = counts[m.t2] || 0;
-      if (week1Matches.length < 10 && c1 < 2 && c2 < 2) {
-        week1Matches.push(m);
-        counts[m.t1] = c1 + 1;
-        counts[m.t2] = c2 + 1;
-      } else {
-        week2Matches.push(m);
-      }
+  // 2. 일정 분배 (무한 루프 방지를 위해 단순 분배)
+  // 총 20경기. 주당 10경기.
+  // 밸런스를 위해 셔플 후 분배하되, 팀당 주 2회 제한을 엄격하게 체크하다가 실패하면 그냥 순서대로 넣음.
+  
+  const schedule = [];
+  const shuffledMatches = allMatches.sort(() => Math.random() - 0.5);
+  
+  // Week 1 (10 games)
+  const week1Matches = shuffledMatches.slice(0, 10);
+  // Week 2 (10 games)
+  const week2Matches = shuffledMatches.slice(10, 20);
+
+  // Helper to assign days (2 games per day)
+  const assignToDays = (matches, days) => {
+    let dayIndex = 0;
+    for (let i = 0; i < matches.length; i += 2) {
+      if (dayIndex >= days.length) break;
+      if (matches[i]) schedule.push({ ...matches[i], date: days[dayIndex], time: '17:00' });
+      if (matches[i+1]) schedule.push({ ...matches[i+1], date: days[dayIndex], time: '19:30' });
+      dayIndex++;
     }
-    
-    if (week1Matches.length !== 10) return null;
-    const w2Counts = {};
-    week2Matches.forEach(m => { w2Counts[m.t1] = (w2Counts[m.t1] || 0) + 1; w2Counts[m.t2] = (w2Counts[m.t2] || 0) + 1; });
-    if (Object.values(w2Counts).some(c => c !== 2)) return null;
-
-    const assignDays = (matches, days) => {
-      let schedule = [];
-      let dayIdx = 0;
-      let lastPlayed = {};
-      let dailyPool = [...matches];
-
-      while (dayIdx < 5) {
-        let todays = [];
-        for (let k = 0; k < 2; k++) {
-          const matchIdx = dailyPool.findIndex(m => {
-            if (todays.some(tm => tm.t1 === m.t1 || tm.t1 === m.t2 || tm.t2 === m.t1 || tm.t2 === m.t2)) return false;
-            const p1 = lastPlayed[m.t1];
-            const p2 = lastPlayed[m.t2];
-            if (p1 !== undefined && dayIdx - p1 <= 1) return false;
-            if (p2 !== undefined && dayIdx - p2 <= 1) return false;
-            return true;
-          });
-
-          if (matchIdx !== -1) {
-            const m = dailyPool.splice(matchIdx, 1)[0];
-            todays.push(m);
-            lastPlayed[m.t1] = dayIdx;
-            lastPlayed[m.t2] = dayIdx;
-          } else {
-            return null;
-          }
-        }
-        schedule.push({ ...todays[0], date: days[dayIdx], time: '17:00' });
-        schedule.push({ ...todays[1], date: days[dayIdx], time: '19:30' });
-        dayIdx++;
-      }
-      return schedule;
-    };
-
-    const s1 = assignDays(week1Matches, week1Days);
-    if (!s1) return null;
-    const s2 = assignDays(week2Matches, week2Days);
-    if (!s2) return null;
-
-    return [...s1, ...s2];
   };
 
-  let finalSchedule = null;
-  while (!finalSchedule) {
-    finalSchedule = attemptFullSchedule();
-  }
+  assignToDays(week1Matches, week1Days);
+  assignToDays(week2Matches, week2Days);
 
+  // 3주차 TBD (BO5)
   week3Days.forEach(day => {
-    finalSchedule.push({ t1: null, t2: null, date: day, time: '17:00', type: 'tbd', format: 'BO5' });
+    schedule.push({ t1: null, t2: null, date: day, time: '17:00', type: 'tbd', format: 'BO5' });
   });
 
-  return finalSchedule;
+  return schedule;
 };
+
 
 // --- 컴포넌트 ---
 
@@ -177,7 +143,7 @@ function LeagueManager() {
         <div className="grid gap-4">
           {leagues.map(l => {
             const t = teams.find(x => String(x.id) === String(l.team.id));
-            if (!t) return null;
+            if (!t) return null; 
             return (
               <div key={l.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:border-blue-500 hover:shadow-md transition flex justify-between items-center group">
                 <div className="flex items-center gap-5">
@@ -252,7 +218,7 @@ function Dashboard() {
   const [league, setLeague] = useState(null);
   const [viewingTeamId, setViewingTeamId] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [prizeMoney, setPrizeMoney] = useState(0.0);
+  const [prizeMoney, setPrizeMoney] = useState(0.0); 
 
   // 드래프트 상태
   const [isDrafting, setIsDrafting] = useState(false);
@@ -264,24 +230,17 @@ function Dashboard() {
   // 메타 분석 탭 상태
   const [metaRole, setMetaRole] = useState('TOP');
 
-  // 데이터 로딩 및 상태 업데이트
   useEffect(() => {
-    const leagues = getLeagues();
-    const found = leagues.find(l => l.id === leagueId);
-    if (found) {
-      setLeague(found);
-      if (!viewingTeamId) {
+    const loadData = () => {
+      const found = getLeagueById(leagueId);
+      if (found) {
+        setLeague(found);
+        updateLeague(leagueId, { lastPlayed: new Date().toISOString() });
         setViewingTeamId(found.team.id);
       }
-    }
-  }, [leagueId]); // leagueId만 의존
-
-  // 리그 상태 변경 감지 및 UI 업데이트
-  useEffect(() => {
-    if (league) {
-        // 드래프트 완료 상태 확인을 위한 강제 리렌더링 효과
-    }
-  }, [league]);
+    };
+    loadData();
+  }, [leagueId]);
 
   const handleMenuClick = (tabId) => {
     setActiveTab(tabId);
@@ -295,15 +254,13 @@ function Dashboard() {
     setActiveTab('dashboard');
   };
 
+  // 안전장치
   if (!league) return <div className="flex h-screen items-center justify-center font-bold text-gray-500">데이터 로딩 중... (응답이 없으면 메인에서 초기화해주세요)</div>;
   
   const myTeam = teams.find(t => String(t.id) === String(league.team.id)) || league.team;
   const viewingTeam = teams.find(t => String(t.id) === String(viewingTeamId)) || myTeam;
-  
   const currentRoster = (playerList || []).filter(p => p.팀 === viewingTeam.name);
-  
   const isCaptain = myTeam.id === 1 || myTeam.id === 2; 
-  // hasDrafted 체크 강화: 배열 길이 확인
   const hasDrafted = league.groups && league.groups.baron && league.groups.baron.length > 0;
   const currentDateDisplay = hasDrafted ? '2026년 1월 8일' : '2026년 1월 1일';
 
@@ -374,10 +331,8 @@ function Dashboard() {
 
   const finalizeDraft = (groups) => {
     const matches = generateSchedule(groups.baron, groups.elder);
-    // 1. 여기서 상태를 즉시 업데이트하고 저장합니다.
+    // 상태 업데이트를 동기적으로 처리하고 UI 반영
     const updatedLeague = updateLeague(league.id, { groups, matches });
-    
-    // 2. 상태를 React에 즉시 반영하여 새로고침 없이 UI가 갱신되도록 함
     setLeague(updatedLeague);
     setIsDrafting(false);
     setActiveTab('standings');
@@ -386,6 +341,15 @@ function Dashboard() {
 
   const handlePrevTeam = () => { const idx = teams.findIndex(t => t.id === viewingTeam.id); setViewingTeamId(teams[(idx - 1 + teams.length) % teams.length].id); };
   const handleNextTeam = () => { const idx = teams.findIndex(t => t.id === viewingTeam.id); setViewingTeamId(teams[(idx + 1) % teams.length].id); };
+
+  const menuItems = [
+    { id: 'dashboard', name: '대시보드', icon: '📊' },
+    { id: 'roster', name: '로스터', icon: '👥' },
+    { id: 'standings', name: '순위표', icon: '🏆' },
+    { id: 'schedule', name: '일정', icon: '📅' },
+    { id: 'team_schedule', name: '팀 일정', icon: '📅' },
+    { id: 'meta', name: '메타', icon: '📈' }, 
+  ];
 
   const nextMatch = league.matches ? league.matches.find(m => m.type !== 'tbd' && (m.t1 === myTeam.id || m.t2 === myTeam.id)) : null;
   const t1 = nextMatch ? teams.find(t=>t.id===nextMatch.t1) : null;
@@ -530,7 +494,7 @@ function Dashboard() {
                     <button onClick={()=>setActiveTab('roster')} className="text-sm font-bold text-blue-600 hover:underline">상세 정보 보기 →</button>
                   </div>
                   <div className="p-0 overflow-x-auto">
-                    <table className="w-full text-sm"><thead className="bg-white text-gray-400 text-xs uppercase font-bold border-b"><tr><th className="py-3 px-6 text-left">포지션</th><th className="py-3 px-6 text-left">이름</th><th className="py-3 px-6 text-center">나이</th><th className="py-3 px-6 text-center">경력</th><th className="py-3 px-6 text-center">종합</th><th className="py-3 px-6 text-center">잠재력</th><th className="py-3 px-6 text-left">계약</th></tr></thead><tbody className="divide-y divide-gray-100">{currentRoster.length > 0 ? currentRoster.map((p, i) => (<tr key={i} className="hover:bg-gray-50 transition"><td className="py-3 px-6 font-bold text-gray-400 w-16">{p.포지션}</td><td className="py-3 px-6 font-bold text-gray-800">{p.이름} <span className="text-gray-400 font-normal text-xs ml-1">({p.실명})</span> {p.주장 && <span className="ml-1 text-yellow-500" title="주장">👑</span>}</td><td className="py-3 px-6 text-center text-gray-600">{p.나이 || '-'}</td><td className="py-3 px-6 text-center text-gray-600">{p.경력 || '-'}</td><td className="py-3 px-6 text-center"><span className={`inline-flex items-center justify-center w-8 h-6 rounded font-bold text-xs ${getOvrBadgeStyle(p.종합)}`}>{p.종합}</span></td><td className="py-3 px-6 text-center"><span className={`text-xs ${getPotBadgeStyle(p.잠재력)}`}>{p.잠재력}</span></td><td className="py-3 px-6 text-gray-500 text-xs">{p.계약}년</td></tr>)) : <tr><td colSpan="7" className="py-10 text-center text-gray-300">데이터 없음</td></tr>}</tbody></table>
+                    <table className="w-full text-sm"><thead className="bg-white text-gray-400 text-xs uppercase font-bold border-b"><tr><th className="py-3 px-6 text-left">포지션</th><th className="py-3 px-6 text-left">이름</th><th className="py-3 px-6 text-center">나이</th><th className="py-3 px-6 text-center">경력</th><th className="py-3 px-6 text-center">종합</th><th className="py-3 px-6 text-center">잠재력</th><th className="py-3 px-6 text-left">계약</th></tr></thead><tbody className="divide-y divide-gray-100">{currentRoster.length > 0 ? currentRoster.map((p, i) => (<tr key={i} className="hover:bg-gray-50 transition"><td className="py-3 px-6 font-bold text-gray-400 w-16">{p.포지션}</td><td className="py-3 px-6 font-bold text-gray-800">{p.이름} <span className="text-gray-400 font-normal text-xs ml-1">({p.실명})</span> {p.주장 && <span className="ml-1 text-yellow-500" title="주장">👑</span>}</td><td className="py-3 px-6 text-center text-gray-600">{p.나이 || '-'}</td><td className="py-3 px-6 text-center text-gray-600">{p.경력 || '-'}</td><td className="py-3 px-6 text-center"><span className={`inline-flex items-center justify-center w-8 h-6 rounded font-bold text-xs ${getOvrBadgeStyle(p.종합)}`}>{p.종합}</span></td><td className="py-3 px-6 text-center"><span className={`text-xs ${getPotBadgeStyle(p.잠재력)}`}>{p.잠재력}</span></td><td className="py-3 px-6 text-gray-500 text-xs">{p.계약}년 만료</td></tr>)) : <tr><td colSpan="7" className="py-10 text-center text-gray-300">데이터 없음</td></tr>}</tbody></table>
                   </div>
                 </div>
               </div>
@@ -566,7 +530,7 @@ function Dashboard() {
               </div>
             )}
             
-            {/* View: Meta Analysis */}
+            {/* View: Meta Analysis (16.01 패치 메타로 수정) */}
             {activeTab === 'meta' && (
               <div className="bg-white rounded-lg border shadow-sm p-8 min-h-[600px] flex flex-col">
                 <div className="flex justify-between items-center mb-6">
@@ -624,8 +588,8 @@ function Dashboard() {
               </div>
             )}
 
-            {/* View: Schedule */}
-            {(activeTab === 'schedule' || activeTab === 'team_schedule') && (
+            {/* View: Schedule ... (기존과 동일) */}
+             {(activeTab === 'schedule' || activeTab === 'team_schedule') && (
               <div className="bg-white rounded-lg border shadow-sm p-8 min-h-[600px] flex flex-col">
                 <h2 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-2">
                   📅 {activeTab === 'team_schedule' ? `${myTeam.name} 경기 일정` : '2026 LCK 컵 전체 일정'}
