@@ -56,7 +56,7 @@ const getPotBadgeStyle = (pot) => {
   return 'text-gray-500 font-medium';
 };
 
-// --- 스케줄러 (안전장치 추가됨) ---
+// --- 스케줄러 (무한루프 방지 포함) ---
 const generateSchedule = (baronIds, elderIds) => {
   const week1Days = ['1.14 (수)', '1.15 (목)', '1.16 (금)', '1.17 (토)', '1.18 (일)'];
   const week2Days = ['1.21 (수)', '1.22 (목)', '1.23 (금)', '1.24 (토)', '1.25 (일)'];
@@ -140,7 +140,6 @@ const generateSchedule = (baronIds, elderIds) => {
     return [...s1, ...s2];
   };
 
-  // *수정됨*: 무한 루프 방지 (최대 100번 시도)
   let finalSchedule = null;
   let attempts = 0;
   while (!finalSchedule && attempts < 100) {
@@ -148,7 +147,6 @@ const generateSchedule = (baronIds, elderIds) => {
     attempts++;
   }
   
-  // 실패 시 기본 스케줄 생성 (오류 방지)
   if (!finalSchedule) {
      finalSchedule = [];
      const days = [...week1Days, ...week2Days];
@@ -159,7 +157,6 @@ const generateSchedule = (baronIds, elderIds) => {
      });
   }
 
-  // 3주차 TBD
   week3Days.forEach(day => {
     finalSchedule.push({ t1: null, t2: null, date: day, time: '17:00', type: 'tbd', format: 'BO5' });
   });
@@ -446,7 +443,7 @@ function Dashboard() {
         </div>
       )}
 
-      {/* Sidebar */}
+      {/* Sidebar (Left Menu) */}
       <aside className="w-64 bg-gray-900 text-gray-300 flex-shrink-0 flex flex-col shadow-xl z-20">
         <div className="p-5 bg-gray-800 border-b border-gray-700 flex items-center gap-3">
           <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white text-xs shadow-lg" style={{backgroundColor: myTeam.colors.primary}}>{myTeam.name}</div>
@@ -512,14 +509,15 @@ function Dashboard() {
                    </div>
                 </div>
                 
-                {/* --- 순위표 픽스된 부분 --- */}
+                {/* --- 우측 순위표 (요청하신 수정 반영) --- */}
                 <div className="col-span-12 lg:col-span-4 flex flex-col h-full max-h-[500px]">
                    {hasDrafted ? (
-                     <div className="bg-white rounded-lg border shadow-sm p-4 h-full overflow-y-auto custom-scrollbar">
+                     // 선정 후: 그룹별 분리 (한글화)
+                     <div className="bg-white rounded-lg border shadow-sm p-4 h-full overflow-y-auto">
                         <div className="mb-6">
                             <div className="flex items-center gap-2 mb-2 border-b pb-2">
                                 <span className="text-lg">🟣</span>
-                                <span className="font-black text-sm text-gray-700">BARON GROUP</span>
+                                <span className="font-black text-sm text-gray-700">바론 그룹 (Baron)</span>
                             </div>
                             <table className="w-full text-xs">
                               <thead className="bg-gray-50 text-gray-400">
@@ -545,7 +543,7 @@ function Dashboard() {
                         <div>
                             <div className="flex items-center gap-2 mb-2 border-b pb-2">
                                 <span className="text-lg">🔴</span>
-                                <span className="font-black text-sm text-gray-700">ELDER GROUP</span>
+                                <span className="font-black text-sm text-gray-700">장로 그룹 (Elder)</span>
                             </div>
                             <table className="w-full text-xs">
                               <thead className="bg-gray-50 text-gray-400">
@@ -569,9 +567,31 @@ function Dashboard() {
                         </div>
                      </div>
                    ) : (
+                     // 선정 전: 전체 10개 팀 (통합)
                      <div className="bg-white rounded-lg border shadow-sm p-0 flex-1 flex flex-col">
-                       <div className="p-3 border-b bg-gray-50 font-bold text-sm text-gray-700 flex justify-between"><span>순위표</span><span onClick={()=>setActiveTab('standings')} className="text-xs text-blue-600 cursor-pointer hover:underline">전체 보기</span></div>
-                       <div className="flex-1 overflow-y-auto p-0"><table className="w-full text-xs"><tbody>{teams.map((t, i) => { const isMyTeam = myTeam.id === t.id; return (<tr key={t.id} onClick={() => setViewingTeamId(t.id)} className={`cursor-pointer border-b last:border-0 transition-colors duration-150 ${isMyTeam ? 'bg-blue-100 border-l-4 border-blue-600' : 'hover:bg-gray-50'}`}><td className="p-2 font-bold text-gray-500 text-center w-8">{i + 1}</td><td className="p-2 font-bold"><span className="text-blue-600 hover:text-blue-800 hover:underline decoration-blue-400 decoration-2 underline-offset-2">{t.fullName}</span>{isMyTeam && <span className="ml-1 text-xs text-gray-500 font-normal">(선택됨)</span>}</td><td className="p-2 text-right text-gray-500">0-0</td></tr>); })}</tbody></table></div>
+                       <div className="p-3 border-b bg-gray-50 font-bold text-sm text-gray-700 flex justify-between"><span>순위표 (프리시즌)</span><span onClick={()=>setActiveTab('standings')} className="text-xs text-blue-600 cursor-pointer hover:underline">전체 보기</span></div>
+                       <div className="flex-1 overflow-y-auto p-0">
+                         <table className="w-full text-xs">
+                           <thead className="bg-gray-50 text-gray-400">
+                             <tr><th className="p-2 text-center w-8">#</th><th className="p-2 text-left">팀</th><th className="p-2 text-right">기록</th></tr>
+                           </thead>
+                           <tbody>
+                             {teams.map((t, i) => { 
+                               const isMyTeam = myTeam.id === t.id; 
+                               return (
+                                 <tr key={t.id} onClick={() => setViewingTeamId(t.id)} className={`cursor-pointer border-b last:border-0 transition-colors duration-150 ${isMyTeam ? 'bg-blue-100 border-l-4 border-blue-600' : 'hover:bg-gray-50'}`}>
+                                   <td className="p-2 font-bold text-gray-500 text-center w-8">{i + 1}</td>
+                                   <td className="p-2 font-bold">
+                                     <span className="text-blue-600 hover:text-blue-800 hover:underline decoration-blue-400 decoration-2 underline-offset-2">{t.fullName}</span>
+                                     {isMyTeam && <span className="ml-1 text-xs text-gray-500 font-normal">(선택됨)</span>}
+                                   </td>
+                                   <td className="p-2 text-right text-gray-500">0-0</td>
+                                 </tr>
+                               ); 
+                             })}
+                           </tbody>
+                         </table>
+                       </div>
                      </div>
                    )}
                 </div>
