@@ -35,7 +35,7 @@ const SIM_CONSTANTS = {
   },
   OTP_SCORE_THRESHOLD: 80,
   OTP_TIER_BOOST: 2,
-  VAR_RANGE: 0.15 // 변수 범위 확대
+  VAR_RANGE: 0.15 
 };
 
 // 0-2. 데이터 전처리 (숙련도 맵핑 - Mock)
@@ -60,12 +60,10 @@ function simulateMatch(teamA, teamB) {
   log.push(`🐉 전장: ${dragonType} 드래곤 협곡 (${dragonBuff.description})`);
   log.push(`✨ Key Matchup (MID): ${picksA[2].champName} vs ${picksB[2].champName}`);
 
-  // 3. 퍼포먼스 계산 (내부적인 승패 판정용 점수)
-  // 현실적인 킬 스코어를 위해 '킬' 변수를 따로 둡니다.
+  // 3. 퍼포먼스 계산
   let killsA = 0;
   let killsB = 0;
   
-  // 각 페이즈별 승리 팀이 킬을 더 많이 가져감
   const p1 = calculatePhase('EARLY', teamA, teamB, picksA, picksB, null, 1.0);
   killsA += p1.killsA; killsB += p1.killsB;
   log.push(p1.log);
@@ -80,23 +78,22 @@ function simulateMatch(teamA, teamB) {
   killsA += p3.killsA; killsB += p3.killsB;
   log.push(p3.log);
 
-  // 최종 승자는 '총 퍼포먼스(Power)'가 높은 팀 (킬이 적어도 운영으로 이길 수 있으나, 여기선 킬과 비례하게 설정)
-  // Power 합산
+  // Power 합산 승패 판정
   const totalPowerA = p1.powerA + p2.powerA + p3.powerA;
   const totalPowerB = p1.powerB + p2.powerB + p3.powerB;
   
   const winner = totalPowerA > totalPowerB ? teamA : teamB;
   const loser = totalPowerA > totalPowerB ? teamB : teamA;
 
-  // 점수 보정 (승자가 킬이 더 적은 경우 방지 및 스코어 현실화)
+  // 점수 보정
   if (winner === teamA && killsA <= killsB) killsA = killsB + Math.floor(Math.random() * 3) + 1;
   if (winner === teamB && killsB <= killsA) killsB = killsA + Math.floor(Math.random() * 3) + 1;
 
   return {
     winner: winner.name,
     loser: loser.name,
-    scoreA: killsA, // 이제 현실적인 킬 스코어 (예: 15)
-    scoreB: killsB, // 예: 10
+    scoreA: killsA,
+    scoreB: killsB,
     logs: log,
     picks: { A: picksA, B: picksB }
   };
@@ -109,7 +106,7 @@ function draftTeam(roster) {
     return {
       champName: selectedMeta.name,
       tier: selectedMeta.tier || 3,
-      mastery: null // 데이터가 없으므로 null
+      mastery: null 
     };
   });
 }
@@ -118,37 +115,27 @@ function calculatePhase(phase, tA, tB, picksA, picksB, bonusTeam, bonusVal) {
   let rawPowerA = 0;
   let rawPowerB = 0;
 
-  // 1. 전력(Power) 계산
   for (let i = 0; i < 5; i++) {
     const pA = tA.roster[i];
     const pB = tB.roster[i];
-    
-    // 기본 스탯 + 랜덤 컨디션 (0.9 ~ 1.1)
     const statA = getPhaseStat(phase, pA) * (0.9 + Math.random() * 0.2);
     const statB = getPhaseStat(phase, pB) * (0.9 + Math.random() * 0.2);
-
     rawPowerA += statA;
     rawPowerB += statB;
   }
 
-  // 보너스 적용
   if (bonusTeam === 'A') rawPowerA *= bonusVal;
   if (bonusTeam === 'B') rawPowerB *= bonusVal;
 
-  // 2. 킬(Kill) 발생 로직 (전력 차이에 비례하여 발생)
-  // 페이즈별 기본 킬 발생 수 (초반: 적음, 후반: 많음)
   let baseKills = phase === 'EARLY' ? 2 : (phase === 'MID' ? 4 : 5);
-  // 난전 정도 (Random)
   baseKills += Math.floor(Math.random() * 4); 
 
   const totalPower = rawPowerA + rawPowerB;
-  const ratioA = rawPowerA / totalPower; // 예: 0.55 vs 0.45
+  const ratioA = rawPowerA / totalPower;
   
-  // 킬 분배
   let killsA = 0;
   let killsB = 0;
   
-  // 전력 비율에 따라 확률적으로 킬 획득
   for(let k=0; k < baseKills; k++) {
       if(Math.random() < ratioA) killsA++;
       else killsB++;
@@ -237,12 +224,15 @@ const deleteLeague = (id) => { const l = getLeagues().filter(x => x.id !== id); 
 const getLeagueById = (id) => getLeagues().find(l => l.id === id);
 function getTextColor(hex) { const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16); return (r*299+g*587+b*114)/1000>128?'#000000':'#FFFFFF'; }
 
+// 색상 세분화: 70/80초/80중/80후/90초/90중
 const getOvrBadgeStyle = (ovr) => {
-  if (ovr >= 95) return 'bg-red-100 text-red-700 border-red-300 ring-red-200';
-  if (ovr >= 90) return 'bg-orange-100 text-orange-700 border-orange-300 ring-orange-200';
-  if (ovr >= 85) return 'bg-purple-100 text-purple-700 border-purple-300 ring-purple-200';
-  if (ovr >= 80) return 'bg-blue-100 text-blue-700 border-blue-300 ring-blue-200';
-  return 'bg-green-100 text-green-700 border-green-300 ring-green-200';
+  if (ovr >= 94) return 'bg-red-100 text-red-700 border-red-300 ring-red-200'; // 94+ (Mid 90s)
+  if (ovr >= 90) return 'bg-orange-100 text-orange-700 border-orange-300 ring-orange-200'; // 90-93 (Low 90s)
+  if (ovr >= 87) return 'bg-purple-100 text-purple-700 border-purple-300 ring-purple-200'; // 87-89 (High 80s)
+  if (ovr >= 84) return 'bg-blue-100 text-blue-700 border-blue-300 ring-blue-200'; // 84-86 (Mid 80s)
+  if (ovr >= 80) return 'bg-cyan-100 text-cyan-700 border-cyan-300 ring-cyan-200'; // 80-83 (Low 80s)
+  if (ovr >= 70) return 'bg-green-100 text-green-700 border-green-300 ring-green-200'; // 70-79
+  return 'bg-gray-100 text-gray-700 border-gray-300';
 };
 
 const getPotBadgeStyle = (pot) => {
@@ -772,9 +762,21 @@ function Dashboard() {
             <div className="h-4 w-px bg-gray-300"></div>
             <div className="flex items-center gap-2 font-bold text-gray-700"><span className="text-gray-400">💰</span> 상금: {prizeMoney.toFixed(1)}억</div>
           </div>
-          <button onClick={handleDraftStart} disabled={hasDrafted} className={`px-6 py-1.5 rounded-full font-bold text-sm shadow-sm transition flex items-center gap-2 ${hasDrafted ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white animate-pulse'}`}>
-            <span>▶</span> {hasDrafted ? "다음 경기 대기 중" : (isCaptain ? "LCK 컵 팀 선정하기" : "LCK 컵 조 확인하기")}
-          </button>
+          
+          {/* Header Action Button: Sim or Draft */}
+          {hasDrafted ? (
+             <button 
+                onClick={handleSimulateMatch} 
+                disabled={!nextMatch}
+                className={`px-6 py-1.5 rounded-full font-bold text-sm shadow-sm transition flex items-center gap-2 ${!nextMatch ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white animate-pulse'}`}
+             >
+                <span>⚔️</span> {nextMatch ? "다음 경기 시뮬레이션" : "모든 경기 완료"}
+             </button>
+          ) : (
+             <button onClick={handleDraftStart} className="px-6 py-1.5 rounded-full font-bold text-sm shadow-sm transition flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white animate-pulse">
+                <span>▶</span> {isCaptain ? "LCK 컵 팀 선정하기" : "LCK 컵 조 확인하기"}
+             </button>
+          )}
         </header>
 
         <main className="flex-1 overflow-y-auto p-6 scroll-smooth">
@@ -794,9 +796,6 @@ function Dashboard() {
                             <span className="text-base font-black text-blue-600">{nextMatch.date}</span>
                             <span className="text-sm font-bold text-gray-600">{nextMatch.time}</span>
                             <span className="mt-2 text-xs font-bold text-white bg-blue-600 px-3 py-1 rounded-full shadow-sm">{nextMatch.format}</span>
-                            <button onClick={handleSimulateMatch} className="mt-3 px-4 py-2 bg-green-500 hover:bg-green-600 text-white font-bold rounded-lg shadow animate-bounce">
-                                ⚔️ 경기 시작 (시뮬레이션)
-                            </button>
                           </div>
                         ) : <div className="text-xs font-bold text-blue-600">모든 일정 종료 또는 대기 중</div>}
                       </div>
@@ -909,17 +908,18 @@ function Dashboard() {
                     <button onClick={()=>setActiveTab('roster')} className="text-sm font-bold text-blue-600 hover:underline">상세 정보 보기 →</button>
                   </div>
                   <div className="p-0 overflow-x-auto">
-                    {/* 대시보드 로스터: 불필요한 스탯 숨김, 간격 축소, 가로 스크롤 제거 */}
+                    {/* 대시보드 로스터: 소속 기간으로 변경, 스탯 width 축소 */}
                     <table className="w-full text-xs table-fixed">
                       <thead className="bg-white text-gray-400 uppercase font-bold border-b">
                           <tr>
                               <th className="py-2 px-2 text-left w-12">POS</th>
                               <th className="py-2 px-2 text-left">NAME</th>
-                              <th className="py-2 px-2 text-center w-10">OVR</th>
-                              <th className="py-2 px-2 text-center w-10">AGE</th>
-                              <th className="py-2 px-2 text-center w-20">SALARY</th>
-                              <th className="py-2 px-2 text-center w-16">POT</th>
-                              <th className="py-2 px-2 text-right">CONTRACT</th>
+                              <th className="py-2 px-2 text-center w-8">OVR</th>
+                              <th className="py-2 px-2 text-center w-8">AGE</th>
+                              <th className="py-2 px-2 text-center w-16">SALARY</th>
+                              <th className="py-2 px-2 text-center w-12">POT</th>
+                              <th className="py-2 px-2 text-center w-16">소속 기간</th>
+                              <th className="py-2 px-2 text-right w-24">계약</th>
                           </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
@@ -931,10 +931,10 @@ function Dashboard() {
                                   <td className="py-3 px-2 text-center text-gray-600">{p.나이 || '-'}</td>
                                   <td className="py-3 px-2 text-center text-gray-700 font-bold">{p.연봉 || '-'}</td>
                                   <td className="py-3 px-2 text-center"><span className={`font-bold ${getPotBadgeStyle(p.잠재력)}`}>{p.잠재력}</span></td>
-                                  {/* 날짜 포맷 수정: "년" 제거 */}
+                                  <td className="py-3 px-2 text-center text-gray-600">{p['팀 소속기간'] || '-'}</td>
                                   <td className="py-3 px-2 text-right text-gray-500">{p.계약} 만료</td>
                               </tr>
-                          )) : <tr><td colSpan="7" className="py-10 text-center text-gray-300">데이터 없음</td></tr>}
+                          )) : <tr><td colSpan="8" className="py-10 text-center text-gray-300">데이터 없음</td></tr>}
                       </tbody>
                     </table>
                   </div>
@@ -1121,7 +1121,7 @@ function Dashboard() {
               </div>
             )}
 
-            {/* 메인 로스터 탭: 여기도 가로 스크롤 없이 최대한 compact하게 */}
+            {/* 메인 로스터 탭: 소속 기간으로 변경, 스탯 w-6으로 최소화 */}
             {activeTab === 'roster' && (
               <div className="bg-white rounded-lg border shadow-sm flex flex-col">
                 <div className="p-6 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
@@ -1133,7 +1133,7 @@ function Dashboard() {
                   <div className="text-right"><div className="text-2xl font-black text-blue-600">{viewingTeam.power} <span className="text-sm text-gray-400 font-normal">TEAM OVR</span></div></div>
                 </div>
                 <div className="overflow-x-auto">
-                    {/* 상세 로스터 테이블: 텍스트 줄임, 패딩 축소 */}
+                    {/* 상세 로스터 테이블: px-1, w-6 사용으로 공간 확보 */}
                     <table className="w-full text-xs text-left">
                         <thead className="bg-white text-gray-500 uppercase font-bold border-b">
                             <tr>
@@ -1141,14 +1141,14 @@ function Dashboard() {
                                 <th className="py-3 px-1 text-center w-8">종합</th>
                                 <th className="py-3 px-1 text-center w-8">나이</th>
                                 <th className="py-3 px-1 text-center w-8">경력</th>
-                                <th className="py-3 px-1 text-center w-8">소속</th>
+                                <th className="py-3 px-1 text-center w-12">소속 기간</th>
                                 <th className="py-3 px-1 text-center w-12">연봉</th>
-                                <th className="py-3 px-1 text-center bg-gray-50 border-l">라인</th>
-                                <th className="py-3 px-1 text-center bg-gray-50">무력</th>
-                                <th className="py-3 px-1 text-center bg-gray-50">한타</th>
-                                <th className="py-3 px-1 text-center bg-gray-50">성장</th>
-                                <th className="py-3 px-1 text-center bg-gray-50">안정</th>
-                                <th className="py-3 px-1 text-center bg-gray-50">운영</th>
+                                <th className="py-3 px-1 text-center bg-gray-50 border-l w-6">라인</th>
+                                <th className="py-3 px-1 text-center bg-gray-50 w-6">무력</th>
+                                <th className="py-3 px-1 text-center bg-gray-50 w-6">한타</th>
+                                <th className="py-3 px-1 text-center bg-gray-50 w-6">성장</th>
+                                <th className="py-3 px-1 text-center bg-gray-50 w-6">안정</th>
+                                <th className="py-3 px-1 text-center bg-gray-50 w-6">운영</th>
                                 <th className="py-3 px-1 text-center border-l w-8">잠재</th>
                                 <th className="py-3 px-2 text-right border-l w-24">계약</th>
                             </tr>
