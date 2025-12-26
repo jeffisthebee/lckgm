@@ -33,26 +33,29 @@ const SIM_CONSTANTS = {
     STANDARD: { 1: 1.0, 2: 0.95, 3: 0.90, 4: 0.85, 5: 0.80 },
     ADC: { 1: 1.0, 2: 0.92, 3: 0.84 }
   },
+  LOW_SAMPLE_THRESHOLD: 5,
   OTP_SCORE_THRESHOLD: 80,
   OTP_TIER_BOOST: 2,
-  VAR_RANGE: 0.15 
+  VAR_RANGE: 0.12
 };
 
-// 0-2. 데이터 전처리 (숙련도 맵핑 - Mock)
+// 0-2. 데이터 전처리 (숙련도 맵핑 - 실제 파일이 없으므로 Mock 생성)
 const MASTERY_MAP = playerList.reduce((acc, player) => {
   acc[player.이름] = { id: player.이름, pool: [] };
   return acc;
 }, {});
 
-// 0-3. 핵심 시뮬레이션 함수 (현실적인 킬 스코어 반영)
+// 0-3. 핵심 시뮬레이션 함수
 function simulateMatch(teamA, teamB) {
   const log = [];
-  
+  let scoreA = 0;
+  let scoreB = 0;
+
   // 1. 드래곤 속성
   const dragonType = GAME_CONSTANTS.DRAGONS.TYPES[Math.floor(Math.random() * GAME_CONSTANTS.DRAGONS.TYPES.length)];
   const dragonBuff = GAME_CONSTANTS.DRAGONS.BUFFS[dragonType];
-  
-  // 2. 밴픽 (Draft)
+   
+  // 2. 밴픽
   const picksA = draftTeam(teamA.roster);
   const picksB = draftTeam(teamB.roster);
 
@@ -60,40 +63,30 @@ function simulateMatch(teamA, teamB) {
   log.push(`🐉 전장: ${dragonType} 드래곤 협곡 (${dragonBuff.description})`);
   log.push(`✨ Key Matchup (MID): ${picksA[2].champName} vs ${picksB[2].champName}`);
 
-  // 3. 퍼포먼스 계산
-  let killsA = 0;
-  let killsB = 0;
-  
+  // 3. 페이즈 계산
   const p1 = calculatePhase('EARLY', teamA, teamB, picksA, picksB, null, 1.0);
-  killsA += p1.killsA; killsB += p1.killsB;
+  scoreA += p1.scoreA; scoreB += p1.scoreB;
   log.push(p1.log);
 
-  const midBonusTeam = p1.powerA > p1.powerB ? 'A' : 'B';
+  const midBonusTeam = p1.scoreA > p1.scoreB ? 'A' : 'B';
   const p2 = calculatePhase('MID', teamA, teamB, picksA, picksB, midBonusTeam, 1.1);
-  killsA += p2.killsA; killsB += p2.killsB;
+  scoreA += p2.scoreA; scoreB += p2.scoreB;
   log.push(p2.log);
 
-  const lateBonusTeam = p2.powerA > p2.powerB ? 'A' : 'B';
+  const lateBonusTeam = p2.scoreA > p2.scoreB ? 'A' : 'B';
   const p3 = calculatePhase('LATE', teamA, teamB, picksA, picksB, lateBonusTeam, 1.15);
-  killsA += p3.killsA; killsB += p3.killsB;
+  scoreA += p3.scoreA; scoreB += p3.scoreB;
   log.push(p3.log);
 
-  // Power 합산 승패 판정
-  const totalPowerA = p1.powerA + p2.powerA + p3.powerA;
-  const totalPowerB = p1.powerB + p2.powerB + p3.powerB;
-  
-  const winner = totalPowerA > totalPowerB ? teamA : teamB;
-  const loser = totalPowerA > totalPowerB ? teamB : teamA;
-
-  // 점수 보정
-  if (winner === teamA && killsA <= killsB) killsA = killsB + Math.floor(Math.random() * 3) + 1;
-  if (winner === teamB && killsB <= killsA) killsB = killsA + Math.floor(Math.random() * 3) + 1;
+  // 4. 결과
+  const winner = scoreA > scoreB ? teamA : teamB;
+  const loser = scoreA > scoreB ? teamB : teamA;
 
   return {
     winner: winner.name,
     loser: loser.name,
-    scoreA: killsA,
-    scoreB: killsB,
+    scoreA: Math.round(scoreA),
+    scoreB: Math.round(scoreB),
     logs: log,
     picks: { A: picksA, B: picksB }
   };
@@ -102,51 +95,77 @@ function simulateMatch(teamA, teamB) {
 function draftTeam(roster) {
   return roster.map(player => {
     const metaPool = championList.filter(c => c.role === player.포지션 && c.tier <= 2);
-    const selectedMeta = metaPool[Math.floor(Math.random() * metaPool.length)] || { name: "Unknown", tier: 3 };
+    const playerData = MASTERY_MAP[player.이름];
+    let masteryPool = [];
+    
+    if (playerData && playerData.pool) {
+       masteryPool = playerData.pool; 
+    }
+
+    let finalPick = null;
+    if (masteryPool.length > 0 && Math.random() < 0.7) {
+      const selectedMastery = masteryPool[Math.floor(Math.random() * masteryPool.length)];
+      const champInfo = championList.find(c => c.name === selectedMastery.name) || { name: selectedMastery.name, tier: 3 };
+      finalPick = { ...champInfo, mastery: selectedMastery };
+    } else {
+      const selectedMeta = metaPool[Math.floor(Math.random() * metaPool.length)] || { name: "Unknown Champion", tier: 3 };
+      finalPick = { ...selectedMeta, mastery: null };
+    }
+
     return {
-      champName: selectedMeta.name,
-      tier: selectedMeta.tier || 3,
-      mastery: null 
+      champName: finalPick.name,
+      tier: finalPick.tier || 3,
+      mastery: finalPick.mastery
     };
   });
 }
 
 function calculatePhase(phase, tA, tB, picksA, picksB, bonusTeam, bonusVal) {
-  let rawPowerA = 0;
-  let rawPowerB = 0;
+  let powerA = 0;
+  let powerB = 0;
 
   for (let i = 0; i < 5; i++) {
     const pA = tA.roster[i];
     const pB = tB.roster[i];
-    const statA = getPhaseStat(phase, pA) * (0.9 + Math.random() * 0.2);
-    const statB = getPhaseStat(phase, pB) * (0.9 + Math.random() * 0.2);
-    rawPowerA += statA;
-    rawPowerB += statB;
+    const pickA = picksA[i];
+    const pickB = picksB[i];
+
+    let statA = getPhaseStat(phase, pA);
+    let statB = getPhaseStat(phase, pB);
+
+    if (pA.포지션 === 'ADC' && tA.roster[4]) statA += getPhaseStat(phase, tA.roster[4]) * 0.3;
+    if (pB.포지션 === 'ADC' && tB.roster[4]) statB += getPhaseStat(phase, tB.roster[4]) * 0.3;
+
+    if (phase === 'LATE') {
+      if (pA.포지션 === 'TOP') statA *= GAME_CONSTANTS.ROLE_QUEST_BONUS.TOP.effect.splitPushPower;
+      if (pB.포지션 === 'TOP') statB *= GAME_CONSTANTS.ROLE_QUEST_BONUS.TOP.effect.splitPushPower;
+      if (pA.포지션 === 'ADC') statA *= GAME_CONSTANTS.ROLE_QUEST_BONUS.ADC.effect.damageMultiplier;
+      if (pB.포지션 === 'ADC') statB *= GAME_CONSTANTS.ROLE_QUEST_BONUS.ADC.effect.damageMultiplier;
+    } else if (phase === 'MID') {
+      if (pA.포지션 === 'MID') statA *= GAME_CONSTANTS.ROLE_QUEST_BONUS.MID.effect.roamingSpeed;
+      if (pB.포지션 === 'MID') statB *= GAME_CONSTANTS.ROLE_QUEST_BONUS.MID.effect.roamingSpeed;
+    }
+
+    const mastA = calculateMasteryScore(pA, pickA.mastery);
+    const mastB = calculateMasteryScore(pB, pickB.mastery);
+
+    const metaA = getMetaScore(pA.포지션, pickA.tier, mastA);
+    const metaB = getMetaScore(pB.포지션, pickB.tier, mastB);
+
+    const scoreA = (statA * SIM_CONSTANTS.WEIGHTS.STATS) + (mastA * SIM_CONSTANTS.WEIGHTS.MASTERY) + (metaA * SIM_CONSTANTS.WEIGHTS.META);
+    const scoreB = (statB * SIM_CONSTANTS.WEIGHTS.STATS) + (mastB * SIM_CONSTANTS.WEIGHTS.MASTERY) + (metaB * SIM_CONSTANTS.WEIGHTS.META);
+
+    powerA += scoreA * (1 + (Math.random() * SIM_CONSTANTS.VAR_RANGE * 2 - SIM_CONSTANTS.VAR_RANGE));
+    powerB += scoreB * (1 + (Math.random() * SIM_CONSTANTS.VAR_RANGE * 2 - SIM_CONSTANTS.VAR_RANGE));
   }
 
-  if (bonusTeam === 'A') rawPowerA *= bonusVal;
-  if (bonusTeam === 'B') rawPowerB *= bonusVal;
-
-  let baseKills = phase === 'EARLY' ? 2 : (phase === 'MID' ? 4 : 5);
-  baseKills += Math.floor(Math.random() * 4); 
-
-  const totalPower = rawPowerA + rawPowerB;
-  const ratioA = rawPowerA / totalPower;
-  
-  let killsA = 0;
-  let killsB = 0;
-  
-  for(let k=0; k < baseKills; k++) {
-      if(Math.random() < ratioA) killsA++;
-      else killsB++;
-  }
+  if (bonusTeam === 'A') powerA *= bonusVal;
+  if (bonusTeam === 'B') powerB *= bonusVal;
 
   return {
-    powerA: rawPowerA,
-    powerB: rawPowerB,
-    killsA: killsA,
-    killsB: killsB,
-    log: generateLog(phase, rawPowerA, rawPowerB, tA.name, tB.name)
+    scoreA: powerA,
+    scoreB: powerB,
+    log: generateLog(phase, powerA, powerB, tA.name, tB.name)
   };
 }
 
@@ -155,6 +174,30 @@ function getPhaseStat(phase, player) {
   if (phase === 'EARLY') return (s.라인전 * 0.6) + (s.무력 * 0.4);
   if (phase === 'MID') return (s.운영 * 0.5) + (s.성장 * 0.3) + (s.한타 * 0.2);
   return (s.한타 * 0.5) + (s.무력 * 0.3) + (s.안정성 * 0.2);
+}
+
+function calculateMasteryScore(player, masteryData) {
+  if (!masteryData) return player.종합 * 0.8;
+  const { games, winRate, kda } = masteryData;
+  let baseScore = (winRate * 0.5) + (kda * 10) + 20;
+  const volumeBonus = Math.log10(games + 1) * 5;
+  return Math.min(100, baseScore + volumeBonus);
+}
+
+function getMetaScore(position, tier, masteryScore) {
+  let finalTier = tier;
+  if (masteryScore >= SIM_CONSTANTS.OTP_SCORE_THRESHOLD) {
+    finalTier = Math.max(1, tier - SIM_CONSTANTS.OTP_TIER_BOOST);
+  }
+  let coeff = 1.0;
+  if (position === 'ADC') {
+    const t = Math.max(1, Math.min(3, finalTier));
+    coeff = SIM_CONSTANTS.META_COEFF.ADC[t];
+  } else {
+    const t = Math.max(1, Math.min(5, finalTier));
+    coeff = SIM_CONSTANTS.META_COEFF.STANDARD[t];
+  }
+  return 100 * coeff;
 }
 
 function generateLog(phase, sA, sB, nA, nB) {
@@ -224,15 +267,12 @@ const deleteLeague = (id) => { const l = getLeagues().filter(x => x.id !== id); 
 const getLeagueById = (id) => getLeagues().find(l => l.id === id);
 function getTextColor(hex) { const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16); return (r*299+g*587+b*114)/1000>128?'#000000':'#FFFFFF'; }
 
-// 색상 세분화: 70/80초/80중/80후/90초/90중
 const getOvrBadgeStyle = (ovr) => {
-  if (ovr >= 94) return 'bg-red-100 text-red-700 border-red-300 ring-red-200'; // 94+ (Mid 90s)
-  if (ovr >= 90) return 'bg-orange-100 text-orange-700 border-orange-300 ring-orange-200'; // 90-93 (Low 90s)
-  if (ovr >= 87) return 'bg-purple-100 text-purple-700 border-purple-300 ring-purple-200'; // 87-89 (High 80s)
-  if (ovr >= 84) return 'bg-blue-100 text-blue-700 border-blue-300 ring-blue-200'; // 84-86 (Mid 80s)
-  if (ovr >= 80) return 'bg-cyan-100 text-cyan-700 border-cyan-300 ring-cyan-200'; // 80-83 (Low 80s)
-  if (ovr >= 70) return 'bg-green-100 text-green-700 border-green-300 ring-green-200'; // 70-79
-  return 'bg-gray-100 text-gray-700 border-gray-300';
+  if (ovr >= 95) return 'bg-red-100 text-red-700 border-red-300 ring-red-200';
+  if (ovr >= 90) return 'bg-orange-100 text-orange-700 border-orange-300 ring-orange-200';
+  if (ovr >= 85) return 'bg-purple-100 text-purple-700 border-purple-300 ring-purple-200';
+  if (ovr >= 80) return 'bg-blue-100 text-blue-700 border-blue-300 ring-blue-200';
+  return 'bg-green-100 text-green-700 border-green-300 ring-green-200';
 };
 
 const getPotBadgeStyle = (pot) => {
@@ -412,7 +452,7 @@ function TeamSelection() {
       lastPlayed: new Date().toISOString(),
       groups: { baron: [], elder: [] },
       matches: [],
-      standings: {} 
+      standings: {} // 팀별 승패 기록용
     });
     setTimeout(() => navigate(`/league/${newId}`), 50);
   };
@@ -461,7 +501,7 @@ function Dashboard() {
   const [metaRole, setMetaRole] = useState('TOP');
 
   // 시뮬레이션 결과 모달 상태
-  const [matchResult, setMatchResult] = useState(null); 
+  const [matchResult, setMatchResult] = useState(null); // { winner, scoreA, scoreB, logs, picks }
 
   useEffect(() => {
     const loadData = () => {
@@ -503,15 +543,17 @@ function Dashboard() {
     const t1 = teams.find(t => t.id === nextMatch.t1);
     const t2 = teams.find(t => t.id === nextMatch.t2);
 
+    // 실제 로스터 가져오기 (players.json 기반) - 포지션 정렬 필요 (TOP, JGL, MID, ADC, SUP 순서라고 가정)
     const positions = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
     const getRoster = (teamName) => {
       const players = playerList.filter(p => p.팀 === teamName);
-      return positions.map(pos => players.find(p => p.포지션 === pos) || players[0]); 
+      return positions.map(pos => players.find(p => p.포지션 === pos) || players[0]); // fallback
     };
 
     const rosterA = getRoster(t1.name);
     const rosterB = getRoster(t2.name);
 
+    // 시뮬레이션 실행
     const result = simulateMatch(
       { name: t1.name, roster: rosterA },
       { name: t2.name, roster: rosterB }
@@ -519,6 +561,7 @@ function Dashboard() {
 
     setMatchResult(result);
 
+    // 결과 저장 및 상태 업데이트
     const updatedMatches = league.matches.map(m => {
         if (m === nextMatch) {
             return { ...m, status: 'finished', result: { winner: result.winner, score: `${result.scoreA} : ${result.scoreB}` } };
@@ -526,6 +569,7 @@ function Dashboard() {
         return m;
     });
 
+    // 순위표 업데이트 로직 (간단 구현: standings 객체에 승패 저장)
     const newStandings = { ...(league.standings || {}) };
     const winnerId = result.winner === t1.name ? t1.id : t2.id;
     const loserId = result.winner === t1.name ? t2.id : t1.id;
@@ -762,21 +806,9 @@ function Dashboard() {
             <div className="h-4 w-px bg-gray-300"></div>
             <div className="flex items-center gap-2 font-bold text-gray-700"><span className="text-gray-400">💰</span> 상금: {prizeMoney.toFixed(1)}억</div>
           </div>
-          
-          {/* Header Action Button: Sim or Draft */}
-          {hasDrafted ? (
-             <button 
-                onClick={handleSimulateMatch} 
-                disabled={!nextMatch}
-                className={`px-6 py-1.5 rounded-full font-bold text-sm shadow-sm transition flex items-center gap-2 ${!nextMatch ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white animate-pulse'}`}
-             >
-                <span>⚔️</span> {nextMatch ? "다음 경기 시뮬레이션" : "모든 경기 완료"}
-             </button>
-          ) : (
-             <button onClick={handleDraftStart} className="px-6 py-1.5 rounded-full font-bold text-sm shadow-sm transition flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white animate-pulse">
-                <span>▶</span> {isCaptain ? "LCK 컵 팀 선정하기" : "LCK 컵 조 확인하기"}
-             </button>
-          )}
+          <button onClick={handleDraftStart} disabled={hasDrafted} className={`px-6 py-1.5 rounded-full font-bold text-sm shadow-sm transition flex items-center gap-2 ${hasDrafted ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white animate-pulse'}`}>
+            <span>▶</span> {hasDrafted ? "다음 경기 대기 중" : (isCaptain ? "LCK 컵 팀 선정하기" : "LCK 컵 조 확인하기")}
+          </button>
         </header>
 
         <main className="flex-1 overflow-y-auto p-6 scroll-smooth">
@@ -796,6 +828,9 @@ function Dashboard() {
                             <span className="text-base font-black text-blue-600">{nextMatch.date}</span>
                             <span className="text-sm font-bold text-gray-600">{nextMatch.time}</span>
                             <span className="mt-2 text-xs font-bold text-white bg-blue-600 px-3 py-1 rounded-full shadow-sm">{nextMatch.format}</span>
+                            <button onClick={handleSimulateMatch} className="mt-3 px-4 py-2 bg-green-500 hover:bg-green-600 text-white font-bold rounded-lg shadow animate-bounce">
+                                ⚔️ 경기 시작 (시뮬레이션)
+                            </button>
                           </div>
                         ) : <div className="text-xs font-bold text-blue-600">모든 일정 종료 또는 대기 중</div>}
                       </div>
@@ -908,34 +943,36 @@ function Dashboard() {
                     <button onClick={()=>setActiveTab('roster')} className="text-sm font-bold text-blue-600 hover:underline">상세 정보 보기 →</button>
                   </div>
                   <div className="p-0 overflow-x-auto">
-                    {/* 대시보드 로스터: 소속 기간으로 변경, 스탯 width 축소 */}
-                    <table className="w-full text-xs table-fixed">
-                      <thead className="bg-white text-gray-400 uppercase font-bold border-b">
-                          <tr>
-                              <th className="py-2 px-2 text-left w-12">POS</th>
-                              <th className="py-2 px-2 text-left">NAME</th>
-                              <th className="py-2 px-2 text-center w-8">OVR</th>
-                              <th className="py-2 px-2 text-center w-8">AGE</th>
-                              <th className="py-2 px-2 text-center w-16">SALARY</th>
-                              <th className="py-2 px-2 text-center w-12">POT</th>
-                              <th className="py-2 px-2 text-center w-16">소속 기간</th>
-                              <th className="py-2 px-2 text-right w-24">계약</th>
-                          </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                          {currentRoster.length > 0 ? currentRoster.map((p, i) => (
-                              <tr key={i} className="hover:bg-gray-50 transition">
-                                  <td className="py-3 px-2 font-bold text-gray-400">{p.포지션}</td>
-                                  <td className="py-3 px-2 font-bold text-gray-800 truncate">{p.이름} {p.주장 && <span className="text-yellow-500">👑</span>}</td>
-                                  <td className="py-3 px-2 text-center"><span className={`inline-block w-8 py-0.5 rounded text-white font-bold ${getOvrBadgeStyle(p.종합).replace('text-', 'bg-').replace('bg-', '')}`.split(' ')[0]}>{p.종합}</span></td>
-                                  <td className="py-3 px-2 text-center text-gray-600">{p.나이 || '-'}</td>
-                                  <td className="py-3 px-2 text-center text-gray-700 font-bold">{p.연봉 || '-'}</td>
-                                  <td className="py-3 px-2 text-center"><span className={`font-bold ${getPotBadgeStyle(p.잠재력)}`}>{p.잠재력}</span></td>
-                                  <td className="py-3 px-2 text-center text-gray-600">{p['팀 소속기간'] || '-'}</td>
-                                  <td className="py-3 px-2 text-right text-gray-500">{p.계약} 만료</td>
-                              </tr>
-                          )) : <tr><td colSpan="8" className="py-10 text-center text-gray-300">데이터 없음</td></tr>}
-                      </tbody>
+                    {/* 대시보드 로스터 테이블 수정: 가로 스크롤 제거 (text-xs, padding 축소, table-fixed) 및 날짜 수정 */}
+                    <table className="w-full text-xs table-fixed text-left">
+                        <thead className="bg-white text-gray-400 uppercase font-bold border-b">
+                            <tr>
+                                <th className="py-2 px-1 w-[8%] text-center">라인</th>
+                                <th className="py-2 px-1 w-[20%]">이름</th>
+                                <th className="py-2 px-1 w-[8%] text-center">OVR</th>
+                                <th className="py-2 px-1 w-[6%] text-center">나이</th>
+                                <th className="py-2 px-1 w-[8%] text-center">경력</th>
+                                <th className="py-2 px-1 w-[10%] text-center">소속</th>
+                                <th className="py-2 px-1 w-[12%] text-center">연봉</th>
+                                <th className="py-2 px-1 w-[10%] text-center">POT</th>
+                                <th className="py-2 px-1 w-[18%] text-left">계약</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {currentRoster.length > 0 ? currentRoster.map((p, i) => (
+                                <tr key={i} className="hover:bg-gray-50 transition">
+                                    <td className="py-2 px-1 font-bold text-gray-400 text-center">{p.포지션}</td>
+                                    <td className="py-2 px-1 font-bold text-gray-800 truncate">{p.이름} <span className="text-gray-400 font-normal text-[10px] hidden lg:inline">({p.실명})</span> {p.주장 && <span className="text-yellow-500" title="주장">👑</span>}</td>
+                                    <td className="py-2 px-1 text-center"><span className={`inline-flex items-center justify-center w-8 h-6 rounded font-black text-xs shadow-sm border ${getOvrBadgeStyle(p.종합)}`}>{p.종합}</span></td>
+                                    <td className="py-2 px-1 text-center text-gray-600">{p.나이 || '-'}</td>
+                                    <td className="py-2 px-1 text-center text-gray-600">{p.경력 || '-'}</td>
+                                    <td className="py-2 px-1 text-center text-gray-700">{p['팀 소속기간'] || '-'}</td>
+                                    <td className="py-2 px-1 text-center text-gray-700 font-bold truncate">{p.연봉 || '-'}</td>
+                                    <td className="py-2 px-1 text-center"><span className={`text-[10px] ${getPotBadgeStyle(p.잠재력)}`}>{p.잠재력}</span></td>
+                                    <td className="py-2 px-1 text-gray-500 font-medium truncate">{p.계약}</td>
+                                </tr>
+                            )) : <tr><td colSpan="9" className="py-10 text-center text-gray-300">데이터 없음</td></tr>}
+                        </tbody>
                     </table>
                   </div>
                 </div>
@@ -956,34 +993,34 @@ function Dashboard() {
                               <h3 className="font-black text-lg text-purple-900">바론 그룹 (Baron Group)</h3>
                            </div>
                            <table className="w-full text-sm">
-                              <thead className="bg-gray-50 text-gray-500 font-bold border-b">
-                                <tr>
-                                  <th className="py-3 px-4 text-center">순위</th>
-                                  <th className="py-3 px-4 text-left">팀</th>
-                                  <th className="py-3 px-4 text-center">승</th>
-                                  <th className="py-3 px-4 text-center">패</th>
-                                  <th className="py-3 px-4 text-center">득실</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-gray-100">
-                                {league.groups.baron.map((id, idx) => {
-                                  const t = teams.find(team => team.id === id);
-                                  const isMyTeam = myTeam.id === id;
-                                  const rec = league.standings && league.standings[id] ? league.standings[id] : {w:0, l:0, diff:0};
-                                  return (
-                                    <tr key={id} onClick={() => setViewingTeamId(id)} className={`cursor-pointer hover:bg-gray-50 transition ${isMyTeam ? 'bg-purple-50' : ''}`}>
-                                      <td className="py-3 px-4 text-center font-bold text-gray-600">{idx + 1}</td>
-                                      <td className="py-3 px-4 font-bold text-gray-800 flex items-center gap-2">
-                                         <div className="w-6 h-6 rounded-full text-white text-[10px] flex items-center justify-center" style={{backgroundColor: t.colors.primary}}>{t.name}</div>
-                                         {t.fullName}
-                                      </td>
-                                      <td className="py-3 px-4 text-center font-bold text-blue-600">{rec.w}</td>
-                                      <td className="py-3 px-4 text-center font-bold text-red-600">{rec.l}</td>
-                                      <td className="py-3 px-4 text-center text-gray-500">{rec.diff}</td>
-                                    </tr>
-                                  )
-                                })}
-                              </tbody>
+                             <thead className="bg-gray-50 text-gray-500 font-bold border-b">
+                               <tr>
+                                 <th className="py-3 px-4 text-center">순위</th>
+                                 <th className="py-3 px-4 text-left">팀</th>
+                                 <th className="py-3 px-4 text-center">승</th>
+                                 <th className="py-3 px-4 text-center">패</th>
+                                 <th className="py-3 px-4 text-center">득실</th>
+                               </tr>
+                             </thead>
+                             <tbody className="divide-y divide-gray-100">
+                               {league.groups.baron.map((id, idx) => {
+                                 const t = teams.find(team => team.id === id);
+                                 const isMyTeam = myTeam.id === id;
+                                 const rec = league.standings && league.standings[id] ? league.standings[id] : {w:0, l:0, diff:0};
+                                 return (
+                                   <tr key={id} onClick={() => setViewingTeamId(id)} className={`cursor-pointer hover:bg-gray-50 transition ${isMyTeam ? 'bg-purple-50' : ''}`}>
+                                     <td className="py-3 px-4 text-center font-bold text-gray-600">{idx + 1}</td>
+                                     <td className="py-3 px-4 font-bold text-gray-800 flex items-center gap-2">
+                                        <div className="w-6 h-6 rounded-full text-white text-[10px] flex items-center justify-center" style={{backgroundColor: t.colors.primary}}>{t.name}</div>
+                                        {t.fullName}
+                                     </td>
+                                     <td className="py-3 px-4 text-center font-bold text-blue-600">{rec.w}</td>
+                                     <td className="py-3 px-4 text-center font-bold text-red-600">{rec.l}</td>
+                                     <td className="py-3 px-4 text-center text-gray-500">{rec.diff}</td>
+                                   </tr>
+                                 )
+                               })}
+                             </tbody>
                            </table>
                         </div>
 
@@ -993,34 +1030,34 @@ function Dashboard() {
                               <h3 className="font-black text-lg text-red-900">장로 그룹 (Elder Group)</h3>
                            </div>
                            <table className="w-full text-sm">
-                              <thead className="bg-gray-50 text-gray-500 font-bold border-b">
-                                <tr>
-                                  <th className="py-3 px-4 text-center">순위</th>
-                                  <th className="py-3 px-4 text-left">팀</th>
-                                  <th className="py-3 px-4 text-center">승</th>
-                                  <th className="py-3 px-4 text-center">패</th>
-                                  <th className="py-3 px-4 text-center">득실</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-gray-100">
-                                {league.groups.elder.map((id, idx) => {
-                                  const t = teams.find(team => team.id === id);
-                                  const isMyTeam = myTeam.id === id;
-                                  const rec = league.standings && league.standings[id] ? league.standings[id] : {w:0, l:0, diff:0};
-                                  return (
-                                    <tr key={id} onClick={() => setViewingTeamId(id)} className={`cursor-pointer hover:bg-gray-50 transition ${isMyTeam ? 'bg-red-50' : ''}`}>
-                                      <td className="py-3 px-4 text-center font-bold text-gray-600">{idx + 1}</td>
-                                      <td className="py-3 px-4 font-bold text-gray-800 flex items-center gap-2">
-                                         <div className="w-6 h-6 rounded-full text-white text-[10px] flex items-center justify-center" style={{backgroundColor: t.colors.primary}}>{t.name}</div>
-                                         {t.fullName}
-                                      </td>
-                                      <td className="py-3 px-4 text-center font-bold text-blue-600">{rec.w}</td>
-                                      <td className="py-3 px-4 text-center font-bold text-red-600">{rec.l}</td>
-                                      <td className="py-3 px-4 text-center text-gray-500">{rec.diff}</td>
-                                    </tr>
-                                  )
-                                })}
-                              </tbody>
+                             <thead className="bg-gray-50 text-gray-500 font-bold border-b">
+                               <tr>
+                                 <th className="py-3 px-4 text-center">순위</th>
+                                 <th className="py-3 px-4 text-left">팀</th>
+                                 <th className="py-3 px-4 text-center">승</th>
+                                 <th className="py-3 px-4 text-center">패</th>
+                                 <th className="py-3 px-4 text-center">득실</th>
+                               </tr>
+                             </thead>
+                             <tbody className="divide-y divide-gray-100">
+                               {league.groups.elder.map((id, idx) => {
+                                 const t = teams.find(team => team.id === id);
+                                 const isMyTeam = myTeam.id === id;
+                                 const rec = league.standings && league.standings[id] ? league.standings[id] : {w:0, l:0, diff:0};
+                                 return (
+                                   <tr key={id} onClick={() => setViewingTeamId(id)} className={`cursor-pointer hover:bg-gray-50 transition ${isMyTeam ? 'bg-red-50' : ''}`}>
+                                     <td className="py-3 px-4 text-center font-bold text-gray-600">{idx + 1}</td>
+                                     <td className="py-3 px-4 font-bold text-gray-800 flex items-center gap-2">
+                                        <div className="w-6 h-6 rounded-full text-white text-[10px] flex items-center justify-center" style={{backgroundColor: t.colors.primary}}>{t.name}</div>
+                                        {t.fullName}
+                                     </td>
+                                     <td className="py-3 px-4 text-center font-bold text-blue-600">{rec.w}</td>
+                                     <td className="py-3 px-4 text-center font-bold text-red-600">{rec.l}</td>
+                                     <td className="py-3 px-4 text-center text-gray-500">{rec.diff}</td>
+                                   </tr>
+                                 )
+                               })}
+                             </tbody>
                            </table>
                         </div>
                     </div>
@@ -1121,7 +1158,6 @@ function Dashboard() {
               </div>
             )}
 
-            {/* 메인 로스터 탭: 소속 기간으로 변경, 스탯 w-6으로 최소화 */}
             {activeTab === 'roster' && (
               <div className="bg-white rounded-lg border shadow-sm flex flex-col">
                 <div className="p-6 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
@@ -1133,51 +1169,51 @@ function Dashboard() {
                   <div className="text-right"><div className="text-2xl font-black text-blue-600">{viewingTeam.power} <span className="text-sm text-gray-400 font-normal">TEAM OVR</span></div></div>
                 </div>
                 <div className="overflow-x-auto">
-                    {/* 상세 로스터 테이블: px-1, w-6 사용으로 공간 확보 */}
-                    <table className="w-full text-xs text-left">
+                    {/* 로스터 상세 테이블 수정: text-xs, table-fixed, padding 축소, 날짜 표기 수정 */}
+                    <table className="w-full text-xs text-left table-fixed">
                         <thead className="bg-white text-gray-500 uppercase font-bold border-b">
                             <tr>
-                                <th className="py-3 px-2 bg-gray-50 sticky left-0 z-10 w-32">정보</th>
-                                <th className="py-3 px-1 text-center w-8">종합</th>
-                                <th className="py-3 px-1 text-center w-8">나이</th>
-                                <th className="py-3 px-1 text-center w-8">경력</th>
-                                <th className="py-3 px-1 text-center w-12">소속 기간</th>
-                                <th className="py-3 px-1 text-center w-12">연봉</th>
-                                <th className="py-3 px-1 text-center bg-gray-50 border-l w-6">라인</th>
-                                <th className="py-3 px-1 text-center bg-gray-50 w-6">무력</th>
-                                <th className="py-3 px-1 text-center bg-gray-50 w-6">한타</th>
-                                <th className="py-3 px-1 text-center bg-gray-50 w-6">성장</th>
-                                <th className="py-3 px-1 text-center bg-gray-50 w-6">안정</th>
-                                <th className="py-3 px-1 text-center bg-gray-50 w-6">운영</th>
-                                <th className="py-3 px-1 text-center border-l w-8">잠재</th>
-                                <th className="py-3 px-2 text-right border-l w-24">계약</th>
+                                <th className="py-2 px-2 bg-gray-50 w-[12%]">정보</th>
+                                <th className="py-2 px-1 text-center w-[5%]">OVR</th>
+                                <th className="py-2 px-1 text-center w-[5%]">나이</th>
+                                <th className="py-2 px-1 text-center w-[5%]">경력</th>
+                                <th className="py-2 px-1 text-center w-[6%]">소속</th>
+                                <th className="py-2 px-1 text-center w-[8%]">연봉</th>
+                                <th className="py-2 px-1 text-center bg-gray-50 border-l w-[6%]">라인</th>
+                                <th className="py-2 px-1 text-center bg-gray-50 w-[6%]">무력</th>
+                                <th className="py-2 px-1 text-center bg-gray-50 w-[6%]">한타</th>
+                                <th className="py-2 px-1 text-center bg-gray-50 w-[6%]">성장</th>
+                                <th className="py-2 px-1 text-center bg-gray-50 w-[6%]">안정</th>
+                                <th className="py-2 px-1 text-center bg-gray-50 w-[6%]">운영</th>
+                                <th className="py-2 px-1 text-center bg-gray-50 border-l text-purple-600 w-[6%]">POT</th>
+                                <th className="py-2 px-2 text-left bg-gray-50 border-l w-[12%]">계약 정보</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                             {currentRoster.map((p, i) => (
                                 <tr key={i} className="hover:bg-blue-50/30 transition group">
-                                    <td className="py-3 px-2 sticky left-0 bg-white group-hover:bg-blue-50/30">
+                                    <td className="py-2 px-2 bg-white group-hover:bg-blue-50/30">
                                         <div className="flex items-center gap-2">
                                             <span className="font-bold text-gray-400 w-6">{p.포지션}</span>
-                                            <div>
-                                                <div className="font-bold text-gray-900 truncate max-w-[80px]">{p.이름}</div>
-                                                <div className="text-[10px] text-gray-400 truncate max-w-[80px]">{p.실명}</div>
+                                            <div className="overflow-hidden">
+                                                <div className="font-bold text-gray-900 truncate">{p.이름} {p.주장 && <span className="text-yellow-500" title="주장">👑</span>}</div>
+                                                <div className="text-[10px] text-gray-400 truncate">{p.특성}</div>
                                             </div>
                                         </div>
                                     </td>
-                                    <td className="py-3 px-1 text-center"><span className={`inline-block w-6 py-0.5 rounded text-white font-bold ${getOvrBadgeStyle(p.종합).replace('text-', 'bg-').replace('bg-', '')}`.split(' ')[0]}>{p.종합}</span></td>
-                                    <td className="py-3 px-1 text-center text-gray-600">{p.나이 || '-'}</td>
-                                    <td className="py-3 px-1 text-center text-gray-600">{p.경력 || '-'}</td>
-                                    <td className="py-3 px-1 text-center text-gray-700">{p['팀 소속기간'] || '-'}</td>
-                                    <td className="py-3 px-1 text-center font-bold text-gray-800">{p.연봉 || '-'}</td>
-                                    <td className="py-3 px-1 text-center border-l text-gray-600">{p.상세?.라인전 || '-'}</td>
-                                    <td className="py-3 px-1 text-center text-gray-600">{p.상세?.무력 || '-'}</td>
-                                    <td className="py-3 px-1 text-center text-gray-600">{p.상세?.한타 || '-'}</td>
-                                    <td className="py-3 px-1 text-center text-gray-600">{p.상세?.성장 || '-'}</td>
-                                    <td className="py-3 px-1 text-center text-gray-600">{p.상세?.안정성 || '-'}</td>
-                                    <td className="py-3 px-1 text-center text-gray-600">{p.상세?.운영 || '-'}</td>
-                                    <td className="py-3 px-1 text-center border-l"><span className={`font-bold ${getPotBadgeStyle(p.잠재력)}`}>{p.잠재력}</span></td>
-                                    <td className="py-3 px-2 text-right border-l text-gray-500">{p.계약} 만료</td>
+                                    <td className="py-2 px-1 text-center"><span className={`inline-flex items-center justify-center w-8 h-6 rounded font-black text-xs shadow-sm border ${getOvrBadgeStyle(p.종합)}`}>{p.종합}</span></td>
+                                    <td className="py-2 px-1 text-center text-gray-600">{p.나이 || '-'}</td>
+                                    <td className="py-2 px-1 text-center text-gray-600">{p.경력 || '-'}</td>
+                                    <td className="py-2 px-1 text-center text-gray-700">{p['팀 소속기간'] || '-'}</td>
+                                    <td className="py-2 px-1 text-center text-gray-700 font-bold truncate">{p.연봉 || '-'}</td>
+                                    <td className="py-2 px-1 text-center border-l font-medium text-gray-600">{p.상세?.라인전 || '-'}</td>
+                                    <td className="py-2 px-1 text-center font-medium text-gray-600">{p.상세?.무력 || '-'}</td>
+                                    <td className="py-2 px-1 text-center font-medium text-gray-600">{p.상세?.한타 || '-'}</td>
+                                    <td className="py-2 px-1 text-center font-medium text-gray-600">{p.상세?.성장 || '-'}</td>
+                                    <td className="py-2 px-1 text-center font-medium text-gray-600">{p.상세?.안정성 || '-'}</td>
+                                    <td className="py-2 px-1 text-center font-medium text-gray-600">{p.상세?.운영 || '-'}</td>
+                                    <td className="py-2 px-1 text-center border-l"><span className={`font-bold ${getPotBadgeStyle(p.잠재력)}`}>{p.잠재력}</span></td>
+                                    <td className="py-2 px-2 border-l"><span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-[10px] font-bold block truncate">{p.계약}</span></td>
                                 </tr>
                             ))}
                         </tbody>
