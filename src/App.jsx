@@ -39,31 +39,62 @@ const SIM_CONSTANTS = {
   VAR_RANGE: 0.12
 };
 
-// 0-2. 데이터 전처리 (숙련도 맵핑 - 실제 파일이 없으므로 Mock 생성)
+// 0-2. 데이터 전처리
 const MASTERY_MAP = playerList.reduce((acc, player) => {
   acc[player.이름] = { id: player.이름, pool: [] };
   return acc;
 }, {});
 
-// 0-3. 핵심 시뮬레이션 함수
-function simulateMatch(teamA, teamB) {
+// 0-3. 핵심 시뮬레이션 함수 (세트제 적용)
+function simulateMatch(teamA, teamB, format = 'BO3') {
+  const targetWins = format === 'BO5' ? 3 : 2;
+  let winsA = 0;
+  let winsB = 0;
+  let setLogs = [];
+  let setPicks = [];
+
+  // 세트 반복 (승부가 날 때까지)
+  while (winsA < targetWins && winsB < targetWins) {
+    const setNum = winsA + winsB + 1;
+    const result = simulateSingleSet(teamA, teamB, setNum);
+    
+    setLogs.push(`\n=== [SET ${setNum}] ===`);
+    setLogs = [...setLogs, ...result.log];
+    setPicks.push({ set: setNum, picksA: result.picksA, picksB: result.picksB });
+
+    if (result.scoreA > result.scoreB) {
+      winsA++;
+      setLogs.push(`🎉 ${setNum}세트 승리: ${teamA.name}`);
+    } else {
+      winsB++;
+      setLogs.push(`🎉 ${setNum}세트 승리: ${teamB.name}`);
+    }
+  }
+
+  return {
+    winner: winsA > winsB ? teamA.name : teamB.name,
+    loser: winsA > winsB ? teamB.name : teamA.name,
+    scoreA: winsA,
+    scoreB: winsB,
+    logs: setLogs,
+    picks: setPicks // 모든 세트의 밴픽 정보 저장
+  };
+}
+
+// 단일 세트 시뮬레이션 (기존 simulateMatch 로직을 여기로 이동)
+function simulateSingleSet(teamA, teamB, setNum) {
   const log = [];
   let scoreA = 0;
   let scoreB = 0;
 
-  // 1. 드래곤 속성
+  // 1. 드래곤 & 밴픽 (매 세트 바뀜)
   const dragonType = GAME_CONSTANTS.DRAGONS.TYPES[Math.floor(Math.random() * GAME_CONSTANTS.DRAGONS.TYPES.length)];
-  const dragonBuff = GAME_CONSTANTS.DRAGONS.BUFFS[dragonType];
-   
-  // 2. 밴픽
   const picksA = draftTeam(teamA.roster);
   const picksB = draftTeam(teamB.roster);
 
-  log.push(`📢 [경기 시작] ${teamA.name} vs ${teamB.name}`);
-  log.push(`🐉 전장: ${dragonType} 드래곤 협곡 (${dragonBuff.description})`);
-  log.push(`✨ Key Matchup (MID): ${picksA[2].champName} vs ${picksB[2].champName}`);
-
-  // 3. 페이즈 계산
+  log.push(`🐉 전장: ${dragonType} (${GAME_CONSTANTS.DRAGONS.BUFFS[dragonType].description})`);
+  
+  // 2. 페이즈 계산
   const p1 = calculatePhase('EARLY', teamA, teamB, picksA, picksB, null, 1.0);
   scoreA += p1.scoreA; scoreB += p1.scoreB;
   log.push(p1.log);
@@ -78,18 +109,7 @@ function simulateMatch(teamA, teamB) {
   scoreA += p3.scoreA; scoreB += p3.scoreB;
   log.push(p3.log);
 
-  // 4. 결과
-  const winner = scoreA > scoreB ? teamA : teamB;
-  const loser = scoreA > scoreB ? teamB : teamA;
-
-  return {
-    winner: winner.name,
-    loser: loser.name,
-    scoreA: Math.round(scoreA),
-    scoreB: Math.round(scoreB),
-    logs: log,
-    picks: { A: picksA, B: picksB }
-  };
+  return { scoreA, scoreB, log, picksA, picksB };
 }
 
 function draftTeam(roster) {
@@ -98,9 +118,7 @@ function draftTeam(roster) {
     const playerData = MASTERY_MAP[player.이름];
     let masteryPool = [];
     
-    if (playerData && playerData.pool) {
-       masteryPool = playerData.pool; 
-    }
+    if (playerData && playerData.pool) { masteryPool = playerData.pool; }
 
     let finalPick = null;
     if (masteryPool.length > 0 && Math.random() < 0.7) {
@@ -112,11 +130,7 @@ function draftTeam(roster) {
       finalPick = { ...selectedMeta, mastery: null };
     }
 
-    return {
-      champName: finalPick.name,
-      tier: finalPick.tier || 3,
-      mastery: finalPick.mastery
-    };
+    return { champName: finalPick.name, tier: finalPick.tier || 3, mastery: finalPick.mastery };
   });
 }
 
@@ -162,11 +176,7 @@ function calculatePhase(phase, tA, tB, picksA, picksB, bonusTeam, bonusVal) {
   if (bonusTeam === 'A') powerA *= bonusVal;
   if (bonusTeam === 'B') powerB *= bonusVal;
 
-  return {
-    scoreA: powerA,
-    scoreB: powerB,
-    log: generateLog(phase, powerA, powerB, tA.name, tB.name)
-  };
+  return { scoreA: powerA, scoreB: powerB, log: generateLog(phase, powerA, powerB, tA.name, tB.name) };
 }
 
 function getPhaseStat(phase, player) {
@@ -204,11 +214,11 @@ function generateLog(phase, sA, sB, nA, nB) {
   const diff = sA - sB;
   const leader = diff > 0 ? nA : nB;
   if (phase === 'EARLY') {
-    return diff > 0 ? `⚔️ [초반] ${leader}, 강력한 라인전으로 주도권을 잡습니다.` : `⚔️ [초반] ${leader} 정글러의 갱킹이 적중했습니다.`;
+    return diff > 0 ? `⚔️ [초반] ${leader}, 강력한 라인전으로 주도권 장악.` : `⚔️ [초반] ${leader} 정글러의 날카로운 갱킹 적중!`;
   } else if (phase === 'MID') {
-    return diff > 0 ? `🗺️ [중반] ${leader}, 운영 단계에서 상대를 압도합니다.` : `🗺️ [중반] ${leader}, 잘라먹기 플레이로 이득을 봅니다.`;
+    return diff > 0 ? `🗺️ [중반] ${leader}, 짜임새 있는 운영으로 압박.` : `🗺️ [중반] ${leader}, 과감한 끊어먹기로 변수 창출!`;
   } else {
-    return diff > 0 ? `💥 [후반] ${leader}, 한타 대승! 넥서스를 파괴합니다.` : `💥 [후반] ${leader}의 기적적인 역전승!`;
+    return diff > 0 ? `💥 [후반] ${leader}, 한타 대승으로 넥서스 파괴!` : `💥 [후반] ${leader}, 기적적인 역전 한타 승리!`;
   }
 }
 
@@ -543,7 +553,7 @@ function Dashboard() {
     const t1 = teams.find(t => t.id === nextMatch.t1);
     const t2 = teams.find(t => t.id === nextMatch.t2);
 
-    // 실제 로스터 가져오기 (players.json 기반) - 포지션 정렬 필요 (TOP, JGL, MID, ADC, SUP 순서라고 가정)
+    // 실제 로스터 가져오기 (players.json 기반)
     const positions = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
     const getRoster = (teamName) => {
       const players = playerList.filter(p => p.팀 === teamName);
@@ -553,10 +563,11 @@ function Dashboard() {
     const rosterA = getRoster(t1.name);
     const rosterB = getRoster(t2.name);
 
-    // 시뮬레이션 실행
+    // 시뮬레이션 실행 (BO3 또는 BO5)
     const result = simulateMatch(
       { name: t1.name, roster: rosterA },
-      { name: t2.name, roster: rosterB }
+      { name: t2.name, roster: rosterB },
+      nextMatch.format // 'BO3' or 'BO5'
     );
 
     setMatchResult(result);
@@ -569,7 +580,7 @@ function Dashboard() {
         return m;
     });
 
-    // 순위표 업데이트 로직 (간단 구현: standings 객체에 승패 저장)
+    // 순위표 업데이트 로직
     const newStandings = { ...(league.standings || {}) };
     const winnerId = result.winner === t1.name ? t1.id : t2.id;
     const loserId = result.winner === t1.name ? t2.id : t1.id;
@@ -578,9 +589,9 @@ function Dashboard() {
     if(!newStandings[loserId]) newStandings[loserId] = { w: 0, l: 0, diff: 0 };
 
     newStandings[winnerId].w += 1;
-    newStandings[winnerId].diff += (Math.abs(result.scoreA - result.scoreB));
+    newStandings[winnerId].diff += (result.scoreA - result.scoreB); // 세트 득실 반영
     newStandings[loserId].l += 1;
-    newStandings[loserId].diff -= (Math.abs(result.scoreA - result.scoreB));
+    newStandings[loserId].diff -= (result.scoreA - result.scoreB); // 세트 득실 반영
 
     updateLeague(league.id, { matches: updatedMatches, standings: newStandings });
     setLeague(prev => ({ ...prev, matches: updatedMatches, standings: newStandings }));
@@ -693,10 +704,10 @@ function Dashboard() {
       {/* Simulation Result Modal */}
       {matchResult && (
         <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl p-6 max-w-2xl w-full shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="bg-white rounded-2xl p-6 max-w-3xl w-full shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
                 <div className="text-center border-b pb-4 mb-4">
                     <h2 className="text-2xl font-black mb-1">경기 결과</h2>
-                    <div className="text-4xl font-black text-blue-600 my-4">
+                    <div className="text-6xl font-black text-blue-600 my-4">
                         {matchResult.scoreA} : {matchResult.scoreB}
                     </div>
                     <div className="text-lg font-bold">
@@ -704,33 +715,29 @@ function Dashboard() {
                     </div>
                 </div>
                 
-                <div className="flex-1 overflow-y-auto space-y-4 px-2">
-                    {/* 밴픽 정보 */}
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                            <h4 className="font-bold text-gray-500 mb-2 text-center">블루 팀 Pick</h4>
-                            {matchResult.picks.A.map((p, i) => (
-                                <div key={i} className="flex justify-between bg-blue-50 p-2 rounded mb-1">
-                                    <span>{p.champName}</span>
-                                    <span className="text-xs text-gray-400">{p.tier}티어</span>
-                                </div>
-                            ))}
-                        </div>
-                        <div>
-                            <h4 className="font-bold text-gray-500 mb-2 text-center">레드 팀 Pick</h4>
-                            {matchResult.picks.B.map((p, i) => (
-                                <div key={i} className="flex justify-between bg-red-50 p-2 rounded mb-1">
-                                    <span>{p.champName}</span>
-                                    <span className="text-xs text-gray-400">{p.tier}티어</span>
-                                </div>
-                            ))}
-                        </div>
+                <div className="flex-1 overflow-y-auto space-y-6 px-4">
+                    {/* 세트별 상세 로그 */}
+                    <div className="bg-gray-100 p-4 rounded-lg text-sm space-y-2 whitespace-pre-wrap">
+                        {matchResult.logs.join('\n')}
                     </div>
 
-                    {/* 로그 */}
-                    <div className="bg-gray-100 p-4 rounded-lg text-sm space-y-2">
-                        {matchResult.logs.map((log, idx) => (
-                            <div key={idx} className="border-b border-gray-200 last:border-0 pb-1 last:pb-0">{log}</div>
+                    {/* 세트별 밴픽 정보 (간략히 표시) */}
+                    <div className="space-y-2">
+                        <h4 className="font-bold text-gray-700">세트별 밴픽 현황</h4>
+                        {matchResult.picks.map((set, idx) => (
+                           <div key={idx} className="bg-gray-50 p-2 rounded border">
+                              <div className="text-xs font-bold text-gray-500 mb-1">SET {set.set}</div>
+                              <div className="flex justify-between text-xs">
+                                 <div>
+                                    <span className="font-bold text-blue-600 mr-2">BLUE</span>
+                                    {set.picksA.map(p => p.champName).join(', ')}
+                                 </div>
+                                 <div>
+                                    <span className="font-bold text-red-600 mr-2">RED</span>
+                                    {set.picksB.map(p => p.champName).join(', ')}
+                                 </div>
+                              </div>
+                           </div>
                         ))}
                     </div>
                 </div>
@@ -806,9 +813,23 @@ function Dashboard() {
             <div className="h-4 w-px bg-gray-300"></div>
             <div className="flex items-center gap-2 font-bold text-gray-700"><span className="text-gray-400">💰</span> 상금: {prizeMoney.toFixed(1)}억</div>
           </div>
-          <button onClick={handleDraftStart} disabled={hasDrafted} className={`px-6 py-1.5 rounded-full font-bold text-sm shadow-sm transition flex items-center gap-2 ${hasDrafted ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white animate-pulse'}`}>
-            <span>▶</span> {hasDrafted ? "다음 경기 대기 중" : (isCaptain ? "LCK 컵 팀 선정하기" : "LCK 컵 조 확인하기")}
-          </button>
+          
+          {/* 헤더 버튼 영역 수정: 조 추첨 전에는 '조 추첨', 후에는 '경기 진행' 버튼 표시 */}
+          <div>
+            {!hasDrafted ? (
+                <button onClick={handleDraftStart} className="px-6 py-1.5 rounded-full font-bold text-sm shadow-sm transition flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white animate-pulse">
+                    <span>▶</span> {isCaptain ? "LCK 컵 팀 선정하기" : "LCK 컵 조 확인하기"}
+                </button>
+            ) : (
+                <button 
+                    onClick={handleSimulateMatch} 
+                    disabled={!nextMatch}
+                    className={`px-6 py-1.5 rounded-full font-bold text-sm shadow-sm transition flex items-center gap-2 ${nextMatch ? 'bg-blue-600 hover:bg-blue-700 text-white animate-bounce' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
+                >
+                    <span>⚔️</span> {nextMatch ? "다음 경기 진행하기" : "진행할 경기가 없습니다"}
+                </button>
+            )}
+          </div>
         </header>
 
         <main className="flex-1 overflow-y-auto p-6 scroll-smooth">
@@ -828,9 +849,7 @@ function Dashboard() {
                             <span className="text-base font-black text-blue-600">{nextMatch.date}</span>
                             <span className="text-sm font-bold text-gray-600">{nextMatch.time}</span>
                             <span className="mt-2 text-xs font-bold text-white bg-blue-600 px-3 py-1 rounded-full shadow-sm">{nextMatch.format}</span>
-                            <button onClick={handleSimulateMatch} className="mt-3 px-4 py-2 bg-green-500 hover:bg-green-600 text-white font-bold rounded-lg shadow animate-bounce">
-                                ⚔️ 경기 시작 (시뮬레이션)
-                            </button>
+                            <div className="mt-2 text-xs text-gray-500 font-bold">상단 버튼으로 진행</div>
                           </div>
                         ) : <div className="text-xs font-bold text-blue-600">모든 일정 종료 또는 대기 중</div>}
                       </div>
@@ -943,7 +962,6 @@ function Dashboard() {
                     <button onClick={()=>setActiveTab('roster')} className="text-sm font-bold text-blue-600 hover:underline">상세 정보 보기 →</button>
                   </div>
                   <div className="p-0 overflow-x-auto">
-                    {/* 대시보드 로스터 테이블 수정: 가로 스크롤 제거 (text-xs, padding 축소, table-fixed) 및 날짜 수정 */}
                     <table className="w-full text-xs table-fixed text-left">
                         <thead className="bg-white text-gray-400 uppercase font-bold border-b">
                             <tr>
@@ -1107,7 +1125,6 @@ function Dashboard() {
                </div>
             )}
 
-            {/* --- (추가됨) 재정 탭 --- */}
             {activeTab === 'finance' && (
               <div className="bg-white rounded-lg border shadow-sm flex flex-col">
                 <div className="p-6 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
@@ -1169,7 +1186,6 @@ function Dashboard() {
                   <div className="text-right"><div className="text-2xl font-black text-blue-600">{viewingTeam.power} <span className="text-sm text-gray-400 font-normal">TEAM OVR</span></div></div>
                 </div>
                 <div className="overflow-x-auto">
-                    {/* 로스터 상세 테이블 수정: text-xs, table-fixed, padding 축소, 날짜 표기 수정 */}
                     <table className="w-full text-xs text-left table-fixed">
                         <thead className="bg-white text-gray-500 uppercase font-bold border-b">
                             <tr>
