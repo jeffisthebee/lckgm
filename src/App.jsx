@@ -17,6 +17,19 @@ const teams = [
   { id: 10, name: 'DNS', fullName: 'DN 수퍼스 (DNS)', power: 82, description: '신생 팀, 도전 정신', colors: { primary: '#1E3A8A', secondary: '#FFFFFF' } },
 ];
 
+const teamFinanceData = {
+  "T1": { "total_expenditure": 135.0, "cap_expenditure": 76.0, "luxury_tax": 9.0 },
+  "GEN": { "total_expenditure": 110.0, "cap_expenditure": 64.5, "luxury_tax": 6.125 },
+  "HLE": { "total_expenditure": 102.0, "cap_expenditure": 94.5, "luxury_tax": 17.25 },
+  "KT": { "total_expenditure": 48.0, "cap_expenditure": 40.4, "luxury_tax": 0.1 },
+  "DK": { "total_expenditure": 35.5, "cap_expenditure": 26.5, "luxury_tax": 0.0 },
+  "NS": { "total_expenditure": 51.0, "cap_expenditure": 50.0, "luxury_tax": 2.5 },
+  "BNK": { "total_expenditure": 15.5, "cap_expenditure": 14.15, "luxury_tax": 0.0 },
+  "BRO": { "total_expenditure": 16.0, "cap_expenditure": 16.0, "luxury_tax": 0.0 },
+  "DRX": { "total_expenditure": 19.0, "cap_expenditure": 19.0, "luxury_tax": 0.0 },
+  "DNS": { "total_expenditure": 29.5, "cap_expenditure": 25.5, "luxury_tax": 0.0 }
+};
+
 const difficulties = [
   { value: 'easy', label: '쉬움', color: 'green' },
   { value: 'normal', label: '보통', color: 'blue' },
@@ -389,7 +402,7 @@ function Dashboard() {
     { id: 'dashboard', name: '대시보드', icon: '📊' },
     { id: 'roster', name: '로스터', icon: '👥' },
     { id: 'standings', name: '순위표', icon: '🏆' },
-    { id: 'finance', name: '재정', icon: '💰' }, // 추가됨
+    { id: 'finance', name: '재정', icon: '💰' }, 
     { id: 'schedule', name: '일정', icon: '📅' },
     { id: 'team_schedule', name: '팀 일정', icon: '📅' },
     { id: 'meta', name: '메타', icon: '📈' }, 
@@ -400,6 +413,9 @@ function Dashboard() {
   const t2 = nextMatch ? teams.find(t=>t.id===nextMatch.t2) : null;
   const opponentId = nextMatch ? (nextMatch.t1 === myTeam.id ? nextMatch.t2 : nextMatch.t1) : null;
   const oppRecord = { w: 0, l: 0 }; 
+
+  // 재정 탭 데이터
+  const finance = teamFinanceData[viewingTeam.name] || { total_expenditure: 0, cap_expenditure: 0, luxury_tax: 0 };
 
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden font-sans relative">
@@ -601,8 +617,8 @@ function Dashboard() {
                     <button onClick={()=>setActiveTab('roster')} className="text-sm font-bold text-blue-600 hover:underline">상세 정보 보기 →</button>
                   </div>
                   <div className="p-0 overflow-x-auto">
-                    {/* 대시보드 로스터 테이블 수정: 연봉, 소속기간 추가 */}
-                    <table className="w-full text-sm"><thead className="bg-white text-gray-400 text-xs uppercase font-bold border-b"><tr><th className="py-3 px-6 text-left">포지션</th><th className="py-3 px-6 text-left">이름</th><th className="py-3 px-6 text-center">나이</th><th className="py-3 px-6 text-center">경력</th><th className="py-3 px-6 text-center">종합</th><th className="py-3 px-6 text-center">연봉</th><th className="py-3 px-6 text-center">소속기간</th><th className="py-3 px-6 text-center">잠재력</th><th className="py-3 px-6 text-left">계약</th></tr></thead><tbody className="divide-y divide-gray-100">{currentRoster.length > 0 ? currentRoster.map((p, i) => (<tr key={i} className="hover:bg-gray-50 transition"><td className="py-3 px-6 font-bold text-gray-400 w-16">{p.포지션}</td><td className="py-3 px-6 font-bold text-gray-800">{p.이름} <span className="text-gray-400 font-normal text-xs ml-1">({p.실명})</span> {p.주장 && <span className="ml-1 text-yellow-500" title="주장">👑</span>}</td><td className="py-3 px-6 text-center text-gray-600">{p.나이 || '-'}</td><td className="py-3 px-6 text-center text-gray-600">{p.경력 || '-'}</td><td className="py-3 px-6 text-center"><span className={`inline-flex items-center justify-center w-10 h-8 rounded-lg font-black text-sm shadow-sm border ${getOvrBadgeStyle(p.종합)}`}>{p.종합}</span></td><td className="py-3 px-6 text-center text-gray-700">{p.연봉 || '-'}</td><td className="py-3 px-6 text-center text-gray-700">{p['팀 소속기간'] || '-'}</td><td className="py-3 px-6 text-center"><span className={`text-xs ${getPotBadgeStyle(p.잠재력)}`}>{p.잠재력}</span></td><td className="py-3 px-6 text-gray-500 text-xs">{p.계약}년 만료</td></tr>)) : <tr><td colSpan="9" className="py-10 text-center text-gray-300">데이터 없음</td></tr>}</tbody></table>
+                    {/* 대시보드 로스터 테이블 수정: 순서 변경 및 CSS 개선 */}
+                    <table className="w-full text-sm whitespace-nowrap"><thead className="bg-white text-gray-400 text-xs uppercase font-bold border-b"><tr><th className="py-3 px-6 text-left">포지션</th><th className="py-3 px-6 text-left">이름</th><th className="py-3 px-6 text-center">종합</th><th className="py-3 px-6 text-center">나이</th><th className="py-3 px-6 text-center">경력</th><th className="py-3 px-6 text-center">소속</th><th className="py-3 px-6 text-center">연봉</th><th className="py-3 px-6 text-center">잠재력</th><th className="py-3 px-6 text-left">계약</th></tr></thead><tbody className="divide-y divide-gray-100">{currentRoster.length > 0 ? currentRoster.map((p, i) => (<tr key={i} className="hover:bg-gray-50 transition"><td className="py-3 px-6 font-bold text-gray-400 w-16">{p.포지션}</td><td className="py-3 px-6 font-bold text-gray-800">{p.이름} <span className="text-gray-400 font-normal text-xs ml-1">({p.실명})</span> {p.주장 && <span className="ml-1 text-yellow-500" title="주장">👑</span>}</td><td className="py-3 px-6 text-center"><span className={`inline-flex items-center justify-center w-10 h-8 rounded-lg font-black text-sm shadow-sm border ${getOvrBadgeStyle(p.종합)}`}>{p.종합}</span></td><td className="py-3 px-6 text-center text-gray-600">{p.나이 || '-'}</td><td className="py-3 px-6 text-center text-gray-600">{p.경력 || '-'}</td><td className="py-3 px-6 text-center text-gray-700">{p['팀 소속기간'] || '-'}</td><td className="py-3 px-6 text-center text-gray-700 font-bold">{p.연봉 || '-'}</td><td className="py-3 px-6 text-center"><span className={`text-xs ${getPotBadgeStyle(p.잠재력)}`}>{p.잠재력}</span></td><td className="py-3 px-6 text-gray-500 text-xs">{p.계약}년 만료</td></tr>)) : <tr><td colSpan="9" className="py-10 text-center text-gray-300">데이터 없음</td></tr>}</tbody></table>
                   </div>
                 </div>
               </div>
@@ -734,11 +750,54 @@ function Dashboard() {
                </div>
             )}
 
+            {/* --- (추가됨) 재정 탭 --- */}
             {activeTab === 'finance' && (
-              <div className="bg-white rounded-lg border shadow-sm p-8 min-h-[600px] flex flex-col items-center justify-center">
-                <div className="text-6xl mb-4">💰</div>
-                <h2 className="text-2xl font-black text-gray-800 mb-2">재정 현황</h2>
-                <p className="text-gray-500">2026 시즌 재정 데이터 집계 중입니다...</p>
+              <div className="bg-white rounded-lg border shadow-sm flex flex-col">
+                <div className="p-6 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
+                  <div className="flex items-center gap-4">
+                    <button onClick={handlePrevTeam} className="p-2 bg-white rounded-full border hover:bg-gray-100 shadow-sm transition">◀</button>
+                    <div className="flex items-center gap-4"><div className="w-16 h-16 rounded-full flex items-center justify-center font-bold text-white shadow-lg text-xl" style={{backgroundColor: viewingTeam.colors.primary}}>{viewingTeam.name}</div><div><h2 className="text-3xl font-black text-gray-900">{viewingTeam.fullName}</h2><p className="text-sm font-bold text-gray-500 mt-1">2026 시즌 재정 현황</p></div></div>
+                    <button onClick={handleNextTeam} className="p-2 bg-white rounded-full border hover:bg-gray-100 shadow-sm transition">▶</button>
+                  </div>
+                </div>
+                <div className="p-8">
+                    <div className="grid grid-cols-2 gap-8 mb-8">
+                        <div className="bg-gray-50 p-6 rounded-xl border">
+                            <h3 className="text-lg font-bold text-gray-700 mb-4">💰 지출 현황 (단위: 억)</h3>
+                            <div className="flex items-end gap-8 h-48">
+                                <div className="flex flex-col items-center gap-2 flex-1 h-full justify-end">
+                                    <span className="font-bold text-blue-600 text-xl">{finance.total_expenditure}억</span>
+                                    <div className="w-full bg-blue-500 rounded-t-lg transition-all duration-500" style={{height: `${Math.min(finance.total_expenditure / 1.5, 100)}%`}}></div>
+                                    <span className="font-bold text-gray-600">총 지출 (추정)</span>
+                                </div>
+                                <div className="flex flex-col items-center gap-2 flex-1 h-full justify-end">
+                                    <span className="font-bold text-purple-600 text-xl">{finance.cap_expenditure}억</span>
+                                    <div className="w-full bg-purple-500 rounded-t-lg transition-all duration-500" style={{height: `${Math.min(finance.cap_expenditure / 1.5, 100)}%`}}></div>
+                                    <span className="font-bold text-gray-600">샐러리캡 반영</span>
+                                </div>
+                                <div className="flex flex-col items-center gap-2 flex-1 h-full justify-end relative">
+                                    <div className="absolute top-10 border-b-2 border-dashed border-red-400 w-full text-center text-xs text-red-400 font-bold">상한선 80억</div>
+                                    <span className="font-bold text-gray-400 text-xl">80억</span>
+                                    <div className="w-full bg-gray-200 rounded-t-lg" style={{height: '53%'}}></div>
+                                    <span className="font-bold text-gray-400">규정 상한선</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="bg-gray-50 p-6 rounded-xl border flex flex-col justify-center items-center">
+                            <h3 className="text-lg font-bold text-gray-700 mb-2">💸 사치세 (Luxury Tax)</h3>
+                            <div className="text-5xl font-black text-red-600 my-4">{finance.luxury_tax > 0 ? `${finance.luxury_tax}억` : '없음'}</div>
+                            <div className="text-sm text-gray-500 text-center">
+                                {finance.luxury_tax > 0 ? (
+                                    finance.cap_expenditure >= 80 
+                                    ? <span>상한선(80억) 초과!<br/>기본 10억 + 초과분({(finance.cap_expenditure - 80).toFixed(1)}억)의 50% 부과</span>
+                                    : <span>균형 지출 구간(40~80억) 초과<br/>초과분({(finance.cap_expenditure - 40).toFixed(1)}억)의 25% 부과</span>
+                                ) : (
+                                    <span className="text-green-600 font-bold">건전한 재정 상태입니다.</span>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
               </div>
             )}
 
@@ -752,7 +811,57 @@ function Dashboard() {
                   </div>
                   <div className="text-right"><div className="text-2xl font-black text-blue-600">{viewingTeam.power} <span className="text-sm text-gray-400 font-normal">TEAM OVR</span></div></div>
                 </div>
-                <div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead className="bg-white text-gray-500 text-xs uppercase font-bold border-b"><tr><th className="py-4 px-6 bg-gray-50 sticky left-0 z-10">정보</th><th className="py-4 px-4 text-center">나이</th><th className="py-4 px-4 text-center">경력</th><th className="py-4 px-4 text-center">종합</th><th className="py-4 px-4 text-center bg-gray-50 border-l">라인전</th><th className="py-4 px-4 text-center bg-gray-50">무력</th><th className="py-4 px-4 text-center bg-gray-50">한타</th><th className="py-4 px-4 text-center bg-gray-50">성장</th><th className="py-4 px-4 text-center bg-gray-50">안정성</th><th className="py-4 px-4 text-center bg-gray-50">운영</th><th className="py-4 px-4 text-center bg-gray-50 border-l text-purple-600">잠재력</th><th className="py-4 px-6 text-center bg-gray-50 border-l">연봉</th><th className="py-4 px-6 text-center bg-gray-50">소속기간</th><th className="py-4 px-6 text-left bg-gray-50 border-l">계약 정보</th></tr></thead><tbody className="divide-y divide-gray-100">{currentRoster.map((p, i) => (<tr key={i} className="hover:bg-blue-50/30 transition group"><td className="py-4 px-6 sticky left-0 bg-white group-hover:bg-blue-50/30"><div className="flex items-center gap-3"><span className="font-bold text-gray-400 w-8">{p.포지션}</span><div><div className="font-bold text-gray-900 text-base">{p.이름} <span className="text-gray-400 font-normal text-xs ml-1">({p.실명})</span> {p.주장 && <span className="ml-1 text-yellow-500" title="주장">👑</span>}</div><div className="text-xs text-gray-400">{p.특성}</div></div></div></td><td className="py-4 px-4 text-center text-gray-600">{p.나이 || '-'}</td><td className="py-4 px-4 text-center text-gray-600">{p.경력 || '-'}</td><td className="py-4 px-4 text-center"><span className={`inline-flex items-center justify-center w-10 h-8 rounded-lg font-black text-sm shadow-sm border ${getOvrBadgeStyle(p.종합)}`}>{p.종합}</span></td><td className="py-4 px-4 text-center border-l font-medium text-gray-600">{p.상세?.라인전 || '-'}</td><td className="py-4 px-4 text-center font-medium text-gray-600">{p.상세?.무력 || '-'}</td><td className="py-4 px-4 text-center font-medium text-gray-600">{p.상세?.한타 || '-'}</td><td className="py-4 px-4 text-center font-medium text-gray-600">{p.상세?.성장 || '-'}</td><td className="py-4 px-4 text-center font-medium text-gray-600">{p.상세?.안정성 || '-'}</td><td className="py-4 px-4 text-center font-medium text-gray-600">{p.상세?.운영 || '-'}</td><td className="py-4 px-4 text-center border-l"><span className={`font-bold ${getPotBadgeStyle(p.잠재력)}`}>{p.잠재력}</span></td><td className="py-4 px-6 text-center font-medium text-gray-800 border-l">{p.연봉 || '-'}</td><td className="py-4 px-6 text-center font-medium text-gray-800">{p['팀 소속기간'] || '-'}</td><td className="py-4 px-6 border-l"><span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-bold">{p.계약}년 만료</span></td></tr>))}</tbody></table></div>
+                <div className="overflow-x-auto">
+                    {/* 로스터 표시 순서 변경 및 한 줄 표시 (whitespace-nowrap) */}
+                    <table className="w-full text-sm text-left whitespace-nowrap">
+                        <thead className="bg-white text-gray-500 text-xs uppercase font-bold border-b">
+                            <tr>
+                                <th className="py-4 px-6 bg-gray-50 sticky left-0 z-10">정보</th>
+                                <th className="py-4 px-4 text-center">종합</th>
+                                <th className="py-4 px-4 text-center">나이</th>
+                                <th className="py-4 px-4 text-center">경력</th>
+                                <th className="py-4 px-4 text-center">소속</th>
+                                <th className="py-4 px-4 text-center">연봉</th>
+                                <th className="py-4 px-4 text-center bg-gray-50 border-l">라인전</th>
+                                <th className="py-4 px-4 text-center bg-gray-50">무력</th>
+                                <th className="py-4 px-4 text-center bg-gray-50">한타</th>
+                                <th className="py-4 px-4 text-center bg-gray-50">성장</th>
+                                <th className="py-4 px-4 text-center bg-gray-50">안정성</th>
+                                <th className="py-4 px-4 text-center bg-gray-50">운영</th>
+                                <th className="py-4 px-4 text-center bg-gray-50 border-l text-purple-600">잠재력</th>
+                                <th className="py-4 px-6 text-left bg-gray-50 border-l">계약 정보</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {currentRoster.map((p, i) => (
+                                <tr key={i} className="hover:bg-blue-50/30 transition group">
+                                    <td className="py-4 px-6 sticky left-0 bg-white group-hover:bg-blue-50/30">
+                                        <div className="flex items-center gap-3">
+                                            <span className="font-bold text-gray-400 w-8">{p.포지션}</span>
+                                            <div>
+                                                <div className="font-bold text-gray-900 text-base">{p.이름} <span className="text-gray-400 font-normal text-xs ml-1">({p.실명})</span> {p.주장 && <span className="ml-1 text-yellow-500" title="주장">👑</span>}</div>
+                                                <div className="text-xs text-gray-400">{p.특성}</div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td className="py-4 px-4 text-center"><span className={`inline-flex items-center justify-center w-10 h-8 rounded-lg font-black text-sm shadow-sm border ${getOvrBadgeStyle(p.종합)}`}>{p.종합}</span></td>
+                                    <td className="py-4 px-4 text-center text-gray-600">{p.나이 || '-'}</td>
+                                    <td className="py-4 px-4 text-center text-gray-600">{p.경력 || '-'}</td>
+                                    <td className="py-4 px-4 text-center text-gray-700">{p['팀 소속기간'] || '-'}</td>
+                                    <td className="py-4 px-4 text-center font-bold text-gray-800">{p.연봉 || '-'}</td>
+                                    <td className="py-4 px-4 text-center border-l font-medium text-gray-600">{p.상세?.라인전 || '-'}</td>
+                                    <td className="py-4 px-4 text-center font-medium text-gray-600">{p.상세?.무력 || '-'}</td>
+                                    <td className="py-4 px-4 text-center font-medium text-gray-600">{p.상세?.한타 || '-'}</td>
+                                    <td className="py-4 px-4 text-center font-medium text-gray-600">{p.상세?.성장 || '-'}</td>
+                                    <td className="py-4 px-4 text-center font-medium text-gray-600">{p.상세?.안정성 || '-'}</td>
+                                    <td className="py-4 px-4 text-center font-medium text-gray-600">{p.상세?.운영 || '-'}</td>
+                                    <td className="py-4 px-4 text-center border-l"><span className={`font-bold ${getPotBadgeStyle(p.잠재력)}`}>{p.잠재력}</span></td>
+                                    <td className="py-4 px-6 border-l"><span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-bold">{p.계약}년 만료</span></td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
               </div>
             )}
 
