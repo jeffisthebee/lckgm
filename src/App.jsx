@@ -1096,7 +1096,7 @@ function Dashboard() {
 
     if (r2Finished && !r3Exists) {
         const r2wWinners = r2wMatches.map(m => getWinner(m));
-        const r2wLosers = r2wMatches.map(m => ({ id: getLoser(m), seed: league.playoffSeeds.find(s => s.id === getLoser(m)).seed }));
+        const r2wLosers = r2wMatches.map(m => ({ id: getLoser(m), seed: (league.playoffSeeds.find(s => s.id === getLoser(m)) || {seed: 99}).seed }));
         r2wLosers.sort((a,b) => a.seed - b.seed); // Sort by seed, lower is better
         
         const r2lWinner = getWinner(r2lMatch);
@@ -1121,8 +1121,11 @@ function Dashboard() {
     const r3lExists = currentMatches.some(m => m.type === 'playoff' && m.round === 3.1);
 
     if (r2_2Match?.status === 'finished' && r3wMatch?.status === 'finished' && !r3lExists) {
-        const r2wLosers = currentMatches.filter(m => m.round === 2).map(m => ({ id: getLoser(m), seed: league.playoffSeeds.find(s => s.id === getLoser(m)).seed }));
+        // BUG FIX: The loser from the WINNERS bracket (r2wMatches) should drop down, not the loser from the losers bracket.
+        const r2wMatchesFinished = currentMatches.filter(m => m.round === 2 && m.status === 'finished');
+        const r2wLosers = r2wMatchesFinished.map(m => ({ id: getLoser(m), seed: (league.playoffSeeds.find(s => s.id === getLoser(m)) || {seed: 99}).seed }));
         r2wLosers.sort((a,b) => a.seed - b.seed); // Higher seed is r2wLosers[0]
+        
         const r2_2Winner = getWinner(r2_2Match);
 
         const newMatch = { id: Date.now() + 600, round: 3.1, match: 1, label: '패자조 3R', t1: r2wLosers[0].id, t2: r2_2Winner, date: '2.19 (목)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: r2wLosers[0].id };
@@ -1587,16 +1590,16 @@ function Dashboard() {
   };
 
   let effectiveDate;
-  let numericDate = 0;
   if (isSeasonOver) {
     effectiveDate = '시즌 종료';
   } else if (nextGlobalMatch) {
     effectiveDate = nextGlobalMatch.date;
-    numericDate = parseDate(effectiveDate);
   } else if (hasDrafted) {
     const lastMatch = league.matches.filter(m => m.status === 'finished').sort((a,b) => parseDate(b.date) - parseDate(a.date))[0];
-    effectiveDate = lastMatch ? `${lastMatch.date} 이후` : '대진 생성 대기 중';
-    numericDate = lastMatch ? parseDate(lastMatch.date) : 0;
+    if (isPlayInFinished) effectiveDate = "2.9 (월) 이후";
+    else if (isSuperWeekFinished) effectiveDate = "2.2 (월) 이후";
+    else if (isRegularSeasonFinished) effectiveDate = "1.26 (월) 이후";
+    else effectiveDate = lastMatch ? `${lastMatch.date} 이후` : '대진 생성 대기 중';
   } else {
     effectiveDate = '2026 프리시즌';
   }
@@ -1611,7 +1614,7 @@ function Dashboard() {
     let name = t.name;
     if ((matchType === 'playin' || matchType === 'playoff') && (league.playInSeeds || league.playoffSeeds)) {
       const s = getTeamSeed(teamId, matchType);
-      name = `${t.name}${s ? ` (${s})` : ''}`;
+      name = `${t.name}${s ? ` (${s} 시드)` : ''}`;
     }
     if (match?.label) {
         const roundLabel = match.type === 'playin' ? `PI ${match.round}R` : match.label;
@@ -1634,9 +1637,9 @@ function Dashboard() {
                 <span className={`font-bold text-sm ${winnerId === t1?.id ? 'text-blue-700' : 'text-gray-800'}`}>{formatTeamName(t1?.id, match.type).name || 'TBD'}</span>
                 {showScore && <span className={`font-black text-sm ${winnerId === t1?.id ? 'text-blue-700' : 'text-gray-500'}`}>{match.status === 'finished' ? match.result.score.split(':')[0] : ''}</span>}
             </div>
-            <div className={`flex justify-between items-center p-2 rounded-b-md ${winnerId === t2?.id ? 'bg-red-100' : 'bg-gray-50'}`}>
-                <span className={`font-bold text-sm ${winnerId === t2?.id ? 'text-red-700' : 'text-gray-800'}`}>{formatTeamName(t2?.id, match.type).name || 'TBD'}</span>
-                {showScore && <span className={`font-black text-sm ${winnerId === t2?.id ? 'text-red-700' : 'text-gray-500'}`}>{match.status === 'finished' ? match.result.score.split(':')[1] : ''}</span>}
+            <div className={`flex justify-between items-center p-2 rounded-b-md ${winnerId === t2?.id ? 'bg-blue-100' : 'bg-gray-50'}`}>
+                <span className={`font-bold text-sm ${winnerId === t2?.id ? 'text-blue-700' : 'text-gray-800'}`}>{formatTeamName(t2?.id, match.type).name || 'TBD'}</span>
+                {showScore && <span className={`font-black text-sm ${winnerId === t2?.id ? 'text-blue-700' : 'text-gray-500'}`}>{match.status === 'finished' ? match.result.score.split(':')[1] : ''}</span>}
             </div>
         </div>
     );
@@ -2051,76 +2054,63 @@ function Dashboard() {
                         const r4m1 = findMatch(4, 1); // Losers Final
                         const final = findMatch(5, 1); // Grand Final
 
-                        const BracketColumn = ({ title, color = 'text-gray-500', children }) => (
-                            <div className="flex flex-col items-center gap-2 w-48">
-                                <h4 className={`text-sm font-bold uppercase tracking-wider ${color}`}>{title}</h4>
-                                {children}
+                        const BracketRow = ({ title, children, className }) => (
+                            <div className={`flex flex-col items-center ${className}`}>
+                                <h4 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-2">{title}</h4>
+                                <div className="flex justify-around w-full">
+                                    {children}
+                                </div>
                             </div>
                         );
+                        
+                        const Spacer = () => <div className="w-48" />;
 
                         return (
                             <div className="flex-1 overflow-x-auto pb-4">
-                                <div className="flex items-start justify-around min-w-[1200px] h-full relative">
-                                    {/* R1 */}
-                                    <BracketColumn title="1라운드">
-                                        <div className="flex flex-col justify-around h-full w-full space-y-32">
+                                <div className="flex flex-col space-y-8 min-w-[1400px]">
+                                    {/* Winners Bracket */}
+                                    <BracketRow title="승자조" className="border-b-2 border-blue-200 pb-8">
+                                        {/* R1 */}
+                                        <div className="flex flex-col justify-around space-y-8 w-48">
                                             <MatchupBox match={r1m1} />
                                             <MatchupBox match={r1m2} />
                                         </div>
-                                    </BracketColumn>
-
-                                    {/* R2 */}
-                                    <BracketColumn title="2라운드">
-                                        <div className="flex flex-col justify-between h-full w-full">
-                                            <div className="flex flex-col gap-2">
-                                                <h5 className="text-xs font-bold text-blue-600 text-center">승자조</h5>
-                                                <MatchupBox match={r2m1} />
-                                                <MatchupBox match={r2m2} />
-                                            </div>
-                                            <div className="flex flex-col gap-2">
-                                                <h5 className="text-xs font-bold text-red-600 text-center">패자조</h5>
-                                                <MatchupBox match={r2lm1} />
-                                            </div>
+                                        {/* R2 */}
+                                        <div className="flex flex-col justify-around space-y-8 w-48">
+                                            <MatchupBox match={r2m1} />
+                                            <MatchupBox match={r2m2} />
                                         </div>
-                                    </BracketColumn>
-
-                                    {/* R3 */}
-                                    <BracketColumn title="3라운드">
-                                        <div className="flex flex-col justify-between h-full w-full">
-                                            <div className="flex flex-col gap-2">
-                                                <h5 className="text-xs font-bold text-blue-600 text-center">승자 결승</h5>
-                                                <MatchupBox match={r3m1} />
-                                            </div>
-                                            <div className="flex flex-col gap-2">
-                                                <h5 className="text-xs font-bold text-red-600 text-center">패자조</h5>
-                                                <MatchupBox match={r2lm2} />
-                                            </div>
+                                        {/* R3 */}
+                                        <div className="flex flex-col justify-center w-48">
+                                            <MatchupBox match={r3m1} />
                                         </div>
-                                    </BracketColumn>
-
-                                    {/* R4 */}
-                                    <BracketColumn title="4라운드">
-                                        <div className="flex flex-col justify-end h-full w-full pb-32">
-                                            <div className="flex flex-col gap-2">
-                                                <h5 className="text-xs font-bold text-red-600 text-center">패자조 결승</h5>
-                                                <MatchupBox match={r3lm1} />
-                                            </div>
-                                        </div>
-                                    </BracketColumn>
-                                    
-                                    {/* R5 */}
-                                    <BracketColumn title="결승 진출전">
-                                        <div className="flex flex-col justify-center h-full w-full">
-                                            <MatchupBox match={r4m1} />
-                                        </div>
-                                    </BracketColumn>
-
-                                    {/* Final */}
-                                    <BracketColumn title="결승전" color="text-yellow-500">
-                                        <div className="flex flex-col justify-center h-full w-full">
+                                        <Spacer />
+                                        {/* Final */}
+                                        <div className="flex flex-col justify-center w-48">
                                             <MatchupBox match={final} />
                                         </div>
-                                    </BracketColumn>
+                                    </BracketRow>
+
+                                    {/* Losers Bracket */}
+                                    <BracketRow title="패자조" className="pt-8">
+                                        {/* R1 */}
+                                        <div className="flex flex-col justify-center w-48">
+                                            <MatchupBox match={r2lm1} />
+                                        </div>
+                                        {/* R2 */}
+                                        <div className="flex flex-col justify-center w-48">
+                                            <MatchupBox match={r2lm2} />
+                                        </div>
+                                        {/* R3 */}
+                                        <div className="flex flex-col justify-center w-48">
+                                            <MatchupBox match={r3lm1} />
+                                        </div>
+                                        {/* R4 */}
+                                        <div className="flex flex-col justify-center w-48">
+                                            <MatchupBox match={r4m1} />
+                                        </div>
+                                        <Spacer />
+                                    </BracketRow>
                                 </div>
                             </div>
                         );
@@ -2321,8 +2311,8 @@ function Dashboard() {
                       const isMyMatch = myTeam.id === m.t1 || myTeam.id === m.t2;
                       const isFinished = m.status === 'finished';
                       
-                      const { name: t1Name, roundLabel: t1Round } = formatTeamName(m.t1, m.type, m);
-                      const { name: t2Name, roundLabel: t2Round } = formatTeamName(m.t2, m.type, m);
+                      const { name: t1Name } = formatTeamName(m.t1, m.type, m);
+                      const { name: t2Name } = formatTeamName(m.t2, m.type, m);
 
                       return (
                         <div key={i} className={`p-4 rounded-lg border flex flex-col gap-2 ${isMyMatch ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-200' : 'bg-white border-gray-200'}`}>
