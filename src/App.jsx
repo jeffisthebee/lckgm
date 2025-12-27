@@ -213,7 +213,8 @@ function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChampionList
   };
 }
 
-function simulateSet(teamA, teamB, setNumber, fearlessBans, currentChampionList, difficulty, playerTeamName) {
+function simulateSet(teamA, teamB, setNumber, fearlessBans, simOptions) {
+  const { currentChampionList, difficulty, playerTeamName } = simOptions;
   const log = [];
   let scoreA = 0;
   let scoreB = 0;
@@ -255,7 +256,7 @@ function simulateSet(teamA, teamB, setNumber, fearlessBans, currentChampionList,
   };
 }
 
-function simulateMatch(teamA, teamB, format = 'BO3', currentChampionList, difficulty, playerTeamName) {
+function simulateMatch(teamA, teamB, format = 'BO3', simOptions) {
   const targetWins = format === 'BO5' ? 3 : 2;
   let winsA = 0;
   let winsB = 0;
@@ -266,7 +267,7 @@ function simulateMatch(teamA, teamB, format = 'BO3', currentChampionList, diffic
 
   while (winsA < targetWins && winsB < targetWins) {
     const currentFearlessBans = [...globalBanList];
-    const setResult = simulateSet(teamA, teamB, currentSet, globalBanList, currentChampionList, difficulty, playerTeamName);
+    const setResult = simulateSet(teamA, teamB, currentSet, globalBanList, simOptions);
     
     matchHistory.push({
       setNumber: currentSet,
@@ -1022,45 +1023,42 @@ function Dashboard() {
       }
   };
 
-  const handleProceedNextMatch = () => {
-    if (!nextGlobalMatch || isMyNextMatch) return;
+  const runSimulationForMatch = (match, isPlayerMatch) => {
+    const t1Obj = teams.find(t => t.id === match.t1);
+    const t2Obj = teams.find(t => t.id === match.t2);
 
-    const t1Obj = teams.find(t => t.id === nextGlobalMatch.t1);
-    const t2Obj = teams.find(t => t.id === nextGlobalMatch.t2);
+    const simOptions = {
+        currentChampionList: league.currentChampionList,
+        difficulty: isPlayerMatch ? league.difficulty : undefined,
+        playerTeamName: isPlayerMatch ? myTeam.name : undefined,
+    };
 
     const result = simulateMatch(
       { name: t1Obj.name, roster: getTeamRoster(t1Obj.name) },
       { name: t2Obj.name, roster: getTeamRoster(t2Obj.name) },
-      nextGlobalMatch.format,
-      league.currentChampionList
-      // AI vs AI 에서는 난이도 미적용
+      match.format,
+      simOptions
     );
+
+    if (isPlayerMatch) {
+        setMyMatchResult({
+            resultData: result,
+            teamA: t1Obj,
+            teamB: t2Obj
+        });
+    }
     
-    applyMatchResult(nextGlobalMatch, result);
+    applyMatchResult(match, result);
+  };
+
+  const handleProceedNextMatch = () => {
+    if (!nextGlobalMatch || isMyNextMatch) return;
+    runSimulationForMatch(nextGlobalMatch, false);
   };
 
   const handleStartMyMatch = () => {
     if (!nextGlobalMatch || !isMyNextMatch) return;
-
-    const t1Obj = teams.find(t => t.id === nextGlobalMatch.t1);
-    const t2Obj = teams.find(t => t.id === nextGlobalMatch.t2);
-
-    const result = simulateMatch(
-      { name: t1Obj.name, roster: getTeamRoster(t1Obj.name) },
-      { name: t2Obj.name, roster: getTeamRoster(t2Obj.name) },
-      nextGlobalMatch.format,
-      league.currentChampionList,
-      league.difficulty,
-      myTeam.name
-    );
-
-    setMyMatchResult({
-      resultData: result,
-      teamA: t1Obj,
-      teamB: t2Obj
-    });
-    
-    applyMatchResult(nextGlobalMatch, result);
+    runSimulationForMatch(nextGlobalMatch, true);
   };
 
   const handleDraftStart = () => {
@@ -1371,7 +1369,7 @@ function Dashboard() {
   const hasPlayInGenerated = league.matches
     ? league.matches.some(m => m.type === 'playin')
     : false;
-
+    
   const isPlayInFinished = hasPlayInGenerated && league.matches.filter(m => m.type === 'playin').every(m => m.status === 'finished');
 
   const handleGeneratePlayoffs = () => {
@@ -1380,7 +1378,7 @@ function Dashboard() {
       alert("플레이오프 대진이 생성되었습니다! (기능 개발 중)");
   };
 
-  let effectiveDate = currentDateDisplay;
+  let effectiveDate = nextGlobalMatch ? nextGlobalMatch.date : (hasDrafted ? '시즌 종료' : '2026 프리시즌');
   if (isPlayInFinished) {
       effectiveDate = '2.9 (월)';
   } else if (isSuperWeekFinished && !hasPlayInGenerated) {
