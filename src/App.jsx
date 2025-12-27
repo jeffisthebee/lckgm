@@ -948,8 +948,8 @@ function Dashboard() {
 
   const generatePlayInRound2 = (matches, seed1, seed2, pickedTeam, remainingTeam) => {
       const r2Matches = [
-          { id: Date.now() + 100, t1: seed1.id, t2: pickedTeam.id, date: '2.7 (토)', time: '17:00', type: 'playin', format: 'BO3', status: 'pending' },
-          { id: Date.now() + 101, t1: seed2.id, t2: remainingTeam.id, date: '2.7 (토)', time: '19:30', type: 'playin', format: 'BO3', status: 'pending' }
+          { id: Date.now() + 100, t1: seed1.id, t2: pickedTeam.id, date: '2.7 (토)', time: '17:00', type: 'playin', format: 'BO3', status: 'pending', round: 2, label: '플레이-인 2라운드' },
+          { id: Date.now() + 101, t1: seed2.id, t2: remainingTeam.id, date: '2.7 (토)', time: '19:30', type: 'playin', format: 'BO3', status: 'pending', round: 2, label: '플레이-인 2라운드' }
       ];
       
       const newMatches = [...matches, ...r2Matches].sort((a,b) => parseFloat(a.date.split(' ')[0]) - parseFloat(b.date.split(' ')[0]));
@@ -1015,7 +1015,7 @@ function Dashboard() {
           });
 
           const finalMatch = { 
-              id: Date.now() + 200, t1: losers[0].id, t2: losers[1].id, date: '2.8 (일)', time: '17:00', type: 'playin', format: 'BO5', status: 'pending' 
+              id: Date.now() + 200, t1: losers[0].id, t2: losers[1].id, date: '2.8 (일)', time: '17:00', type: 'playin', format: 'BO5', status: 'pending', round: 3, label: '플레이-인 최종전'
           };
           
           const newMatches = [...matches, finalMatch].sort((a,b) => parseFloat(a.date.split(' ')[0]) - parseFloat(b.date.split(' ')[0]));
@@ -1048,10 +1048,10 @@ function Dashboard() {
             
             const newPlayoffMatches = [
                 // R2 Winners
-                { id: Date.now() + 400, round: 2, match: 1, label: '승자조 1경기', t1: seed1, t2: pickedWinner.id, date: '2.13 (금)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: seed1 },
-                { id: Date.now() + 401, round: 2, match: 2, label: '승자조 2경기', t1: seed2, t2: remainingWinner, date: '2.13 (금)', time: '19:30', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: seed2 },
+                { id: Date.now() + 400, round: 2, match: 1, label: '승자조 2R', t1: seed1, t2: pickedWinner.id, date: '2.13 (금)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: seed1 },
+                { id: Date.now() + 401, round: 2, match: 2, label: '승자조 2R', t1: seed2, t2: remainingWinner, date: '2.13 (금)', time: '19:30', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: seed2 },
                 // R2 Losers
-                { id: Date.now() + 402, round: 2.1, match: 1, label: '패자조 1라운드', t1: r1Losers[0].id, t2: r1Losers[1].id, date: '2.14 (토)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: 'coin' },
+                { id: Date.now() + 402, round: 2.1, match: 1, label: '패자조 1R', t1: r1Losers[0].id, t2: r1Losers[1].id, date: '2.14 (토)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: 'coin' },
             ];
             
             const allMatches = [...currentMatches, ...newPlayoffMatches];
@@ -1105,7 +1105,7 @@ function Dashboard() {
             // R3 Winners
             { id: Date.now() + 500, round: 3, match: 1, label: '승자조 결승', t1: r2wWinners[0], t2: r2wWinners[1], date: '2.18 (수)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: 'coin' },
             // R2 Losers R2
-            { id: Date.now() + 501, round: 2.2, match: 1, label: '패자조 2라운드', t1: r2wLosers[1].id, t2: r2lWinner, date: '2.15 (일)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: r2wLosers[1].id },
+            { id: Date.now() + 501, round: 2.2, match: 1, label: '패자조 2R', t1: r2wLosers[1].id, t2: r2lWinner, date: '2.15 (일)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: r2wLosers[1].id },
         ];
 
         const allMatches = [...currentMatches, ...newPlayoffMatches];
@@ -1125,7 +1125,7 @@ function Dashboard() {
         r2wLosers.sort((a,b) => a.seed - b.seed); // Higher seed is r2wLosers[0]
         const r2_2Winner = getWinner(r2_2Match);
 
-        const newMatch = { id: Date.now() + 600, round: 3.1, match: 1, label: '패자조 3라운드', t1: r2wLosers[0].id, t2: r2_2Winner, date: '2.19 (목)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: r2wLosers[0].id };
+        const newMatch = { id: Date.now() + 600, round: 3.1, match: 1, label: '패자조 3R', t1: r2wLosers[0].id, t2: r2_2Winner, date: '2.19 (목)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: r2wLosers[0].id };
         
         const allMatches = [...currentMatches, newMatch];
         updateLeague(league.id, { matches: allMatches });
@@ -1478,8 +1478,8 @@ function Dashboard() {
       const seed5 = seededTeams[4].id;
 
       const newMatches = [
-          { id: Date.now() + 1, t1: seed3, t2: seed6, date: '2.6 (금)', time: '17:00', type: 'playin', format: 'BO3', status: 'pending' },
-          { id: Date.now() + 2, t1: seed4, t2: seed5, date: '2.6 (금)', time: '19:30', type: 'playin', format: 'BO3', status: 'pending' }
+          { id: Date.now() + 1, t1: seed3, t2: seed6, date: '2.6 (금)', time: '17:00', type: 'playin', format: 'BO3', status: 'pending', round: 1, label: '플레이-인 1라운드' },
+          { id: Date.now() + 2, t1: seed4, t2: seed5, date: '2.6 (금)', time: '19:30', type: 'playin', format: 'BO3', status: 'pending', round: 1, label: '플레이-인 1라운드' }
       ];
 
       const updatedMatches = [...league.matches, ...newMatches];
@@ -1544,8 +1544,8 @@ function Dashboard() {
 
     const generateR1Matches = (pickedTeam) => {
         const remainingTeams = playInTeamsForSelection.filter(t => t.id !== pickedTeam.id);
-        const r1m1 = { id: Date.now() + 300, round: 1, match: 1, label: '1라운드 1경기', t1: seed3Team.id, t2: pickedTeam.id, date: '2.11 (수)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: seed3Team.id };
-        const r1m2 = { id: Date.now() + 301, round: 1, match: 2, label: '1라운드 2경기', t1: remainingTeams[0].id, t2: remainingTeams[1].id, date: '2.12 (목)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: 'coin' };
+        const r1m1 = { id: Date.now() + 300, round: 1, match: 1, label: '1라운드', t1: seed3Team.id, t2: pickedTeam.id, date: '2.11 (수)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: seed3Team.id };
+        const r1m2 = { id: Date.now() + 301, round: 1, match: 2, label: '1라운드', t1: remainingTeams[0].id, t2: remainingTeams[1].id, date: '2.12 (목)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: 'coin' };
         
         // 날짜 랜덤 배정
         if (Math.random() < 0.5) {
@@ -1579,13 +1579,24 @@ function Dashboard() {
   const grandFinal = league.matches.find(m => m.type === 'playoff' && m.round === 5);
   const isSeasonOver = grandFinal && grandFinal.status === 'finished';
 
+  const parseDate = (dateStr) => {
+    if (!dateStr || typeof dateStr !== 'string') return 0;
+    const parts = dateStr.split(' ')[0].split('.');
+    if (parts.length < 2) return 0;
+    return parseFloat(parts[0]) * 100 + parseFloat(parts[1]);
+  };
+
   let effectiveDate;
+  let numericDate = 0;
   if (isSeasonOver) {
     effectiveDate = '시즌 종료';
   } else if (nextGlobalMatch) {
     effectiveDate = nextGlobalMatch.date;
+    numericDate = parseDate(effectiveDate);
   } else if (hasDrafted) {
-    effectiveDate = '대진 생성 대기 중';
+    const lastMatch = league.matches.filter(m => m.status === 'finished').sort((a,b) => parseDate(b.date) - parseDate(a.date))[0];
+    effectiveDate = lastMatch ? `${lastMatch.date} 이후` : '대진 생성 대기 중';
+    numericDate = lastMatch ? parseDate(lastMatch.date) : 0;
   } else {
     effectiveDate = '2026 프리시즌';
   }
@@ -1595,13 +1606,18 @@ function Dashboard() {
     const seedData = matchType === 'playin' ? league.playInSeeds : league.playoffSeeds;
     return seedData?.find(s => s.id === teamId)?.seed;
   };
-  const formatTeamName = (teamId, matchType) => {
+  const formatTeamName = (teamId, matchType, match) => {
     const t = teams.find(x => x.id === teamId) || { name: 'TBD' };
+    let name = t.name;
     if ((matchType === 'playin' || matchType === 'playoff') && (league.playInSeeds || league.playoffSeeds)) {
       const s = getTeamSeed(teamId, matchType);
-      return `${t.name}${s ? ` (${s}시드)` : ''}`;
+      name = `${t.name}${s ? ` (${s})` : ''}`;
     }
-    return t.name;
+    if (match?.label) {
+        const roundLabel = match.type === 'playin' ? `PI ${match.round}R` : match.label;
+        return { name, roundLabel };
+    }
+    return { name, roundLabel: null };
   };
 
   const MatchupBox = ({ match, showScore = true }) => {
@@ -1615,11 +1631,11 @@ function Dashboard() {
     return (
         <div className={`bg-white border-2 rounded-lg shadow-sm ${match.status === 'pending' ? 'border-gray-300' : 'border-gray-400'}`}>
             <div className={`flex justify-between items-center p-2 rounded-t-md ${winnerId === t1?.id ? 'bg-blue-100' : 'bg-gray-50'}`}>
-                <span className={`font-bold text-sm ${winnerId === t1?.id ? 'text-blue-700' : 'text-gray-800'}`}>{t1?.name || 'TBD'}</span>
+                <span className={`font-bold text-sm ${winnerId === t1?.id ? 'text-blue-700' : 'text-gray-800'}`}>{formatTeamName(t1?.id, match.type).name || 'TBD'}</span>
                 {showScore && <span className={`font-black text-sm ${winnerId === t1?.id ? 'text-blue-700' : 'text-gray-500'}`}>{match.status === 'finished' ? match.result.score.split(':')[0] : ''}</span>}
             </div>
             <div className={`flex justify-between items-center p-2 rounded-b-md ${winnerId === t2?.id ? 'bg-red-100' : 'bg-gray-50'}`}>
-                <span className={`font-bold text-sm ${winnerId === t2?.id ? 'text-red-700' : 'text-gray-800'}`}>{t2?.name || 'TBD'}</span>
+                <span className={`font-bold text-sm ${winnerId === t2?.id ? 'text-red-700' : 'text-gray-800'}`}>{formatTeamName(t2?.id, match.type).name || 'TBD'}</span>
                 {showScore && <span className={`font-black text-sm ${winnerId === t2?.id ? 'text-red-700' : 'text-gray-500'}`}>{match.status === 'finished' ? match.result.score.split(':')[1] : ''}</span>}
             </div>
         </div>
@@ -1728,7 +1744,8 @@ function Dashboard() {
             {hasDrafted && isRegularSeasonFinished && !hasSuperWeekGenerated && (
                  <button 
                  onClick={handleGenerateSuperWeek} 
-                 className="px-5 py-1.5 rounded-full font-bold text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition"
+                 disabled={numericDate < 126}
+                 className="px-5 py-1.5 rounded-full font-bold text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition disabled:bg-gray-300 disabled:animate-none"
                >
                    <span>🔥</span> 슈퍼위크 및 16.02 패치 확인
                </button>
@@ -1737,16 +1754,18 @@ function Dashboard() {
             {isSuperWeekFinished && !hasPlayInGenerated && (
                 <button 
                 onClick={handleGeneratePlayIn} 
-                className="px-5 py-1.5 rounded-full font-bold text-sm bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition"
+                disabled={numericDate < 202}
+                className="px-5 py-1.5 rounded-full font-bold text-sm bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition disabled:bg-gray-300 disabled:animate-none"
               >
-                  <span>🛡️</span> 플레이-인 진출팀 확정 및 일정 생성
+                  <span>🛡️</span> 플레이-인 진출팀 확정
               </button>
             )}
 
             {isPlayInFinished && !hasPlayoffsGenerated && (
                 <button 
                 onClick={handleGeneratePlayoffs} 
-                className="px-5 py-1.5 rounded-full font-bold text-sm bg-yellow-500 hover:bg-yellow-600 text-white shadow-sm flex items-center gap-2 animate-bounce transition"
+                disabled={numericDate < 209}
+                className="px-5 py-1.5 rounded-full font-bold text-sm bg-yellow-500 hover:bg-yellow-600 text-white shadow-sm flex items-center gap-2 animate-bounce transition disabled:bg-gray-300 disabled:animate-none"
               >
                   <span>👑</span> 플레이오프 대진 생성
               </button>
@@ -1757,7 +1776,7 @@ function Dashboard() {
                   onClick={handleProceedNextMatch} 
                   className="px-5 py-1.5 rounded-full font-bold text-sm bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-2 animate-pulse transition"
                 >
-                    <span>⏩</span> 다음 경기 진행 ({t1 ? formatTeamName(t1.id, nextGlobalMatch?.type) : '?'} vs {t2 ? formatTeamName(t2.id, nextGlobalMatch?.type) : '?'})
+                    <span>⏩</span> 다음 경기 진행 ({formatTeamName(t1.id, nextGlobalMatch?.type, nextGlobalMatch).name} vs {formatTeamName(t2.id, nextGlobalMatch?.type, nextGlobalMatch).name})
                 </button>
             )}
 
@@ -1777,14 +1796,16 @@ function Dashboard() {
                    <div className="absolute top-0 right-0 p-4 opacity-10 text-9xl">📅</div>
                    <h3 className="text-lg font-bold text-gray-800 mb-2">다음 경기 일정</h3>
                    <div className="flex items-center justify-between bg-gray-50 rounded-xl p-6 border">
-                      <div className="text-center w-1/3"><div className="text-4xl font-black text-gray-800 mb-2">{t1 ? formatTeamName(t1.id, nextGlobalMatch?.type) : '?'}</div></div>
+                      <div className="text-center w-1/3"><div className="text-4xl font-black text-gray-800 mb-2">{t1 ? formatTeamName(t1.id, nextGlobalMatch?.type, nextGlobalMatch).name : '?'}</div></div>
                       <div className="text-center w-1/3 flex flex-col items-center">
                         <div className="text-xs font-bold text-gray-400 uppercase">VS</div><div className="text-3xl font-bold text-gray-300 my-2">@</div>
                         {nextGlobalMatch ? (
                           <div className="mt-1 flex flex-col items-center">
                             <span className="text-base font-black text-blue-600">{nextGlobalMatch.date}</span>
                             <span className="text-sm font-bold text-gray-600">{nextGlobalMatch.time}</span>
-                            <span className="mt-2 text-xs font-bold text-white bg-blue-600 px-3 py-1 rounded-full shadow-sm">{nextGlobalMatch.format}</span>
+                            <span className="mt-2 text-xs font-bold text-white bg-blue-600 px-3 py-1 rounded-full shadow-sm">
+                                {nextGlobalMatch.label ? nextGlobalMatch.label : nextGlobalMatch.format}
+                            </span>
                             
                             {isMyNextMatch ? (
                                 <button onClick={handleStartMyMatch} className="mt-3 px-6 py-3 bg-green-500 hover:bg-green-600 text-white font-bold rounded-lg shadow-lg transform transition hover:scale-105 animate-bounce">
@@ -1800,7 +1821,7 @@ function Dashboard() {
                         ) : <div className="text-xs font-bold text-blue-600">{isSeasonOver ? '시즌 종료' : '대진 생성 대기 중'}</div>}
                       </div>
                       <div className="text-center w-1/3">
-                          <div className="text-4xl font-black text-gray-800 mb-2">{t2 ? formatTeamName(t2.id, nextGlobalMatch?.type) : '?'}</div>
+                          <div className="text-4xl font-black text-gray-800 mb-2">{t2 ? formatTeamName(t2.id, nextGlobalMatch?.type, nextGlobalMatch).name : '?'}</div>
                       </div>
                    </div>
                 </div>
@@ -1830,9 +1851,9 @@ function Dashboard() {
                                     <div key={m.id} className="bg-gray-50 border rounded p-2 text-xs">
                                         <div className="font-bold text-gray-400 mb-1">{m.label || m.date}</div>
                                         <div className="flex justify-between items-center">
-                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t1)?.name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t1, m.type)}</div>
+                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t1)?.name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t1, m.type).name}</div>
                                             <div className="text-gray-400 font-bold">{m.status === 'finished' ? m.result.score : 'vs'}</div>
-                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t2)?.name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t2, m.type)}</div>
+                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t2)?.name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t2, m.type).name}</div>
                                         </div>
                                     </div>
                                 ))}
@@ -2024,43 +2045,85 @@ function Dashboard() {
                         
                         const r1m1 = findMatch(1, 1);
                         const r1m2 = findMatch(1, 2);
-                        const r2m1 = findMatch(2, 1);
-                        const r2m2 = findMatch(2, 2);
-                        const r2lm1 = findMatch(2.1, 1);
-                        const r3m1 = findMatch(3, 1);
-                        const r2lm2 = findMatch(2.2, 1);
-                        const r3lm1 = findMatch(3.1, 1);
-                        const r4m1 = findMatch(4, 1);
-                        const final = findMatch(5, 1);
+                        const r2m1 = findMatch(2, 1); // Winners R2 M1
+                        const r2m2 = findMatch(2, 2); // Winners R2 M2
+                        const r2lm1 = findMatch(2.1, 1); // Losers R1
+                        const r2lm2 = findMatch(2.2, 1); // Losers R2
+                        const r3m1 = findMatch(3, 1); // Winners Final
+                        const r3lm1 = findMatch(3.1, 1); // Losers R3
+                        const r4m1 = findMatch(4, 1); // Losers Final
+                        const final = findMatch(5, 1); // Grand Final
+
+                        const BracketColumn = ({ title, color = 'text-gray-500', children }) => (
+                            <div className="flex flex-col items-center gap-2 w-48">
+                                <h4 className={`text-sm font-bold uppercase tracking-wider ${color}`}>{title}</h4>
+                                {children}
+                            </div>
+                        );
 
                         return (
-                            <div className="flex space-x-4 overflow-x-auto pb-4">
-                                {/* R1 */}
-                                <div className="flex flex-col justify-around space-y-16 min-w-[180px]">
-                                    <div className="flex flex-col"><span className="text-xs font-bold text-gray-400 mb-1">R1 M1</span><MatchupBox match={r1m1} /></div>
-                                    <div className="flex flex-col"><span className="text-xs font-bold text-gray-400 mb-1">R1 M2</span><MatchupBox match={r1m2} /></div>
-                                </div>
-                                {/* R2 */}
-                                <div className="flex flex-col justify-around min-w-[180px]">
-                                    <div className="flex flex-col"><span className="text-xs font-bold text-gray-400 mb-1">승자조 R2</span><MatchupBox match={r2m1} /></div>
-                                    <div className="flex flex-col"><span className="text-xs font-bold text-gray-400 mb-1">승자조 R2</span><MatchupBox match={r2m2} /></div>
-                                </div>
-                                {/* R3 Winners / R2 Losers */}
-                                <div className="flex flex-col justify-around min-w-[180px]">
-                                    <div className="flex flex-col"><span className="text-xs font-bold text-gray-400 mb-1">승자조 결승</span><MatchupBox match={r3m1} /></div>
-                                    <div className="flex flex-col"><span className="text-xs font-bold text-red-500 mb-1">패자조 R2</span><MatchupBox match={r2lm2} /></div>
-                                </div>
-                                {/* R3 Losers */}
-                                <div className="flex flex-col justify-end min-w-[180px] mb-[12.5rem]">
-                                    <div className="flex flex-col"><span className="text-xs font-bold text-red-500 mb-1">패자조 R3</span><MatchupBox match={r3lm1} /></div>
-                                </div>
-                                {/* R4 Losers Final */}
-                                <div className="flex flex-col justify-center min-w-[180px]">
-                                    <div className="flex flex-col"><span className="text-xs font-bold text-red-500 mb-1">결승 진출전</span><MatchupBox match={r4m1} /></div>
-                                </div>
-                                {/* Final */}
-                                <div className="flex flex-col justify-center min-w-[200px]">
-                                    <div className="flex flex-col"><span className="text-lg font-black text-yellow-500 mb-1">결승전</span><MatchupBox match={final} /></div>
+                            <div className="flex-1 overflow-x-auto pb-4">
+                                <div className="flex items-start justify-around min-w-[1200px] h-full relative">
+                                    {/* R1 */}
+                                    <BracketColumn title="1라운드">
+                                        <div className="flex flex-col justify-around h-full w-full space-y-32">
+                                            <MatchupBox match={r1m1} />
+                                            <MatchupBox match={r1m2} />
+                                        </div>
+                                    </BracketColumn>
+
+                                    {/* R2 */}
+                                    <BracketColumn title="2라운드">
+                                        <div className="flex flex-col justify-between h-full w-full">
+                                            <div className="flex flex-col gap-2">
+                                                <h5 className="text-xs font-bold text-blue-600 text-center">승자조</h5>
+                                                <MatchupBox match={r2m1} />
+                                                <MatchupBox match={r2m2} />
+                                            </div>
+                                            <div className="flex flex-col gap-2">
+                                                <h5 className="text-xs font-bold text-red-600 text-center">패자조</h5>
+                                                <MatchupBox match={r2lm1} />
+                                            </div>
+                                        </div>
+                                    </BracketColumn>
+
+                                    {/* R3 */}
+                                    <BracketColumn title="3라운드">
+                                        <div className="flex flex-col justify-between h-full w-full">
+                                            <div className="flex flex-col gap-2">
+                                                <h5 className="text-xs font-bold text-blue-600 text-center">승자 결승</h5>
+                                                <MatchupBox match={r3m1} />
+                                            </div>
+                                            <div className="flex flex-col gap-2">
+                                                <h5 className="text-xs font-bold text-red-600 text-center">패자조</h5>
+                                                <MatchupBox match={r2lm2} />
+                                            </div>
+                                        </div>
+                                    </BracketColumn>
+
+                                    {/* R4 */}
+                                    <BracketColumn title="4라운드">
+                                        <div className="flex flex-col justify-end h-full w-full pb-32">
+                                            <div className="flex flex-col gap-2">
+                                                <h5 className="text-xs font-bold text-red-600 text-center">패자조 결승</h5>
+                                                <MatchupBox match={r3lm1} />
+                                            </div>
+                                        </div>
+                                    </BracketColumn>
+                                    
+                                    {/* R5 */}
+                                    <BracketColumn title="결승 진출전">
+                                        <div className="flex flex-col justify-center h-full w-full">
+                                            <MatchupBox match={r4m1} />
+                                        </div>
+                                    </BracketColumn>
+
+                                    {/* Final */}
+                                    <BracketColumn title="결승전" color="text-yellow-500">
+                                        <div className="flex flex-col justify-center h-full w-full">
+                                            <MatchupBox match={final} />
+                                        </div>
+                                    </BracketColumn>
                                 </div>
                             </div>
                         );
@@ -2260,17 +2323,21 @@ function Dashboard() {
                       const t2 = m.t2 ? teams.find(t => t.id === m.t2) : { name: 'TBD' };
                       const isMyMatch = myTeam.id === m.t1 || myTeam.id === m.t2;
                       const isFinished = m.status === 'finished';
+                      
+                      const { name: t1Name, roundLabel: t1Round } = formatTeamName(m.t1, m.type, m);
+                      const { name: t2Name, roundLabel: t2Round } = formatTeamName(m.t2, m.type, m);
+
                       return (
                         <div key={i} className={`p-4 rounded-lg border flex flex-col gap-2 ${isMyMatch ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-200' : 'bg-white border-gray-200'}`}>
                           <div className="flex justify-between text-xs font-bold text-gray-500">
                             <span>{m.date} {m.time}</span>
                             <span className={`font-bold ${m.type === 'playoff' ? 'text-yellow-600' : (m.type === 'super' ? 'text-purple-600' : (m.type === 'playin' ? 'text-indigo-600' : 'text-gray-500'))}`}>
-                                {m.type === 'playoff' ? '👑 플레이오프' : (m.type === 'super' ? '🔥 슈퍼위크' : (m.type === 'playin' ? '🛡️ 플레이-인' : '정규시즌'))}
+                                {m.label || (m.type === 'super' ? '🔥 슈퍼위크' : '정규시즌')}
                             </span>
                           </div>
                           <div className="flex justify-between items-center mt-2">
                             <div className="flex flex-col items-center w-1/3">
-                                <span className={`font-bold ${isMyMatch && myTeam.id === m.t1 ? 'text-blue-600' : 'text-gray-800'}`}>{formatTeamName(m.t1, m.type)}</span>
+                                <span className={`font-bold ${isMyMatch && myTeam.id === m.t1 ? 'text-blue-600' : 'text-gray-800'}`}>{t1Name}</span>
                                 {isFinished && m.result.winner === t1.name && <span className="text-xs text-blue-500 font-bold">WIN</span>}
                             </div>
                             <div className="text-center font-bold">
@@ -2281,7 +2348,7 @@ function Dashboard() {
                                 )}
                             </div>
                             <div className="flex flex-col items-center w-1/3">
-                                <span className={`font-bold ${isMyMatch && myTeam.id === m.t2 ? 'text-blue-600' : 'text-gray-800'}`}>{formatTeamName(m.t2, m.type)}</span>
+                                <span className={`font-bold ${isMyMatch && myTeam.id === m.t2 ? 'text-blue-600' : 'text-gray-800'}`}>{t2Name}</span>
                                 {isFinished && m.result.winner === t2.name && <span className="text-xs text-blue-500 font-bold">WIN</span>}
                             </div>
                           </div>
