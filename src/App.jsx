@@ -1072,12 +1072,18 @@ function Dashboard() {
             });
             return;
         } else {
-            // AI Logic: Pick the winner from the lower-seeded R1 match
-            const r1m1 = r1Matches.find(m => m.match === 1); // 3-seed match
-            const r1m2 = r1Matches.find(m => m.match === 2); // other match
-            const winnerOfR1M2 = r1Winners.find(w => w.id === getWinner(r1m2)).id;
-            const picked = teams.find(t => t.id === winnerOfR1M2);
-            generateR2Matches(picked);
+            // AI Logic: Pick the winner from the higher-seeded R1 match (3-seed's match) if they win, otherwise pick the other winner.
+            const r1m1Winner = getWinner(r1Matches.find(m => m.match === 1));
+            const r1m2Winner = getWinner(r1Matches.find(m => m.match === 2));
+            const r1m1Seed3 = r1Matches.find(m => m.match === 1).t1;
+            
+            let pickedId;
+            if (r1m1Winner === r1m1Seed3) { // If seed 3 won their match
+                pickedId = r1m2Winner; // Pick the other winner
+            } else {
+                pickedId = r1m1Winner; // Pick the team that beat seed 3
+            }
+            generateR2Matches(teams.find(t => t.id === pickedId));
         }
         return; // Stop further checks
     }
@@ -1570,11 +1576,18 @@ function Dashboard() {
     }
   };
 
-  let effectiveDate = nextGlobalMatch ? nextGlobalMatch.date : (hasDrafted ? '시즌 종료' : '2026 프리시즌');
-  if (isPlayInFinished && !hasPlayoffsGenerated) {
-      effectiveDate = '2.9 (월)';
-  } else if (isSuperWeekFinished && !hasPlayInGenerated) {
-      effectiveDate = '2.2 (월)';
+  const grandFinal = league.matches.find(m => m.type === 'playoff' && m.round === 5);
+  const isSeasonOver = grandFinal && grandFinal.status === 'finished';
+
+  let effectiveDate;
+  if (isSeasonOver) {
+    effectiveDate = '시즌 종료';
+  } else if (nextGlobalMatch) {
+    effectiveDate = nextGlobalMatch.date;
+  } else if (hasDrafted) {
+    effectiveDate = '대진 생성 대기 중';
+  } else {
+    effectiveDate = '2026 프리시즌';
   }
 
   // Helper: get play-in/playoff seed and format team names with seed
@@ -1589,6 +1602,28 @@ function Dashboard() {
       return `${t.name}${s ? ` (${s}시드)` : ''}`;
     }
     return t.name;
+  };
+
+  const MatchupBox = ({ match, showScore = true }) => {
+    if (!match) {
+        return <div className="h-16 border-2 border-dashed rounded-lg flex items-center justify-center text-gray-400 text-sm">TBD</div>;
+    }
+    const t1 = teams.find(t => t.id === match.t1);
+    const t2 = teams.find(t => t.id === match.t2);
+    const winnerId = match.status === 'finished' ? teams.find(t => t.name === match.result.winner)?.id : null;
+
+    return (
+        <div className={`bg-white border-2 rounded-lg shadow-sm ${match.status === 'pending' ? 'border-gray-300' : 'border-gray-400'}`}>
+            <div className={`flex justify-between items-center p-2 rounded-t-md ${winnerId === t1?.id ? 'bg-blue-100' : 'bg-gray-50'}`}>
+                <span className={`font-bold text-sm ${winnerId === t1?.id ? 'text-blue-700' : 'text-gray-800'}`}>{t1?.name || 'TBD'}</span>
+                {showScore && <span className={`font-black text-sm ${winnerId === t1?.id ? 'text-blue-700' : 'text-gray-500'}`}>{match.status === 'finished' ? match.result.score.split(':')[0] : ''}</span>}
+            </div>
+            <div className={`flex justify-between items-center p-2 rounded-b-md ${winnerId === t2?.id ? 'bg-red-100' : 'bg-gray-50'}`}>
+                <span className={`font-bold text-sm ${winnerId === t2?.id ? 'text-red-700' : 'text-gray-800'}`}>{t2?.name || 'TBD'}</span>
+                {showScore && <span className={`font-black text-sm ${winnerId === t2?.id ? 'text-red-700' : 'text-gray-500'}`}>{match.status === 'finished' ? match.result.score.split(':')[1] : ''}</span>}
+            </div>
+        </div>
+    );
   };
 
   return (
@@ -1762,7 +1797,7 @@ function Dashboard() {
                             )}
 
                           </div>
-                        ) : <div className="text-xs font-bold text-blue-600">{hasPlayoffsGenerated ? '시즌 종료' : (isPlayInFinished ? '플레이오프 대기 중' : '모든 일정 종료')}</div>}
+                        ) : <div className="text-xs font-bold text-blue-600">{isSeasonOver ? '시즌 종료' : '대진 생성 대기 중'}</div>}
                       </div>
                       <div className="text-center w-1/3">
                           <div className="text-4xl font-black text-gray-800 mb-2">{t2 ? formatTeamName(t2.id, nextGlobalMatch?.type) : '?'}</div>
@@ -1777,47 +1812,30 @@ function Dashboard() {
                         
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="font-bold text-gray-800 text-sm">
-                                {showPlayInBracket ? '🛡️ 플레이-인 대진표' : '순위표'}
+                                {hasPlayoffsGenerated ? '👑 플레이오프' : (hasPlayInGenerated ? '🛡️ 플레이-인' : '순위표')}
                             </h3>
-                            {hasPlayInGenerated && (
+                            {(hasPlayInGenerated && !hasPlayoffsGenerated) && (
                                 <button onClick={() => setShowPlayInBracket(!showPlayInBracket)} className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-200 font-bold">
                                     {showPlayInBracket ? '순위표 보기' : '대진표 보기'}
                                 </button>
                             )}
                         </div>
 
-                        {showPlayInBracket ? (
-                            <div className="flex-1 space-y-4">
-                                <div className="text-xs font-bold text-gray-400 uppercase">Round 1 (2.6)</div>
-                                {[...league.matches].filter(m=>m.type==='playin' && m.date.includes('2.6')).map(m => (
-                                    <div key={m.id} className="bg-gray-50 border rounded p-2 text-xs flex justify-between items-center">
-                                        <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t1).name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t1, m.type)}</div>
-                                        <div className="text-gray-400 font-bold">{m.status === 'finished' ? m.result.score : 'vs'}</div>
-                                        <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t2).name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t2, m.type)}</div>
+                        {(hasPlayoffsGenerated || (hasPlayInGenerated && showPlayInBracket)) ? (
+                            <div className="flex-1 space-y-3">
+                                {[...league.matches]
+                                    .filter(m => m.type === (hasPlayoffsGenerated ? 'playoff' : 'playin'))
+                                    .sort((a,b) => a.id - b.id)
+                                    .map(m => (
+                                    <div key={m.id} className="bg-gray-50 border rounded p-2 text-xs">
+                                        <div className="font-bold text-gray-400 mb-1">{m.label || m.date}</div>
+                                        <div className="flex justify-between items-center">
+                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t1)?.name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t1, m.type)}</div>
+                                            <div className="text-gray-400 font-bold">{m.status === 'finished' ? m.result.score : 'vs'}</div>
+                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t2)?.name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t2, m.type)}</div>
+                                        </div>
                                     </div>
                                 ))}
-                                
-                                <div className="text-xs font-bold text-gray-400 uppercase mt-4">Round 2 (2.7)</div>
-                                {league.matches.some(m=>m.date.includes('2.7')) ? (
-                                    [...league.matches].filter(m=>m.type==='playin' && m.date.includes('2.7')).map(m => (
-                                        <div key={m.id} className="bg-gray-50 border rounded p-2 text-xs flex justify-between items-center">
-                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t1).name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t1, m.type)}</div>
-                                            <div className="text-gray-400 font-bold">{m.status === 'finished' ? m.result.score : 'vs'}</div>
-                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t2).name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t2, m.type)}</div>
-                                        </div>
-                                    ))
-                                ) : <div className="text-xs text-gray-400 italic">대진 대기 중...</div>}
-
-                                <div className="text-xs font-bold text-gray-400 uppercase mt-4">Final (2.8)</div>
-                                {league.matches.some(m=>m.date.includes('2.8')) ? (
-                                    [...league.matches].filter(m=>m.type==='playin' && m.date.includes('2.8')).map(m => (
-                                        <div key={m.id} className="bg-gray-50 border rounded p-2 text-xs flex justify-between items-center">
-                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t1).name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t1, m.type)}</div>
-                                            <div className="text-gray-400 font-bold">{m.status === 'finished' ? m.result.score : 'vs'}</div>
-                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t2).name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t2, m.type)}</div>
-                                        </div>
-                                    ))
-                                ) : <div className="text-xs text-gray-400 italic">대진 대기 중...</div>}
                             </div>
                         ) : (
                             <>
@@ -1998,11 +2016,55 @@ function Dashboard() {
             )}
             
             {activeTab === 'playoffs' && (
-                <div className="bg-white rounded-lg border shadow-sm p-8 min-h-[600px] flex flex-col">
+                <div className="bg-white rounded-lg border shadow-sm p-6 min-h-[600px] flex flex-col">
                     <h2 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-2">👑 2026 LCK 컵 플레이오프</h2>
-                    {hasPlayoffsGenerated ? (
-                        <div className="text-sm text-gray-600">플레이오프 대진표 구현 중...</div>
-                    ) : (
+                    {hasPlayoffsGenerated ? (() => {
+                        const poMatches = league.matches.filter(m => m.type === 'playoff');
+                        const findMatch = (round, match) => poMatches.find(m => m.round === round && m.match === match);
+                        
+                        const r1m1 = findMatch(1, 1);
+                        const r1m2 = findMatch(1, 2);
+                        const r2m1 = findMatch(2, 1);
+                        const r2m2 = findMatch(2, 2);
+                        const r2lm1 = findMatch(2.1, 1);
+                        const r3m1 = findMatch(3, 1);
+                        const r2lm2 = findMatch(2.2, 1);
+                        const r3lm1 = findMatch(3.1, 1);
+                        const r4m1 = findMatch(4, 1);
+                        const final = findMatch(5, 1);
+
+                        return (
+                            <div className="flex space-x-4 overflow-x-auto pb-4">
+                                {/* R1 */}
+                                <div className="flex flex-col justify-around space-y-16 min-w-[180px]">
+                                    <div className="flex flex-col"><span className="text-xs font-bold text-gray-400 mb-1">R1 M1</span><MatchupBox match={r1m1} /></div>
+                                    <div className="flex flex-col"><span className="text-xs font-bold text-gray-400 mb-1">R1 M2</span><MatchupBox match={r1m2} /></div>
+                                </div>
+                                {/* R2 */}
+                                <div className="flex flex-col justify-around min-w-[180px]">
+                                    <div className="flex flex-col"><span className="text-xs font-bold text-gray-400 mb-1">승자조 R2</span><MatchupBox match={r2m1} /></div>
+                                    <div className="flex flex-col"><span className="text-xs font-bold text-gray-400 mb-1">승자조 R2</span><MatchupBox match={r2m2} /></div>
+                                </div>
+                                {/* R3 Winners / R2 Losers */}
+                                <div className="flex flex-col justify-around min-w-[180px]">
+                                    <div className="flex flex-col"><span className="text-xs font-bold text-gray-400 mb-1">승자조 결승</span><MatchupBox match={r3m1} /></div>
+                                    <div className="flex flex-col"><span className="text-xs font-bold text-red-500 mb-1">패자조 R2</span><MatchupBox match={r2lm2} /></div>
+                                </div>
+                                {/* R3 Losers */}
+                                <div className="flex flex-col justify-end min-w-[180px] mb-[12.5rem]">
+                                    <div className="flex flex-col"><span className="text-xs font-bold text-red-500 mb-1">패자조 R3</span><MatchupBox match={r3lm1} /></div>
+                                </div>
+                                {/* R4 Losers Final */}
+                                <div className="flex flex-col justify-center min-w-[180px]">
+                                    <div className="flex flex-col"><span className="text-xs font-bold text-red-500 mb-1">결승 진출전</span><MatchupBox match={r4m1} /></div>
+                                </div>
+                                {/* Final */}
+                                <div className="flex flex-col justify-center min-w-[200px]">
+                                    <div className="flex flex-col"><span className="text-lg font-black text-yellow-500 mb-1">결승전</span><MatchupBox match={final} /></div>
+                                </div>
+                            </div>
+                        );
+                    })() : (
                         <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
                             <div className="text-4xl mb-4">🛡️</div>
                             <div className="text-xl font-bold">플레이오프가 아직 시작되지 않았습니다</div>
