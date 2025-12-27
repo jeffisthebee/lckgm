@@ -1,4 +1,3 @@
-// (full file contents; same as provided previously but with the two edits applied)
 import React, { useState, useEffect, useRef } from 'react';
 import { Routes, Route, useNavigate, useParams, Navigate } from 'react-router-dom';
 import playerList from './data/players.json';
@@ -427,7 +426,16 @@ const getPotBadgeStyle = (pot) => {
   return 'text-gray-500 font-medium';
 };
 
-// (rest of file unchanged aside from the two modified blocks above)
+export default function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<LeagueManager />} />
+      <Route path="/new-league" element={<TeamSelection />} />
+      <Route path="/league/:leagueId" element={<Dashboard />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
 
 const generateSchedule = (baronIds, elderIds) => {
   const week1Days = ['1.14 (수)', '1.15 (목)', '1.16 (금)', '1.17 (토)', '1.18 (일)'];
