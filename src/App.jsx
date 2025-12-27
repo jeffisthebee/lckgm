@@ -854,8 +854,8 @@ function Dashboard() {
   // 로컬 순위표 상태 (버그 수정용: API 호출 대신 계산된 값 사용)
   const [computedStandings, setComputedStandings] = useState({});
 
-  // 플레이-인 2라운드 상대 선택 모달 상태
-  const [playInChoice, setPlayInChoice] = useState(null); // { seed1, seed2, winners: [team1, team2] }
+  // 플레이-인/플레이오프 상대 선택 모달 상태
+  const [opponentChoice, setOpponentChoice] = useState(null); // { type: 'playin' | 'playoff', ...data }
 
   useEffect(() => {
     const loadData = () => {
@@ -882,7 +882,7 @@ function Dashboard() {
       teams.forEach(t => { newStandings[t.id] = { w: 0, l: 0, diff: 0 }; });
 
       lg.matches.forEach(m => {
-          if (m.status === 'finished' && m.type !== 'playin') { // 플레이-인 기록은 순위표에서 제외
+          if (m.status === 'finished' && (m.type === 'regular' || m.type === 'super')) {
               const winner = teams.find(t => t.name === m.result.winner);
               const actualLoser = (m.t1 === winner.id) ? teams.find(t => t.id === m.t2) : teams.find(t => t.id === m.t1);
               
@@ -942,8 +942,8 @@ function Dashboard() {
     setLeague(updatedLeague);
     recalculateStandings(updatedLeague); // 순위표 즉시 갱신
     
-    // 플레이-인 자동 생성 로직 (1라운드 종료 후 2라운드 생성 등)
     checkAndGenerateNextPlayInRound(updatedMatches);
+    checkAndGenerateNextPlayoffRound(updatedMatches);
   };
 
   const generatePlayInRound2 = (matches, seed1, seed2, pickedTeam, remainingTeam) => {
@@ -956,14 +956,14 @@ function Dashboard() {
       updateLeague(league.id, { matches: newMatches });
       setLeague(prev => ({ ...prev, matches: newMatches }));
       alert("플레이-인 2라운드 대진이 완성되었습니다!");
-      setPlayInChoice(null);
+      setOpponentChoice(null);
   };
 
   const checkAndGenerateNextPlayInRound = (matches) => {
       // 1라운드(2.6)가 모두 끝났는지 확인
-      const r1Matches = matches.filter(m => m.date.includes('2.6'));
+      const r1Matches = matches.filter(m => m.type === 'playin' && m.date.includes('2.6'));
       const r1Finished = r1Matches.length > 0 && r1Matches.every(m => m.status === 'finished');
-      const r2Exists = matches.some(m => m.date.includes('2.7'));
+      const r2Exists = matches.some(m => m.type === 'playin' && m.date.includes('2.7'));
 
       if (r1Finished && !r2Exists) {
           const r1Winners = r1Matches.map(m => teams.find(t => t.name === m.result.winner));
@@ -972,25 +972,28 @@ function Dashboard() {
           const seed2 = teams.find(t => t.id === playInSeeds[1].id);
           
           const winnersWithSeed = r1Winners.map(w => ({ ...w, seedIndex: playInSeeds.findIndex(s => s.id === w.id) }));
-          winnersWithSeed.sort((a, b) => a.seedIndex - b.seedIndex); // Sort by seed index ASC (lower seed index is better)
+          winnersWithSeed.sort((a, b) => a.seedIndex - b.seedIndex);
           
           if (seed1.id === myTeam.id) {
-              // User is seed 1, open choice modal
-              setPlayInChoice({
-                  seed1: seed1,
-                  seed2: seed2,
-                  winners: winnersWithSeed,
-                  matches: matches
+              setOpponentChoice({
+                  type: 'playin',
+                  title: '플레이-인 2라운드 상대 선택',
+                  description: '1라운드 승리팀 중 한 팀을 2라운드 상대로 지명할 수 있습니다.',
+                  picker: seed1,
+                  opponents: winnersWithSeed,
+                  onConfirm: (pickedTeam) => {
+                      const remainingTeam = winnersWithSeed.find(w => w.id !== pickedTeam.id);
+                      generatePlayInRound2(matches, seed1, seed2, pickedTeam, remainingTeam);
+                  }
               });
-              return; // Stop execution until user makes a choice
+              return;
           } else {
-              // AI is seed 1, make a choice
-              const lowerSeedWinner = winnersWithSeed[1]; // Higher seed index means lower rank
+              const lowerSeedWinner = winnersWithSeed[1]; 
               const higherSeedWinner = winnersWithSeed[0];
               
               let pickedTeam;
               if (Math.random() < 0.65) {
-                  pickedTeam = lowerSeedWinner; // 65% chance to pick the lower-seeded team
+                  pickedTeam = lowerSeedWinner; 
               } else {
                   pickedTeam = higherSeedWinner;
               }
@@ -1001,12 +1004,11 @@ function Dashboard() {
       }
 
       // 2라운드(2.7)가 모두 끝났는지 확인 -> 최종전 생성
-      const r2Matches = matches.filter(m => m.date.includes('2.7'));
+      const r2Matches = matches.filter(m => m.type === 'playin' && m.date.includes('2.7'));
       const r2Finished = r2Matches.length > 0 && r2Matches.every(m => m.status === 'finished');
-      const finalExists = matches.some(m => m.date.includes('2.8'));
+      const finalExists = matches.some(m => m.type === 'playin' && m.date.includes('2.8'));
 
       if (r2Finished && !finalExists) {
-          // 2라운드 패자 찾기
           const losers = r2Matches.map(m => {
              const winnerName = m.result.winner;
              return m.t1 === teams.find(t=>t.name===winnerName).id ? teams.find(t=>t.id===m.t2) : teams.find(t=>t.id===m.t1);
@@ -1021,6 +1023,144 @@ function Dashboard() {
           setLeague(prev => ({ ...prev, matches: newMatches }));
           alert("플레이-인 최종전 대진이 완성되었습니다!");
       }
+  };
+
+  const checkAndGenerateNextPlayoffRound = (currentMatches) => {
+    if (!league.playoffSeeds) return;
+
+    const getWinner = m => teams.find(t => t.name === m.result.winner).id;
+    const getLoser = m => (m.t1 === getWinner(m) ? m.t2 : m.t1);
+
+    // --- R1 -> R2 (Winners/Losers) ---
+    const r1Matches = currentMatches.filter(m => m.type === 'playoff' && m.round === 1);
+    const r1Finished = r1Matches.length === 2 && r1Matches.every(m => m.status === 'finished');
+    const r2Exists = currentMatches.some(m => m.type === 'playoff' && m.round === 2);
+
+    if (r1Finished && !r2Exists) {
+        const r1Winners = r1Matches.map(m => ({ id: getWinner(m), fromMatch: m.match }));
+        const r1Losers = r1Matches.map(m => ({ id: getLoser(m), fromMatch: m.match }));
+        
+        const seed1 = league.playoffSeeds.find(s => s.seed === 1).id;
+        const seed2 = league.playoffSeeds.find(s => s.seed === 2).id;
+
+        const generateR2Matches = (pickedWinner) => {
+            const remainingWinner = r1Winners.find(w => w.id !== pickedWinner.id).id;
+            
+            const newPlayoffMatches = [
+                // R2 Winners
+                { id: Date.now() + 400, round: 2, match: 1, label: '승자조 1경기', t1: seed1, t2: pickedWinner.id, date: '2.13 (금)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: seed1 },
+                { id: Date.now() + 401, round: 2, match: 2, label: '승자조 2경기', t1: seed2, t2: remainingWinner, date: '2.13 (금)', time: '19:30', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: seed2 },
+                // R2 Losers
+                { id: Date.now() + 402, round: 2.1, match: 1, label: '패자조 1라운드', t1: r1Losers[0].id, t2: r1Losers[1].id, date: '2.14 (토)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: 'coin' },
+            ];
+            
+            const allMatches = [...currentMatches, ...newPlayoffMatches];
+            updateLeague(league.id, { matches: allMatches });
+            setLeague(prev => ({ ...prev, matches: allMatches }));
+            alert("👑 플레이오프 2라운드 대진이 완성되었습니다!");
+            setOpponentChoice(null);
+        };
+
+        if (seed1 === myTeam.id) {
+            setOpponentChoice({
+                type: 'playoff_r2',
+                title: '플레이오프 2라운드 상대 선택',
+                description: '1라운드 승리팀 중 한 팀을 2라운드 상대로 지명할 수 있습니다.',
+                picker: teams.find(t => t.id === seed1),
+                opponents: r1Winners.map(w => teams.find(t => t.id === w.id)),
+                onConfirm: (pickedTeam) => generateR2Matches(pickedTeam)
+            });
+            return;
+        } else {
+            // AI Logic: Pick the winner from the lower-seeded R1 match
+            const r1m1 = r1Matches.find(m => m.match === 1); // 3-seed match
+            const r1m2 = r1Matches.find(m => m.match === 2); // other match
+            const winnerOfR1M2 = r1Winners.find(w => w.id === getWinner(r1m2)).id;
+            const picked = teams.find(t => t.id === winnerOfR1M2);
+            generateR2Matches(picked);
+        }
+        return; // Stop further checks
+    }
+
+    // --- R2 -> R3 (Winners/Losers) ---
+    const r2wMatches = currentMatches.filter(m => m.type === 'playoff' && m.round === 2);
+    const r2lMatch = currentMatches.find(m => m.type === 'playoff' && m.round === 2.1);
+    const r2Finished = r2wMatches.length === 2 && r2wMatches.every(m => m.status === 'finished') && r2lMatch?.status === 'finished';
+    const r3Exists = currentMatches.some(m => m.type === 'playoff' && m.round === 3);
+
+    if (r2Finished && !r3Exists) {
+        const r2wWinners = r2wMatches.map(m => getWinner(m));
+        const r2wLosers = r2wMatches.map(m => ({ id: getLoser(m), seed: league.playoffSeeds.find(s => s.id === getLoser(m)).seed }));
+        r2wLosers.sort((a,b) => a.seed - b.seed); // Sort by seed, lower is better
+        
+        const r2lWinner = getWinner(r2lMatch);
+
+        const newPlayoffMatches = [
+            // R3 Winners
+            { id: Date.now() + 500, round: 3, match: 1, label: '승자조 결승', t1: r2wWinners[0], t2: r2wWinners[1], date: '2.18 (수)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: 'coin' },
+            // R2 Losers R2
+            { id: Date.now() + 501, round: 2.2, match: 1, label: '패자조 2라운드', t1: r2wLosers[1].id, t2: r2lWinner, date: '2.15 (일)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: r2wLosers[1].id },
+        ];
+
+        const allMatches = [...currentMatches, ...newPlayoffMatches];
+        updateLeague(league.id, { matches: allMatches });
+        setLeague(prev => ({ ...prev, matches: allMatches }));
+        alert("👑 플레이오프 3라운드 승자조 및 2라운드 패자조 경기가 생성되었습니다!");
+        return;
+    }
+    
+    // --- R2.2 & R3 Winners -> R3 Losers ---
+    const r2_2Match = currentMatches.find(m => m.type === 'playoff' && m.round === 2.2);
+    const r3wMatch = currentMatches.find(m => m.type === 'playoff' && m.round === 3);
+    const r3lExists = currentMatches.some(m => m.type === 'playoff' && m.round === 3.1);
+
+    if (r2_2Match?.status === 'finished' && r3wMatch?.status === 'finished' && !r3lExists) {
+        const r2wLosers = currentMatches.filter(m => m.round === 2).map(m => ({ id: getLoser(m), seed: league.playoffSeeds.find(s => s.id === getLoser(m)).seed }));
+        r2wLosers.sort((a,b) => a.seed - b.seed); // Higher seed is r2wLosers[0]
+        const r2_2Winner = getWinner(r2_2Match);
+
+        const newMatch = { id: Date.now() + 600, round: 3.1, match: 1, label: '패자조 3라운드', t1: r2wLosers[0].id, t2: r2_2Winner, date: '2.19 (목)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: r2wLosers[0].id };
+        
+        const allMatches = [...currentMatches, newMatch];
+        updateLeague(league.id, { matches: allMatches });
+        setLeague(prev => ({ ...prev, matches: allMatches }));
+        alert("👑 플레이오프 3라운드 패자조 경기가 생성되었습니다!");
+        return;
+    }
+
+    // --- R3 Losers & R3 Winners -> R4 (Finals Qualifier) ---
+    const r3lMatch = currentMatches.find(m => m.type === 'playoff' && m.round === 3.1);
+    const r4Exists = currentMatches.some(m => m.type === 'playoff' && m.round === 4);
+
+    if (r3lMatch?.status === 'finished' && r3wMatch?.status === 'finished' && !r4Exists) {
+        const r3wLoser = getLoser(r3wMatch);
+        const r3lWinner = getWinner(r3lMatch);
+
+        const newMatch = { id: Date.now() + 700, round: 4, match: 1, label: '결승 진출전', t1: r3wLoser, t2: r3lWinner, date: '2.21 (토)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: r3wLoser };
+        
+        const allMatches = [...currentMatches, newMatch];
+        updateLeague(league.id, { matches: allMatches });
+        setLeague(prev => ({ ...prev, matches: allMatches }));
+        alert("👑 플레이오프 결승 진출전이 생성되었습니다!");
+        return;
+    }
+
+    // --- R4 & R3 Winners -> Grand Final ---
+    const r4Match = currentMatches.find(m => m.type === 'playoff' && m.round === 4);
+    const finalExists = currentMatches.some(m => m.type === 'playoff' && m.round === 5);
+
+    if (r4Match?.status === 'finished' && r3wMatch?.status === 'finished' && !finalExists) {
+        const r3wWinner = getWinner(r3wMatch);
+        const r4Winner = getWinner(r4Match);
+
+        const newMatch = { id: Date.now() + 800, round: 5, match: 1, label: '결승전', t1: r3wWinner, t2: r4Winner, date: '2.22 (일)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: r3wWinner };
+        
+        const allMatches = [...currentMatches, newMatch];
+        updateLeague(league.id, { matches: allMatches });
+        setLeague(prev => ({ ...prev, matches: allMatches }));
+        alert("🏆 대망의 결승전이 생성되었습니다!");
+        return;
+    }
   };
 
   const runSimulationForMatch = (match, isPlayerMatch) => {
@@ -1141,6 +1281,7 @@ function Dashboard() {
     { id: 'dashboard', name: '대시보드', icon: '📊' },
     { id: 'roster', name: '로스터', icon: '👥' },
     { id: 'standings', name: '순위표', icon: '🏆' },
+    { id: 'playoffs', name: '플레이오프', icon: '👑' },
     { id: 'finance', name: '재정', icon: '💰' }, 
     { id: 'schedule', name: '일정', icon: '📅' },
     { id: 'team_schedule', name: '팀 일정', icon: '📅' },
@@ -1264,21 +1405,18 @@ function Dashboard() {
   // Play-In Generation Logic
   const handleGeneratePlayIn = () => {
       // 1. 그룹별 승점 비교 및 참가 팀 선정
-      // If totals tie, compare groups' aggregated set difference (computedStandings[id].diff)
       let isBaronWinner;
       if (baronTotalWins > elderTotalWins) {
         isBaronWinner = true;
       } else if (baronTotalWins < elderTotalWins) {
         isBaronWinner = false;
       } else {
-        // tie on total wins -> compare set difference totals
         const baronDiffTotal = (league.groups?.baron || []).reduce((s, id) => s + ((computedStandings[id]?.diff) || 0), 0);
         const elderDiffTotal = (league.groups?.elder || []).reduce((s, id) => s + ((computedStandings[id]?.diff) || 0), 0);
 
         if (baronDiffTotal > elderDiffTotal) isBaronWinner = true;
         else if (baronDiffTotal < elderDiffTotal) isBaronWinner = false;
         else {
-          // still tied -> fallback to sum of team power
           const baronPower = (league.groups?.baron || []).reduce((s, id) => s + ((teams.find(t => t.id === id)?.power) || 0), 0);
           const elderPower = (league.groups?.elder || []).reduce((s, id) => s + ((teams.find(t => t.id === id)?.power) || 0), 0);
           if (baronPower > elderPower) isBaronWinner = true;
@@ -1290,7 +1428,6 @@ function Dashboard() {
       const baronSorted = getSortedGroup([...league.groups.baron]);
       const elderSorted = getSortedGroup([...league.groups.elder]);
 
-      // 상태 저장 객체 (시즌 결산용)
       const seasonSummary = {
           winnerGroup: isBaronWinner ? 'Baron' : 'Elder',
           poTeams: [],
@@ -1301,41 +1438,34 @@ function Dashboard() {
       let playInTeams = [];
       
       if (isBaronWinner) {
-          // 승자(Baron): 1,2위 PO 직행, 3,4,5위 플레이인
           seasonSummary.poTeams.push({ id: baronSorted[0], seed: 1 });
           seasonSummary.poTeams.push({ id: baronSorted[1], seed: 2 });
           playInTeams.push(baronSorted[2], baronSorted[3], baronSorted[4]);
 
-          // 패자(Elder): 1위 PO 직행, 2,3,4위 플레이인, 5위 탈락
           seasonSummary.poTeams.push({ id: elderSorted[0], seed: 3 });
           playInTeams.push(elderSorted[1], elderSorted[2], elderSorted[3]);
           seasonSummary.eliminated = elderSorted[4];
       } else {
-          // 승자(Elder)
           seasonSummary.poTeams.push({ id: elderSorted[0], seed: 1 });
           seasonSummary.poTeams.push({ id: elderSorted[1], seed: 2 });
           playInTeams.push(elderSorted[2], elderSorted[3], elderSorted[4]);
 
-          // 패자(Baron)
           seasonSummary.poTeams.push({ id: baronSorted[0], seed: 3 });
           playInTeams.push(baronSorted[1], baronSorted[2], baronSorted[3]);
           seasonSummary.eliminated = baronSorted[4];
       }
 
-      // 2. 통합 시딩 (승수 > 득실 > 랜덤)
       playInTeams.sort((a, b) => {
           const recA = computedStandings[a];
           const recB = computedStandings[b];
           if (recA.w !== recB.w) return recB.w - recA.w;
           if (recA.diff !== recB.diff) return recB.diff - recA.diff;
-          return Math.random() - 0.5; // 동률 시 랜덤
+          return Math.random() - 0.5;
       });
 
-      // 시드 저장
       const seededTeams = playInTeams.map((tid, idx) => ({ id: tid, seed: idx + 1 }));
       seasonSummary.playInTeams = seededTeams;
       
-      // 3. 1라운드 대진 생성 (3vs6, 4vs5)
       const seed3 = seededTeams[2].id;
       const seed6 = seededTeams[5].id;
       const seed4 = seededTeams[3].id;
@@ -1350,7 +1480,7 @@ function Dashboard() {
       
       updateLeague(league.id, { matches: updatedMatches, playInSeeds: seededTeams, seasonSummary }); 
       setLeague(prev => ({ ...prev, matches: updatedMatches, playInSeeds: seededTeams, seasonSummary }));
-      setShowPlayInBracket(true); // 대진표 보기 모드로 자동 전환
+      setShowPlayInBracket(true);
       alert('🛡️ 플레이-인 대진이 생성되었습니다! (1,2시드 2라운드 직행)');
   };
   
@@ -1371,28 +1501,91 @@ function Dashboard() {
     : false;
     
   const isPlayInFinished = hasPlayInGenerated && league.matches.filter(m => m.type === 'playin').every(m => m.status === 'finished');
+    
+  const hasPlayoffsGenerated = league.matches
+    ? league.matches.some(m => m.type === 'playoff')
+    : false;
 
   const handleGeneratePlayoffs = () => {
-      // This is where you would generate the final playoff bracket.
-      // For now, it's just an alert.
-      alert("플레이오프 대진이 생성되었습니다! (기능 개발 중)");
+    if (!isPlayInFinished || hasPlayoffsGenerated) return;
+
+    // 1. PO 진출팀 6팀 확정 및 시드 배정
+    const directPO = league.seasonSummary.poTeams; // {id, seed}
+    const playInR2Winners = league.matches
+        .filter(m => m.type === 'playin' && m.date.includes('2.7') && m.status === 'finished')
+        .map(m => teams.find(t => t.name === m.result.winner).id);
+    const playInFinalWinner = league.matches
+        .filter(m => m.type === 'playin' && m.date.includes('2.8') && m.status === 'finished')
+        .map(m => teams.find(t => t.name === m.result.winner).id);
+    
+    const playInQualifiers = [...playInR2Winners, ...playInFinalWinner];
+
+    // PO 시드 배정 (4, 5, 6번)
+    const playInQualifiersWithOriginalSeed = playInQualifiers.map(id => {
+        const originalSeed = league.playInSeeds.find(s => s.id === id);
+        return { id, originalSeed: originalSeed ? originalSeed.seed : 99 };
+    }).sort((a, b) => a.originalSeed - b.originalSeed);
+
+    const playoffSeeds = [
+        ...directPO,
+        { id: playInQualifiersWithOriginalSeed[0].id, seed: 4 },
+        { id: playInQualifiersWithOriginalSeed[1].id, seed: 5 },
+        { id: playInQualifiersWithOriginalSeed[2].id, seed: 6 },
+    ].sort((a, b) => a.seed - b.seed);
+
+    const seed3Team = playoffSeeds.find(s => s.seed === 3);
+    const playInTeamsForSelection = playoffSeeds.filter(s => s.seed >= 4);
+
+    const generateR1Matches = (pickedTeam) => {
+        const remainingTeams = playInTeamsForSelection.filter(t => t.id !== pickedTeam.id);
+        const r1m1 = { id: Date.now() + 300, round: 1, match: 1, label: '1라운드 1경기', t1: seed3Team.id, t2: pickedTeam.id, date: '2.11 (수)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: seed3Team.id };
+        const r1m2 = { id: Date.now() + 301, round: 1, match: 2, label: '1라운드 2경기', t1: remainingTeams[0].id, t2: remainingTeams[1].id, date: '2.12 (목)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: 'coin' };
+        
+        // 날짜 랜덤 배정
+        if (Math.random() < 0.5) {
+            [r1m1.date, r1m2.date] = [r1m2.date, r1m1.date];
+        }
+
+        const newMatches = [...league.matches, r1m1, r1m2];
+        updateLeague(league.id, { matches: newMatches, playoffSeeds });
+        setLeague(prev => ({ ...prev, matches: newMatches, playoffSeeds }));
+        alert("👑 플레이오프 1라운드 대진이 완성되었습니다!");
+        setOpponentChoice(null);
+        setActiveTab('playoffs');
+    };
+
+    if (seed3Team.id === myTeam.id) {
+        setOpponentChoice({
+            type: 'playoff_r1',
+            title: '플레이오프 1라운드 상대 선택',
+            description: '플레이-인에서 올라온 팀 중 한 팀을 상대로 지명할 수 있습니다.',
+            picker: teams.find(t => t.id === seed3Team.id),
+            opponents: playInTeamsForSelection.map(s => teams.find(t => t.id === s.id)),
+            onConfirm: (pickedTeam) => generateR1Matches(pickedTeam)
+        });
+    } else {
+        // AI 로직: 가장 낮은 시드(6번)를 선택
+        const picked = playInTeamsForSelection.find(s => s.seed === 6);
+        generateR1Matches(teams.find(t => t.id === picked.id));
+    }
   };
 
   let effectiveDate = nextGlobalMatch ? nextGlobalMatch.date : (hasDrafted ? '시즌 종료' : '2026 프리시즌');
-  if (isPlayInFinished) {
+  if (isPlayInFinished && !hasPlayoffsGenerated) {
       effectiveDate = '2.9 (월)';
   } else if (isSuperWeekFinished && !hasPlayInGenerated) {
       effectiveDate = '2.2 (월)';
   }
 
-  // Helper: get play-in seed and format team names with seed when match is playin
-  const getPlayInSeed = (teamId) => {
-    return league.playInSeeds?.find(s => s.id === teamId)?.seed;
+  // Helper: get play-in/playoff seed and format team names with seed
+  const getTeamSeed = (teamId, matchType) => {
+    const seedData = matchType === 'playin' ? league.playInSeeds : league.playoffSeeds;
+    return seedData?.find(s => s.id === teamId)?.seed;
   };
-  const formatTeamName = (teamId, isPlayIn) => {
+  const formatTeamName = (teamId, matchType) => {
     const t = teams.find(x => x.id === teamId) || { name: 'TBD' };
-    if (isPlayIn && league.playInSeeds) {
-      const s = getPlayInSeed(teamId);
+    if ((matchType === 'playin' || matchType === 'playoff') && (league.playInSeeds || league.playoffSeeds)) {
+      const s = getTeamSeed(teamId, matchType);
       return `${t.name}${s ? ` (${s}시드)` : ''}`;
     }
     return t.name;
@@ -1410,25 +1603,22 @@ function Dashboard() {
         />
       )}
 
-      {playInChoice && (
+      {opponentChoice && (
         <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl p-8 max-w-lg w-full text-center shadow-2xl">
-                <h2 className="text-2xl font-black mb-2">🛡️ 플레이-인 2라운드 상대 선택</h2>
-                <p className="text-gray-600 mb-6">1라운드 승리팀 중 한 팀을 2라운드 상대로 지명할 수 있습니다.</p>
+                <h2 className="text-2xl font-black mb-2">{opponentChoice.title}</h2>
+                <p className="text-gray-600 mb-6">{opponentChoice.description}</p>
                 <div className="grid grid-cols-2 gap-4">
-                    {playInChoice.winners.map(winner => (
+                    {opponentChoice.opponents.map(opp => (
                         <button 
-                            key={winner.id}
-                            onClick={() => {
-                                const remainingWinner = playInChoice.winners.find(w => w.id !== winner.id);
-                                generatePlayInRound2(playInChoice.matches, playInChoice.seed1, playInChoice.seed2, winner, remainingWinner);
-                            }}
+                            key={opp.id}
+                            onClick={() => opponentChoice.onConfirm(opp)}
                             className="p-4 rounded-xl border-2 transition flex flex-col items-center gap-2 bg-white border-gray-200 hover:border-blue-500 hover:shadow-md cursor-pointer"
                         >
-                            <div className="w-16 h-16 rounded-full flex items-center justify-center text-white font-bold shadow-sm text-lg" style={{backgroundColor:winner.colors.primary}}>{winner.name}</div>
-                            <div className="font-bold text-lg">{winner.fullName}</div>
+                            <div className="w-16 h-16 rounded-full flex items-center justify-center text-white font-bold shadow-sm text-lg" style={{backgroundColor:opp.colors.primary}}>{opp.name}</div>
+                            <div className="font-bold text-lg">{opp.fullName}</div>
                             <div className="text-sm bg-gray-100 px-3 py-1 rounded-full font-bold">
-                                {winner.seedIndex + 1}시드
+                                {getTeamSeed(opp.id, opponentChoice.type.startsWith('playoff') ? 'playoff' : 'playin')} 시드
                             </div>
                         </button>
                     ))}
@@ -1518,21 +1708,21 @@ function Dashboard() {
               </button>
             )}
 
-            {isPlayInFinished && (
+            {isPlayInFinished && !hasPlayoffsGenerated && (
                 <button 
                 onClick={handleGeneratePlayoffs} 
                 className="px-5 py-1.5 rounded-full font-bold text-sm bg-yellow-500 hover:bg-yellow-600 text-white shadow-sm flex items-center gap-2 animate-bounce transition"
               >
-                  <span>🏆</span> 플레이오프 일정 확인하기
+                  <span>👑</span> 플레이오프 대진 생성
               </button>
             )}
 
-            {hasDrafted && nextGlobalMatch && !isMyNextMatch && !isPlayInFinished && (
+            {hasDrafted && nextGlobalMatch && !isMyNextMatch && (
                 <button 
                   onClick={handleProceedNextMatch} 
                   className="px-5 py-1.5 rounded-full font-bold text-sm bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-2 animate-pulse transition"
                 >
-                    <span>⏩</span> 다음 경기 진행 ({t1 ? formatTeamName(t1.id, nextGlobalMatch?.type === 'playin') : '?'} vs {t2 ? formatTeamName(t2.id, nextGlobalMatch?.type === 'playin') : '?'})
+                    <span>⏩</span> 다음 경기 진행 ({t1 ? formatTeamName(t1.id, nextGlobalMatch?.type) : '?'} vs {t2 ? formatTeamName(t2.id, nextGlobalMatch?.type) : '?'})
                 </button>
             )}
 
@@ -1552,7 +1742,7 @@ function Dashboard() {
                    <div className="absolute top-0 right-0 p-4 opacity-10 text-9xl">📅</div>
                    <h3 className="text-lg font-bold text-gray-800 mb-2">다음 경기 일정</h3>
                    <div className="flex items-center justify-between bg-gray-50 rounded-xl p-6 border">
-                      <div className="text-center w-1/3"><div className="text-4xl font-black text-gray-800 mb-2">{t1 ? formatTeamName(t1.id, nextGlobalMatch?.type === 'playin') : '?'}</div></div>
+                      <div className="text-center w-1/3"><div className="text-4xl font-black text-gray-800 mb-2">{t1 ? formatTeamName(t1.id, nextGlobalMatch?.type) : '?'}</div></div>
                       <div className="text-center w-1/3 flex flex-col items-center">
                         <div className="text-xs font-bold text-gray-400 uppercase">VS</div><div className="text-3xl font-bold text-gray-300 my-2">@</div>
                         {nextGlobalMatch ? (
@@ -1572,10 +1762,10 @@ function Dashboard() {
                             )}
 
                           </div>
-                        ) : <div className="text-xs font-bold text-blue-600">{isPlayInFinished ? '플레이오프 대기 중' : '모든 일정 종료'}</div>}
+                        ) : <div className="text-xs font-bold text-blue-600">{hasPlayoffsGenerated ? '시즌 종료' : (isPlayInFinished ? '플레이오프 대기 중' : '모든 일정 종료')}</div>}
                       </div>
                       <div className="text-center w-1/3">
-                          <div className="text-4xl font-black text-gray-800 mb-2">{t2 ? formatTeamName(t2.id, nextGlobalMatch?.type === 'playin') : '?'}</div>
+                          <div className="text-4xl font-black text-gray-800 mb-2">{t2 ? formatTeamName(t2.id, nextGlobalMatch?.type) : '?'}</div>
                       </div>
                    </div>
                 </div>
@@ -1601,9 +1791,9 @@ function Dashboard() {
                                 <div className="text-xs font-bold text-gray-400 uppercase">Round 1 (2.6)</div>
                                 {[...league.matches].filter(m=>m.type==='playin' && m.date.includes('2.6')).map(m => (
                                     <div key={m.id} className="bg-gray-50 border rounded p-2 text-xs flex justify-between items-center">
-                                        <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t1).name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t1, m.type === 'playin')}</div>
+                                        <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t1).name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t1, m.type)}</div>
                                         <div className="text-gray-400 font-bold">{m.status === 'finished' ? m.result.score : 'vs'}</div>
-                                        <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t2).name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t2, m.type === 'playin')}</div>
+                                        <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t2).name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t2, m.type)}</div>
                                     </div>
                                 ))}
                                 
@@ -1611,9 +1801,9 @@ function Dashboard() {
                                 {league.matches.some(m=>m.date.includes('2.7')) ? (
                                     [...league.matches].filter(m=>m.type==='playin' && m.date.includes('2.7')).map(m => (
                                         <div key={m.id} className="bg-gray-50 border rounded p-2 text-xs flex justify-between items-center">
-                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t1).name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t1, m.type === 'playin')}</div>
+                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t1).name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t1, m.type)}</div>
                                             <div className="text-gray-400 font-bold">{m.status === 'finished' ? m.result.score : 'vs'}</div>
-                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t2).name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t2, m.type === 'playin')}</div>
+                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t2).name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t2, m.type)}</div>
                                         </div>
                                     ))
                                 ) : <div className="text-xs text-gray-400 italic">대진 대기 중...</div>}
@@ -1622,9 +1812,9 @@ function Dashboard() {
                                 {league.matches.some(m=>m.date.includes('2.8')) ? (
                                     [...league.matches].filter(m=>m.type==='playin' && m.date.includes('2.8')).map(m => (
                                         <div key={m.id} className="bg-gray-50 border rounded p-2 text-xs flex justify-between items-center">
-                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t1).name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t1, m.type === 'playin')}</div>
+                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t1).name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t1, m.type)}</div>
                                             <div className="text-gray-400 font-bold">{m.status === 'finished' ? m.result.score : 'vs'}</div>
-                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t2).name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t2, m.type === 'playin')}</div>
+                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t2).name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t2, m.type)}</div>
                                         </div>
                                     ))
                                 ) : <div className="text-xs text-gray-400 italic">대진 대기 중...</div>}
@@ -1654,7 +1844,6 @@ function Dashboard() {
                                                         const isMyTeam = myTeam.id === id;
                                                         const rec = computedStandings[id] || {w:0, l:0, diff:0};
                                                         
-                                                        // 상태 표시 로직 (시드 포함)
                                                         let statusBadge = null;
                                                         if (league.seasonSummary) {
                                                             const summary = league.seasonSummary;
@@ -1769,7 +1958,6 @@ function Dashboard() {
                                             const isMyTeam = myTeam.id === id;
                                             const rec = computedStandings[id] || {w:0, l:0, diff:0};
                                             
-                                            // 상태 표시 로직 (시드 포함)
                                             let statusBadge = null;
                                             if (league.seasonSummary) {
                                                 const summary = league.seasonSummary;
@@ -1807,6 +1995,21 @@ function Dashboard() {
                     </div>
                  )}
                </div>
+            )}
+            
+            {activeTab === 'playoffs' && (
+                <div className="bg-white rounded-lg border shadow-sm p-8 min-h-[600px] flex flex-col">
+                    <h2 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-2">👑 2026 LCK 컵 플레이오프</h2>
+                    {hasPlayoffsGenerated ? (
+                        <div className="text-sm text-gray-600">플레이오프 대진표 구현 중...</div>
+                    ) : (
+                        <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
+                            <div className="text-4xl mb-4">🛡️</div>
+                            <div className="text-xl font-bold">플레이오프가 아직 시작되지 않았습니다</div>
+                            <p className="mt-2">정규 시즌과 플레이-인을 모두 마친 후 대진이 생성됩니다.</p>
+                        </div>
+                    )}
+                </div>
             )}
 
             {/* 재정 탭 */}
@@ -1999,11 +2202,13 @@ function Dashboard() {
                         <div key={i} className={`p-4 rounded-lg border flex flex-col gap-2 ${isMyMatch ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-200' : 'bg-white border-gray-200'}`}>
                           <div className="flex justify-between text-xs font-bold text-gray-500">
                             <span>{m.date} {m.time}</span>
-                            <span>{m.type === 'super' ? '🔥 슈퍼위크' : (m.type === 'playin' ? '🛡️ 플레이-인' : (m.type === 'tbd' ? '🔒 미정' : '정규시즌'))}</span>
+                            <span className={`font-bold ${m.type === 'playoff' ? 'text-yellow-600' : (m.type === 'super' ? 'text-purple-600' : (m.type === 'playin' ? 'text-indigo-600' : 'text-gray-500'))}`}>
+                                {m.type === 'playoff' ? '👑 플레이오프' : (m.type === 'super' ? '🔥 슈퍼위크' : (m.type === 'playin' ? '🛡️ 플레이-인' : '정규시즌'))}
+                            </span>
                           </div>
                           <div className="flex justify-between items-center mt-2">
                             <div className="flex flex-col items-center w-1/3">
-                                <span className={`font-bold ${isMyMatch && myTeam.id === m.t1 ? 'text-blue-600' : 'text-gray-800'}`}>{formatTeamName(m.t1, m.type === 'playin')}</span>
+                                <span className={`font-bold ${isMyMatch && myTeam.id === m.t1 ? 'text-blue-600' : 'text-gray-800'}`}>{formatTeamName(m.t1, m.type)}</span>
                                 {isFinished && m.result.winner === t1.name && <span className="text-xs text-blue-500 font-bold">WIN</span>}
                             </div>
                             <div className="text-center font-bold">
@@ -2014,7 +2219,7 @@ function Dashboard() {
                                 )}
                             </div>
                             <div className="flex flex-col items-center w-1/3">
-                                <span className={`font-bold ${isMyMatch && myTeam.id === m.t2 ? 'text-blue-600' : 'text-gray-800'}`}>{formatTeamName(m.t2, m.type === 'playin')}</span>
+                                <span className={`font-bold ${isMyMatch && myTeam.id === m.t2 ? 'text-blue-600' : 'text-gray-800'}`}>{formatTeamName(m.t2, m.type)}</span>
                                 {isFinished && m.result.winner === t2.name && <span className="text-xs text-blue-500 font-bold">WIN</span>}
                             </div>
                           </div>
