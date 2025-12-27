@@ -2041,76 +2041,113 @@ function Dashboard() {
                     <h2 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-2">👑 2026 LCK 컵 플레이오프</h2>
                     {hasPlayoffsGenerated ? (() => {
                         const poMatches = league.matches.filter(m => m.type === 'playoff');
+                        const getWinner = m => m && m.status === 'finished' ? teams.find(t => t.name === m.result.winner)?.id : null;
+                        const getLoser = m => {
+                            if (!m || m.status !== 'finished') return null;
+                            const winnerId = getWinner(m);
+                            return m.t1 === winnerId ? m.t2 : m.t1;
+                        };
+
                         const findMatch = (round, match) => poMatches.find(m => m.round === round && m.match === match);
                         
                         const r1m1 = findMatch(1, 1);
                         const r1m2 = findMatch(1, 2);
-                        const r2m1 = findMatch(2, 1); // Winners R2 M1
-                        const r2m2 = findMatch(2, 2); // Winners R2 M2
-                        const r2lm1 = findMatch(2.1, 1); // Losers R1
-                        const r2lm2 = findMatch(2.2, 1); // Losers R2
-                        const r3m1 = findMatch(3, 1); // Winners Final
-                        const r3lm1 = findMatch(3.1, 1); // Losers R3
-                        const r4m1 = findMatch(4, 1); // Losers Final
-                        const final = findMatch(5, 1); // Grand Final
+                        
+                        // TBD Logic for R2 Winners
+                        let r2m1 = findMatch(2, 1);
+                        if (!r2m1 && r1m1) {
+                            r2m1 = { t1: league.playoffSeeds.find(s => s.seed === 1).id, t2: null, status: 'pending' };
+                        }
+                        let r2m2 = findMatch(2, 2);
+                        if (!r2m2 && r1m2) {
+                            r2m2 = { t1: league.playoffSeeds.find(s => s.seed === 2).id, t2: null, status: 'pending' };
+                        }
 
-                        const BracketRow = ({ title, children, className }) => (
-                            <div className={`flex flex-col items-center ${className}`}>
-                                <h4 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-2">{title}</h4>
-                                <div className="flex justify-around w-full">
-                                    {children}
-                                </div>
+                        // TBD Logic for R2 Losers
+                        let r2lm1 = findMatch(2.1, 1);
+                        if (!r2lm1 && r1m1?.status === 'finished' && r1m2?.status === 'finished') {
+                            r2lm1 = { t1: getLoser(r1m1), t2: getLoser(r1m2), status: 'pending' };
+                        }
+
+                        // TBD Logic for R3 Winners
+                        let r3m1 = findMatch(3, 1);
+                        if (!r3m1 && r2m1?.status === 'finished' && r2m2?.status === 'finished') {
+                            r3m1 = { t1: getWinner(r2m1), t2: getWinner(r2m2), status: 'pending' };
+                        }
+                        
+                        // TBD Logic for R2.2 Losers
+                        let r2lm2 = findMatch(2.2, 1);
+                        if (!r2lm2 && r2m1?.status === 'finished' && r2m2?.status === 'finished' && r2lm1?.status === 'finished') {
+                            const r2wLosers = [getLoser(r2m1), getLoser(r2m2)].map(id => ({ id, seed: league.playoffSeeds.find(s => s.id === id)?.seed || 99 })).sort((a,b) => b.seed - a.seed);
+                            r2lm2 = { t1: r2wLosers[0].id, t2: getWinner(r2lm1), status: 'pending' };
+                        }
+
+                        // TBD Logic for R3.1 Losers
+                        let r3lm1 = findMatch(3.1, 1);
+                        if (!r3lm1 && r3m1?.status === 'finished' && r2lm2?.status === 'finished') {
+                            const r2wLosers = [getLoser(r2m1), getLoser(r2m2)].map(id => ({ id, seed: league.playoffSeeds.find(s => s.id === id)?.seed || 99 })).sort((a,b) => a.seed - b.seed);
+                            r3lm1 = { t1: r2wLosers[0].id, t2: getWinner(r2lm2), status: 'pending' };
+                        }
+
+                        // TBD Logic for R4 (Losers Final)
+                        let r4m1 = findMatch(4, 1);
+                        if (!r4m1 && r3m1?.status === 'finished' && r3lm1?.status === 'finished') {
+                            r4m1 = { t1: getLoser(r3m1), t2: getWinner(r3lm1), status: 'pending' };
+                        }
+
+                        // TBD Logic for Grand Final
+                        let final = findMatch(5, 1);
+                        if (!final && r3m1?.status === 'finished' && r4m1?.status === 'finished') {
+                            final = { t1: getWinner(r3m1), t2: getWinner(r4m1), status: 'pending' };
+                        }
+
+                        const BracketColumn = ({ title, children, className }) => (
+                            <div className={`flex flex-col items-center justify-around w-48 space-y-8 ${className}`}>
+                                <h4 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-2 absolute -top-8">{title}</h4>
+                                {children}
                             </div>
                         );
                         
-                        const Spacer = () => <div className="w-48" />;
-
                         return (
                             <div className="flex-1 overflow-x-auto pb-4">
-                                <div className="flex flex-col space-y-8 min-w-[1400px]">
-                                    {/* Winners Bracket */}
-                                    <BracketRow title="승자조" className="border-b-2 border-blue-200 pb-8">
-                                        {/* R1 */}
-                                        <div className="flex flex-col justify-around space-y-8 w-48">
+                                <div className="flex justify-around space-x-8 min-w-[1400px] relative pt-8">
+                                    {/* Round 1 */}
+                                    <BracketColumn title="1라운드">
+                                        <div className="h-full flex flex-col justify-around space-y-8">
                                             <MatchupBox match={r1m1} />
                                             <MatchupBox match={r1m2} />
                                         </div>
-                                        {/* R2 */}
-                                        <div className="flex flex-col justify-around space-y-8 w-48">
+                                    </BracketColumn>
+                                    {/* Round 2 */}
+                                    <BracketColumn title="2라운드">
+                                        <div className="h-full flex flex-col justify-around space-y-8">
                                             <MatchupBox match={r2m1} />
                                             <MatchupBox match={r2m2} />
                                         </div>
-                                        {/* R3 */}
-                                        <div className="flex flex-col justify-center w-48">
+                                        <MatchupBox match={r2lm1} />
+                                    </BracketColumn>
+                                    {/* Round 3 */}
+                                    <BracketColumn title="3라운드">
+                                        <div className="h-full flex flex-col justify-center">
                                             <MatchupBox match={r3m1} />
                                         </div>
-                                        <Spacer />
-                                        {/* Final */}
-                                        <div className="flex flex-col justify-center w-48">
-                                            <MatchupBox match={final} />
-                                        </div>
-                                    </BracketRow>
-
-                                    {/* Losers Bracket */}
-                                    <BracketRow title="패자조" className="pt-8">
-                                        {/* R1 */}
-                                        <div className="flex flex-col justify-center w-48">
-                                            <MatchupBox match={r2lm1} />
-                                        </div>
-                                        {/* R2 */}
-                                        <div className="flex flex-col justify-center w-48">
+                                        <div className="h-full flex flex-col justify-around space-y-8">
                                             <MatchupBox match={r2lm2} />
-                                        </div>
-                                        {/* R3 */}
-                                        <div className="flex flex-col justify-center w-48">
                                             <MatchupBox match={r3lm1} />
                                         </div>
-                                        {/* R4 */}
-                                        <div className="flex flex-col justify-center w-48">
+                                    </BracketColumn>
+                                    {/* Round 4 */}
+                                    <BracketColumn title="결승 진출전">
+                                        <div className="h-full flex flex-col justify-end">
                                             <MatchupBox match={r4m1} />
                                         </div>
-                                        <Spacer />
-                                    </BracketRow>
+                                    </BracketColumn>
+                                    {/* Final */}
+                                    <BracketColumn title="결승전">
+                                        <div className="h-full flex flex-col justify-center">
+                                            <MatchupBox match={final} />
+                                        </div>
+                                    </BracketColumn>
                                 </div>
                             </div>
                         );
