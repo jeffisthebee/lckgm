@@ -166,7 +166,7 @@ function runDraftSimulation(blueTeam, redTeam, fearlessBans) {
         champName: c.name, 
         tier: c.tier, 
         mastery: c.mastery, 
-        playerName: p.이름,
+        playerName: p.이름, 
         playerOvr: p.종합
       };
     });
@@ -429,8 +429,7 @@ const getPotBadgeStyle = (pot) => {
 const generateSchedule = (baronIds, elderIds) => {
   const week1Days = ['1.14 (수)', '1.15 (목)', '1.16 (금)', '1.17 (토)', '1.18 (일)'];
   const week2Days = ['1.21 (수)', '1.22 (목)', '1.23 (금)', '1.24 (토)', '1.25 (일)'];
-  const week3Days = ['1.28 (수)', '1.29 (목)', '1.30 (금)', '1.31 (토)', '2.1 (일)'];
-
+  
   const shuffledElder = [...elderIds].sort(() => Math.random() - 0.5);
   let allMatches = [];
    
@@ -531,10 +530,6 @@ const generateSchedule = (baronIds, elderIds) => {
     const dayB = parseFloat(b.date.split(' ')[0]);
     if (dayA !== dayB) return dayA - dayB;
     return a.time === '17:00' ? -1 : 1;
-  });
-
-  week3Days.forEach(day => {
-    finalSchedule.push({ id: Date.now() + Math.random(), t1: null, t2: null, date: day, time: '17:00', type: 'tbd', format: 'BO5', status: 'pending' });
   });
 
   return finalSchedule;
@@ -688,9 +683,9 @@ function DetailedMatchResultModal({ result, onClose, teamA, teamB }) {
                  <div className="flex gap-2">
                    {bansBlue.map((b, i) => (
                      <div key={i} className="group relative">
-                        <div className="w-14 h-14 bg-gray-100 rounded-lg flex items-center justify-center border-2 border-gray-200 text-gray-400 font-bold text-xs shadow-inner overflow-hidden">
-                           <span className="group-hover:hidden">{b.slice(0,3)}</span>
-                           <span className="hidden group-hover:block text-[10px] text-center leading-tight px-1">{b}</span>
+                        {/* 밴 카드 디자인 수정: 너비 확장, 텍스트 크기 조정, 줄바꿈 허용 */}
+                        <div className="w-16 h-10 bg-gray-100 rounded-lg flex items-center justify-center border border-gray-300 text-gray-600 font-bold text-[10px] shadow-sm p-1 text-center leading-tight">
+                           {b}
                         </div>
                      </div>
                    ))}
@@ -717,9 +712,8 @@ function DetailedMatchResultModal({ result, onClose, teamA, teamB }) {
                  <div className="flex gap-2">
                     {bansRed.map((b, i) => (
                      <div key={i} className="group relative">
-                        <div className="w-14 h-14 bg-gray-100 rounded-lg flex items-center justify-center border-2 border-gray-200 text-gray-400 font-bold text-xs shadow-inner overflow-hidden">
-                           <span className="group-hover:hidden">{b.slice(0,3)}</span>
-                           <span className="hidden group-hover:block text-[10px] text-center leading-tight px-1">{b}</span>
+                        <div className="w-16 h-10 bg-gray-100 rounded-lg flex items-center justify-center border border-gray-300 text-gray-600 font-bold text-[10px] shadow-sm p-1 text-center leading-tight">
+                           {b}
                         </div>
                      </div>
                    ))}
@@ -1020,7 +1014,6 @@ function Dashboard() {
       
       return league.matches.filter(m => {
           if (m.status !== 'finished') return false;
-          // 승자 ID 찾기
           const winnerTeam = teams.find(t => t.name === m.result.winner);
           if (!winnerTeam) return false;
           return groupIds.includes(winnerTeam.id);
@@ -1036,14 +1029,15 @@ function Dashboard() {
     const baronSorted = getSortedGroup([...league.groups.baron]);
     const elderSorted = getSortedGroup([...league.groups.elder]);
     let newMatches = [];
-    const days = ['1.26 (월)', '1.27 (화)', '1.28 (수)', '1.29 (목)', '1.30 (금)']; 
+    
+    // 슈퍼위크 날짜 수정 (1월 28일 수요일부터 2월 1일 일요일까지)
+    const days = ['1.28 (수)', '1.29 (목)', '1.30 (금)', '1.31 (토)', '2.1 (일)']; 
 
     // 순위별 매칭 생성
     let pairs = [];
     for(let i=0; i<5; i++) {
         pairs.push({ t1: baronSorted[i], t2: elderSorted[i], rank: i+1 });
     }
-    // 경기 순서 랜덤 셔플
     pairs.sort(() => Math.random() - 0.5);
 
     // 기존 TBD 일정 제거 후 새 일정 추가
@@ -1054,15 +1048,14 @@ function Dashboard() {
             id: Date.now() + idx,
             t1: pair.t1,
             t2: pair.t2,
-            date: days[idx] || '1.30 (금)', 
+            date: days[idx] || '2.1 (일)', 
             time: '17:00',
-            type: 'super', // 슈퍼위크 타입 지정 (승리시 2점)
-            format: 'BO3',
+            type: 'super', 
+            format: 'BO5', // 슈퍼위크는 3판 2선승제 (BO5)
             status: 'pending'
         });
     });
 
-    // 날짜순 정렬
     const updatedMatches = [...cleanMatches, ...newMatches];
     updatedMatches.sort((a, b) => {
         const dayA = parseFloat(a.date.split(' ')[0]);
@@ -1072,15 +1065,13 @@ function Dashboard() {
 
     updateLeague(league.id, { matches: updatedMatches });
     setLeague(prev => ({ ...prev, matches: updatedMatches }));
-    alert('🔥 슈퍼위크 일정이 생성되었습니다! (승리 시 그룹 포인트 2점)');
+    alert('🔥 슈퍼위크 일정이 생성되었습니다! (승리 시 그룹 포인트 2점, BO5)');
   };
   
-  // 정규 시즌 경기 종료 여부 확인 (1.25일까지의 경기)
   const isRegularSeasonFinished = league.matches 
     ? league.matches.filter(m => m.type === 'regular').every(m => m.status === 'finished') 
     : false;
   
-  // 슈퍼위크 생성 여부 확인
   const hasSuperWeekGenerated = league.matches
     ? league.matches.some(m => m.type === 'super')
     : false;
@@ -1164,16 +1155,14 @@ function Dashboard() {
           </div>
           
           <div className="flex items-center gap-3">
-            {/* 정규시즌이 끝났고 슈퍼위크 생성이 안됐으면 생성 버튼 표시 */}
             {hasDrafted && isRegularSeasonFinished && !hasSuperWeekGenerated ? (
                  <button 
                  onClick={handleGenerateSuperWeek} 
                  className="px-5 py-1.5 rounded-full font-bold text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition"
                >
-                   <span>🔥</span> 슈퍼위크 일정 확인하기 (1.26 ~ )
+                   <span>🔥</span> 슈퍼위크 일정 확인하기 (1.28 ~ )
                </button>
             ) : (
-                /* 그 외에는 다음 경기 진행 버튼 (단, 다음 경기가 있고 내 경기가 아닐 때) */
                 hasDrafted && nextGlobalMatch && !isMyNextMatch && (
                     <button 
                       onClick={handleProceedNextMatch} 
@@ -1238,7 +1227,7 @@ function Dashboard() {
                         <div className="mb-6">
                             <div className="flex items-center gap-2 mb-2 border-b pb-2">
                                 <span className="text-lg">🟣</span>
-                                <span className="font-black text-sm text-gray-700">바론 그룹 (Baron)</span>
+                                <span className="font-black text-sm text-gray-700">바론 그룹</span>
                             </div>
                             <table className="w-full text-xs">
                               <thead className="bg-gray-50 text-gray-400">
@@ -1265,7 +1254,7 @@ function Dashboard() {
                         <div>
                             <div className="flex items-center gap-2 mb-2 border-b pb-2">
                                 <span className="text-lg">🔴</span>
-                                <span className="font-black text-sm text-gray-700">장로 그룹 (Elder)</span>
+                                <span className="font-black text-sm text-gray-700">장로 그룹</span>
                             </div>
                             <table className="w-full text-xs">
                               <thead className="bg-gray-50 text-gray-400">
