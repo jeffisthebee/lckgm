@@ -1132,7 +1132,28 @@ function Dashboard() {
   // Play-In Generation Logic
   const handleGeneratePlayIn = () => {
       // 1. 그룹별 승점 비교 및 참가 팀 선정
-      const isBaronWinner = baronTotalWins > elderTotalWins;
+      // If totals tie, compare groups' aggregated set difference (computedStandings[id].diff)
+      let isBaronWinner;
+      if (baronTotalWins > elderTotalWins) {
+        isBaronWinner = true;
+      } else if (baronTotalWins < elderTotalWins) {
+        isBaronWinner = false;
+      } else {
+        // tie on total wins -> compare set difference totals
+        const baronDiffTotal = (league.groups?.baron || []).reduce((s, id) => s + ((computedStandings[id]?.diff) || 0), 0);
+        const elderDiffTotal = (league.groups?.elder || []).reduce((s, id) => s + ((computedStandings[id]?.diff) || 0), 0);
+
+        if (baronDiffTotal > elderDiffTotal) isBaronWinner = true;
+        else if (baronDiffTotal < elderDiffTotal) isBaronWinner = false;
+        else {
+          // still tied -> fallback to sum of team power
+          const baronPower = (league.groups?.baron || []).reduce((s, id) => s + ((teams.find(t => t.id === id)?.power) || 0), 0);
+          const elderPower = (league.groups?.elder || []).reduce((s, id) => s + ((teams.find(t => t.id === id)?.power) || 0), 0);
+          if (baronPower > elderPower) isBaronWinner = true;
+          else if (baronPower < elderPower) isBaronWinner = false;
+          else isBaronWinner = Math.random() < 0.5;
+        }
+      }
       
       const baronSorted = getSortedGroup([...league.groups.baron]);
       const elderSorted = getSortedGroup([...league.groups.elder]);
@@ -1218,6 +1239,19 @@ function Dashboard() {
     : false;
 
   const effectiveDate = (isSuperWeekFinished && !hasPlayInGenerated) ? '2.2 (월)' : currentDateDisplay;
+
+  // Helper: get play-in seed and format team names with seed when match is playin
+  const getPlayInSeed = (teamId) => {
+    return league.playInSeeds?.find(s => s.id === teamId)?.seed;
+  };
+  const formatTeamName = (teamId, isPlayIn) => {
+    const t = teams.find(x => x.id === teamId) || { name: 'TBD' };
+    if (isPlayIn && league.playInSeeds) {
+      const s = getPlayInSeed(teamId);
+      return `${t.name}${s ? ` (Seed ${s})` : ''}`;
+    }
+    return t.name;
+  };
 
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden font-sans relative">
@@ -1317,7 +1351,7 @@ function Dashboard() {
                   onClick={handleProceedNextMatch} 
                   className="px-5 py-1.5 rounded-full font-bold text-sm bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-2 animate-pulse transition"
                 >
-                    <span>⏩</span> 다음 경기 진행 ({t1?.name} vs {t2?.name})
+                    <span>⏩</span> 다음 경기 진행 ({t1 ? formatTeamName(t1.id, nextGlobalMatch?.type === 'playin') : '?'} vs {t2 ? formatTeamName(t2.id, nextGlobalMatch?.type === 'playin') : '?'})
                 </button>
             )}
 
@@ -1337,7 +1371,7 @@ function Dashboard() {
                    <div className="absolute top-0 right-0 p-4 opacity-10 text-9xl">📅</div>
                    <h3 className="text-lg font-bold text-gray-800 mb-2">다음 경기 일정</h3>
                    <div className="flex items-center justify-between bg-gray-50 rounded-xl p-6 border">
-                      <div className="text-center w-1/3"><div className="text-4xl font-black text-gray-800 mb-2">{t1 ? t1.name : '?'}</div></div>
+                      <div className="text-center w-1/3"><div className="text-4xl font-black text-gray-800 mb-2">{t1 ? formatTeamName(t1.id, nextGlobalMatch?.type === 'playin') : '?'}</div></div>
                       <div className="text-center w-1/3 flex flex-col items-center">
                         <div className="text-xs font-bold text-gray-400 uppercase">VS</div><div className="text-3xl font-bold text-gray-300 my-2">@</div>
                         {nextGlobalMatch ? (
@@ -1360,7 +1394,7 @@ function Dashboard() {
                         ) : <div className="text-xs font-bold text-blue-600">모든 일정 종료 또는 대기 중</div>}
                       </div>
                       <div className="text-center w-1/3">
-                          <div className="text-4xl font-black text-gray-800 mb-2">{t2 ? t2.name : '?'}</div>
+                          <div className="text-4xl font-black text-gray-800 mb-2">{t2 ? formatTeamName(t2.id, nextGlobalMatch?.type === 'playin') : '?'}</div>
                       </div>
                    </div>
                 </div>
@@ -1386,9 +1420,9 @@ function Dashboard() {
                                 <div className="text-xs font-bold text-gray-400 uppercase">Round 1 (2.6)</div>
                                 {[...league.matches].filter(m=>m.type==='playin' && m.date.includes('2.6')).map(m => (
                                     <div key={m.id} className="bg-gray-50 border rounded p-2 text-xs flex justify-between items-center">
-                                        <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t1).name ? 'text-green-600' : 'text-gray-700'}`}>{teams.find(t=>t.id===m.t1).name}</div>
+                                        <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t1).name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t1, m.type === 'playin')}</div>
                                         <div className="text-gray-400 font-bold">{m.status === 'finished' ? m.result.score : 'vs'}</div>
-                                        <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t2).name ? 'text-green-600' : 'text-gray-700'}`}>{teams.find(t=>t.id===m.t2).name}</div>
+                                        <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t2).name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t2, m.type === 'playin')}</div>
                                     </div>
                                 ))}
                                 
@@ -1396,9 +1430,9 @@ function Dashboard() {
                                 {league.matches.some(m=>m.date.includes('2.7')) ? (
                                     [...league.matches].filter(m=>m.type==='playin' && m.date.includes('2.7')).map(m => (
                                         <div key={m.id} className="bg-gray-50 border rounded p-2 text-xs flex justify-between items-center">
-                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t1).name ? 'text-green-600' : 'text-gray-700'}`}>{teams.find(t=>t.id===m.t1).name}</div>
+                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t1).name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t1, m.type === 'playin')}</div>
                                             <div className="text-gray-400 font-bold">{m.status === 'finished' ? m.result.score : 'vs'}</div>
-                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t2).name ? 'text-green-600' : 'text-gray-700'}`}>{teams.find(t=>t.id===m.t2).name}</div>
+                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t2).name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t2, m.type === 'playin')}</div>
                                         </div>
                                     ))
                                 ) : <div className="text-xs text-gray-400 italic">대진 대기 중...</div>}
@@ -1407,9 +1441,9 @@ function Dashboard() {
                                 {league.matches.some(m=>m.date.includes('2.8')) ? (
                                     [...league.matches].filter(m=>m.type==='playin' && m.date.includes('2.8')).map(m => (
                                         <div key={m.id} className="bg-gray-50 border rounded p-2 text-xs flex justify-between items-center">
-                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t1).name ? 'text-green-600' : 'text-gray-700'}`}>{teams.find(t=>t.id===m.t1).name}</div>
+                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t1).name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t1, m.type === 'playin')}</div>
                                             <div className="text-gray-400 font-bold">{m.status === 'finished' ? m.result.score : 'vs'}</div>
-                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t2).name ? 'text-green-600' : 'text-gray-700'}`}>{teams.find(t=>t.id===m.t2).name}</div>
+                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t2).name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t2, m.type === 'playin')}</div>
                                         </div>
                                     ))
                                 ) : <div className="text-xs text-gray-400 italic">대진 대기 중...</div>}
@@ -1701,7 +1735,7 @@ function Dashboard() {
                                     <td className="py-2 px-1 text-center border-l"><span className={`font-bold ${getPotBadgeStyle(p.잠재력)}`}>{p.잠재력}</span></td>
                                     <td className="py-2 px-2 border-l"><span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-[10px] font-bold block truncate">{p.계약}</span></td>
                                 </tr>
-                            ))}
+                            ))} 
                         </tbody>
                     </table>
                 </div>
@@ -1787,7 +1821,7 @@ function Dashboard() {
                           </div>
                           <div className="flex justify-between items-center mt-2">
                             <div className="flex flex-col items-center w-1/3">
-                                <span className={`font-bold ${isMyMatch && myTeam.id === m.t1 ? 'text-blue-600' : 'text-gray-800'}`}>{t1.name}</span>
+                                <span className={`font-bold ${isMyMatch && myTeam.id === m.t1 ? 'text-blue-600' : 'text-gray-800'}`}>{formatTeamName(m.t1, m.type === 'playin')}</span>
                                 {isFinished && m.result.winner === t1.name && <span className="text-xs text-blue-500 font-bold">WIN</span>}
                             </div>
                             <div className="text-center font-bold">
@@ -1798,7 +1832,7 @@ function Dashboard() {
                                 )}
                             </div>
                             <div className="flex flex-col items-center w-1/3">
-                                <span className={`font-bold ${isMyMatch && myTeam.id === m.t2 ? 'text-blue-600' : 'text-gray-800'}`}>{t2.name}</span>
+                                <span className={`font-bold ${isMyMatch && myTeam.id === m.t2 ? 'text-blue-600' : 'text-gray-800'}`}>{formatTeamName(m.t2, m.type === 'playin')}</span>
                                 {isFinished && m.result.winner === t2.name && <span className="text-xs text-blue-500 font-bold">WIN</span>}
                             </div>
                           </div>
@@ -1828,4 +1862,5 @@ export default function App() {
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
+
 }
