@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Routes, Route, useNavigate, useParams, Navigate } from 'react-router-dom';
 import playerList from './data/players.json';
-import championList from './data/champions.json';
+import rawChampionList from './data/champions.json';
 
 // ==========================================
 // 0. 시뮬레이션 엔진 및 상수 (Simulation Engine)
@@ -65,6 +65,34 @@ const MASTERY_MAP = playerList.reduce((acc, player) => {
   return acc;
 }, {});
 
+// --- 데이터 처리 (챔피언 티어 재조정) ---
+const rebalanceChampionTiers = (champions) => {
+    const roles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
+    let newChampionList = [];
+
+    roles.forEach(role => {
+        // 역할별 챔피언 필터링 및 셔플
+        let roleChamps = champions.filter(c => c.role === role);
+        roleChamps.sort(() => Math.random() - 0.5); // Shuffle
+
+        const tierLimits = role === 'ADC' ? 3 : 5;
+        const champsPerTier = 10;
+
+        roleChamps.forEach((champ, index) => {
+            let newTier = Math.floor(index / champsPerTier) + 1;
+            if (newTier > tierLimits) {
+                newTier = tierLimits;
+            }
+            newChampionList.push({ ...champ, tier: newTier });
+        });
+    });
+
+    return newChampionList.sort((a, b) => a.id - b.id); // 원래 순서로 복원 (선택사항)
+};
+
+// 앱 로드 시 챔피언 리스트를 한 번 재조정
+const championList = rebalanceChampionTiers(rawChampionList);
+
 // --- 드래프트 엔진 ---
 
 function calculateChampionScore(player, champion, masteryData) {
@@ -105,7 +133,7 @@ function getBestAvailableChampion(player, availableChampions) {
   return bestChamp || pool[0];
 }
 
-function runDraftSimulation(blueTeam, redTeam, fearlessBans) {
+function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChampionList) {
   let localBans = new Set([...fearlessBans]);
   let picks = { BLUE: {}, RED: {} }; 
   let logs = [];
@@ -122,7 +150,7 @@ function runDraftSimulation(blueTeam, redTeam, fearlessBans) {
     const opponentTeam = step.side === 'BLUE' ? redTeam : blueTeam;
     const mySide = step.side;
     const opSide = step.side === 'BLUE' ? 'RED' : 'BLUE';
-    const availableChamps = championList.filter(c => !localBans.has(c.name));
+    const availableChamps = currentChampionList.filter(c => !localBans.has(c.name));
 
     if (step.type === 'BAN') {
       let targetRole = remainingRoles[opSide][Math.floor(Math.random() * remainingRoles[opSide].length)];
@@ -179,7 +207,7 @@ function runDraftSimulation(blueTeam, redTeam, fearlessBans) {
   };
 }
 
-function simulateSet(teamA, teamB, setNumber, fearlessBans) {
+function simulateSet(teamA, teamB, setNumber, fearlessBans, currentChampionList) {
   const log = [];
   let scoreA = 0;
   let scoreB = 0;
@@ -187,7 +215,7 @@ function simulateSet(teamA, teamB, setNumber, fearlessBans) {
   const dragonType = GAME_CONSTANTS.DRAGONS.TYPES[Math.floor(Math.random() * GAME_CONSTANTS.DRAGONS.TYPES.length)];
   const dragonBuff = GAME_CONSTANTS.DRAGONS.BUFFS[dragonType];
   
-  const draftResult = runDraftSimulation(teamA, teamB, fearlessBans);
+  const draftResult = runDraftSimulation(teamA, teamB, fearlessBans, currentChampionList);
   const picksA = draftResult.picks.A;
   const picksB = draftResult.picks.B;
 
@@ -221,7 +249,7 @@ function simulateSet(teamA, teamB, setNumber, fearlessBans) {
   };
 }
 
-function simulateMatch(teamA, teamB, format = 'BO3') {
+function simulateMatch(teamA, teamB, format = 'BO3', currentChampionList) {
   const targetWins = format === 'BO5' ? 3 : 2;
   let winsA = 0;
   let winsB = 0;
@@ -232,7 +260,7 @@ function simulateMatch(teamA, teamB, format = 'BO3') {
 
   while (winsA < targetWins && winsB < targetWins) {
     const currentFearlessBans = [...globalBanList];
-    const setResult = simulateSet(teamA, teamB, currentSet, globalBanList);
+    const setResult = simulateSet(teamA, teamB, currentSet, globalBanList, currentChampionList);
     
     matchHistory.push({
       setNumber: currentSet,
@@ -600,7 +628,10 @@ function TeamSelection() {
       lastPlayed: new Date().toISOString(),
       groups: { baron: [], elder: [] },
       matches: [],
-      standings: {} 
+      standings: {},
+      // 시즌 시작 시 초기 챔피언 리스트와 메타 버전 저장
+      currentChampionList: championList,
+      metaVersion: '16.01'
     });
     setTimeout(() => navigate(`/league/${newId}`), 50);
   };
@@ -812,10 +843,16 @@ function Dashboard() {
     const loadData = () => {
       const found = getLeagueById(leagueId);
       if (found) {
-        setLeague(found);
+        // 데이터 무결성 검사 및 초기화
+        const sanitizedLeague = {
+            ...found,
+            metaVersion: found.metaVersion || '16.01',
+            currentChampionList: found.currentChampionList || championList
+        };
+        setLeague(sanitizedLeague);
         updateLeague(leagueId, { lastPlayed: new Date().toISOString() });
-        setViewingTeamId(found.team.id);
-        recalculateStandings(found);
+        setViewingTeamId(sanitizedLeague.team.id);
+        recalculateStandings(sanitizedLeague);
       }
     };
     loadData();
@@ -978,7 +1015,8 @@ function Dashboard() {
     const result = simulateMatch(
       { name: t1Obj.name, roster: getTeamRoster(t1Obj.name) },
       { name: t2Obj.name, roster: getTeamRoster(t2Obj.name) },
-      nextGlobalMatch.format
+      nextGlobalMatch.format,
+      league.currentChampionList
     );
     
     applyMatchResult(nextGlobalMatch, result);
@@ -993,7 +1031,8 @@ function Dashboard() {
     const result = simulateMatch(
       { name: t1Obj.name, roster: getTeamRoster(t1Obj.name) },
       { name: t2Obj.name, roster: getTeamRoster(t2Obj.name) },
-      nextGlobalMatch.format
+      nextGlobalMatch.format,
+      league.currentChampionList
     );
 
     setMyMatchResult({
@@ -1073,7 +1112,7 @@ function Dashboard() {
     const matches = generateSchedule(groups.baron, groups.elder);
     const updated = updateLeague(league.id, { groups, matches });
     if (updated) {
-      setLeague(updated);
+      setLeague(prev => ({...prev, ...updated}));
       setTimeout(() => { setIsDrafting(false); setActiveTab('standings'); alert("팀 구성 및 일정이 완료되었습니다!"); }, 500);
     }
   };
@@ -1118,7 +1157,45 @@ function Dashboard() {
   const baronTotalWins = calculateGroupScore('baron');
   const elderTotalWins = calculateGroupScore('elder');
 
+  const updateChampionMeta = (currentChamps) => {
+    const probabilities = {
+        1: { 1: 0.40, 2: 0.40, 3: 0.15, 4: 0.04, 5: 0.01 },
+        2: { 1: 0.25, 2: 0.40, 3: 0.25, 4: 0.08, 5: 0.02 },
+        3: { 1: 0.07, 2: 0.23, 3: 0.40, 4: 0.23, 5: 0.07 },
+        4: { 1: 0.02, 2: 0.08, 3: 0.25, 4: 0.40, 5: 0.25 },
+        5: { 1: 0.01, 2: 0.04, 3: 0.15, 4: 0.25, 5: 0.40 },
+    };
+
+    const getNewTier = (currentTier) => {
+        const rand = Math.random();
+        let cumulative = 0;
+        const chances = probabilities[currentTier];
+        for (const tier in chances) {
+            cumulative += chances[tier];
+            if (rand < cumulative) {
+                return parseInt(tier, 10);
+            }
+        }
+        return currentTier; // Fallback
+    };
+
+    const newChampionList = currentChamps.map(champ => {
+        let newTier = getNewTier(champ.tier);
+        // ADC는 티어를 3으로 제한
+        if (champ.role === 'ADC' && newTier > 3) {
+            newTier = 3;
+        }
+        return { ...champ, tier: newTier };
+    });
+
+    return newChampionList;
+  };
+
   const handleGenerateSuperWeek = () => {
+    // 메타 업데이트 로직 추가
+    const newChampionList = updateChampionMeta(league.currentChampionList);
+    const newMetaVersion = '16.02';
+
     const baronSorted = getSortedGroup([...league.groups.baron]);
     const elderSorted = getSortedGroup([...league.groups.elder]);
     let newMatches = [];
@@ -1152,9 +1229,19 @@ function Dashboard() {
         return dayA - dayB;
     });
 
-    updateLeague(league.id, { matches: updatedMatches });
-    setLeague(prev => ({ ...prev, matches: updatedMatches }));
-    alert('🔥 슈퍼위크 일정이 생성되었습니다! (BO5)');
+    // 리그 데이터에 메타 변경사항과 함께 저장
+    updateLeague(league.id, { 
+        matches: updatedMatches,
+        currentChampionList: newChampionList,
+        metaVersion: newMetaVersion
+    });
+    setLeague(prev => ({ 
+        ...prev, 
+        matches: updatedMatches,
+        currentChampionList: newChampionList,
+        metaVersion: newMetaVersion
+    }));
+    alert(`🔥 슈퍼위크 일정이 생성되고, 메타가 16.02 패치로 변경되었습니다!`);
   };
 
   // Play-In Generation Logic
@@ -1388,7 +1475,7 @@ function Dashboard() {
                  onClick={handleGenerateSuperWeek} 
                  className="px-5 py-1.5 rounded-full font-bold text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition"
                >
-                   <span>🔥</span> 슈퍼위크 일정 확인하기 (1.28 ~ )
+                   <span>🔥</span> 슈퍼위크 및 16.02 패치 확인
                </button>
             )}
 
@@ -1801,7 +1888,7 @@ function Dashboard() {
               <div className="bg-white rounded-lg border shadow-sm p-8 min-h-[600px] flex flex-col">
                 <div className="flex justify-between items-center mb-6">
                   <h2 className="text-2xl font-black text-gray-900 flex items-center gap-2">
-                    <span className="text-purple-600">📈</span> 16.01 패치 메타
+                    <span className="text-purple-600">📈</span> {league.metaVersion || '16.01'} 패치 메타
                   </h2>
                   <div className="flex bg-gray-100 p-1 rounded-lg">
                     {['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(role => (
@@ -1817,12 +1904,13 @@ function Dashboard() {
                 </div>
 
                 <div className="grid grid-cols-1 gap-4">
-                  {championList
+                  {(league.currentChampionList || championList)
                     .filter(c => c.role === metaRole)
+                    .sort((a, b) => a.tier - b.tier) // 티어 순으로 정렬
                     .map((champ, idx) => (
                       <div key={champ.id} className="border rounded-xl p-4 flex items-center justify-between hover:bg-gray-50 transition group">
                         <div className="flex items-center gap-4 w-1/4">
-                          <span className={`text-2xl font-black w-10 text-center ${idx < 3 ? 'text-yellow-500' : 'text-gray-300'}`}>{idx + 1}</span>
+                          <span className={`text-2xl font-black w-10 text-center ${champ.tier === 1 ? 'text-yellow-500' : 'text-gray-300'}`}>{idx + 1}</span>
                           <div>
                             <div className="font-bold text-lg text-gray-800">{champ.name}</div>
                             <span className={`text-xs font-bold px-2 py-0.5 rounded ${champ.tier === 1 ? 'bg-purple-100 text-purple-600' : champ.tier === 2 ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
