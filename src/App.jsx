@@ -109,8 +109,8 @@ function runDraftSimulation(blueTeam, redTeam, fearlessBans) {
   let localBans = new Set([...fearlessBans]);
   let picks = { BLUE: {}, RED: {} }; 
   let logs = [];
-  let blueBans = []; // 이번 세트 블루 밴 목록
-  let redBans = [];  // 이번 세트 레드 밴 목록
+  let blueBans = []; 
+  let redBans = [];
 
   let remainingRoles = {
     BLUE: ['TOP', 'JGL', 'MID', 'ADC', 'SUP'],
@@ -228,10 +228,12 @@ function simulateMatch(teamA, teamB, format = 'BO3') {
   let currentSet = 1;
   let globalBanList = [];
   
-  // 모든 세트의 상세 기록을 저장할 배열
   let matchHistory = [];
 
   while (winsA < targetWins && winsB < targetWins) {
+    // 시뮬레이션 전 현재까지의 피어리스 밴 목록 저장 (표시용)
+    const currentFearlessBans = [...globalBanList];
+
     const setResult = simulateSet(teamA, teamB, currentSet, globalBanList);
     
     matchHistory.push({
@@ -239,6 +241,7 @@ function simulateMatch(teamA, teamB, format = 'BO3') {
       winner: setResult.winnerName,
       picks: setResult.picks,
       bans: setResult.bans,
+      fearlessBans: currentFearlessBans, // 해당 세트에 적용된 글로벌 밴 목록
       logs: setResult.logs,
       scores: setResult.score
     });
@@ -260,7 +263,7 @@ function simulateMatch(teamA, teamB, format = 'BO3') {
     scoreA: winsA,
     scoreB: winsB,
     scoreString: `${winsA}:${winsB}`,
-    history: matchHistory // 모든 세트 정보 포함
+    history: matchHistory 
   };
 }
 
@@ -635,13 +638,14 @@ function TeamSelection() {
 
 // --- Detailed Match Result Modal (New for My Games) ---
 function DetailedMatchResultModal({ result, onClose, teamA, teamB }) {
-  const [activeSet, setActiveSet] = useState(0); // 0 = set 1, 1 = set 2...
+  const [activeSet, setActiveSet] = useState(0); 
   
   const currentSetData = result.history[activeSet];
   const picksBlue = currentSetData.picks.A;
   const picksRed = currentSetData.picks.B;
   const bansBlue = currentSetData.bans.A;
   const bansRed = currentSetData.bans.B;
+  const fearlessBans = currentSetData.fearlessBans || [];
 
   return (
     <div className="fixed inset-0 z-[100] bg-gray-900 bg-opacity-95 flex items-center justify-center p-4">
@@ -677,16 +681,53 @@ function DetailedMatchResultModal({ result, onClose, teamA, teamB }) {
 
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto p-6">
-          {/* Bans */}
-          <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm">
-            <div className="flex gap-2">
-              <span className="font-bold text-blue-600 mr-2 self-center">BLUE BAN</span>
-              {bansBlue.map((b, i) => <div key={i} className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center text-[10px] text-gray-500 font-bold border border-gray-300 shadow-inner" title={b}>{b.slice(0,2)}</div>)}
-            </div>
-            <div className="flex gap-2">
-               {bansRed.map((b, i) => <div key={i} className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center text-[10px] text-gray-500 font-bold border border-gray-300 shadow-inner" title={b}>{b.slice(0,2)}</div>)}
-               <span className="font-bold text-red-600 ml-2 self-center">RED BAN</span>
-            </div>
+          {/* Bans Section with improved layout & Full Names */}
+          <div className="mb-6 bg-white p-5 rounded-xl shadow-sm border border-gray-200">
+             <div className="flex justify-between items-start">
+               {/* Blue Team Bans */}
+               <div className="flex flex-col gap-2">
+                 <div className="text-blue-600 font-black text-sm uppercase tracking-wider mb-1">Blue Phase Bans</div>
+                 <div className="flex gap-2">
+                   {bansBlue.map((b, i) => (
+                     <div key={i} className="group relative">
+                        <div className="w-14 h-14 bg-gray-100 rounded-lg flex items-center justify-center border-2 border-gray-200 text-gray-400 font-bold text-xs shadow-inner overflow-hidden">
+                           <span className="group-hover:hidden">{b.slice(0,3)}</span>
+                           <span className="hidden group-hover:block text-[10px] text-center leading-tight px-1">{b}</span>
+                        </div>
+                     </div>
+                   ))}
+                 </div>
+               </div>
+
+               {/* Global (Fearless) Bans - Center */}
+               {fearlessBans.length > 0 && (
+                   <div className="flex flex-col gap-2 items-center mx-4">
+                     <div className="text-purple-600 font-black text-sm uppercase tracking-wider mb-1 flex items-center gap-1">
+                        <span>🚫</span> Fearless (Locked)
+                     </div>
+                     <div className="flex gap-1 flex-wrap justify-center max-w-lg bg-purple-50 p-2 rounded-lg border border-purple-100">
+                       {fearlessBans.map((b, i) => (
+                         <span key={i} className="text-[10px] font-bold text-purple-700 bg-white px-2 py-1 rounded border border-purple-200 shadow-sm">{b}</span>
+                       ))}
+                     </div>
+                   </div>
+               )}
+
+               {/* Red Team Bans */}
+               <div className="flex flex-col gap-2 items-end">
+                 <div className="text-red-600 font-black text-sm uppercase tracking-wider mb-1">Red Phase Bans</div>
+                 <div className="flex gap-2">
+                    {bansRed.map((b, i) => (
+                     <div key={i} className="group relative">
+                        <div className="w-14 h-14 bg-gray-100 rounded-lg flex items-center justify-center border-2 border-gray-200 text-gray-400 font-bold text-xs shadow-inner overflow-hidden">
+                           <span className="group-hover:hidden">{b.slice(0,3)}</span>
+                           <span className="hidden group-hover:block text-[10px] text-center leading-tight px-1">{b}</span>
+                        </div>
+                     </div>
+                   ))}
+                 </div>
+               </div>
+             </div>
           </div>
 
           {/* Rosters & Picks */}
@@ -974,6 +1015,10 @@ function Dashboard() {
     });
   };
 
+  // 그룹별 총 승점(Wins) 계산
+  const baronTotalWins = league.groups && league.groups.baron ? league.groups.baron.reduce((acc, id) => acc + (league.standings[id]?.w || 0), 0) : 0;
+  const elderTotalWins = league.groups && league.groups.elder ? league.groups.elder.reduce((acc, id) => acc + (league.standings[id]?.w || 0), 0) : 0;
+
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden font-sans relative">
       
@@ -1110,10 +1155,13 @@ function Dashboard() {
                 <div className="col-span-12 lg:col-span-4 flex flex-col h-full max-h-[500px]">
                    {hasDrafted ? (
                      <div className="bg-white rounded-lg border shadow-sm p-4 h-full overflow-y-auto">
+                        <div className="mb-2 text-center text-xs font-bold text-gray-500 bg-gray-100 py-1 rounded">
+                           그룹 대항전 총점: <span className="text-purple-600">Baron {baronTotalWins}</span> vs <span className="text-red-600">Elder {elderTotalWins}</span>
+                        </div>
                         <div className="mb-6">
                             <div className="flex items-center gap-2 mb-2 border-b pb-2">
                                 <span className="text-lg">🟣</span>
-                                <span className="font-black text-sm text-gray-700">바론 그룹 (Baron)</span>
+                                <span className="font-black text-sm text-gray-700">바론 그룹</span>
                             </div>
                             <table className="w-full text-xs">
                               <thead className="bg-gray-50 text-gray-400">
@@ -1140,7 +1188,7 @@ function Dashboard() {
                         <div>
                             <div className="flex items-center gap-2 mb-2 border-b pb-2">
                                 <span className="text-lg">🔴</span>
-                                <span className="font-black text-sm text-gray-700">장로 그룹 (Elder)</span>
+                                <span className="font-black text-sm text-gray-700">장로 그룹</span>
                             </div>
                             <table className="w-full text-xs">
                               <thead className="bg-gray-50 text-gray-400">
@@ -1219,79 +1267,84 @@ function Dashboard() {
                <div className="flex flex-col gap-6">
                  <h2 className="text-2xl font-black text-gray-900 flex items-center gap-2">🏆 2026 LCK 컵 순위표</h2>
                  {hasDrafted ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
-                           <div className="p-4 bg-purple-50 border-b border-purple-100 flex items-center gap-2">
-                              <span className="text-2xl">🟣</span>
-                              <h3 className="font-black text-lg text-purple-900">바론 그룹 (Baron Group)</h3>
-                           </div>
-                           <table className="w-full text-sm">
-                             <thead className="bg-gray-50 text-gray-500 font-bold border-b">
-                               <tr>
-                                 <th className="py-3 px-4 text-center">순위</th>
-                                 <th className="py-3 px-4 text-left">팀</th>
-                                 <th className="py-3 px-4 text-center">승</th>
-                                 <th className="py-3 px-4 text-center">패</th>
-                                 <th className="py-3 px-4 text-center">득실</th>
-                               </tr>
-                             </thead>
-                             <tbody className="divide-y divide-gray-100">
-                               {getSortedGroup(league.groups.baron).map((id, idx) => {
-                                 const t = teams.find(team => team.id === id);
-                                 const isMyTeam = myTeam.id === id;
-                                 const rec = league.standings && league.standings[id] ? league.standings[id] : {w:0, l:0, diff:0};
-                                 return (
-                                   <tr key={id} onClick={() => setViewingTeamId(id)} className={`cursor-pointer hover:bg-gray-50 transition ${isMyTeam ? 'bg-purple-50' : ''}`}>
-                                     <td className="py-3 px-4 text-center font-bold text-gray-600">{idx + 1}</td>
-                                     <td className="py-3 px-4 font-bold text-gray-800 flex items-center gap-2">
-                                        <div className="w-6 h-6 rounded-full text-white text-[10px] flex items-center justify-center" style={{backgroundColor: t.colors.primary}}>{t.name}</div>
-                                        {t.fullName}
-                                     </td>
-                                     <td className="py-3 px-4 text-center font-bold text-blue-600">{rec.w}</td>
-                                     <td className="py-3 px-4 text-center font-bold text-red-600">{rec.l}</td>
-                                     <td className="py-3 px-4 text-center text-gray-500">{rec.diff > 0 ? `+${rec.diff}` : rec.diff}</td>
-                                   </tr>
-                                 )
-                               })}
-                             </tbody>
-                           </table>
+                    <div className="flex flex-col gap-4">
+                        <div className="bg-gray-800 text-white rounded-lg p-4 text-center font-bold text-lg shadow-sm">
+                           🔥 그룹 대항전 스코어: <span className="text-purple-400 text-2xl mx-2">{baronTotalWins}</span> (Baron) vs <span className="text-red-400 text-2xl mx-2">{elderTotalWins}</span> (Elder)
                         </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
+                            <div className="p-4 bg-purple-50 border-b border-purple-100 flex items-center gap-2">
+                                <span className="text-2xl">🟣</span>
+                                <h3 className="font-black text-lg text-purple-900">바론 그룹 (Baron Group)</h3>
+                            </div>
+                            <table className="w-full text-sm">
+                                <thead className="bg-gray-50 text-gray-500 font-bold border-b">
+                                <tr>
+                                    <th className="py-3 px-4 text-center">순위</th>
+                                    <th className="py-3 px-4 text-left">팀</th>
+                                    <th className="py-3 px-4 text-center">승</th>
+                                    <th className="py-3 px-4 text-center">패</th>
+                                    <th className="py-3 px-4 text-center">득실</th>
+                                </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                {getSortedGroup(league.groups.baron).map((id, idx) => {
+                                    const t = teams.find(team => team.id === id);
+                                    const isMyTeam = myTeam.id === id;
+                                    const rec = league.standings && league.standings[id] ? league.standings[id] : {w:0, l:0, diff:0};
+                                    return (
+                                    <tr key={id} onClick={() => setViewingTeamId(id)} className={`cursor-pointer hover:bg-gray-50 transition ${isMyTeam ? 'bg-purple-50' : ''}`}>
+                                        <td className="py-3 px-4 text-center font-bold text-gray-600">{idx + 1}</td>
+                                        <td className="py-3 px-4 font-bold text-gray-800 flex items-center gap-2">
+                                            <div className="w-6 h-6 rounded-full text-white text-[10px] flex items-center justify-center" style={{backgroundColor: t.colors.primary}}>{t.name}</div>
+                                            {t.fullName}
+                                        </td>
+                                        <td className="py-3 px-4 text-center font-bold text-blue-600">{rec.w}</td>
+                                        <td className="py-3 px-4 text-center font-bold text-red-600">{rec.l}</td>
+                                        <td className="py-3 px-4 text-center text-gray-500">{rec.diff > 0 ? `+${rec.diff}` : rec.diff}</td>
+                                    </tr>
+                                    )
+                                })}
+                                </tbody>
+                            </table>
+                            </div>
 
-                        <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
-                           <div className="p-4 bg-red-50 border-b border-red-100 flex items-center gap-2">
-                              <span className="text-2xl">🔴</span>
-                              <h3 className="font-black text-lg text-red-900">장로 그룹 (Elder Group)</h3>
-                           </div>
-                           <table className="w-full text-sm">
-                             <thead className="bg-gray-50 text-gray-500 font-bold border-b">
-                               <tr>
-                                 <th className="py-3 px-4 text-center">순위</th>
-                                 <th className="py-3 px-4 text-left">팀</th>
-                                 <th className="py-3 px-4 text-center">승</th>
-                                 <th className="py-3 px-4 text-center">패</th>
-                                 <th className="py-3 px-4 text-center">득실</th>
-                               </tr>
-                             </thead>
-                             <tbody className="divide-y divide-gray-100">
-                               {getSortedGroup(league.groups.elder).map((id, idx) => {
-                                 const t = teams.find(team => team.id === id);
-                                 const isMyTeam = myTeam.id === id;
-                                 const rec = league.standings && league.standings[id] ? league.standings[id] : {w:0, l:0, diff:0};
-                                 return (
-                                   <tr key={id} onClick={() => setViewingTeamId(id)} className={`cursor-pointer hover:bg-gray-50 transition ${isMyTeam ? 'bg-red-50' : ''}`}>
-                                     <td className="py-3 px-4 text-center font-bold text-gray-600">{idx + 1}</td>
-                                     <td className="py-3 px-4 font-bold text-gray-800 flex items-center gap-2">
-                                        <div className="w-6 h-6 rounded-full text-white text-[10px] flex items-center justify-center" style={{backgroundColor: t.colors.primary}}>{t.name}</div>
-                                        {t.fullName}
-                                     </td>
-                                     <td className="py-3 px-4 text-center font-bold text-blue-600">{rec.w}</td>
-                                     <td className="py-3 px-4 text-center font-bold text-red-600">{rec.l}</td>
-                                     <td className="py-3 px-4 text-center text-gray-500">{rec.diff > 0 ? `+${rec.diff}` : rec.diff}</td>
-                                   </tr>
-                                 )
-                               })}
-                             </tbody>
-                           </table>
+                            <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
+                            <div className="p-4 bg-red-50 border-b border-red-100 flex items-center gap-2">
+                                <span className="text-2xl">🔴</span>
+                                <h3 className="font-black text-lg text-red-900">장로 그룹 (Elder Group)</h3>
+                            </div>
+                            <table className="w-full text-sm">
+                                <thead className="bg-gray-50 text-gray-500 font-bold border-b">
+                                <tr>
+                                    <th className="py-3 px-4 text-center">순위</th>
+                                    <th className="py-3 px-4 text-left">팀</th>
+                                    <th className="py-3 px-4 text-center">승</th>
+                                    <th className="py-3 px-4 text-center">패</th>
+                                    <th className="py-3 px-4 text-center">득실</th>
+                                </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                {getSortedGroup(league.groups.elder).map((id, idx) => {
+                                    const t = teams.find(team => team.id === id);
+                                    const isMyTeam = myTeam.id === id;
+                                    const rec = league.standings && league.standings[id] ? league.standings[id] : {w:0, l:0, diff:0};
+                                    return (
+                                    <tr key={id} onClick={() => setViewingTeamId(id)} className={`cursor-pointer hover:bg-gray-50 transition ${isMyTeam ? 'bg-red-50' : ''}`}>
+                                        <td className="py-3 px-4 text-center font-bold text-gray-600">{idx + 1}</td>
+                                        <td className="py-3 px-4 font-bold text-gray-800 flex items-center gap-2">
+                                            <div className="w-6 h-6 rounded-full text-white text-[10px] flex items-center justify-center" style={{backgroundColor: t.colors.primary}}>{t.name}</div>
+                                            {t.fullName}
+                                        </td>
+                                        <td className="py-3 px-4 text-center font-bold text-blue-600">{rec.w}</td>
+                                        <td className="py-3 px-4 text-center font-bold text-red-600">{rec.l}</td>
+                                        <td className="py-3 px-4 text-center text-gray-500">{rec.diff > 0 ? `+${rec.diff}` : rec.diff}</td>
+                                    </tr>
+                                    )
+                                })}
+                                </tbody>
+                            </table>
+                            </div>
                         </div>
                     </div>
                  ) : (
