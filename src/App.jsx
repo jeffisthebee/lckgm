@@ -426,7 +426,6 @@ const getPotBadgeStyle = (pot) => {
   return 'text-gray-500 font-medium';
 };
 
-// generateSchedule unchanged
 const generateSchedule = (baronIds, elderIds) => {
   const week1Days = ['1.14 (수)', '1.15 (목)', '1.16 (금)', '1.17 (토)', '1.18 (일)'];
   const week2Days = ['1.21 (수)', '1.22 (목)', '1.23 (금)', '1.24 (토)', '1.25 (일)'];
@@ -622,7 +621,7 @@ function TeamSelection() {
         <div className="grid grid-cols-4 gap-3 mb-4">{difficulties.map(d=><button key={d.value} onClick={()=>setDiff(d.value)} className={`py-3 rounded-xl border-2 font-bold transition ${diff===d.value?'bg-gray-800 text-white border-gray-800':'bg-white text-gray-400 border-gray-200 hover:border-gray-300'}`}>{d.label}</button>)}</div>
         <div className="bg-gray-50 rounded-lg p-4 mb-8 text-sm leading-relaxed border border-gray-100">
           <p className="text-gray-600 font-medium">ℹ️ 난이도가 상승할수록 승리 확률 감소, 재계약 확률 감소, 선수의 기복이 증가하여 전체적으로 운영이 어려워집니다.</p>
-          {diff === 'insane' && <p className="text-red-600 font-bold mt-2 animate-pulse">⚠️ 극악 난이도는 운과 실력이 모두 필요한 최악의 시나리오입니다。</p>}
+          {diff === 'insane' && <p className="text-red-600 font-bold mt-2 animate-pulse">⚠️ 극악 난이도는 운과 실력이 모두 필요한 최악의 시나리오입니다.</p>}
         </div>
         <button onClick={handleStart} className="w-full py-5 rounded-2xl font-black text-xl text-white shadow-lg hover:shadow-xl hover:opacity-90 transition transform hover:-translate-y-1" style={{backgroundColor:current.colors.primary,color:getTextColor(current.colors.primary)}}>2026 시즌 시작하기</button>
       </div>
@@ -806,6 +805,9 @@ function Dashboard() {
   // 로컬 순위표 상태 (버그 수정용: API 호출 대신 계산된 값 사용)
   const [computedStandings, setComputedStandings] = useState({});
 
+  // 플레이-인 2라운드 상대 선택 모달 상태
+  const [playInChoice, setPlayInChoice] = useState(null); // { seed1, seed2, winners: [team1, team2] }
+
   useEffect(() => {
     const loadData = () => {
       const found = getLeagueById(leagueId);
@@ -890,6 +892,19 @@ function Dashboard() {
     checkAndGenerateNextPlayInRound(updatedMatches);
   };
 
+  const generatePlayInRound2 = (matches, seed1, seed2, pickedTeam, remainingTeam) => {
+      const r2Matches = [
+          { id: Date.now() + 100, t1: seed1.id, t2: pickedTeam.id, date: '2.7 (토)', time: '17:00', type: 'playin', format: 'BO3', status: 'pending' },
+          { id: Date.now() + 101, t1: seed2.id, t2: remainingTeam.id, date: '2.7 (토)', time: '19:30', type: 'playin', format: 'BO3', status: 'pending' }
+      ];
+      
+      const newMatches = [...matches, ...r2Matches].sort((a,b) => parseFloat(a.date.split(' ')[0]) - parseFloat(b.date.split(' ')[0]));
+      updateLeague(league.id, { matches: newMatches });
+      setLeague(prev => ({ ...prev, matches: newMatches }));
+      alert("플레이-인 2라운드 대진이 완성되었습니다!");
+      setPlayInChoice(null);
+  };
+
   const checkAndGenerateNextPlayInRound = (matches) => {
       // 1라운드(2.6)가 모두 끝났는지 확인
       const r1Matches = matches.filter(m => m.date.includes('2.6'));
@@ -897,85 +912,38 @@ function Dashboard() {
       const r2Exists = matches.some(m => m.date.includes('2.7'));
 
       if (r1Finished && !r2Exists) {
-          // winners from round 1 (team objects)
           const r1Winners = r1Matches.map(m => teams.find(t => t.name === m.result.winner));
           const playInSeeds = league.playInSeeds || []; 
-          const seed1 = playInSeeds[0] ? teams.find(t => t.id === playInSeeds[0].id) : null;
-          const seed2 = playInSeeds[1] ? teams.find(t => t.id === playInSeeds[1].id) : null;
+          const seed1 = teams.find(t => t.id === playInSeeds[0].id);
+          const seed2 = teams.find(t => t.id === playInSeeds[1].id);
           
-          // Build winners with their seed numbers (from playInSeeds mapping)
-          const winnersWithSeed = r1Winners.map(w => {
-            const seedObj = playInSeeds.find(s => s.id === w.id);
-            return { team: w, seed: seedObj ? seedObj.seed : null };
-          });
-
-          // Determine pickedTeam and remainingTeam according to rules:
-          // - If myTeam is seed1, prompt user to pick between the two winners.
-          // - Else, choose the lower seed (higher numeric seed) 65% of the time.
-          let pickedTeamObj = null;
-          let remainingTeamObj = null;
-
-          if (seed1 && myTeam.id === seed1.id) {
-            // let user choose
-            const a = winnersWithSeed[0];
-            const b = winnersWithSeed[1];
-            const aLabel = `${a.team.name} (${a.seed ? `${a.seed} 시드` : '시드 없음'})`;
-            const bLabel = `${b.team.name} (${b.seed ? `${b.seed} 시드` : '시드 없음'})`;
-            const input = window.prompt(`플레이-인 2라운드에서 대전할 팀을 선택하세요:\n1) ${aLabel}\n2) ${bLabel}\n숫자 1 또는 2를 입력하세요. (취소 시 1번 선택)`, '1');
-            if (input && input.trim() === '2') {
-              pickedTeamObj = b.team;
-              remainingTeamObj = a.team;
-            } else {
-              pickedTeamObj = a.team;
-              remainingTeamObj = b.team;
-            }
+          const winnersWithSeed = r1Winners.map(w => ({ ...w, seedIndex: playInSeeds.findIndex(s => s.id === w.id) }));
+          winnersWithSeed.sort((a, b) => a.seedIndex - b.seedIndex); // Sort by seed index ASC (lower seed index is better)
+          
+          if (seed1.id === myTeam.id) {
+              // User is seed 1, open choice modal
+              setPlayInChoice({
+                  seed1: seed1,
+                  seed2: seed2,
+                  winners: winnersWithSeed,
+                  matches: matches
+              });
+              return; // Stop execution until user makes a choice
           } else {
-            // CPU selection: prefer lower seed (higher number) 65% of time
-            const a = winnersWithSeed[0];
-            const b = winnersWithSeed[1];
-            // If seeds are undefined, fallback to random
-            const aSeed = a.seed ?? 0;
-            const bSeed = b.seed ?? 0;
-            let lowerSeedTeam = a.team;
-            let higherSeedTeam = b.team;
-            if (aSeed < bSeed) {
-              // a has better (smaller) seed number -> b is lower seed (worse)
-              lowerSeedTeam = b.team;
-              higherSeedTeam = a.team;
-            } else if (aSeed > bSeed) {
-              lowerSeedTeam = a.team;
-              higherSeedTeam = b.team;
-            } else {
-              // equal or unknown, treat b as lower by default for some variety
-              lowerSeedTeam = b.team;
-              higherSeedTeam = a.team;
-            }
-
-            if (Math.random() < 0.65) {
-              pickedTeamObj = lowerSeedTeam;
-              remainingTeamObj = higherSeedTeam;
-            } else {
-              pickedTeamObj = higherSeedTeam;
-              remainingTeamObj = lowerSeedTeam;
-            }
+              // AI is seed 1, make a choice
+              const lowerSeedWinner = winnersWithSeed[1]; // Higher seed index means lower rank
+              const higherSeedWinner = winnersWithSeed[0];
+              
+              let pickedTeam;
+              if (Math.random() < 0.65) {
+                  pickedTeam = lowerSeedWinner; // 65% chance to pick the lower-seeded team
+              } else {
+                  pickedTeam = higherSeedWinner;
+              }
+              const remainingTeam = (pickedTeam.id === lowerSeedWinner.id) ? higherSeedWinner : lowerSeedWinner;
+              
+              generatePlayInRound2(matches, seed1, seed2, pickedTeam, remainingTeam);
           }
-
-          // Fallback if something went wrong
-          if (!pickedTeamObj) {
-            const defaultPick = winnersWithSeed[0] || { team: teams.find(t => t.id === playInSeeds[2]?.id) };
-            pickedTeamObj = defaultPick.team;
-            remainingTeamObj = winnersWithSeed[1] ? winnersWithSeed[1].team : teams.find(t => t.id === playInSeeds[3]?.id);
-          }
-
-          const r2Matches = [
-              { id: Date.now() + 100, t1: seed1.id, t2: pickedTeamObj.id, date: '2.7 (토)', time: '17:00', type: 'playin', format: 'BO3', status: 'pending' },
-              { id: Date.now() + 101, t1: seed2.id, t2: remainingTeamObj.id, date: '2.7 (토)', time: '19:30', type: 'playin', format: 'BO3', status: 'pending' }
-          ];
-          
-          const newMatches = [...matches, ...r2Matches].sort((a,b) => parseFloat(a.date.split(' ')[0]) - parseFloat(b.date.split(' ')[0]));
-          updateLeague(league.id, { matches: newMatches });
-          setLeague(prev => ({ ...prev, matches: newMatches }));
-          alert("플레이-인 2라운드 대진이 완성되었습니다!");
       }
 
       // 2라운드(2.7)가 모두 끝났는지 확인 -> 최종전 생성
@@ -1189,19 +1157,99 @@ function Dashboard() {
     alert('🔥 슈퍼위크 일정이 생성되었습니다! (BO5)');
   };
 
-  // Helper: get play-in seed and format team names with seed when match is playin
-  const getPlayInSeed = (teamId) => {
-    return league.playInSeeds?.find(s => s.id === teamId)?.seed;
-  };
-  const formatTeamName = (teamId, isPlayIn) => {
-    const t = teams.find(x => x.id === teamId) || { name: 'TBD' };
-    if (isPlayIn && league.playInSeeds) {
-      const s = getPlayInSeed(teamId);
-      return `${t.name}${s ? ` (${s} 시드)` : ''}`;
-    }
-    return t.name;
-  };
+  // Play-In Generation Logic
+  const handleGeneratePlayIn = () => {
+      // 1. 그룹별 승점 비교 및 참가 팀 선정
+      // If totals tie, compare groups' aggregated set difference (computedStandings[id].diff)
+      let isBaronWinner;
+      if (baronTotalWins > elderTotalWins) {
+        isBaronWinner = true;
+      } else if (baronTotalWins < elderTotalWins) {
+        isBaronWinner = false;
+      } else {
+        // tie on total wins -> compare set difference totals
+        const baronDiffTotal = (league.groups?.baron || []).reduce((s, id) => s + ((computedStandings[id]?.diff) || 0), 0);
+        const elderDiffTotal = (league.groups?.elder || []).reduce((s, id) => s + ((computedStandings[id]?.diff) || 0), 0);
 
+        if (baronDiffTotal > elderDiffTotal) isBaronWinner = true;
+        else if (baronDiffTotal < elderDiffTotal) isBaronWinner = false;
+        else {
+          // still tied -> fallback to sum of team power
+          const baronPower = (league.groups?.baron || []).reduce((s, id) => s + ((teams.find(t => t.id === id)?.power) || 0), 0);
+          const elderPower = (league.groups?.elder || []).reduce((s, id) => s + ((teams.find(t => t.id === id)?.power) || 0), 0);
+          if (baronPower > elderPower) isBaronWinner = true;
+          else if (baronPower < elderPower) isBaronWinner = false;
+          else isBaronWinner = Math.random() < 0.5;
+        }
+      }
+      
+      const baronSorted = getSortedGroup([...league.groups.baron]);
+      const elderSorted = getSortedGroup([...league.groups.elder]);
+
+      // 상태 저장 객체 (시즌 결산용)
+      const seasonSummary = {
+          winnerGroup: isBaronWinner ? 'Baron' : 'Elder',
+          poTeams: [],
+          playInTeams: [],
+          eliminated: null
+      };
+
+      let playInTeams = [];
+      
+      if (isBaronWinner) {
+          // 승자(Baron): 1,2위 PO 직행, 3,4,5위 플레이인
+          seasonSummary.poTeams.push({ id: baronSorted[0], seed: 1 });
+          seasonSummary.poTeams.push({ id: baronSorted[1], seed: 2 });
+          playInTeams.push(baronSorted[2], baronSorted[3], baronSorted[4]);
+
+          // 패자(Elder): 1위 PO 직행, 2,3,4위 플레이인, 5위 탈락
+          seasonSummary.poTeams.push({ id: elderSorted[0], seed: 3 });
+          playInTeams.push(elderSorted[1], elderSorted[2], elderSorted[3]);
+          seasonSummary.eliminated = elderSorted[4];
+      } else {
+          // 승자(Elder)
+          seasonSummary.poTeams.push({ id: elderSorted[0], seed: 1 });
+          seasonSummary.poTeams.push({ id: elderSorted[1], seed: 2 });
+          playInTeams.push(elderSorted[2], elderSorted[3], elderSorted[4]);
+
+          // 패자(Baron)
+          seasonSummary.poTeams.push({ id: baronSorted[0], seed: 3 });
+          playInTeams.push(baronSorted[1], baronSorted[2], baronSorted[3]);
+          seasonSummary.eliminated = baronSorted[4];
+      }
+
+      // 2. 통합 시딩 (승수 > 득실 > 랜덤)
+      playInTeams.sort((a, b) => {
+          const recA = computedStandings[a];
+          const recB = computedStandings[b];
+          if (recA.w !== recB.w) return recB.w - recA.w;
+          if (recA.diff !== recB.diff) return recB.diff - recA.diff;
+          return Math.random() - 0.5; // 동률 시 랜덤
+      });
+
+      // 시드 저장
+      const seededTeams = playInTeams.map((tid, idx) => ({ id: tid, seed: idx + 1 }));
+      seasonSummary.playInTeams = seededTeams;
+      
+      // 3. 1라운드 대진 생성 (3vs6, 4vs5)
+      const seed3 = seededTeams[2].id;
+      const seed6 = seededTeams[5].id;
+      const seed4 = seededTeams[3].id;
+      const seed5 = seededTeams[4].id;
+
+      const newMatches = [
+          { id: Date.now() + 1, t1: seed3, t2: seed6, date: '2.6 (금)', time: '17:00', type: 'playin', format: 'BO3', status: 'pending' },
+          { id: Date.now() + 2, t1: seed4, t2: seed5, date: '2.6 (금)', time: '19:30', type: 'playin', format: 'BO3', status: 'pending' }
+      ];
+
+      const updatedMatches = [...league.matches, ...newMatches];
+      
+      updateLeague(league.id, { matches: updatedMatches, playInSeeds: seededTeams, seasonSummary }); 
+      setLeague(prev => ({ ...prev, matches: updatedMatches, playInSeeds: seededTeams, seasonSummary }));
+      setShowPlayInBracket(true); // 대진표 보기 모드로 자동 전환
+      alert('🛡️ 플레이-인 대진이 생성되었습니다! (1,2시드 2라운드 직행)');
+  };
+  
   const isRegularSeasonFinished = league.matches 
     ? league.matches.filter(m => m.type === 'regular').every(m => m.status === 'finished') 
     : false;
@@ -1220,6 +1268,19 @@ function Dashboard() {
 
   const effectiveDate = (isSuperWeekFinished && !hasPlayInGenerated) ? '2.2 (월)' : currentDateDisplay;
 
+  // Helper: get play-in seed and format team names with seed when match is playin
+  const getPlayInSeed = (teamId) => {
+    return league.playInSeeds?.find(s => s.id === teamId)?.seed;
+  };
+  const formatTeamName = (teamId, isPlayIn) => {
+    const t = teams.find(x => x.id === teamId) || { name: 'TBD' };
+    if (isPlayIn && league.playInSeeds) {
+      const s = getPlayInSeed(teamId);
+      return `${t.name}${s ? ` (${s}시드)` : ''}`;
+    }
+    return t.name;
+  };
+
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden font-sans relative">
       
@@ -1230,6 +1291,33 @@ function Dashboard() {
           teamB={myMatchResult.teamB}
           onClose={() => setMyMatchResult(null)} 
         />
+      )}
+
+      {playInChoice && (
+        <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl p-8 max-w-lg w-full text-center shadow-2xl">
+                <h2 className="text-2xl font-black mb-2">🛡️ 플레이-인 2라운드 상대 선택</h2>
+                <p className="text-gray-600 mb-6">1라운드 승리팀 중 한 팀을 2라운드 상대로 지명할 수 있습니다.</p>
+                <div className="grid grid-cols-2 gap-4">
+                    {playInChoice.winners.map(winner => (
+                        <button 
+                            key={winner.id}
+                            onClick={() => {
+                                const remainingWinner = playInChoice.winners.find(w => w.id !== winner.id);
+                                generatePlayInRound2(playInChoice.matches, playInChoice.seed1, playInChoice.seed2, winner, remainingWinner);
+                            }}
+                            className="p-4 rounded-xl border-2 transition flex flex-col items-center gap-2 bg-white border-gray-200 hover:border-blue-500 hover:shadow-md cursor-pointer"
+                        >
+                            <div className="w-16 h-16 rounded-full flex items-center justify-center text-white font-bold shadow-sm text-lg" style={{backgroundColor:winner.colors.primary}}>{winner.name}</div>
+                            <div className="font-bold text-lg">{winner.fullName}</div>
+                            <div className="text-sm bg-gray-100 px-3 py-1 rounded-full font-bold">
+                                {winner.seedIndex + 1}시드
+                            </div>
+                        </button>
+                    ))}
+                </div>
+            </div>
+        </div>
       )}
 
       {isDrafting && (
@@ -1473,9 +1561,9 @@ function Dashboard() {
                      </div>
                    ) : (
                      <div className="bg-white rounded-lg border shadow-sm p-0 flex-1 flex flex-col">
-                       <div className="p-3 border-b bg-gray-50 font-bold text-sm text-gray-700 flex justify-between"><span>순위표 (프리시즌)</span><span onClick={()=>setActiveTab('standings')} className="text-xs text-blue-600 cursor-pointer hover:underline">전체 보기</span></div>
+                       <div className="p-3 border-b bg-gray-50 font-bold text-sm text-gray-700 flex justify-between"><span >순위표 (프리시즌)</span><span onClick={()=>setActiveTab('standings')} className="text-xs text-blue-600 cursor-pointer hover:underline">전체 보기</span></div>
                        <div className="flex-1 overflow-y-auto p-0">
-                         <div className="p-4 text-center text-gray-400 text-xs">시즌 시작 전입니다。</div>
+                         <div className="p-4 text-center text-gray-400 text-xs">시즌 시작 전입니다.</div>
                        </div>
                      </div>
                    )}
@@ -1637,7 +1725,7 @@ function Dashboard() {
                                     ? <span>상한선(80억) 초과!<br/>기본 10억 + 초과분({(finance.cap_expenditure - 80).toFixed(1)}억)의 50% 부과</span>
                                     : <span>균형 지출 구간(40~80억) 초과<br/>초과분({(finance.cap_expenditure - 40).toFixed(1)}억)의 25% 부과</span>
                                 ) : (
-                                    <span className="text-green-600 font-bold">건전한 재정 상태입니다。</span>
+                                    <span className="text-green-600 font-bold">건전한 재정 상태입니다.</span>
                                 )}
                             </div>
                         </div>
@@ -1706,6 +1794,110 @@ function Dashboard() {
                         </tbody>
                     </table>
                 </div>
+              </div>
+            )}
+
+            {activeTab === 'meta' && (
+              <div className="bg-white rounded-lg border shadow-sm p-8 min-h-[600px] flex flex-col">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-black text-gray-900 flex items-center gap-2">
+                    <span className="text-purple-600">📈</span> 16.01 패치 메타
+                  </h2>
+                  <div className="flex bg-gray-100 p-1 rounded-lg">
+                    {['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(role => (
+                      <button
+                        key={role}
+                        onClick={() => setMetaRole(role)}
+                        className={`px-4 py-2 rounded-md text-sm font-bold transition ${metaRole === role ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                      >
+                        {role}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4">
+                  {championList
+                    .filter(c => c.role === metaRole)
+                    .map((champ, idx) => (
+                      <div key={champ.id} className="border rounded-xl p-4 flex items-center justify-between hover:bg-gray-50 transition group">
+                        <div className="flex items-center gap-4 w-1/4">
+                          <span className={`text-2xl font-black w-10 text-center ${idx < 3 ? 'text-yellow-500' : 'text-gray-300'}`}>{idx + 1}</span>
+                          <div>
+                            <div className="font-bold text-lg text-gray-800">{champ.name}</div>
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded ${champ.tier === 1 ? 'bg-purple-100 text-purple-600' : champ.tier === 2 ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
+                              {champ.tier} 티어
+                            </span>
+                          </div>
+                        </div>
+                          
+                        <div className="flex-1 px-8">
+                          <div className="flex justify-between text-xs text-gray-500 mb-1 font-medium">
+                            <span>초반 {champ.stats.early}</span>
+                            <span>중반 {champ.stats.mid}</span>
+                            <span>후반 {champ.stats.late}</span>
+                          </div>
+                          <div className="h-2.5 bg-gray-100 rounded-full flex overflow-hidden">
+                            <div className="bg-green-400 h-full" style={{width: `${champ.stats.early * 10}%`}} />
+                            <div className="bg-yellow-400 h-full" style={{width: `${champ.stats.mid * 10}%`}} />
+                            <div className="bg-red-400 h-full" style={{width: `${champ.stats.late * 10}%`}} />
+                          </div>
+                        </div>
+
+                        <div className="w-1/3 text-right">
+                          <div className="text-xs font-bold text-gray-400 mb-1 uppercase tracking-wide">Counter Picks</div>
+                          <div className="text-sm font-medium text-gray-700">{champ.counters.join(', ')}</div>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {(activeTab === 'schedule' || activeTab === 'team_schedule') && (
+              <div className="bg-white rounded-lg border shadow-sm p-8 min-h-[600px] flex flex-col">
+                <h2 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-2">
+                  📅 {activeTab === 'team_schedule' ? `${myTeam.name} 경기 일정` : '2026 LCK 컵 전체 일정'}
+                </h2>
+                {hasDrafted ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto">
+                    {league.matches
+                      .filter(m => activeTab === 'schedule' || (m.t1 === myTeam.id || m.t2 === myTeam.id))
+                      .map((m, i) => {
+                      const t1 = m.t1 ? teams.find(t => t.id === m.t1) : { name: 'TBD' };
+                      const t2 = m.t2 ? teams.find(t => t.id === m.t2) : { name: 'TBD' };
+                      const isMyMatch = myTeam.id === m.t1 || myTeam.id === m.t2;
+                      const isFinished = m.status === 'finished';
+                      return (
+                        <div key={i} className={`p-4 rounded-lg border flex flex-col gap-2 ${isMyMatch ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-200' : 'bg-white border-gray-200'}`}>
+                          <div className="flex justify-between text-xs font-bold text-gray-500">
+                            <span>{m.date} {m.time}</span>
+                            <span>{m.type === 'super' ? '🔥 슈퍼위크' : (m.type === 'playin' ? '🛡️ 플레이-인' : (m.type === 'tbd' ? '🔒 미정' : '정규시즌'))}</span>
+                          </div>
+                          <div className="flex justify-between items-center mt-2">
+                            <div className="flex flex-col items-center w-1/3">
+                                <span className={`font-bold ${isMyMatch && myTeam.id === m.t1 ? 'text-blue-600' : 'text-gray-800'}`}>{formatTeamName(m.t1, m.type === 'playin')}</span>
+                                {isFinished && m.result.winner === t1.name && <span className="text-xs text-blue-500 font-bold">WIN</span>}
+                            </div>
+                            <div className="text-center font-bold">
+                                {isFinished ? (
+                                    <span className="text-xl text-gray-800">{m.result.score}</span>
+                                ) : (
+                                    <span className="text-gray-400">VS</span>
+                                )}
+                            </div>
+                            <div className="flex flex-col items-center w-1/3">
+                                <span className={`font-bold ${isMyMatch && myTeam.id === m.t2 ? 'text-blue-600' : 'text-gray-800'}`}>{formatTeamName(m.t2, m.type === 'playin')}</span>
+                                {isFinished && m.result.winner === t2.name && <span className="text-xs text-blue-500 font-bold">WIN</span>}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-gray-400"><div className="text-4xl mb-4">🗳️</div><div className="text-xl font-bold">일정이 생성되지 않았습니다</div><p className="mt-2">먼저 조 추첨을 진행해주세요.</p></div>
+                )}
               </div>
             )}
 
