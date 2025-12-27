@@ -426,17 +426,6 @@ const getPotBadgeStyle = (pot) => {
   return 'text-gray-500 font-medium';
 };
 
-export default function AppRoutes() {
-  return (
-    <Routes>
-      <Route path="/" element={<LeagueManager />} />
-      <Route path="/new-league" element={<TeamSelection />} />
-      <Route path="/league/:leagueId" element={<Dashboard />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
-  );
-}
-
 const generateSchedule = (baronIds, elderIds) => {
   const week1Days = ['1.14 (수)', '1.15 (목)', '1.16 (금)', '1.17 (토)', '1.18 (일)'];
   const week2Days = ['1.21 (수)', '1.22 (목)', '1.23 (금)', '1.24 (토)', '1.25 (일)'];
@@ -907,20 +896,61 @@ function Dashboard() {
       const r2Exists = matches.some(m => m.date.includes('2.7'));
 
       if (r1Finished && !r2Exists) {
-          const r1Winners = r1Matches.map(m => teams.find(t => t.name === m.result.winner));
+          const r1Winners = r1Matches.map(m => teams.find(t => t.name === m.result.winner)).filter(Boolean);
           const playInSeeds = league.playInSeeds || []; 
-          const seed1 = teams.find(t => t.id === playInSeeds[0].id);
-          const seed2 = teams.find(t => t.id === playInSeeds[1].id);
+          const seed1Obj = playInSeeds[0];
+          const seed2Obj = playInSeeds[1];
+          const seed1 = teams.find(t => t.id === seed1Obj?.id);
+          const seed2 = teams.find(t => t.id === seed2Obj?.id);
           
-          const winnersWithSeed = r1Winners.map(w => ({ ...w, seedIndex: playInSeeds.findIndex(s => s.id === w.id) }));
-          winnersWithSeed.sort((a, b) => b.seedIndex - a.seedIndex); 
-          
-          const pickedTeam = winnersWithSeed[0]; 
-          const remainingTeam = winnersWithSeed[1];
+          // Map winners to their seed numbers (if any)
+          const winnersWithSeed = r1Winners.map(w => {
+            const seedEntry = playInSeeds.find(s => s.id === w.id);
+            return { team: w, seed: seedEntry ? seedEntry.seed : 99 };
+          });
 
+          if (winnersWithSeed.length < 2) {
+            // Not enough winners to proceed safely
+            alert('라운드1 승자가 부족하여 플레이-인 2라운드 생성을 할 수 없습니다.');
+            return;
+          }
+
+          let pickedTeamObj = null;
+          let remainingTeamObj = null;
+
+          // If my team is seed1, let user choose between the two winners
+          if (seed1 && seed1.id === myTeam.id) {
+            const nameA = winnersWithSeed[0].team.name;
+            const nameB = winnersWithSeed[1].team.name;
+            const chooseFirst = window.confirm(`당신은 플레이-인 1번 시드입니다.\n라운드1 승자 중 라운드2 상대를 선택하세요.\n확인(OK) 선택: ${nameA}\n취소(Cancel) 선택: ${nameB}`);
+            if (chooseFirst) {
+              pickedTeamObj = winnersWithSeed[0].team;
+              remainingTeamObj = winnersWithSeed[1].team;
+            } else {
+              pickedTeamObj = winnersWithSeed[1].team;
+              remainingTeamObj = winnersWithSeed[0].team;
+            }
+          } else {
+            // Otherwise seed1 chooses lower seed of two winners 65% of time
+            // "lower seed" = higher numeric seed value (e.g., 5 > 3)
+            // Determine lower and higher among winners
+            const sortedBySeedDesc = [...winnersWithSeed].sort((a, b) => b.seed - a.seed); // desc: largest seed first
+            const lower = sortedBySeedDesc[0].team;
+            const higher = sortedBySeedDesc[1].team;
+            const chooseLower = Math.random() < 0.65;
+            if (chooseLower) {
+              pickedTeamObj = lower;
+              remainingTeamObj = higher;
+            } else {
+              pickedTeamObj = higher;
+              remainingTeamObj = lower;
+            }
+          }
+          
+          // Construct r2 matches: seed1 vs pickedTeam, seed2 vs remainingTeam
           const r2Matches = [
-              { id: Date.now() + 100, t1: seed1.id, t2: pickedTeam.id, date: '2.7 (토)', time: '17:00', type: 'playin', format: 'BO3', status: 'pending' },
-              { id: Date.now() + 101, t1: seed2.id, t2: remainingTeam.id, date: '2.7 (토)', time: '19:30', type: 'playin', format: 'BO3', status: 'pending' }
+              { id: Date.now() + 100, t1: seed1.id, t2: pickedTeamObj.id, date: '2.7 (토)', time: '17:00', type: 'playin', format: 'BO3', status: 'pending' },
+              { id: Date.now() + 101, t1: seed2.id, t2: remainingTeamObj.id, date: '2.7 (토)', time: '19:30', type: 'playin', format: 'BO3', status: 'pending' }
           ];
           
           const newMatches = [...matches, ...r2Matches].sort((a,b) => parseFloat(a.date.split(' ')[0]) - parseFloat(b.date.split(' ')[0]));
@@ -1140,99 +1170,19 @@ function Dashboard() {
     alert('🔥 슈퍼위크 일정이 생성되었습니다! (BO5)');
   };
 
-  // Play-In Generation Logic
-  const handleGeneratePlayIn = () => {
-      // 1. 그룹별 승점 비교 및 참가 팀 선정
-      // If totals tie, compare groups' aggregated set difference (computedStandings[id].diff)
-      let isBaronWinner;
-      if (baronTotalWins > elderTotalWins) {
-        isBaronWinner = true;
-      } else if (baronTotalWins < elderTotalWins) {
-        isBaronWinner = false;
-      } else {
-        // tie on total wins -> compare set difference totals
-        const baronDiffTotal = (league.groups?.baron || []).reduce((s, id) => s + ((computedStandings[id]?.diff) || 0), 0);
-        const elderDiffTotal = (league.groups?.elder || []).reduce((s, id) => s + ((computedStandings[id]?.diff) || 0), 0);
-
-        if (baronDiffTotal > elderDiffTotal) isBaronWinner = true;
-        else if (baronDiffTotal < elderDiffTotal) isBaronWinner = false;
-        else {
-          // still tied -> fallback to sum of team power
-          const baronPower = (league.groups?.baron || []).reduce((s, id) => s + ((teams.find(t => t.id === id)?.power) || 0), 0);
-          const elderPower = (league.groups?.elder || []).reduce((s, id) => s + ((teams.find(t => t.id === id)?.power) || 0), 0);
-          if (baronPower > elderPower) isBaronWinner = true;
-          else if (baronPower < elderPower) isBaronWinner = false;
-          else isBaronWinner = Math.random() < 0.5;
-        }
-      }
-      
-      const baronSorted = getSortedGroup([...league.groups.baron]);
-      const elderSorted = getSortedGroup([...league.groups.elder]);
-
-      // 상태 저장 객체 (시즌 결산용)
-      const seasonSummary = {
-          winnerGroup: isBaronWinner ? 'Baron' : 'Elder',
-          poTeams: [],
-          playInTeams: [],
-          eliminated: null
-      };
-
-      let playInTeams = [];
-      
-      if (isBaronWinner) {
-          // 승자(Baron): 1,2위 PO 직행, 3,4,5위 플레이인
-          seasonSummary.poTeams.push({ id: baronSorted[0], seed: 1 });
-          seasonSummary.poTeams.push({ id: baronSorted[1], seed: 2 });
-          playInTeams.push(baronSorted[2], baronSorted[3], baronSorted[4]);
-
-          // 패자(Elder): 1위 PO 직행, 2,3,4위 플레이인, 5위 탈락
-          seasonSummary.poTeams.push({ id: elderSorted[0], seed: 3 });
-          playInTeams.push(elderSorted[1], elderSorted[2], elderSorted[3]);
-          seasonSummary.eliminated = elderSorted[4];
-      } else {
-          // 승자(Elder)
-          seasonSummary.poTeams.push({ id: elderSorted[0], seed: 1 });
-          seasonSummary.poTeams.push({ id: elderSorted[1], seed: 2 });
-          playInTeams.push(elderSorted[2], elderSorted[3], elderSorted[4]);
-
-          // 패자(Baron)
-          seasonSummary.poTeams.push({ id: baronSorted[0], seed: 3 });
-          playInTeams.push(baronSorted[1], baronSorted[2], baronSorted[3]);
-          seasonSummary.eliminated = baronSorted[4];
-      }
-
-      // 2. 통합 시딩 (승수 > 득실 > 랜덤)
-      playInTeams.sort((a, b) => {
-          const recA = computedStandings[a];
-          const recB = computedStandings[b];
-          if (recA.w !== recB.w) return recB.w - recA.w;
-          if (recA.diff !== recB.diff) return recB.diff - recA.diff;
-          return Math.random() - 0.5; // 동률 시 랜덤
-      });
-
-      // 시드 저장
-      const seededTeams = playInTeams.map((tid, idx) => ({ id: tid, seed: idx + 1 }));
-      seasonSummary.playInTeams = seededTeams;
-      
-      // 3. 1라운드 대진 생성 (3vs6, 4vs5)
-      const seed3 = seededTeams[2].id;
-      const seed6 = seededTeams[5].id;
-      const seed4 = seededTeams[3].id;
-      const seed5 = seededTeams[4].id;
-
-      const newMatches = [
-          { id: Date.now() + 1, t1: seed3, t2: seed6, date: '2.6 (금)', time: '17:00', type: 'playin', format: 'BO3', status: 'pending' },
-          { id: Date.now() + 2, t1: seed4, t2: seed5, date: '2.6 (금)', time: '19:30', type: 'playin', format: 'BO3', status: 'pending' }
-      ];
-
-      const updatedMatches = [...league.matches, ...newMatches];
-      
-      updateLeague(league.id, { matches: updatedMatches, playInSeeds: seededTeams, seasonSummary }); 
-      setLeague(prev => ({ ...prev, matches: updatedMatches, playInSeeds: seededTeams, seasonSummary }));
-      setShowPlayInBracket(true); // 대진표 보기 모드로 자동 전환
-      alert('🛡️ 플레이-인 대진이 생성되었습니다! (1,2시드 2라운드 직행)');
+  // Helper: get play-in seed and format team names with Korean "번 시드"
+  const getPlayInSeed = (teamId) => {
+    return league.playInSeeds?.find(s => s.id === teamId)?.seed;
   };
-  
+  const formatTeamName = (teamId, isPlayIn) => {
+    const t = teams.find(x => x.id === teamId) || { name: 'TBD' };
+    if (isPlayIn && league.playInSeeds) {
+      const s = getPlayInSeed(teamId);
+      return `${t.name}${s ? ` (${s}번 시드)` : ''}`;
+    }
+    return t.name;
+  };
+
   const isRegularSeasonFinished = league.matches 
     ? league.matches.filter(m => m.type === 'regular').every(m => m.status === 'finished') 
     : false;
@@ -1250,19 +1200,6 @@ function Dashboard() {
     : false;
 
   const effectiveDate = (isSuperWeekFinished && !hasPlayInGenerated) ? '2.2 (월)' : currentDateDisplay;
-
-  // Helper: get play-in seed and format team names with seed when match is playin
-  const getPlayInSeed = (teamId) => {
-    return league.playInSeeds?.find(s => s.id === teamId)?.seed;
-  };
-  const formatTeamName = (teamId, isPlayIn) => {
-    const t = teams.find(x => x.id === teamId) || { name: 'TBD' };
-    if (isPlayIn && league.playInSeeds) {
-      const s = getPlayInSeed(teamId);
-      return `${t.name}${s ? ` (Seed ${s})` : ''}`;
-    }
-    return t.name;
-  };
 
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden font-sans relative">
@@ -1687,173 +1624,6 @@ function Dashboard() {
                         </div>
                     </div>
                 </div>
-              </div>
-            )}
-
-            {activeTab === 'roster' && (
-              <div className="bg-white rounded-lg border shadow-sm flex flex-col">
-                <div className="p-6 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
-                  <div className="flex items-center gap-4">
-                    <button onClick={handlePrevTeam} className="p-2 bg-white rounded-full border hover:bg-gray-100 shadow-sm transition">◀</button>
-                    <div className="flex items-center gap-4"><div className="w-16 h-16 rounded-full flex items-center justify-center font-bold text-white shadow-lg text-xl" style={{backgroundColor: viewingTeam.colors.primary}}>{viewingTeam.name}</div><div><h2 className="text-3xl font-black text-gray-900">{viewingTeam.fullName}</h2><p className="text-sm font-bold text-gray-500 mt-1">상세 로스터 및 계약 현황</p></div></div>
-                    <button onClick={handleNextTeam} className="p-2 bg-white rounded-full border hover:bg-gray-100 shadow-sm transition">▶</button>
-                  </div>
-                  <div className="text-right"><div className="text-2xl font-black text-blue-600">{viewingTeam.power} <span className="text-sm text-gray-400 font-normal">TEAM OVR</span></div></div>
-                </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-xs text-left table-fixed">
-                        <thead className="bg-white text-gray-500 uppercase font-bold border-b">
-                            <tr>
-                                <th className="py-2 px-2 bg-gray-50 w-[12%]">정보</th>
-                                <th className="py-2 px-1 text-center w-[5%]">OVR</th>
-                                <th className="py-2 px-1 text-center w-[5%]">나이</th>
-                                <th className="py-2 px-1 text-center w-[5%]">경력</th>
-                                <th className="py-2 px-1 text-center w-[6%]">소속</th>
-                                <th className="py-2 px-1 text-center w-[8%]">연봉</th>
-                                <th className="py-2 px-1 text-center bg-gray-50 border-l w-[6%]">라인</th>
-                                <th className="py-2 px-1 text-center bg-gray-50 w-[6%]">무력</th>
-                                <th className="py-2 px-1 text-center bg-gray-50 w-[6%]">한타</th>
-                                <th className="py-2 px-1 text-center bg-gray-50 w-[6%]">성장</th>
-                                <th className="py-2 px-1 text-center bg-gray-50 w-[6%]">안정</th>
-                                <th className="py-2 px-1 text-center bg-gray-50 w-[6%]">운영</th>
-                                <th className="py-2 px-1 text-center bg-gray-50 border-l text-purple-600 w-[6%]">POT</th>
-                                <th className="py-2 px-2 text-left bg-gray-50 border-l w-[12%]">계약 정보</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                            {currentRoster.map((p, i) => (
-                                <tr key={i} className="hover:bg-blue-50/30 transition group">
-                                    <td className="py-2 px-2 bg-white group-hover:bg-blue-50/30">
-                                        <div className="flex items-center gap-2">
-                                            <span className="font-bold text-gray-400 w-6">{p.포지션}</span>
-                                            <div className="overflow-hidden">
-                                                <div className="font-bold text-gray-900 truncate">{p.이름} {p.주장 && <span className="text-yellow-500" title="주장">👑</span>}</div>
-                                                <div className="text-[10px] text-gray-400 truncate">{p.특성}</div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td className="py-2 px-1 text-center"><span className={`inline-flex items-center justify-center w-8 h-6 rounded font-black text-xs shadow-sm border ${getOvrBadgeStyle(p.종합)}`}>{p.종합}</span></td>
-                                    <td className="py-2 px-1 text-center text-gray-600">{p.나이 || '-'}</td>
-                                    <td className="py-2 px-1 text-center text-gray-600">{p.경력 || '-'}</td>
-                                    <td className="py-2 px-1 text-center text-gray-700">{p['팀 소속기간'] || '-'}</td>
-                                    <td className="py-2 px-1 text-center text-gray-700 font-bold truncate">{p.연봉 || '-'}</td>
-                                    <td className="py-2 px-1 text-center border-l font-medium text-gray-600">{p.상세?.라인전 || '-'}</td>
-                                    <td className="py-2 px-1 text-center font-medium text-gray-600">{p.상세?.무력 || '-'}</td>
-                                    <td className="py-2 px-1 text-center font-medium text-gray-600">{p.상세?.한타 || '-'}</td>
-                                    <td className="py-2 px-1 text-center font-medium text-gray-600">{p.상세?.성장 || '-'}</td>
-                                    <td className="py-2 px-1 text-center font-medium text-gray-600">{p.상세?.안정성 || '-'}</td>
-                                    <td className="py-2 px-1 text-center font-medium text-gray-600">{p.상세?.운영 || '-'}</td>
-                                    <td className="py-2 px-1 text-center border-l"><span className={`font-bold ${getPotBadgeStyle(p.잠재력)}`}>{p.잠재력}</span></td>
-                                    <td className="py-2 px-2 border-l"><span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-[10px] font-bold block truncate">{p.계약}</span></td>
-                                </tr>
-                            ))} 
-                        </tbody>
-                    </table>
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'meta' && (
-              <div className="bg-white rounded-lg border shadow-sm p-8 min-h-[600px] flex flex-col">
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-2xl font-black text-gray-900 flex items-center gap-2">
-                    <span className="text-purple-600">📈</span> 16.01 패치 메타
-                  </h2>
-                  <div className="flex bg-gray-100 p-1 rounded-lg">
-                    {['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(role => (
-                      <button
-                        key={role}
-                        onClick={() => setMetaRole(role)}
-                        className={`px-4 py-2 rounded-md text-sm font-bold transition ${metaRole === role ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                      >
-                        {role}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4">
-                  {championList
-                    .filter(c => c.role === metaRole)
-                    .map((champ, idx) => (
-                      <div key={champ.id} className="border rounded-xl p-4 flex items-center justify-between hover:bg-gray-50 transition group">
-                        <div className="flex items-center gap-4 w-1/4">
-                          <span className={`text-2xl font-black w-10 text-center ${idx < 3 ? 'text-yellow-500' : 'text-gray-300'}`}>{idx + 1}</span>
-                          <div>
-                            <div className="font-bold text-lg text-gray-800">{champ.name}</div>
-                            <span className={`text-xs font-bold px-2 py-0.5 rounded ${champ.tier === 1 ? 'bg-purple-100 text-purple-600' : champ.tier === 2 ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
-                              {champ.tier} 티어
-                            </span>
-                          </div>
-                        </div>
-                          
-                        <div className="flex-1 px-8">
-                          <div className="flex justify-between text-xs text-gray-500 mb-1 font-medium">
-                            <span>초반 {champ.stats.early}</span>
-                            <span>중반 {champ.stats.mid}</span>
-                            <span>후반 {champ.stats.late}</span>
-                          </div>
-                          <div className="h-2.5 bg-gray-100 rounded-full flex overflow-hidden">
-                            <div className="bg-green-400 h-full" style={{width: `${champ.stats.early * 10}%`}} />
-                            <div className="bg-yellow-400 h-full" style={{width: `${champ.stats.mid * 10}%`}} />
-                            <div className="bg-red-400 h-full" style={{width: `${champ.stats.late * 10}%`}} />
-                          </div>
-                        </div>
-
-                        <div className="w-1/3 text-right">
-                          <div className="text-xs font-bold text-gray-400 mb-1 uppercase tracking-wide">Counter Picks</div>
-                          <div className="text-sm font-medium text-gray-700">{champ.counters.join(', ')}</div>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-
-            {(activeTab === 'schedule' || activeTab === 'team_schedule') && (
-              <div className="bg-white rounded-lg border shadow-sm p-8 min-h-[600px] flex flex-col">
-                <h2 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-2">
-                  📅 {activeTab === 'team_schedule' ? `${myTeam.name} 경기 일정` : '2026 LCK 컵 전체 일정'}
-                </h2>
-                {hasDrafted ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto">
-                    {league.matches
-                      .filter(m => activeTab === 'schedule' || (m.t1 === myTeam.id || m.t2 === myTeam.id))
-                      .map((m, i) => {
-                      const t1 = m.t1 ? teams.find(t => t.id === m.t1) : { name: 'TBD' };
-                      const t2 = m.t2 ? teams.find(t => t.id === m.t2) : { name: 'TBD' };
-                      const isMyMatch = myTeam.id === m.t1 || myTeam.id === m.t2;
-                      const isFinished = m.status === 'finished';
-                      return (
-                        <div key={i} className={`p-4 rounded-lg border flex flex-col gap-2 ${isMyMatch ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-200' : 'bg-white border-gray-200'}`}>
-                          <div className="flex justify-between text-xs font-bold text-gray-500">
-                            <span>{m.date} {m.time}</span>
-                            <span>{m.type === 'super' ? '🔥 슈퍼위크' : (m.type === 'playin' ? '🛡️ 플레이-인' : (m.type === 'tbd' ? '🔒 미정' : '정규시즌'))}</span>
-                          </div>
-                          <div className="flex justify-between items-center mt-2">
-                            <div className="flex flex-col items-center w-1/3">
-                                <span className={`font-bold ${isMyMatch && myTeam.id === m.t1 ? 'text-blue-600' : 'text-gray-800'}`}>{formatTeamName(m.t1, m.type === 'playin')}</span>
-                                {isFinished && m.result.winner === t1.name && <span className="text-xs text-blue-500 font-bold">WIN</span>}
-                            </div>
-                            <div className="text-center font-bold">
-                                {isFinished ? (
-                                    <span className="text-xl text-gray-800">{m.result.score}</span>
-                                ) : (
-                                    <span className="text-gray-400">VS</span>
-                                )}
-                            </div>
-                            <div className="flex flex-col items-center w-1/3">
-                                <span className={`font-bold ${isMyMatch && myTeam.id === m.t2 ? 'text-blue-600' : 'text-gray-800'}`}>{formatTeamName(m.t2, m.type === 'playin')}</span>
-                                {isFinished && m.result.winner === t2.name && <span className="text-xs text-blue-500 font-bold">WIN</span>}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="flex-1 flex flex-col items-center justify-center text-gray-400"><div className="text-4xl mb-4">🗳️</div><div className="text-xl font-bold">일정이 생성되지 않았습니다</div><p className="mt-2">먼저 조 추첨을 진행해주세요.</p></div>
-                )}
               </div>
             )}
 
