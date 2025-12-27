@@ -7,7 +7,7 @@ import championList from './data/champions.json';
 // 0. 시뮬레이션 엔진 및 상수 (Simulation Engine)
 // ==========================================
 
-// 0-1. 게임 상수 정의 (플레이버 텍스트 및 보너스 효과)
+// 0-1. 게임 상수 정의
 const GAME_CONSTANTS = {
   DRAGONS: {
     TYPES: ['화학공학', '바람', '대지', '화염', '바다', '마법공학'],
@@ -38,28 +38,200 @@ const SIM_CONSTANTS = {
   VAR_RANGE: 0.12
 };
 
-// 0-2. 데이터 전처리 (숙련도 맵핑 Mock)
+// 밴픽 진행 순서 (요청사항 반영)
+const DRAFT_SEQUENCE = [
+    // 1페이즈 밴 (3장)
+    { type: 'BAN', side: 'BLUE', label: '블루 1밴' },
+    { type: 'BAN', side: 'RED', label: '레드 1밴' },
+    { type: 'BAN', side: 'BLUE', label: '블루 2밴' },
+    { type: 'BAN', side: 'RED', label: '레드 2밴' },
+    { type: 'BAN', side: 'BLUE', label: '블루 3밴' },
+    { type: 'BAN', side: 'RED', label: '레드 3밴' },
+    // 1페이즈 픽 (3장)
+    { type: 'PICK', side: 'BLUE', label: '블루 1픽' },
+    { type: 'PICK', side: 'RED', label: '레드 1픽' },
+    { type: 'PICK', side: 'RED', label: '레드 2픽' },
+    { type: 'PICK', side: 'BLUE', label: '블루 2픽' },
+    { type: 'PICK', side: 'BLUE', label: '블루 3픽' },
+    { type: 'PICK', side: 'RED', label: '레드 3픽' },
+    // 2페이즈 밴 (2장) - 순서: 레드 -> 블루 -> 레드 -> 블루
+    { type: 'BAN', side: 'RED', label: '레드 4밴' },
+    { type: 'BAN', side: 'BLUE', label: '블루 4밴' },
+    { type: 'BAN', side: 'RED', label: '레드 5밴' },
+    { type: 'BAN', side: 'BLUE', label: '블루 5밴' },
+    // 2페이즈 픽 (2장)
+    { type: 'PICK', side: 'RED', label: '레드 4픽' },
+    { type: 'PICK', side: 'BLUE', label: '블루 4픽' },
+    { type: 'PICK', side: 'BLUE', label: '블루 5픽' },
+    { type: 'PICK', side: 'RED', label: '레드 5픽' }
+];
+
+// 0-2. 데이터 전처리
 const MASTERY_MAP = playerList.reduce((acc, player) => {
   acc[player.이름] = { id: player.이름, pool: [] };
   return acc;
 }, {});
 
+// --------------------------------------------------------
+// New Draft Engine: 피어리스 + 가중치 기반 밴픽 시뮬레이션
+// --------------------------------------------------------
+
+// 점수 계산 헬퍼: (선수 .55 + 메타 .25 + 숙련도 .20)
+function calculateChampionScore(player, champion, masteryData) {
+    // 1. 선수 스탯 점수 (기본 80~100 가정 -> 0~100 스케일링)
+    const playerStat = player.종합 || 85; 
+    
+    // 2. 메타 점수 (티어 기반)
+    // 1티어=100, 2티어=90, 3티어=80...
+    let metaScore = 100 - ((champion.tier - 1) * 10);
+    if(player.포지션 === 'ADC' && champion.role === 'ADC') {
+        // 원딜 메타 보정
+        metaScore = SIM_CONSTANTS.META_COEFF.ADC[Math.min(champion.tier, 3)] * 100;
+    }
+
+    // 3. 숙련도 점수
+    let masteryScore = 70; // 기본값
+    if (masteryData) {
+        masteryScore = (masteryData.winRate * 0.5) + (masteryData.kda * 10) + 20;
+    } else if (champion.tier <= 2) {
+        masteryScore = 80; // 메타 챔프는 기본 숙련도 보정
+    }
+
+    // 가중치 적용
+    return (playerStat * SIM_CONSTANTS.WEIGHTS.STATS) + 
+           (metaScore * SIM_CONSTANTS.WEIGHTS.META) + 
+           (masteryScore * SIM_CONSTANTS.WEIGHTS.MASTERY);
+}
+
+// AI: 특정 포지션에 대해 가장 높은 점수의 챔피언 찾기
+function getBestAvailableChampion(player, availableChampions) {
+    let bestChamp = null;
+    let maxScore = -1;
+    const playerData = MASTERY_MAP[player.이름];
+
+    // 해당 포지션 챔피언만 필터링
+    const roleChamps = availableChampions.filter(c => c.role === player.포지션);
+    
+    // 데이터 부족 시 안전장치 (모든 챔프 대상)
+    const pool = roleChamps.length > 0 ? roleChamps : availableChampions;
+
+    for (const champ of pool) {
+        // 숙련도 데이터 확인
+        const mastery = playerData?.pool?.find(m => m.name === champ.name);
+        const score = calculateChampionScore(player, champ, mastery);
+        
+        // 랜덤성을 약간 추가하여 매번 똑같은 픽 방지 (±5%)
+        const randomFactor = 1 + (Math.random() * 0.1 - 0.05);
+        const finalScore = score * randomFactor;
+
+        if (finalScore > maxScore) {
+            maxScore = finalScore;
+            bestChamp = { ...champ, mastery };
+        }
+    }
+    return bestChamp || pool[0]; // Fallback
+}
+
+// 밴픽 실행 함수
+function runDraftSimulation(blueTeam, redTeam, fearlessBans) {
+    let localBans = new Set([...fearlessBans]); // 피어리스 밴 포함
+    let picks = { BLUE: {}, RED: {} }; // { 'TOP': champ, ... }
+    let logs = [];
+
+    // 남은 포지션 추적
+    let remainingRoles = {
+        BLUE: ['TOP', 'JGL', 'MID', 'ADC', 'SUP'],
+        RED: ['TOP', 'JGL', 'MID', 'ADC', 'SUP']
+    };
+
+    DRAFT_SEQUENCE.forEach(step => {
+        const actingTeam = step.side === 'BLUE' ? blueTeam : redTeam;
+        const opponentTeam = step.side === 'BLUE' ? redTeam : blueTeam;
+        const mySide = step.side;
+        const opSide = step.side === 'BLUE' ? 'RED' : 'BLUE';
+
+        // 사용 가능한 챔피언 풀 (이미 밴되거나 픽된 것 제외)
+        const availableChamps = championList.filter(c => !localBans.has(c.name));
+
+        if (step.type === 'BAN') {
+            // AI 밴: 상대방의 남은 포지션 중 가장 강력한 챔피언 저격
+            let targetRole = remainingRoles[opSide][Math.floor(Math.random() * remainingRoles[opSide].length)];
+            const targetPlayer = opponentTeam.roster.find(p => p.포지션 === targetRole);
+            
+            // 상대 입장에서 최고의 챔프를 찾아서 밴
+            const banCandidate = getBestAvailableChampion(targetPlayer, availableChamps);
+            if (banCandidate) {
+                localBans.add(banCandidate.name);
+                // logs.push(`🚫 ${step.label}: ${banCandidate.name} 금지`);
+            }
+        } else {
+            // AI 픽: 우리 팀의 남은 포지션 중 가장 좋은 챔피언 선택
+            // 픽 순서에 따라 가져갈 포지션을 정함 (여기서는 랜덤이나 중요도 순이 아닌, 남은 포지션 중 점수 최댓값 탐색으로 구현)
+            
+            let bestPick = null;
+            let bestPickRole = '';
+            let highestScore = -1;
+
+            remainingRoles[mySide].forEach(role => {
+                const player = actingTeam.roster.find(p => p.포지션 === role);
+                const champ = getBestAvailableChampion(player, availableChamps);
+                
+                // 해당 챔프의 점수 계산
+                const score = calculateChampionScore(player, champ, champ.mastery);
+                
+                if (score > highestScore) {
+                    highestScore = score;
+                    bestPick = champ;
+                    bestPickRole = role;
+                }
+            });
+
+            if (bestPick) {
+                localBans.add(bestPick.name); // 픽된 것도 밴 처리(중복 픽 불가)
+                picks[mySide][bestPickRole] = bestPick;
+                
+                // 남은 포지션에서 제거
+                remainingRoles[mySide] = remainingRoles[mySide].filter(r => r !== bestPickRole);
+                // logs.push(`✅ ${step.label}: ${bestPick.name} (${bestPickRole})`);
+            }
+        }
+    });
+
+    // 픽 결과를 배열 형태로 변환 (기존 로직 호환성)
+    const picksArrayBlue = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(pos => {
+        const c = picks.BLUE[pos];
+        return { champName: c.name, tier: c.tier, mastery: c.mastery };
+    });
+    const picksArrayRed = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(pos => {
+        const c = picks.RED[pos];
+        return { champName: c.name, tier: c.tier, mastery: c.mastery };
+    });
+
+    return {
+        picks: { A: picksArrayBlue, B: picksArrayRed },
+        draftLogs: logs
+    };
+}
+
+
 // 0-3. 세트(Set) 단위 시뮬레이션 함수 (단판 승부)
-// 이 함수는 '승리한 팀의 이름'과 '로그'를 반환합니다.
-function simulateSet(teamA, teamB, setNumber) {
+function simulateSet(teamA, teamB, setNumber, fearlessBans) {
   const log = [];
   let scoreA = 0;
   let scoreB = 0;
 
-  // 1. 드래곤 속성 및 밴픽 시뮬레이션
+  // 1. 드래곤 & 밴픽 (피어리스 적용)
   const dragonType = GAME_CONSTANTS.DRAGONS.TYPES[Math.floor(Math.random() * GAME_CONSTANTS.DRAGONS.TYPES.length)];
   const dragonBuff = GAME_CONSTANTS.DRAGONS.BUFFS[dragonType];
   
-  const picksA = draftTeam(teamA.roster);
-  const picksB = draftTeam(teamB.roster);
+  // New Draft Engine 호출
+  const draftResult = runDraftSimulation(teamA, teamB, fearlessBans);
+  const picksA = draftResult.picks.A;
+  const picksB = draftResult.picks.B;
 
   log.push(`\n🎮 [SET ${setNumber}] 경기 시작`);
   log.push(`🐉 전장: ${dragonType} 드래곤 협곡 (${dragonBuff.description})`);
+  log.push(`🚫 피어리스 밴: ${fearlessBans.length}개 챔피언 제외됨`);
   log.push(`✨ Key Matchup (MID): ${picksA[2].champName} vs ${picksB[2].champName}`);
 
   // 2. 페이즈 계산 (초반 -> 중반 -> 후반)
@@ -81,30 +253,40 @@ function simulateSet(teamA, teamB, setNumber) {
   const winner = scoreA > scoreB ? teamA.name : teamB.name;
   log.push(`🏆 ${setNumber}세트 승리: ${winner}`);
 
+  // 이번 세트에 사용된 챔피언 목록 추출 (피어리스용)
+  const usedChamps = [...picksA.map(p=>p.champName), ...picksB.map(p=>p.champName)];
+
   return {
     winnerName: winner,
     picks: { A: picksA, B: picksB },
-    logs: log
+    logs: log,
+    usedChamps: usedChamps
   };
 }
 
 // 0-4. 매치(Match) 단위 시뮬레이션 함수 (BO3 / BO5)
-// 이 함수는 여러 세트를 돌려 최종 스코어(2:1 등)를 반환합니다.
 function simulateMatch(teamA, teamB, format = 'BO3') {
   const targetWins = format === 'BO5' ? 3 : 2;
   let winsA = 0;
   let winsB = 0;
   let currentSet = 1;
-  let fullLogs = [`📢 [매치 시작] ${teamA.name} vs ${teamB.name} (${format} 방식)`];
+  let fullLogs = [`📢 [매치 시작] ${teamA.name} vs ${teamB.name} (${format} / 피어리스 드래프트)`];
   let lastSetPicks = null;
+  
+  // **피어리스 밴 리스트 (매치 내 누적)**
+  let globalBanList = [];
 
   // 승패가 결정될 때까지 세트 반복
   while (winsA < targetWins && winsB < targetWins) {
-    const setResult = simulateSet(teamA, teamB, currentSet);
+    // 세트 시뮬레이션 (globalBanList 전달)
+    const setResult = simulateSet(teamA, teamB, currentSet, globalBanList);
     
     // 로그 합치기
     fullLogs = [...fullLogs, ...setResult.logs];
     lastSetPicks = setResult.picks;
+
+    // 피어리스 밴 업데이트 (이번 세트 픽을 추가)
+    globalBanList = [...globalBanList, ...setResult.usedChamps];
 
     // 스코어 카운트
     if (setResult.winnerName === teamA.name) {
@@ -131,36 +313,8 @@ function simulateMatch(teamA, teamB, format = 'BO3') {
   };
 }
 
-// 밴픽 로직
-function draftTeam(roster) {
-  return roster.map(player => {
-    const metaPool = championList.filter(c => c.role === player.포지션 && c.tier <= 2);
-    const playerData = MASTERY_MAP[player.이름];
-    let masteryPool = [];
-    
-    if (playerData && playerData.pool) {
-       masteryPool = playerData.pool; 
-    }
 
-    let finalPick = null;
-    if (masteryPool.length > 0 && Math.random() < 0.7) {
-      const selectedMastery = masteryPool[Math.floor(Math.random() * masteryPool.length)];
-      const champInfo = championList.find(c => c.name === selectedMastery.name) || { name: selectedMastery.name, tier: 3 };
-      finalPick = { ...champInfo, mastery: selectedMastery };
-    } else {
-      const selectedMeta = metaPool[Math.floor(Math.random() * metaPool.length)] || { name: "Unknown Champion", tier: 3 };
-      finalPick = { ...selectedMeta, mastery: null };
-    }
-
-    return {
-      champName: finalPick.name,
-      tier: finalPick.tier || 3,
-      mastery: finalPick.mastery
-    };
-  });
-}
-
-// 페이즈별 전투력 계산
+// 페이즈별 전투력 계산 (기존 로직 유지)
 function calculatePhase(phase, tA, tB, picksA, picksB, bonusTeam, bonusVal) {
   let powerA = 0;
   let powerB = 0;
@@ -426,7 +580,7 @@ const generateSchedule = (baronIds, elderIds) => {
       });
   }
 
-  // 일정을 날짜순으로 정렬 (중요: 순차적 시뮬레이션을 위함)
+  // 일정을 날짜순으로 정렬
   finalSchedule.sort((a, b) => {
     const dayA = parseFloat(a.date.split(' ')[0]);
     const dayB = parseFloat(b.date.split(' ')[0]);
@@ -642,14 +796,13 @@ function Dashboard() {
     const t1Obj = teams.find(t => t.id === nextGlobalMatch.t1);
     const t2Obj = teams.find(t => t.id === nextGlobalMatch.t2);
 
-    // BO3 또는 BO5 시뮬레이션 실행
+    // BO3 또는 BO5 시뮬레이션 실행 (피어리스 적용)
     const result = simulateMatch(
       { name: t1Obj.name, roster: getTeamRoster(t1Obj.name) },
       { name: t2Obj.name, roster: getTeamRoster(t2Obj.name) },
       nextGlobalMatch.format
     );
     
-    // CPU 경기는 모달 없이 결과만 반영하고 넘어가거나, 간단한 알림을 줄 수 있음
     applyMatchResult(nextGlobalMatch, result);
   };
 
