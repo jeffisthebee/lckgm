@@ -1744,8 +1744,7 @@ function Dashboard() {
             {hasDrafted && isRegularSeasonFinished && !hasSuperWeekGenerated && (
                  <button 
                  onClick={handleGenerateSuperWeek} 
-                 disabled={numericDate < 126}
-                 className="px-5 py-1.5 rounded-full font-bold text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition disabled:bg-gray-300 disabled:animate-none"
+                 className="px-5 py-1.5 rounded-full font-bold text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition"
                >
                    <span>🔥</span> 슈퍼위크 및 16.02 패치 확인
                </button>
@@ -1754,8 +1753,7 @@ function Dashboard() {
             {isSuperWeekFinished && !hasPlayInGenerated && (
                 <button 
                 onClick={handleGeneratePlayIn} 
-                disabled={numericDate < 202}
-                className="px-5 py-1.5 rounded-full font-bold text-sm bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition disabled:bg-gray-300 disabled:animate-none"
+                className="px-5 py-1.5 rounded-full font-bold text-sm bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition"
               >
                   <span>🛡️</span> 플레이-인 진출팀 확정
               </button>
@@ -1764,8 +1762,7 @@ function Dashboard() {
             {isPlayInFinished && !hasPlayoffsGenerated && (
                 <button 
                 onClick={handleGeneratePlayoffs} 
-                disabled={numericDate < 209}
-                className="px-5 py-1.5 rounded-full font-bold text-sm bg-yellow-500 hover:bg-yellow-600 text-white shadow-sm flex items-center gap-2 animate-bounce transition disabled:bg-gray-300 disabled:animate-none"
+                className="px-5 py-1.5 rounded-full font-bold text-sm bg-yellow-500 hover:bg-yellow-600 text-white shadow-sm flex items-center gap-2 animate-bounce transition"
               >
                   <span>👑</span> 플레이오프 대진 생성
               </button>
@@ -1804,7 +1801,7 @@ function Dashboard() {
                             <span className="text-base font-black text-blue-600">{nextGlobalMatch.date}</span>
                             <span className="text-sm font-bold text-gray-600">{nextGlobalMatch.time}</span>
                             <span className="mt-2 text-xs font-bold text-white bg-blue-600 px-3 py-1 rounded-full shadow-sm">
-                                {nextGlobalMatch.label ? nextGlobalMatch.label : nextGlobalMatch.format}
+                                {nextGlobalMatch.label || nextGlobalMatch.format}
                             </span>
                             
                             {isMyNextMatch ? (
