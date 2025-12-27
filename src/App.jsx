@@ -34,7 +34,13 @@ const SIM_CONSTANTS = {
   },
   OTP_SCORE_THRESHOLD: 80,
   OTP_TIER_BOOST: 2,
-  VAR_RANGE: 0.12
+  VAR_RANGE: 0.12,
+  DIFFICULTY_MULTIPLIERS: {
+    easy: 0.8,
+    normal: 1.0,
+    hard: 1.1,
+    insane: 1.25
+  }
 };
 
 const DRAFT_SEQUENCE = [
@@ -207,7 +213,7 @@ function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChampionList
   };
 }
 
-function simulateSet(teamA, teamB, setNumber, fearlessBans, currentChampionList) {
+function simulateSet(teamA, teamB, setNumber, fearlessBans, currentChampionList, difficulty, playerTeamName) {
   const log = [];
   let scoreA = 0;
   let scoreB = 0;
@@ -221,17 +227,17 @@ function simulateSet(teamA, teamB, setNumber, fearlessBans, currentChampionList)
 
   log.push(`🐉 전장: ${dragonType} 드래곤 (${dragonBuff.description})`);
 
-  const p1 = calculatePhase('EARLY', teamA, teamB, picksA, picksB, null, 1.0);
+  const p1 = calculatePhase('EARLY', teamA, teamB, picksA, picksB, null, 1.0, difficulty, playerTeamName);
   scoreA += p1.scoreA; scoreB += p1.scoreB;
   log.push(p1.log);
 
   const midBonusTeam = p1.scoreA > p1.scoreB ? 'A' : 'B';
-  const p2 = calculatePhase('MID', teamA, teamB, picksA, picksB, midBonusTeam, 1.1);
+  const p2 = calculatePhase('MID', teamA, teamB, picksA, picksB, midBonusTeam, 1.1, difficulty, playerTeamName);
   scoreA += p2.scoreA; scoreB += p2.scoreB;
   log.push(p2.log);
 
   const lateBonusTeam = p2.scoreA > p2.scoreB ? 'A' : 'B';
-  const p3 = calculatePhase('LATE', teamA, teamB, picksA, picksB, lateBonusTeam, 1.15);
+  const p3 = calculatePhase('LATE', teamA, teamB, picksA, picksB, lateBonusTeam, 1.15, difficulty, playerTeamName);
   scoreA += p3.scoreA; scoreB += p3.scoreB;
   log.push(p3.log);
 
@@ -249,7 +255,7 @@ function simulateSet(teamA, teamB, setNumber, fearlessBans, currentChampionList)
   };
 }
 
-function simulateMatch(teamA, teamB, format = 'BO3', currentChampionList) {
+function simulateMatch(teamA, teamB, format = 'BO3', currentChampionList, difficulty, playerTeamName) {
   const targetWins = format === 'BO5' ? 3 : 2;
   let winsA = 0;
   let winsB = 0;
@@ -260,7 +266,7 @@ function simulateMatch(teamA, teamB, format = 'BO3', currentChampionList) {
 
   while (winsA < targetWins && winsB < targetWins) {
     const currentFearlessBans = [...globalBanList];
-    const setResult = simulateSet(teamA, teamB, currentSet, globalBanList, currentChampionList);
+    const setResult = simulateSet(teamA, teamB, currentSet, globalBanList, currentChampionList, difficulty, playerTeamName);
     
     matchHistory.push({
       setNumber: currentSet,
@@ -294,7 +300,7 @@ function simulateMatch(teamA, teamB, format = 'BO3', currentChampionList) {
 }
 
 // 페이즈별 전투력 계산 
-function calculatePhase(phase, tA, tB, picksA, picksB, bonusTeam, bonusVal) {
+function calculatePhase(phase, tA, tB, picksA, picksB, bonusTeam, bonusVal, difficulty, playerTeamName) {
   let powerA = 0;
   let powerB = 0;
 
@@ -335,6 +341,17 @@ function calculatePhase(phase, tA, tB, picksA, picksB, bonusTeam, bonusVal) {
 
   if (bonusTeam === 'A') powerA *= bonusVal;
   if (bonusTeam === 'B') powerB *= bonusVal;
+
+  // 난이도 조절: 플레이어의 상대팀(AI) 점수에만 배율 적용
+  if (playerTeamName && difficulty) {
+    const multiplier = SIM_CONSTANTS.DIFFICULTY_MULTIPLIERS[difficulty] || 1.0;
+    if (tA.name !== playerTeamName) {
+        powerA *= multiplier;
+    }
+    if (tB.name !== playerTeamName) {
+        powerB *= multiplier;
+    }
+  }
 
   return {
     scoreA: powerA,
@@ -899,7 +916,6 @@ function Dashboard() {
   const hasDrafted = league.groups && league.groups.baron && league.groups.baron.length > 0;
   
   const nextGlobalMatch = league.matches ? league.matches.find(m => m.status === 'pending') : null;
-  const currentDateDisplay = nextGlobalMatch ? nextGlobalMatch.date : (hasDrafted ? '시즌 종료' : '2026 프리시즌');
 
   const isMyNextMatch = nextGlobalMatch ? (nextGlobalMatch.t1 === myTeam.id || nextGlobalMatch.t2 === myTeam.id) : false;
 
@@ -1017,6 +1033,7 @@ function Dashboard() {
       { name: t2Obj.name, roster: getTeamRoster(t2Obj.name) },
       nextGlobalMatch.format,
       league.currentChampionList
+      // AI vs AI 에서는 난이도 미적용
     );
     
     applyMatchResult(nextGlobalMatch, result);
@@ -1032,7 +1049,9 @@ function Dashboard() {
       { name: t1Obj.name, roster: getTeamRoster(t1Obj.name) },
       { name: t2Obj.name, roster: getTeamRoster(t2Obj.name) },
       nextGlobalMatch.format,
-      league.currentChampionList
+      league.currentChampionList,
+      league.difficulty,
+      myTeam.name
     );
 
     setMyMatchResult({
@@ -1353,7 +1372,20 @@ function Dashboard() {
     ? league.matches.some(m => m.type === 'playin')
     : false;
 
-  const effectiveDate = (isSuperWeekFinished && !hasPlayInGenerated) ? '2.2 (월)' : currentDateDisplay;
+  const isPlayInFinished = hasPlayInGenerated && league.matches.filter(m => m.type === 'playin').every(m => m.status === 'finished');
+
+  const handleGeneratePlayoffs = () => {
+      // This is where you would generate the final playoff bracket.
+      // For now, it's just an alert.
+      alert("플레이오프 대진이 생성되었습니다! (기능 개발 중)");
+  };
+
+  let effectiveDate = currentDateDisplay;
+  if (isPlayInFinished) {
+      effectiveDate = '2.9 (월)';
+  } else if (isSuperWeekFinished && !hasPlayInGenerated) {
+      effectiveDate = '2.2 (월)';
+  }
 
   // Helper: get play-in seed and format team names with seed when match is playin
   const getPlayInSeed = (teamId) => {
@@ -1488,7 +1520,16 @@ function Dashboard() {
               </button>
             )}
 
-            {hasDrafted && nextGlobalMatch && !isMyNextMatch && (
+            {isPlayInFinished && (
+                <button 
+                onClick={handleGeneratePlayoffs} 
+                className="px-5 py-1.5 rounded-full font-bold text-sm bg-yellow-500 hover:bg-yellow-600 text-white shadow-sm flex items-center gap-2 animate-bounce transition"
+              >
+                  <span>🏆</span> 플레이오프 일정 확인하기
+              </button>
+            )}
+
+            {hasDrafted && nextGlobalMatch && !isMyNextMatch && !isPlayInFinished && (
                 <button 
                   onClick={handleProceedNextMatch} 
                   className="px-5 py-1.5 rounded-full font-bold text-sm bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-2 animate-pulse transition"
@@ -1533,7 +1574,7 @@ function Dashboard() {
                             )}
 
                           </div>
-                        ) : <div className="text-xs font-bold text-blue-600">모든 일정 종료 또는 대기 중</div>}
+                        ) : <div className="text-xs font-bold text-blue-600">{isPlayInFinished ? '플레이오프 대기 중' : '모든 일정 종료'}</div>}
                       </div>
                       <div className="text-center w-1/3">
                           <div className="text-4xl font-black text-gray-800 mb-2">{t2 ? formatTeamName(t2.id, nextGlobalMatch?.type === 'playin') : '?'}</div>
