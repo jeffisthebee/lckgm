@@ -96,8 +96,8 @@ const rebalanceChampionTiers = (champions) => {
     return newChampionList.sort((a, b) => a.id - b.id); // 원래 순서로 복원 (선택사항)
 };
 
-// 앱 로드 시 챔피언 리스트를 한 번 재조정
-const championList = rebalanceChampionTiers(rawChampionList);
+// 앱 로드 시 챔피언 리스트를 원본 데이터로 설정
+const championList = rawChampionList;
 
 // --- 드래프트 엔진 ---
 
