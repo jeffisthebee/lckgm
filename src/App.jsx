@@ -231,9 +231,7 @@ function simulateMatch(teamA, teamB, format = 'BO3') {
   let matchHistory = [];
 
   while (winsA < targetWins && winsB < targetWins) {
-    // 시뮬레이션 전 현재까지의 피어리스 밴 목록 저장 (표시용)
     const currentFearlessBans = [...globalBanList];
-
     const setResult = simulateSet(teamA, teamB, currentSet, globalBanList);
     
     matchHistory.push({
@@ -241,7 +239,7 @@ function simulateMatch(teamA, teamB, format = 'BO3') {
       winner: setResult.winnerName,
       picks: setResult.picks,
       bans: setResult.bans,
-      fearlessBans: currentFearlessBans, // 해당 세트에 적용된 글로벌 밴 목록
+      fearlessBans: currentFearlessBans,
       logs: setResult.logs,
       scores: setResult.score
     });
@@ -1015,9 +1013,77 @@ function Dashboard() {
     });
   };
 
-  // 그룹별 총 승점(Wins) 계산
-  const baronTotalWins = league.groups && league.groups.baron ? league.groups.baron.reduce((acc, id) => acc + (league.standings[id]?.w || 0), 0) : 0;
-  const elderTotalWins = league.groups && league.groups.elder ? league.groups.elder.reduce((acc, id) => acc + (league.standings[id]?.w || 0), 0) : 0;
+  // 그룹 포인트 계산 함수 (매치 기록 기반)
+  const calculateGroupScore = (groupType) => {
+      if (!league.groups || !league.groups[groupType]) return 0;
+      const groupIds = league.groups[groupType];
+      
+      return league.matches.filter(m => {
+          if (m.status !== 'finished') return false;
+          // 승자 ID 찾기
+          const winnerTeam = teams.find(t => t.name === m.result.winner);
+          if (!winnerTeam) return false;
+          return groupIds.includes(winnerTeam.id);
+      }).reduce((acc, m) => acc + (m.type === 'super' ? 2 : 1), 0);
+  };
+
+  const baronTotalWins = calculateGroupScore('baron');
+  const elderTotalWins = calculateGroupScore('elder');
+
+
+  // 슈퍼위크 일정 생성 핸들러
+  const handleGenerateSuperWeek = () => {
+    const baronSorted = getSortedGroup([...league.groups.baron]);
+    const elderSorted = getSortedGroup([...league.groups.elder]);
+    let newMatches = [];
+    const days = ['1.26 (월)', '1.27 (화)', '1.28 (수)', '1.29 (목)', '1.30 (금)']; 
+
+    // 순위별 매칭 생성
+    let pairs = [];
+    for(let i=0; i<5; i++) {
+        pairs.push({ t1: baronSorted[i], t2: elderSorted[i], rank: i+1 });
+    }
+    // 경기 순서 랜덤 셔플
+    pairs.sort(() => Math.random() - 0.5);
+
+    // 기존 TBD 일정 제거 후 새 일정 추가
+    const cleanMatches = league.matches.filter(m => m.type !== 'tbd');
+
+    pairs.forEach((pair, idx) => {
+        newMatches.push({
+            id: Date.now() + idx,
+            t1: pair.t1,
+            t2: pair.t2,
+            date: days[idx] || '1.30 (금)', 
+            time: '17:00',
+            type: 'super', // 슈퍼위크 타입 지정 (승리시 2점)
+            format: 'BO3',
+            status: 'pending'
+        });
+    });
+
+    // 날짜순 정렬
+    const updatedMatches = [...cleanMatches, ...newMatches];
+    updatedMatches.sort((a, b) => {
+        const dayA = parseFloat(a.date.split(' ')[0]);
+        const dayB = parseFloat(b.date.split(' ')[0]);
+        return dayA - dayB;
+    });
+
+    updateLeague(league.id, { matches: updatedMatches });
+    setLeague(prev => ({ ...prev, matches: updatedMatches }));
+    alert('🔥 슈퍼위크 일정이 생성되었습니다! (승리 시 그룹 포인트 2점)');
+  };
+  
+  // 정규 시즌 경기 종료 여부 확인 (1.25일까지의 경기)
+  const isRegularSeasonFinished = league.matches 
+    ? league.matches.filter(m => m.type === 'regular').every(m => m.status === 'finished') 
+    : false;
+  
+  // 슈퍼위크 생성 여부 확인
+  const hasSuperWeekGenerated = league.matches
+    ? league.matches.some(m => m.type === 'super')
+    : false;
 
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden font-sans relative">
@@ -1098,13 +1164,24 @@ function Dashboard() {
           </div>
           
           <div className="flex items-center gap-3">
-            {hasDrafted && nextGlobalMatch && !isMyNextMatch && (
-                <button 
-                  onClick={handleProceedNextMatch} 
-                  className="px-5 py-1.5 rounded-full font-bold text-sm bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-2 animate-pulse transition"
-                >
-                    <span>⏩</span> 다음 경기 진행 ({t1?.name} vs {t2?.name})
-                </button>
+            {/* 정규시즌이 끝났고 슈퍼위크 생성이 안됐으면 생성 버튼 표시 */}
+            {hasDrafted && isRegularSeasonFinished && !hasSuperWeekGenerated ? (
+                 <button 
+                 onClick={handleGenerateSuperWeek} 
+                 className="px-5 py-1.5 rounded-full font-bold text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition"
+               >
+                   <span>🔥</span> 슈퍼위크 일정 확인하기 (1.26 ~ )
+               </button>
+            ) : (
+                /* 그 외에는 다음 경기 진행 버튼 (단, 다음 경기가 있고 내 경기가 아닐 때) */
+                hasDrafted && nextGlobalMatch && !isMyNextMatch && (
+                    <button 
+                      onClick={handleProceedNextMatch} 
+                      className="px-5 py-1.5 rounded-full font-bold text-sm bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-2 animate-pulse transition"
+                    >
+                        <span>⏩</span> 다음 경기 진행 ({t1?.name} vs {t2?.name})
+                    </button>
+                )
             )}
 
             <button onClick={handleDraftStart} disabled={hasDrafted} className={`px-6 py-1.5 rounded-full font-bold text-sm shadow-sm transition flex items-center gap-2 ${hasDrafted ? 'bg-gray-100 text-gray-400 cursor-not-allowed hidden' : 'bg-green-600 hover:bg-green-700 text-white animate-pulse'}`}>
@@ -1161,7 +1238,7 @@ function Dashboard() {
                         <div className="mb-6">
                             <div className="flex items-center gap-2 mb-2 border-b pb-2">
                                 <span className="text-lg">🟣</span>
-                                <span className="font-black text-sm text-gray-700">바론 그룹</span>
+                                <span className="font-black text-sm text-gray-700">바론 그룹 (Baron)</span>
                             </div>
                             <table className="w-full text-xs">
                               <thead className="bg-gray-50 text-gray-400">
@@ -1188,7 +1265,7 @@ function Dashboard() {
                         <div>
                             <div className="flex items-center gap-2 mb-2 border-b pb-2">
                                 <span className="text-lg">🔴</span>
-                                <span className="font-black text-sm text-gray-700">장로 그룹</span>
+                                <span className="font-black text-sm text-gray-700">장로 그룹 (Elder)</span>
                             </div>
                             <table className="w-full text-xs">
                               <thead className="bg-gray-50 text-gray-400">
