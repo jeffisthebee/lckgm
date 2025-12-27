@@ -908,8 +908,8 @@ function Dashboard() {
           const remainingTeam = winnersWithSeed[1];
 
           const r2Matches = [
-              { id: Date.now() + 100, t1: seed1.id, t2: pickedTeam.id, date: '2.7 (토)', time: '17:00', type: 'playin', format: 'BO5', status: 'pending' },
-              { id: Date.now() + 101, t1: seed2.id, t2: remainingTeam.id, date: '2.7 (토)', time: '19:30', type: 'playin', format: 'BO5', status: 'pending' }
+              { id: Date.now() + 100, t1: seed1.id, t2: pickedTeam.id, date: '2.7 (토)', time: '17:00', type: 'playin', format: 'BO3', status: 'pending' },
+              { id: Date.now() + 101, t1: seed2.id, t2: remainingTeam.id, date: '2.7 (토)', time: '19:30', type: 'playin', format: 'BO3', status: 'pending' }
           ];
           
           const newMatches = [...matches, ...r2Matches].sort((a,b) => parseFloat(a.date.split(' ')[0]) - parseFloat(b.date.split(' ')[0]));
@@ -1189,8 +1189,8 @@ function Dashboard() {
       const seed5 = seededTeams[4].id;
 
       const newMatches = [
-          { id: Date.now() + 1, t1: seed3, t2: seed6, date: '2.6 (금)', time: '17:00', type: 'playin', format: 'BO5', status: 'pending' },
-          { id: Date.now() + 2, t1: seed4, t2: seed5, date: '2.6 (금)', time: '19:30', type: 'playin', format: 'BO5', status: 'pending' }
+          { id: Date.now() + 1, t1: seed3, t2: seed6, date: '2.6 (금)', time: '17:00', type: 'playin', format: 'BO3', status: 'pending' },
+          { id: Date.now() + 2, t1: seed4, t2: seed5, date: '2.6 (금)', time: '19:30', type: 'playin', format: 'BO3', status: 'pending' }
       ];
 
       const updatedMatches = [...league.matches, ...newMatches];
@@ -1443,8 +1443,11 @@ function Dashboard() {
                                                         let statusBadge = null;
                                                         if (league.seasonSummary) {
                                                             const summary = league.seasonSummary;
-                                                            if (summary.poTeams.find(pt => pt.id === id)) statusBadge = <span className="text-[10px] bg-yellow-100 text-yellow-700 px-1 rounded ml-1 font-bold">PO</span>;
-                                                            else if (summary.playInTeams.find(pit => pit.id === id)) statusBadge = <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1 rounded ml-1 font-bold">PI</span>;
+                                                            const poTeam = summary.poTeams.find(pt => pt.id === id);
+                                                            const piTeam = summary.playInTeams.find(pit => pit.id === id);
+
+                                                            if (poTeam) statusBadge = <span className="text-[10px] bg-yellow-100 text-yellow-700 px-1 rounded ml-1 font-bold">PO ({poTeam.seed})</span>;
+                                                            else if (piTeam) statusBadge = <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1 rounded ml-1 font-bold">PI ({piTeam.seed})</span>;
                                                             else if (summary.eliminated === id) statusBadge = <span className="text-[10px] bg-gray-200 text-gray-500 px-1 rounded ml-1 font-bold">OUT</span>;
                                                         }
 
@@ -1555,9 +1558,12 @@ function Dashboard() {
                                             let statusBadge = null;
                                             if (league.seasonSummary) {
                                                 const summary = league.seasonSummary;
-                                                if (summary.poTeams.find(pt => pt.id === id)) statusBadge = <span className="text-xs bg-yellow-100 text-yellow-700 px-2 rounded ml-2 font-bold">PO 직행</span>;
-                                                else if (summary.playInTeams.find(pit => pit.id === id)) statusBadge = <span className="text-xs bg-indigo-100 text-indigo-700 px-2 rounded ml-2 font-bold">플레이-인</span>;
-                                                else if (summary.eliminated === id) statusBadge = <span className="text-xs bg-gray-200 text-gray-500 px-2 rounded ml-2 font-bold">탈락</span>;
+                                                const poTeam = summary.poTeams.find(pt => pt.id === id);
+                                                const piTeam = summary.playInTeams.find(pit => pit.id === id);
+
+                                                if (poTeam) statusBadge = <span className="text-xs bg-yellow-100 text-yellow-700 px-2 rounded ml-2 font-bold">PO ({poTeam.seed})</span>;
+                                                else if (piTeam) statusBadge = <span className="text-xs bg-indigo-100 text-indigo-700 px-2 rounded ml-2 font-bold">PI ({piTeam.seed})</span>;
+                                                else if (summary.eliminated === id) statusBadge = <span className="text-xs bg-gray-200 text-gray-500 px-2 rounded ml-2 font-bold">OUT</span>;
                                             }
 
                                             return (
@@ -1698,63 +1704,6 @@ function Dashboard() {
                             ))}
                         </tbody>
                     </table>
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'meta' && (
-              <div className="bg-white rounded-lg border shadow-sm p-8 min-h-[600px] flex flex-col">
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-2xl font-black text-gray-900 flex items-center gap-2">
-                    <span className="text-purple-600">📈</span> 16.01 패치 메타
-                  </h2>
-                  <div className="flex bg-gray-100 p-1 rounded-lg">
-                    {['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(role => (
-                      <button
-                        key={role}
-                        onClick={() => setMetaRole(role)}
-                        className={`px-4 py-2 rounded-md text-sm font-bold transition ${metaRole === role ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                      >
-                        {role}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4">
-                  {championList
-                    .filter(c => c.role === metaRole)
-                    .map((champ, idx) => (
-                      <div key={champ.id} className="border rounded-xl p-4 flex items-center justify-between hover:bg-gray-50 transition group">
-                        <div className="flex items-center gap-4 w-1/4">
-                          <span className={`text-2xl font-black w-10 text-center ${idx < 3 ? 'text-yellow-500' : 'text-gray-300'}`}>{idx + 1}</span>
-                          <div>
-                            <div className="font-bold text-lg text-gray-800">{champ.name}</div>
-                            <span className={`text-xs font-bold px-2 py-0.5 rounded ${champ.tier === 1 ? 'bg-purple-100 text-purple-600' : champ.tier === 2 ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
-                              {champ.tier} 티어
-                            </span>
-                          </div>
-                        </div>
-                          
-                        <div className="flex-1 px-8">
-                          <div className="flex justify-between text-xs text-gray-500 mb-1 font-medium">
-                            <span>초반 {champ.stats.early}</span>
-                            <span>중반 {champ.stats.mid}</span>
-                            <span>후반 {champ.stats.late}</span>
-                          </div>
-                          <div className="h-2.5 bg-gray-100 rounded-full flex overflow-hidden">
-                            <div className="bg-green-400 h-full" style={{width: `${champ.stats.early * 10}%`}} />
-                            <div className="bg-yellow-400 h-full" style={{width: `${champ.stats.mid * 10}%`}} />
-                            <div className="bg-red-400 h-full" style={{width: `${champ.stats.late * 10}%`}} />
-                          </div>
-                        </div>
-
-                        <div className="w-1/3 text-right">
-                          <div className="text-xs font-bold text-gray-400 mb-1 uppercase tracking-wide">Counter Picks</div>
-                          <div className="text-sm font-medium text-gray-700">{champ.counters.join(', ')}</div>
-                        </div>
-                      </div>
-                    ))}
                 </div>
               </div>
             )}
