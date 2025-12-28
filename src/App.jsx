@@ -30,7 +30,8 @@ const SIM_CONSTANTS = {
   WEIGHTS: { STATS: 0.55, META: 0.25, MASTERY: 0.20 },
   META_COEFF: {
     STANDARD: { 1: 1.0, 2: 0.95, 3: 0.90, 4: 0.85, 5: 0.80 },
-    ADC: { 1: 1.0, 2: 0.92, 3: 0.84 }
+    // ADC now uses the standard 5-tier coefficient
+    ADC: { 1: 1.0, 2: 0.95, 3: 0.90, 4: 0.85, 5: 0.80 }
   },
   OTP_SCORE_THRESHOLD: 80,
   OTP_TIER_BOOST: 2,
@@ -81,7 +82,8 @@ const rebalanceChampionTiers = (champions) => {
         let roleChamps = champions.filter(c => c.role === role);
         roleChamps.sort(() => Math.random() - 0.5); // Shuffle
 
-        const tierLimits = role === 'ADC' ? 3 : 5;
+        // All roles now use 5 tiers
+        const tierLimits = 5;
         const champsPerTier = 10;
 
         roleChamps.forEach((champ, index) => {
@@ -104,9 +106,9 @@ const championList = rawChampionList;
 function calculateChampionScore(player, champion, masteryData) {
   const playerStat = player.종합 || 85; 
   let metaScore = 100 - ((champion.tier - 1) * 10);
-  if(player.포지션 === 'ADC' && champion.role === 'ADC') {
-    metaScore = SIM_CONSTANTS.META_COEFF.ADC[Math.min(champion.tier, 3)] * 100;
-  }
+  // ADC now uses the standard meta coefficient calculation
+  metaScore = SIM_CONSTANTS.META_COEFF.STANDARD[Math.min(champion.tier, 5)] * 100;
+  
   let masteryScore = 70;
   if (masteryData) {
     masteryScore = (masteryData.winRate * 0.5) + (masteryData.kda * 10) + 20;
@@ -382,13 +384,10 @@ function getMetaScore(position, tier, masteryScore) {
     finalTier = Math.max(1, tier - SIM_CONSTANTS.OTP_TIER_BOOST);
   }
   let coeff = 1.0;
-  if (position === 'ADC') {
-    const t = Math.max(1, Math.min(3, finalTier));
-    coeff = SIM_CONSTANTS.META_COEFF.ADC[t];
-  } else {
-    const t = Math.max(1, Math.min(5, finalTier));
-    coeff = SIM_CONSTANTS.META_COEFF.STANDARD[t];
-  }
+  // ADC now uses the standard 5-tier system
+  const t = Math.max(1, Math.min(5, finalTier));
+  coeff = SIM_CONSTANTS.META_COEFF.STANDARD[t];
+  
   return 100 * coeff;
 }
 
@@ -1348,10 +1347,7 @@ function Dashboard() {
 
     const newChampionList = currentChamps.map(champ => {
         let newTier = getNewTier(champ.tier);
-        // ADC는 티어를 3으로 제한
-        if (champ.role === 'ADC' && newTier > 3) {
-            newTier = 3;
-        }
+        // ADC tier limit removed
         return { ...champ, tier: newTier };
     });
 
@@ -1609,30 +1605,30 @@ function Dashboard() {
     const seedData = matchType === 'playin' ? league.playInSeeds : league.playoffSeeds;
     return seedData?.find(s => s.id === teamId)?.seed;
   };
-  const formatTeamName = (teamId, matchType, match) => {
-    const t = teams.find(x => x.id === teamId) || { name: 'TBD' };
+  const formatTeamName = (teamId, matchType) => {
+    const t = teams.find(x => x.id === teamId);
+    if (!t) return 'TBD';
+    
     let name = t.name;
     if ((matchType === 'playin' || matchType === 'playoff') && (league.playInSeeds || league.playoffSeeds)) {
       const s = getTeamSeed(teamId, matchType);
-      name = `${t.name}${s ? ` (${s} 시드)` : ''}`;
+      if (s) {
+        name = `${t.name} (${s}시드)`;
+      }
     }
-    if (match?.label) {
-        const roundLabel = match.type === 'playin' ? `PI ${match.round}R` : match.label;
-        return { name, roundLabel };
-    }
-    return { name, roundLabel: null };
+    return name;
   };
 
   const MatchupBox = ({ match, showScore = true }) => {
     if (!match || (!match.t1 && !match.t2)) {
-        return <div className="h-16 border-2 border-dashed rounded-lg flex items-center justify-center text-gray-400 text-sm">TBD</div>;
+        return <div className="h-16 border-2 border-dashed rounded-lg flex items-center justify-center text-gray-400 text-sm w-full">TBD</div>;
     }
     const t1 = teams.find(t => t.id === match.t1);
     const t2 = teams.find(t => t.id === match.t2);
     const winnerId = match.status === 'finished' ? teams.find(t => t.name === match.result.winner)?.id : null;
 
-    const team1Name = t1 ? formatTeamName(t1.id, match.type).name : 'TBD';
-    const team2Name = t2 ? formatTeamName(t2.id, match.type).name : 'TBD';
+    const team1Name = t1 ? formatTeamName(t1.id, match.type) : 'TBD';
+    const team2Name = t2 ? formatTeamName(t2.id, match.type) : 'TBD';
 
     return (
         <div className={`bg-white border-2 rounded-lg shadow-sm w-full ${match.status === 'pending' ? 'border-gray-300' : 'border-gray-400'}`}>
@@ -1640,9 +1636,9 @@ function Dashboard() {
                 <span className={`font-bold text-sm ${winnerId === t1?.id ? 'text-blue-700' : 'text-gray-800'}`}>{team1Name}</span>
                 {showScore && <span className={`font-black text-sm ${winnerId === t1?.id ? 'text-blue-700' : 'text-gray-500'}`}>{match.status === 'finished' ? match.result.score.split(':')[0] : ''}</span>}
             </div>
-            <div className={`flex justify-between items-center p-2 rounded-b-md ${winnerId === t2?.id ? 'bg-red-100' : 'bg-gray-50'}`}>
-                <span className={`font-bold text-sm ${winnerId === t2?.id ? 'text-red-700' : 'text-gray-800'}`}>{team2Name}</span>
-                {showScore && <span className={`font-black text-sm ${winnerId === t2?.id ? 'text-red-700' : 'text-gray-500'}`}>{match.status === 'finished' ? match.result.score.split(':')[1] : ''}</span>}
+            <div className={`flex justify-between items-center p-2 rounded-b-md ${winnerId === t2?.id ? 'bg-blue-100' : 'bg-gray-50'}`}>
+                <span className={`font-bold text-sm ${winnerId === t2?.id ? 'text-blue-700' : 'text-gray-800'}`}>{team2Name}</span>
+                {showScore && <span className={`font-black text-sm ${winnerId === t2?.id ? 'text-blue-700' : 'text-gray-500'}`}>{match.status === 'finished' ? match.result.score.split(':')[1] : ''}</span>}
             </div>
         </div>
     );
@@ -1854,9 +1850,9 @@ function Dashboard() {
                                     <div key={m.id} className="bg-gray-50 border rounded p-2 text-xs">
                                         <div className="font-bold text-gray-400 mb-1">{m.label || m.date}</div>
                                         <div className="flex justify-between items-center">
-                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t1)?.name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t1, m.type).name}</div>
+                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t1)?.name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t1, m.type)}</div>
                                             <div className="text-gray-400 font-bold">{m.status === 'finished' ? m.result.score : 'vs'}</div>
-                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t2)?.name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t2, m.type).name}</div>
+                                            <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t2)?.name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t2, m.type)}</div>
                                         </div>
                                     </div>
                                 ))}
@@ -2077,11 +2073,11 @@ function Dashboard() {
                         
                         return (
                             <div className="flex-1 overflow-x-auto pb-8">
-                                <div className="flex flex-col space-y-16 min-w-[1400px] relative pt-12">
+                                <div className="flex flex-col space-y-24 min-w-[1400px] relative pt-12">
                                     {/* --- 승자조 --- */}
                                     <div className="relative border-b-2 border-dashed pb-16">
-                                        <h3 className="text-lg font-black text-blue-600 mb-8 absolute top-0">승자조 (Winner's Bracket)</h3>
-                                        <div className="flex justify-between items-center">
+                                        <h3 className="text-lg font-black text-blue-600 mb-8 absolute -top-2">승자조 (Winner's Bracket)</h3>
+                                        <div className="flex justify-between items-center mt-8">
                                             <BracketColumn title="1라운드">
                                                 <div className="flex flex-col justify-around space-y-32 h-[300px]">
                                                     <MatchupBox match={r1m1} />
@@ -2090,34 +2086,34 @@ function Dashboard() {
                                             </BracketColumn>
                                             <BracketColumn title="승자조 2R">
                                                 <div className="flex flex-col justify-around space-y-32 h-[300px]">
-                                                    <MatchupBox match={r2m1_actual || { t1: league.playoffSeeds.find(s => s.seed === 1)?.id, t2: getWinner(r1m1), status: 'pending' }} />
-                                                    <MatchupBox match={r2m2_actual || { t1: league.playoffSeeds.find(s => s.seed === 2)?.id, t2: getWinner(r1m2), status: 'pending' }} />
+                                                    <MatchupBox match={r2m1_actual || { t1: league.playoffSeeds.find(s => s.seed === 1)?.id, t2: getWinner(r1m1), status: 'pending', type: 'playoff' }} />
+                                                    <MatchupBox match={r2m2_actual || { t1: league.playoffSeeds.find(s => s.seed === 2)?.id, t2: getWinner(r1m2), status: 'pending', type: 'playoff' }} />
                                                 </div>
                                             </BracketColumn>
                                             <BracketColumn title="승자조 결승">
-                                                <MatchupBox match={r3m1_actual || { t1: getWinner(r2m1_actual), t2: getWinner(r2m2_actual), status: 'pending' }} />
+                                                <MatchupBox match={r3m1_actual || { t1: getWinner(r2m1_actual), t2: getWinner(r2m2_actual), status: 'pending', type: 'playoff' }} />
                                             </BracketColumn>
                                             <BracketColumn title="결승전">
-                                                <MatchupBox match={final_actual || { t1: getWinner(r3m1_actual), t2: getWinner(r4m1_actual), status: 'pending' }} />
+                                                <MatchupBox match={final_actual || { t1: getWinner(r3m1_actual), t2: getWinner(r4m1_actual), status: 'pending', type: 'playoff' }} />
                                             </BracketColumn>
                                         </div>
                                     </div>
 
                                     {/* --- 패자조 --- */}
-                                    <div className="relative pt-12">
-                                        <h3 className="text-lg font-black text-red-600 mb-8 absolute top-0">패자조 (Loser's Bracket)</h3>
-                                        <div className="flex justify-start items-center space-x-24">
+                                    <div className="relative pt-8">
+                                        <h3 className="text-lg font-black text-red-600 mb-8 absolute -top-2">패자조 (Loser's Bracket)</h3>
+                                        <div className="flex justify-start items-center space-x-24 mt-8">
                                             <BracketColumn title="패자조 1R">
-                                                <MatchupBox match={r2lm1_actual || { t1: getLoser(r1m1), t2: getLoser(r1m2), status: 'pending' }} />
+                                                <MatchupBox match={r2lm1_actual || { t1: getLoser(r1m1), t2: getLoser(r1m2), status: 'pending', type: 'playoff' }} />
                                             </BracketColumn>
                                             <BracketColumn title="패자조 2R">
-                                                <MatchupBox match={r2lm2_actual || { t1: [getLoser(r2m1_actual), getLoser(r2m2_actual)].sort((a,b) => (league.playoffSeeds.find(s=>s.id===b)?.seed || 99) - (league.playoffSeeds.find(s=>s.id===a)?.seed || 99))[0], t2: getWinner(r2lm1_actual), status: 'pending' }} />
+                                                <MatchupBox match={r2lm2_actual || { t1: [getLoser(r2m1_actual), getLoser(r2m2_actual)].sort((a,b) => (league.playoffSeeds.find(s=>s.id===b)?.seed || 99) - (league.playoffSeeds.find(s=>s.id===a)?.seed || 99))[0], t2: getWinner(r2lm1_actual), status: 'pending', type: 'playoff' }} />
                                             </BracketColumn>
                                             <BracketColumn title="패자조 3R">
-                                                <MatchupBox match={r3lm1_actual || { t1: [getLoser(r2m1_actual), getLoser(r2m2_actual)].sort((a,b) => (league.playoffSeeds.find(s=>s.id===a)?.seed || 99) - (league.playoffSeeds.find(s=>s.id===b)?.seed || 99))[0], t2: getWinner(r2lm2_actual), status: 'pending' }} />
+                                                <MatchupBox match={r3lm1_actual || { t1: [getLoser(r2m1_actual), getLoser(r2m2_actual)].sort((a,b) => (league.playoffSeeds.find(s=>s.id===a)?.seed || 99) - (league.playoffSeeds.find(s=>s.id===b)?.seed || 99))[0], t2: getWinner(r2lm2_actual), status: 'pending', type: 'playoff' }} />
                                             </BracketColumn>
                                             <BracketColumn title="결승 진출전">
-                                                <MatchupBox match={r4m1_actual || { t1: getLoser(r3m1_actual), t2: getWinner(r3lm1_actual), status: 'pending' }} />
+                                                <MatchupBox match={r4m1_actual || { t1: getLoser(r3m1_actual), t2: getWinner(r3lm1_actual), status: 'pending', type: 'playoff' }} />
                                             </BracketColumn>
                                         </div>
                                     </div>
@@ -2321,8 +2317,8 @@ function Dashboard() {
                       const isMyMatch = myTeam.id === m.t1 || myTeam.id === m.t2;
                       const isFinished = m.status === 'finished';
                       
-                      const { name: t1Name } = formatTeamName(m.t1, m.type, m);
-                      const { name: t2Name } = formatTeamName(m.t2, m.type, m);
+                      const t1Name = formatTeamName(m.t1, m.type);
+                      const t2Name = formatTeamName(m.t2, m.type);
 
                       return (
                         <div key={i} className={`p-4 rounded-lg border flex flex-col gap-2 ${isMyMatch ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-200' : 'bg-white border-gray-200'}`}>
