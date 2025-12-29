@@ -911,22 +911,6 @@ function simulateMatch(teamA, teamB, format = 'BO3', simOptions) {
   };
 }
 
-globalBanList = [...globalBanList, ...setResult.usedChamps];
-    currentSet++;
-
-  const finalWinner = winsA > winsB ? teamA : teamB;
-  const finalLoser = winsA > winsB ? teamB : teamA;
-
-  return {
-    winner: finalWinner.name,
-    loser: finalLoser.name,
-    scoreA: winsA,
-    scoreB: winsB,
-    scoreString: `${winsA}:${winsB}`,
-    history: matchHistory 
-  };
-
-
 // ==========================================
 // 1. 데이터 및 유틸리티
 // ==========================================
