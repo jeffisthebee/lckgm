@@ -4,7 +4,7 @@ import playerList from './data/players.json';
 import rawChampionList from './data/champions.json';
 
 // ==========================================
-// [통합] LoL eSports 시뮬레이션 엔진 (v3.1)
+// [통합] LoL eSports 시뮬레이션 엔진 (v3.2)
 // ==========================================
 
 const SIDES = { BLUE: 'BLUE', RED: 'RED' };
@@ -327,7 +327,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
   const firstDragonType = shuffledDragons[0];
   const secondDragonType = shuffledDragons[1];
   const mapElementType = shuffledDragons[2];
-  let dragonSpawnCount = 0; // 전역 용 등장 횟수
+  let dragonSpawnCount = 0;
 
   const initLane = () => ({
       tier1: { hp: 100, plates: 6, destroyed: false },
@@ -344,7 +344,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
         [SIDES.RED]: { TOP: initLane(), MID: initLane(), BOT: initLane() }
     },
     nexusHealth: { [SIDES.BLUE]: 100, [SIDES.RED]: 100 },
-    dragons: { [SIDES.BLUE]: [], [SIDES.RED]: [] }, // 팀별 용 획득 목록
+    dragons: { [SIDES.BLUE]: [], [SIDES.RED]: [] }, 
     grubs: { [SIDES.BLUE]: 0, [SIDES.RED]: 0 },
     soul: null,
     baronBuff: { side: null, endTime: 0 },
@@ -389,7 +389,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
     powerBlue *= (1 + (Math.random() * SIM_CONSTANTS.VAR_RANGE * 2 - SIM_CONSTANTS.VAR_RANGE));
     powerRed *= (1 + (Math.random() * SIM_CONSTANTS.VAR_RANGE * 2 - SIM_CONSTANTS.VAR_RANGE));
 
-    let eventLog = null;
+    let eventLog = ""; // 문자열 누적을 위해 빈 문자열로 초기화
 
     if (time === GAME_RULES.OBJECTIVES.GRUBS.time) {
       const winner = resolveCombat(powerBlue, powerRed);
@@ -404,30 +404,24 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
       eventLog = `[${time}분] 👁️ ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 전령 획득`;
     }
 
-    // [수정사항 1] 드래곤 영혼 로직 수정
     if (time >= state.nextDragonTime && !state.soul) {
       const winner = resolveCombat(powerBlue, powerRed);
-      
-      // 현재 용 속성 결정 (전역 카운트 기준)
       let currentDragonName;
       if (dragonSpawnCount === 0) currentDragonName = firstDragonType;
       else if (dragonSpawnCount === 1) currentDragonName = secondDragonType;
-      else currentDragonName = mapElementType; // 3번째 이후로는 맵 속성 고정
+      else currentDragonName = mapElementType;
 
       state.dragons[winner].push(currentDragonName);
       state.gold[winner] += GAME_RULES.OBJECTIVES.DRAGON.gold;
-      dragonSpawnCount++; // 전역 카운트 증가
+      dragonSpawnCount++;
 
       eventLog = `[${time}분] 🐉 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name}, ${currentDragonName} 용 처치`;
       
-      // 해당 팀이 먹은 용이 4개여야 영혼 획득
       if (state.dragons[winner].length === 4) {
         state.soul = { side: winner, type: mapElementType };
         state.nextElderTime = time + GAME_RULES.OBJECTIVES.ELDER.spawn_after_soul;
         eventLog += ` (👑 ${mapElementType} 영혼 획득!)`;
-        // 영혼이 나오면 다음 용 리젠 타이머는 설정하지 않음 (장로 대기)
       } else {
-        // 아직 영혼 주인이 안 정해졌으면 다음 용 리젠
         state.nextDragonTime = time + GAME_RULES.OBJECTIVES.DRAGON.respawn;
       }
     }
@@ -451,22 +445,30 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
 
     const powerDiffRatio = Math.abs(powerBlue - powerRed) / ((powerBlue + powerRed) / 2);
     
+    // 교전 및 라인 로직
     if (powerDiffRatio > 0.05 || Math.random() < (0.3 + (time * 0.005))) {
         const winner = powerBlue > powerRed ? SIDES.BLUE : SIDES.RED;
         const loser = winner === SIDES.BLUE ? SIDES.RED : SIDES.BLUE;
         const winnerName = winner === SIDES.BLUE ? teamBlue.name : teamRed.name;
+        const loserName = loser === SIDES.BLUE ? teamBlue.name : teamRed.name;
         
+        // 1. 킬 발생 로직
         if (Math.random() < 0.6) {
             const winnerKills = 1 + Math.floor(Math.random() * 2);
             state.kills[winner] += winnerKills;
             state.gold[winner] += (GAME_RULES.GOLD.KILL + GAME_RULES.GOLD.ASSIST) * winnerKills;
             
+            let combatMsg = `[${time}분] ${winnerName} 교전 승리 (${winnerKills}킬)`;
+            
+            // [수정사항 2] 반격 킬 로그 추가
             if (Math.random() < 0.35) {
                 state.kills[loser] += 1;
                 state.gold[loser] += (GAME_RULES.GOLD.KILL + GAME_RULES.GOLD.ASSIST);
+                combatMsg += ` (상대 ${loserName} 1킬 반격)`;
             }
 
-            if (!eventLog && Math.random() < 0.3) eventLog = `[${time}분] ${winnerName} 교전 승리 (${winnerKills}킬)`;
+            if (!eventLog) eventLog = combatMsg;
+            else eventLog += ` | ${combatMsg}`;
         }
 
         let targetLanes = [MAP_LANES[Math.floor(Math.random() * MAP_LANES.length)]];
@@ -483,26 +485,29 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
                     if (Math.random() < 0.4 * pushPower) {
                          if (enemyLane.tier1.plates > 0) {
                              enemyLane.tier1.plates--;
-                             // [수정사항 2] 방패 파괴 시 골드 즉시 반영 (250 + 50*5 = 500G)
                              const plateGold = GAME_RULES.GOLD.TURRET.OUTER_PLATE.local + (GAME_RULES.GOLD.TURRET.OUTER_PLATE.team * 5);
                              state.gold[winner] += plateGold;
                              
+                             // [수정사항 1] 방패 채굴 로그 무조건 출력
+                             const plateCount = 6 - enemyLane.tier1.plates;
+                             let plateMsg = `[${time}분] 💰 ${winnerName}, ${lane} 포탑 방패 채굴 (${plateCount}/6)`;
+                             
                              if (enemyLane.tier1.plates === 0) {
                                  enemyLane.tier1.destroyed = true;
-                                 eventLog = `[${time}분] 💥 ${winnerName}, ${lane} 1차 포탑 파괴 (모든 방패 파괴)`;
-                             } else {
-                                 // 방패 채굴 로그 확률 증가
-                                 if (!eventLog && Math.random() < 0.6) {
-                                     eventLog = `[${time}분] ${winnerName}, ${lane} 포탑 방패 채굴 (${6 - enemyLane.tier1.plates}/6)`;
-                                 }
+                                 plateMsg = `[${time}분] 💥 ${winnerName}, ${lane} 1차 포탑 파괴 (모든 방패 파괴)`;
                              }
+
+                             if (!eventLog) eventLog = plateMsg;
+                             else eventLog += ` | ${plateMsg}`;
                          }
                     }
                 } else {
                     if (Math.random() < 0.3 * pushPower) {
                         enemyLane.tier1.destroyed = true;
                         state.gold[winner] += 500; 
-                        if (!eventLog) eventLog = `[${time}분] 💥 ${winnerName}, ${lane} 1차 포탑 파괴`;
+                        let pushMsg = `[${time}분] 💥 ${winnerName}, ${lane} 1차 포탑 파괴`;
+                        if (!eventLog) eventLog = pushMsg;
+                        else eventLog += ` | ${pushMsg}`;
                     }
                 }
             } else if (!enemyLane.tier2.destroyed) {
@@ -511,20 +516,26 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
                     let localG = lane === 'MID' ? GAME_RULES.GOLD.TURRET.INNER_MID.local : GAME_RULES.GOLD.TURRET.INNER_SIDE.local;
                     let teamG = lane === 'MID' ? GAME_RULES.GOLD.TURRET.INNER_MID.team : GAME_RULES.GOLD.TURRET.INNER_SIDE.team;
                     state.gold[winner] += (localG + (teamG * 5));
-                    if (!eventLog) eventLog = `[${time}분] 💥 ${winnerName}, ${lane} 2차 포탑 파괴`;
+                    let pushMsg = `[${time}분] 💥 ${winnerName}, ${lane} 2차 포탑 파괴`;
+                    if (!eventLog) eventLog = pushMsg;
+                    else eventLog += ` | ${pushMsg}`;
                 }
             } else if (!enemyLane.tier3.destroyed) {
                 if (Math.random() < 0.2 * pushPower) {
                     enemyLane.tier3.destroyed = true;
                     state.gold[winner] += (GAME_RULES.GOLD.TURRET.INHIB_TURRET.local + (GAME_RULES.GOLD.TURRET.INHIB_TURRET.team * 5));
-                    if (!eventLog) eventLog = `[${time}분] 🚨 ${winnerName}, ${lane} 3차(억제기) 포탑 파괴`;
+                    let pushMsg = `[${time}분] 🚨 ${winnerName}, ${lane} 3차(억제기) 포탑 파괴`;
+                    if (!eventLog) eventLog = pushMsg;
+                    else eventLog += ` | ${pushMsg}`;
                 }
             } else if (!enemyLane.inhib.destroyed) {
                 if (Math.random() < 0.3 * pushPower) {
                     enemyLane.inhib.destroyed = true;
                     enemyLane.inhib.respawnTime = time + 5;
                     state.gold[winner] += 50;
-                    eventLog = `[${time}분] 🚧 ${winnerName}, ${lane} 억제기 파괴! 슈퍼 미니언 생성`;
+                    let pushMsg = `[${time}분] 🚧 ${winnerName}, ${lane} 억제기 파괴! 슈퍼 미니언 생성`;
+                    if (!eventLog) eventLog = pushMsg;
+                    else eventLog += ` | ${pushMsg}`;
                 }
             } else {
                 if (Math.random() < 0.2 * pushPower) {
