@@ -960,15 +960,24 @@ function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions) {
   const { currentChampionList } = simOptions;
 
   const draftResult = runDraftSimulation(teamBlue, teamRed, fearlessBans, currentChampionList);
-   
   if (draftResult.picks.A.length < 5 || draftResult.picks.B.length < 5) {
-    return {
-        winnerName: teamBlue.name,
-        resultSummary: '경기 취소 (로스터 부족)',
-        score: { [teamBlue.name]: '0', [teamRed.name]: '0' }
-    };
+    // Replace the final return in function simulateSet(...) with this block
+  return {
+    winnerName: gameResult.winnerName,
+    resultSummary: resultSummary + ' ' + pogText,
+    picks: draftResult.picks,
+    bans: draftResult.bans,
+    logs: finalLogs,
+    usedChamps: usedChamps,
+    score: { 
+        [teamBlue.name]: String(scoreBlue), 
+        [teamRed.name]: String(scoreRed) 
+    },
+    // Add timing info so LiveGamePlayer can parse safely
+    gameTime: gameResult.gameTime,
+    totalMinutes: gameResult.totalMinutes
+  };
   }
-
   const getConditionModifier = (player) => {
       const stability = player.상세?.안정성 || 50;
       const variancePercent = ((100 - stability) / stability) * 10; 
@@ -1627,16 +1636,20 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
             const next = prev + 1;
             // 종료 조건
             const totalMin = simulationData.totalMinutes || 30;
-            const finalSec = simulationData.gameTime.includes('초') 
-                ? parseInt(simulationData.gameTime.split('분')[0])*60 + parseInt(simulationData.gameTime.split('분')[1] || '0')
-                : totalMin * 60;
-            
-            if (next >= finalSec) {
-                setPhase('SET_RESULT');
-                clearInterval(timer); // [FIX] 타이머 즉시 정지
-                return next;
-            }
-
+let finalSec = totalMin * 60;
+if (typeof simulationData.gameTime === 'string') {
+  // match "12분 34초" style safely and extract numbers
+  const m = simulationData.gameTime.match(/(\d+)\s*분\s*(\d+)\s*초/);
+  if (m) {
+    finalSec = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+  } else {
+    // fallback: try to parse numbers more loosely
+    const parts = simulationData.gameTime.split('분');
+    const mins = parseInt(parts[0], 10) || 0;
+    const secs = parts[1] ? parseInt(parts[1].replace(/[^0-9]/g, ''), 10) || 0 : 0;
+    finalSec = mins * 60 + secs;
+  }
+}
             // 로그 처리
             const currentLogs = simulationData.logs.filter(log => {
                 const m = log.match(/\[(\d+):(\d+)\]/);
@@ -1722,7 +1735,12 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                 <div className="w-full flex relative">
                     {/* 선수 목록 */}
                     <div className="w-64 bg-gray-900 p-2 space-y-1">
-                        {liveStats.players.filter(p=>p.side==='BLUE').map((p,i)=><div key={i} className="text-xs bg-black p-2 border-l-2 border-blue-500">{p.champName} ({p.k}/{p.d}/{p.a})</div>)}
+                    {liveStats.players.filter(p=>p.side==='BLUE').map((p,i) => (
+  <div key={i} className="text-xs bg-black p-2 border-l-2 border-blue-500">
+    <div className="font-bold">{p.champName} <span className="text-xs text-gray-400">- {p.playerName}</span></div>
+    <div className="text-[11px] text-gray-300">{p.k}/{p.d}/{p.a}</div>
+  </div>
+))}
                     </div>
                     {/* 로그 화면 */}
                     <div className="flex-1 relative flex flex-col justify-end items-center pb-10">
@@ -1739,7 +1757,12 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                         </div>
                     </div>
                     <div className="w-64 bg-gray-900 p-2 space-y-1">
-                        {liveStats.players.filter(p=>p.side==='RED').map((p,i)=><div key={i} className="text-xs bg-black p-2 border-r-2 border-red-500 text-right">{p.champName} ({p.k}/{p.d}/{p.a})</div>)}
+                    {liveStats.players.filter(p=>p.side==='RED').map((p,i) => (
+  <div key={i} className="text-xs bg-black p-2 border-r-2 border-red-500 text-right">
+    <div className="font-bold">{p.champName} <span className="text-xs text-gray-400">- {p.playerName}</span></div>
+    <div className="text-[11px] text-gray-300">{p.k}/{p.d}/{p.a}</div>
+  </div>
+))}
                     </div>
                 </div>
             )}
