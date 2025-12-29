@@ -956,30 +956,18 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
   };
 }
 
-// [FIX] simulateSet 함수 앞부분 수정
 function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions) {
   const { currentChampionList } = simOptions;
 
-  // 챔피언 리스트가 없는 경우 방어
-  const safeChampionList = currentChampionList && currentChampionList.length > 0 ? currentChampionList : (rawChampionList || []);
-
-  const draftResult = runDraftSimulation(teamBlue, teamRed, fearlessBans, safeChampionList);
-  
-  // [FIX] 로스터 부족 시에도 안전한 데이터 구조 반환
-  if (!draftResult || !draftResult.picks || draftResult.picks.A.length < 5 || draftResult.picks.B.length < 5) {
+  const draftResult = runDraftSimulation(teamBlue, teamRed, fearlessBans, currentChampionList);
+   
+  if (draftResult.picks.A.length < 5 || draftResult.picks.B.length < 5) {
     return {
-        winnerName: teamBlue.name, // 기본값
+        winnerName: teamBlue.name,
         resultSummary: '경기 취소 (로스터 부족)',
-        score: { [teamBlue.name]: '0', [teamRed.name]: '0' },
-        picks: { A: [], B: [] }, // [핵심] 빈 배열이라도 있어야 함
-        bans: { A: [], B: [] },
-        logs: ['로스터 부족으로 경기가 취소되었습니다.'],
-        usedChamps: [],
-        finalKills: { [SIDES.BLUE]: 0, [SIDES.RED]: 0 }
+        score: { [teamBlue.name]: '0', [teamRed.name]: '0' }
     };
   }
-
-  // ... (이후 코드는 그대로 유지: const getConditionModifier = ...)
 
   const getConditionModifier = (player) => {
       const stability = player.상세?.안정성 || 50;
@@ -1566,7 +1554,7 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
       );
   }
 
-  // [FIX] LiveGamePlayer 내부의 startSet 함수 전체 교체
+  // 시뮬레이션 시작 함수
   const startSet = useCallback(() => {
     try {
         const blueTeam = currentSet % 2 !== 0 ? teamA : teamB;
@@ -1575,15 +1563,9 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
         // 시뮬레이터 실행
         const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
         
-        // [중요] 결과가 없거나, 픽 데이터가 없는 경우(로스터 부족으로 경기 취소 등) 방어 로직
-        if (!result || !result.picks || !result.picks.A || !result.picks.B) {
-             console.error("시뮬레이션 실패:", result);
-             alert(`경기 생성 실패: ${result?.resultSummary || '알 수 없는 오류'}\n로스터가 충분한지 확인해주세요.`);
-             onClose(); // 강제로 닫아서 흰 화면 방지
-             return;
-        }
+        if (!result || !result.picks) throw new Error("시뮬레이션 결과가 비어있습니다.");
 
-        // 초기 스탯 세팅 (안전하게 옵셔널 체이닝 사용)
+        // 초기 스탯 세팅
         setLiveStats({
             kills: { BLUE: 0, RED: 0 },
             gold: { BLUE: 2500, RED: 2500 },
@@ -1591,8 +1573,8 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
             drakes: { BLUE: 0, RED: 0 },
             grubs: { BLUE: 0, RED: 0 },
             players: [
-                ...(result.picks.A || []).map(p => ({ ...p, side: 'BLUE', k:0, d:0, a:0, currentGold: 500, lvl: 1 })),
-                ...(result.picks.B || []).map(p => ({ ...p, side: 'RED', k:0, d:0, a:0, currentGold: 500, lvl: 1 }))
+                ...result.picks.A.map(p => ({ ...p, side: 'BLUE', k:0, d:0, a:0, currentGold: 500, lvl: 1 })),
+                ...result.picks.B.map(p => ({ ...p, side: 'RED', k:0, d:0, a:0, currentGold: 500, lvl: 1 }))
             ]
         });
         
@@ -1604,7 +1586,7 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
 
     } catch (e) {
         console.error(e);
-        alert("치명적 오류 발생: " + e.message);
+        alert("시뮬레이션 중 오류 발생: " + e.message);
         onClose();
     }
   }, [currentSet, teamA, teamB, globalBanList, simOptions, onClose]);
