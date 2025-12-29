@@ -2159,6 +2159,47 @@ function Dashboard() {
     setIsLiveGameMode(true);
   };
 
+  // ==========================================
+// [FIX] 누락된 함수 추가 (Dashboard 컴포넌트 내부)
+// 이 코드를 handleStartMyMatch 함수 밑에 복사해서 붙여넣으세요.
+// ==========================================
+
+const handleLiveMatchComplete = (match, resultData) => {
+  // 1. 결과 데이터를 기반으로 매치 정보 업데이트
+  const updatedMatches = league.matches.map(m => {
+      if (m.id === match.id) {
+          return {
+              ...m,
+              status: 'finished',
+              result: {
+                  winner: resultData.winner,
+                  score: resultData.scoreString
+              }
+          };
+      }
+      return m;
+  });
+
+  // 2. 리그 데이터 저장 및 상태 업데이트
+  const updatedLeague = { ...league, matches: updatedMatches };
+  updateLeague(league.id, updatedLeague); // 로컬 스토리지 저장
+  setLeague(updatedLeague);
+  recalculateStandings(updatedLeague); // 순위표 갱신
+
+  // 3. 다음 라운드 생성 로직 체크 (플레이인/플레이오프)
+  checkAndGenerateNextPlayInRound(updatedMatches);
+  checkAndGenerateNextPlayoffRound(updatedMatches);
+
+  // 4. 라이브 모드 종료 및 초기화
+  setIsLiveGameMode(false);
+  setLiveMatchData(null);
+  
+  // 5. 완료 메시지
+  alert(`경기 종료! 승리: ${resultData.winner}`);
+};
+
+// ==========================================
+
   const handleDraftStart = () => {
     if (hasDrafted) return;
     setIsDrafting(true);
