@@ -4,10 +4,10 @@ import playerList from './data/players.json';
 import rawChampionList from './data/champions.json';
 
 // ==========================================
-// [통합] LoL eSports 시뮬레이션 엔진 (v3.6)
-// - 난이도 계수 완화 & 승패 판정 완전 확률제 (v3.5 유지)
-// - [NEW] 패시브 골드 삭제 -> 개인별 능력치 기반 성장 시스템 도입
-// - [NEW] 골드당 스탯 증폭 공식 (100G당 0.025%)
+// [통합] LoL eSports 시뮬레이션 엔진 (v3.6.1)
+// - [FIX] 오브젝트 리스폰 타이밍 정밀 보정 (초 단위 절대 시간 적용)
+// - 패시브 골드 삭제 & 개인별 골드 성장 시스템 (v3.6 유지)
+// - 난이도, 승패 확률제, 포지션 가중치 (v3.5 유지)
 // ==========================================
 
 const SIDES = { BLUE: 'BLUE', RED: 'RED' };
@@ -44,7 +44,7 @@ const SIM_CONSTANTS = {
       LATE:  { TOP: 0.15, JGL: 0.20, MID: 0.25, ADC: 0.30, SUP: 0.10 }
   },
 
-  // [NEW] 포지션별 기본 분당 골드 (CS 수급 기준)
+  // 포지션별 기본 분당 골드 (CS 수급 기준)
   BASE_GOLD_INCOME: {
       TOP: 375, JGL: 325, MID: 425, ADC: 455, SUP: 260
   }
@@ -94,7 +94,7 @@ const GAME_RULES = {
     PLATES: { start_time: 4, end_time: 14, count: 6 }
   },
   GOLD: {
-    START: 500, KILL: 300, ASSIST: 150, // PASSIVE_PER_MIN 삭제됨
+    START: 500, KILL: 300, ASSIST: 150, 
     TURRET: { 
         OUTER_PLATE: { local: 250, team: 50 },
         INNER_MID: { local: 425, team: 25 },
@@ -104,7 +104,6 @@ const GAME_RULES = {
   },
 };
 
-// ... (DRAFT_SEQUENCE, MASTERY_MAP, 헬퍼 함수들은 기존과 동일, 생략 없이 유지하려면 위 v3.5 코드의 해당 부분을 그대로 사용) ...
 const DRAFT_SEQUENCE = [
   { type: 'BAN', side: 'BLUE', label: '블루 1밴' },
   { type: 'BAN', side: 'RED', label: '레드 1밴' },
@@ -273,7 +272,6 @@ function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChampionList
   };
 }
 
-// 4. 팀 파워 계산 [수정됨: 개인 골드 기반 스탯 증폭 적용]
 function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks) {
   let totalPower = 0;
   
@@ -307,8 +305,7 @@ function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks) 
     
     let combatPower = (rawStat * SIM_CONSTANTS.WEIGHTS.STATS) + (metaScore * SIM_CONSTANTS.WEIGHTS.META) + (masteryScore * SIM_CONSTANTS.WEIGHTS.MASTERY);
 
-    // [NEW] 골드 기반 능력치 증폭 (100골드당 0.025% = 0.00025)
-    // 공식: 1 + (현재골드 * 0.0000025)
+    // 골드 기반 능력치 증폭 (100골드당 0.025%)
     const currentGold = pick.currentGold || 500;
     const goldMultiplier = 1 + (currentGold * 0.0000025);
     combatPower *= goldMultiplier;
@@ -347,9 +344,6 @@ function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks) 
       else balanceMultiplier = 0.85; 
   }
   totalPower *= balanceMultiplier;
-
-  // *전체 골드 차이에 의한 보정은 개별 골드 보정으로 대체되었으므로 삭제 혹은 미미하게 유지*
-  // 여기서는 중복 적용을 막기 위해 삭제합니다.
   
   return totalPower;
 }
@@ -361,7 +355,7 @@ function resolveCombat(powerA, powerB) {
     return Math.random() < winChanceA ? SIDES.BLUE : SIDES.RED;
 }
 
-// [NEW] 개인별 분당 골드 계산 헬퍼 함수
+// 개인별 분당 골드 계산 함수
 function calculateIndividualIncome(pick, time) {
     const role = pick.playerData.포지션;
     const stats = pick.playerData.상세 || { 라인전: 80, 무력: 80, 안정성: 80, 성장: 80, 운영: 80, 한타: 80 };
@@ -370,29 +364,25 @@ function calculateIndividualIncome(pick, time) {
     let multiplier = 0;
     
     if (time < 15) {
-        // 초반: (라인전 x.5 + 무력 x.3 + 안정성 x.2) / 90
+        // 초반
         multiplier = (stats.라인전 * 0.5 + stats.무력 * 0.3 + stats.안정성 * 0.2) / 90;
     } else if (time < 30) {
-        // 중반: (성장 x.4 + 운영 x.4 + 무력 x.2) / 90
+        // 중반
         multiplier = (stats.성장 * 0.4 + stats.운영 * 0.4 + stats.무력 * 0.2) / 90;
     } else {
-        // 후반: (한타 x.3 + 운영 x.3 + 안정성 x.3) / 90
+        // 후반
         multiplier = (stats.한타 * 0.3 + stats.운영 * 0.3 + stats.안정성 * 0.3) / 90;
     }
-
-    // 최소 80%, 최대 120% 효율 제한을 두어 너무 말도 안되는 수치가 나오지 않게 보정
-    // multiplier = Math.max(0.8, Math.min(1.2, multiplier)); (선택 사항)
     
     return Math.floor(baseGold * multiplier);
 }
 
 // 5. 인게임 시뮬레이션 엔진
 function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
-  let time = 0;
+  let time = 0; // minute
   const logs = [];
   const { difficulty, playerTeamName } = simOptions;
   
-  // [NEW] 시작 시 모든 플레이어에게 500골드 지급
   [...picksBlue, ...picksRed].forEach(p => p.currentGold = GAME_RULES.GOLD.START);
 
   const dragonTypes = ['화염', '대지', '바람', '바다', '마법공학', '화학공학'];
@@ -410,7 +400,6 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
   });
 
   let state = {
-    // gold는 이제 표시용 합계만 저장
     gold: { [SIDES.BLUE]: GAME_RULES.GOLD.START * 5, [SIDES.RED]: GAME_RULES.GOLD.START * 5 },
     kills: { [SIDES.BLUE]: 0, [SIDES.RED]: 0 },
     structures: {
@@ -423,14 +412,14 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
     soul: null,
     baronBuff: { side: null, endTime: 0 },
     elderBuff: { side: null, endTime: 0 },
-    nextDragonTime: GAME_RULES.OBJECTIVES.DRAGON.initial_spawn,
-    nextBaronTime: GAME_RULES.OBJECTIVES.BARON.spawn,
-    nextElderTime: Infinity,
+    // [FIX] 절대 시간(초)으로 관리하여 정밀한 타이밍 제어
+    nextDragonTimeAbs: GAME_RULES.OBJECTIVES.DRAGON.initial_spawn * 60, // 300초
+    nextBaronTimeAbs: GAME_RULES.OBJECTIVES.BARON.spawn * 60,         // 1200초
+    nextElderTimeAbs: Infinity,
   };
 
   const formatTime = (m, s) => `[${m}:${s < 10 ? '0' + s : s}]`;
   
-  // [NEW] 골드 지급 함수
   const grantGoldToPlayer = (teamSide, playerIdx, amount) => {
       if (teamSide === SIDES.BLUE) {
           picksBlue[playerIdx].currentGold += amount;
@@ -453,13 +442,13 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
         minuteEvents.push({ sec: second, message: `${formatTime(time, second)} ${msg}` });
     };
     
-    // [NEW] 분당 개인 골드 지급 (CS/성장)
-    picksBlue.forEach((pick, idx) => {
+    // 분당 골드 지급
+    picksBlue.forEach((pick) => {
         const income = calculateIndividualIncome(pick, time);
         pick.currentGold += income;
         state.gold[SIDES.BLUE] += income;
     });
-    picksRed.forEach((pick, idx) => {
+    picksRed.forEach((pick) => {
         const income = calculateIndividualIncome(pick, time);
         pick.currentGold += income;
         state.gold[SIDES.RED] += income;
@@ -483,7 +472,6 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
       grubs: state.grubs[side]
     });
 
-    // calculateTeamPower 내부에서 picks의 currentGold를 참조하여 계산함
     let powerBlue = calculateTeamPower(picksBlue, time, getActiveBuffs(SIDES.BLUE), 0, picksRed);
     let powerRed = calculateTeamPower(picksRed, time, getActiveBuffs(SIDES.RED), 0, picksBlue);
     
@@ -496,56 +484,96 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
     powerBlue *= (1 + (Math.random() * SIM_CONSTANTS.VAR_RANGE * 2 - SIM_CONSTANTS.VAR_RANGE));
     powerRed *= (1 + (Math.random() * SIM_CONSTANTS.VAR_RANGE * 2 - SIM_CONSTANTS.VAR_RANGE));
 
+    // 유충 (고정 시간은 유지)
     if (time === GAME_RULES.OBJECTIVES.GRUBS.time) {
       const winner = resolveCombat(powerBlue, powerRed);
       state.grubs[winner] += GAME_RULES.OBJECTIVES.GRUBS.count;
-      grantTeamGold(winner, GAME_RULES.OBJECTIVES.GRUBS.gold / 5); // 팀 골드를 개인에게 분배 (60G씩)
+      grantTeamGold(winner, GAME_RULES.OBJECTIVES.GRUBS.gold / 5); 
       addEvent(5, `🐛 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 공허 유충 처치`);
     }
 
+    // 전령 (고정 시간)
     if (time === GAME_RULES.OBJECTIVES.HERALD.time) {
       const winner = resolveCombat(powerBlue, powerRed);
       grantTeamGold(winner, GAME_RULES.OBJECTIVES.HERALD.gold / 5);
       addEvent(10, `👁️ ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 전령 획득`);
     }
 
-    if (time >= state.nextDragonTime && !state.soul) {
-      const winner = resolveCombat(powerBlue, powerRed);
-      let currentDragonName;
-      if (dragonSpawnCount === 0) currentDragonName = firstDragonType;
-      else if (dragonSpawnCount === 1) currentDragonName = secondDragonType;
-      else currentDragonName = mapElementType;
+    // [FIX] 용 생성 로직: 절대 시간(초) 기준으로 체크
+    // 현재 루프의 끝 시간(초) = time * 60 + 59
+    if ((time * 60 + 59) >= state.nextDragonTimeAbs && !state.soul) {
+        // 이번 분(minute) 내에서 가능한 가장 빠른 초(second)를 계산
+        // 만약 리스폰 시간이 15분 50초(950초)이고 현재 time이 15분(900~959초)이면, 50초 이후에만 스폰 가능
+        const currentMinuteStartAbs = time * 60;
+        const minValidSec = (currentMinuteStartAbs < state.nextDragonTimeAbs) 
+                            ? (state.nextDragonTimeAbs - currentMinuteStartAbs) 
+                            : 0;
+        
+        // 유효한 시간대 내에서 랜덤 이벤트 발생
+        const eventSec = Math.floor(Math.random() * (60 - minValidSec)) + minValidSec;
+        
+        // 이벤트 발생 절대 시간
+        const eventAbsTime = currentMinuteStartAbs + eventSec;
 
-      state.dragons[winner].push(currentDragonName);
-      grantTeamGold(winner, GAME_RULES.OBJECTIVES.DRAGON.gold / 5);
-      dragonSpawnCount++;
+        const winner = resolveCombat(powerBlue, powerRed);
+        let currentDragonName;
+        if (dragonSpawnCount === 0) currentDragonName = firstDragonType;
+        else if (dragonSpawnCount === 1) currentDragonName = secondDragonType;
+        else currentDragonName = mapElementType;
 
-      let msg = `🐉 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name}, ${currentDragonName} 용 처치`;
-      if (state.dragons[winner].length === 4) {
-        state.soul = { side: winner, type: mapElementType };
-        state.nextElderTime = time + GAME_RULES.OBJECTIVES.ELDER.spawn_after_soul;
-        msg += ` (👑 ${mapElementType} 영혼 획득!)`;
-      } else {
-        state.nextDragonTime = time + GAME_RULES.OBJECTIVES.DRAGON.respawn;
-      }
-      addEvent(Math.floor(Math.random() * 20) + 10, msg);
+        state.dragons[winner].push(currentDragonName);
+        grantTeamGold(winner, GAME_RULES.OBJECTIVES.DRAGON.gold / 5);
+        dragonSpawnCount++;
+
+        let msg = `🐉 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name}, ${currentDragonName} 용 처치`;
+        if (state.dragons[winner].length === 4) {
+            state.soul = { side: winner, type: mapElementType };
+            // 장로 리스폰 시간 설정 (절대 시간)
+            state.nextElderTimeAbs = eventAbsTime + (GAME_RULES.OBJECTIVES.ELDER.spawn_after_soul * 60);
+            msg += ` (👑 ${mapElementType} 영혼 획득!)`;
+        } else {
+            // 다음 용 리스폰 시간 설정 (절대 시간 + 5분)
+            state.nextDragonTimeAbs = eventAbsTime + (GAME_RULES.OBJECTIVES.DRAGON.respawn * 60);
+        }
+        addEvent(eventSec, msg);
     }
 
-    if (time >= state.nextBaronTime && !(state.baronBuff.side && state.baronBuff.endTime >= time)) {
+    // [FIX] 바론 생성 로직 (절대 시간 적용)
+    if ((time * 60 + 59) >= state.nextBaronTimeAbs && !(state.baronBuff.side && state.baronBuff.endTime >= time)) {
+      // 바론은 즉시 먹는 게 아니라 확률적으로 시도
       if (Math.random() > 0.6 || time > 30) { 
+        const currentMinuteStartAbs = time * 60;
+        const minValidSec = (currentMinuteStartAbs < state.nextBaronTimeAbs) 
+                            ? (state.nextBaronTimeAbs - currentMinuteStartAbs) 
+                            : 0;
+        const eventSec = Math.floor(Math.random() * (60 - minValidSec)) + minValidSec;
+        const eventAbsTime = currentMinuteStartAbs + eventSec;
+
         const winner = resolveCombat(powerBlue * 0.9, powerRed * 0.9);
         state.baronBuff = { side: winner, endTime: time + GAME_RULES.OBJECTIVES.BARON.duration };
         grantTeamGold(winner, GAME_RULES.OBJECTIVES.BARON.gold / 5);
-        state.nextBaronTime = time + GAME_RULES.OBJECTIVES.DRAGON.respawn;
-        addEvent(Math.floor(Math.random() * 30) + 15, `🟣 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 내셔 남작 처치!`);
+        
+        // 바론 재생성 (절대 시간)
+        state.nextBaronTimeAbs = eventAbsTime + (GAME_RULES.OBJECTIVES.DRAGON.respawn * 60); // respawn 5분 동일
+        addEvent(eventSec, `🟣 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 내셔 남작 처치!`);
       }
     }
 
-    if (time >= state.nextElderTime && !(state.elderBuff.side && state.elderBuff.endTime >= time)) {
-      const winner = resolveCombat(powerBlue, powerRed);
-      state.elderBuff = { side: winner, endTime: time + GAME_RULES.OBJECTIVES.ELDER.duration };
-      state.nextElderTime = time + GAME_RULES.OBJECTIVES.ELDER.spawn_after_soul;
-      addEvent(Math.floor(Math.random() * 30) + 20, `🐲 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 장로 드래곤 처치!`);
+    // [FIX] 장로 생성 로직 (절대 시간 적용)
+    if ((time * 60 + 59) >= state.nextElderTimeAbs && !(state.elderBuff.side && state.elderBuff.endTime >= time)) {
+        const currentMinuteStartAbs = time * 60;
+        const minValidSec = (currentMinuteStartAbs < state.nextElderTimeAbs) 
+                            ? (state.nextElderTimeAbs - currentMinuteStartAbs) 
+                            : 0;
+        const eventSec = Math.floor(Math.random() * (60 - minValidSec)) + minValidSec;
+        const eventAbsTime = currentMinuteStartAbs + eventSec;
+
+        const winner = resolveCombat(powerBlue, powerRed);
+        state.elderBuff = { side: winner, endTime: time + GAME_RULES.OBJECTIVES.ELDER.duration };
+        
+        // 장로 재생성 (절대 시간)
+        state.nextElderTimeAbs = eventAbsTime + (GAME_RULES.OBJECTIVES.ELDER.spawn_after_soul * 60); 
+        addEvent(eventSec, `🐲 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 장로 드래곤 처치!`);
     }
 
     const powerDiffRatio = Math.abs(powerBlue - powerRed) / ((powerBlue + powerRed) / 2);
@@ -566,13 +594,10 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
             const winnerKills = 1 + Math.floor(Math.random() * 2);
             state.kills[winner] += winnerKills;
             
-            // [NEW] 킬 골드 분배 (킬러 + 어시스트)
-            // 시뮬레이션 단순화를 위해 랜덤 킬러 선정 (캐리 라인 가중치 없이 완전 랜덤)
+            // 킬 골드 분배
             for(let k=0; k<winnerKills; k++) {
                 const killerIdx = Math.floor(Math.random() * 5);
-                // 킬러: 300G
                 grantGoldToPlayer(winner, killerIdx, GAME_RULES.GOLD.KILL);
-                // 어시스트: 150G를 나머지 4명 중 랜덤 1~2명에게 분배 (여기선 단순히 팀원 1명에게 몰아주기)
                 const assistIdx = (killerIdx + 1) % 5; 
                 grantGoldToPlayer(winner, assistIdx, GAME_RULES.GOLD.ASSIST);
             }
@@ -604,19 +629,16 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
             if (state.baronBuff.side === winner) pushPower += 1.0;
             if (state.elderBuff.side === winner) pushPower += 2.0;
             
-            // [NEW] 포탑 골드 수급자 결정 (해당 라인 라이너)
             let lanerIdx = 0; // TOP
             if (lane === 'MID') lanerIdx = 2;
-            if (lane === 'BOT') lanerIdx = 3; // ADC가 먹는다고 가정
+            if (lane === 'BOT') lanerIdx = 3; 
 
             if (!enemyLane.tier1.destroyed) {
                 if (time >= GAME_RULES.OBJECTIVES.PLATES.start_time && time < GAME_RULES.OBJECTIVES.PLATES.end_time) {
                     if (Math.random() < 0.4 * pushPower) {
                          if (enemyLane.tier1.plates > 0) {
                              enemyLane.tier1.plates--;
-                             // 로컬 골드: 해당 라이너
                              grantGoldToPlayer(winner, lanerIdx, GAME_RULES.GOLD.TURRET.OUTER_PLATE.local);
-                             // 팀 골드: 전체 N빵 (여기선 그냥 팀원 전체에게 조금씩)
                              grantTeamGold(winner, GAME_RULES.GOLD.TURRET.OUTER_PLATE.team);
                              
                              const plateCount = 6 - enemyLane.tier1.plates;
@@ -632,7 +654,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
                 } else if (time >= GAME_RULES.OBJECTIVES.PLATES.end_time) {
                     if (Math.random() < 0.3 * pushPower) {
                         enemyLane.tier1.destroyed = true;
-                        grantGoldToPlayer(winner, lanerIdx, 300); // 1차 파괴 로컬
+                        grantGoldToPlayer(winner, lanerIdx, 300); 
                         grantTeamGold(winner, 50);
                         addEvent(currentPushSec, `💥 ${winnerName}, ${lane} 1차 포탑 파괴`);
                     }
@@ -657,7 +679,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
                 if (Math.random() < 0.3 * pushPower) {
                     enemyLane.inhib.destroyed = true;
                     enemyLane.inhib.respawnTime = time + 5;
-                    grantTeamGold(winner, 10); // 억제기 파괴는 골드 적음
+                    grantTeamGold(winner, 10);
                     addEvent(currentPushSec, `🚧 ${winnerName}, ${lane} 억제기 파괴! 슈퍼 미니언 생성`);
                 }
             } else {
