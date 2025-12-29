@@ -2119,9 +2119,11 @@ function Dashboard() {
     runSimulationForMatch(nextGlobalMatch, false);
   };
 
- // ==========================================
-  // [2단계] Dashboard 컴포넌트 내부의 함수 교체
+// ==========================================
+  // [수정됨] Dashboard 내부 로직 통합 (여기서부터 복사하세요)
   // ==========================================
+
+  // [1] 내 경기 시작하기 (안전장치 추가됨)
   const handleStartMyMatch = () => {
     // 1. 경기 데이터 확인
     if (!nextGlobalMatch) {
@@ -2129,28 +2131,31 @@ function Dashboard() {
         return;
     }
 
-    // 2. 팀 ID로 팀 데이터 찾기 (안전장치 추가)
-    const t1Obj = teams.find(t => t.id === nextGlobalMatch.t1);
-    const t2Obj = teams.find(t => t.id === nextGlobalMatch.t2);
+    // 2. 팀 데이터 찾기 (ID가 숫자/문자열 다르거나 객체일 경우 대비)
+    let t1Obj = teams.find(t => String(t.id) === String(nextGlobalMatch.t1));
+    let t2Obj = teams.find(t => String(t.id) === String(nextGlobalMatch.t2));
 
-    // 3. 팀 데이터를 못 찾았으면 중단 (여기서 흰 화면 발생함)
+    // 혹시 매치 데이터에 ID 대신 객체가 통째로 들어있는 경우 방어 로직
+    if (!t1Obj && typeof nextGlobalMatch.t1 === 'object') t1Obj = nextGlobalMatch.t1;
+    if (!t2Obj && typeof nextGlobalMatch.t2 === 'object') t2Obj = nextGlobalMatch.t2;
+
+    // 3. 여전히 팀을 못 찾았으면 중단 (흰 화면 방지)
     if (!t1Obj || !t2Obj) {
         console.error("팀 정보를 찾을 수 없습니다.", nextGlobalMatch);
-        alert(`팀 데이터 오류! ID: ${nextGlobalMatch.t1} vs ${nextGlobalMatch.t2}`);
+        alert(`팀 데이터 오류 발생! (T1: ${JSON.stringify(nextGlobalMatch.t1)}, T2: ${JSON.stringify(nextGlobalMatch.t2)})`);
         return;
     }
 
-    // 4. 로스터 가져오기 (1단계 함수 사용)
+    // 4. 로스터 가져오기
     const t1Roster = getTeamRoster(t1Obj.name);
     const t2Roster = getTeamRoster(t2Obj.name);
 
-    // 5. 로스터 비어있으면 경고
     if (!t1Roster || t1Roster.length === 0 || !t2Roster || t2Roster.length === 0) {
         alert("선수 데이터를 불러오는데 실패했습니다. playerList.json을 확인하세요.");
         return;
     }
 
-    // 6. 모든 데이터가 정상이면 실행
+    // 5. 라이브 모드 실행
     setLiveMatchData({
         match: nextGlobalMatch,
         teamA: { ...t1Obj, roster: t1Roster },
@@ -2159,46 +2164,470 @@ function Dashboard() {
     setIsLiveGameMode(true);
   };
 
-  // ==========================================
-// [FIX] 누락된 함수 추가 (Dashboard 컴포넌트 내부)
-// 이 코드를 handleStartMyMatch 함수 밑에 복사해서 붙여넣으세요.
-// ==========================================
+  // [2] 경기 종료 처리 (이 함수가 없으면 흰 화면 뜸)
+  const handleLiveMatchComplete = (match, resultData) => {
+    // 1. 매치 결과 업데이트
+    const updatedMatches = league.matches.map(m => {
+        if (m.id === match.id) {
+            return {
+                ...m,
+                status: 'finished',
+                result: {
+                    winner: resultData.winner,
+                    score: resultData.scoreString
+                }
+            };
+        }
+        return m;
+    });
 
-const handleLiveMatchComplete = (match, resultData) => {
-  // 1. 결과 데이터를 기반으로 매치 정보 업데이트
-  const updatedMatches = league.matches.map(m => {
-      if (m.id === match.id) {
-          return {
-              ...m,
-              status: 'finished',
-              result: {
-                  winner: resultData.winner,
-                  score: resultData.scoreString
-              }
-          };
-      }
-      return m;
-  });
+    // 2. 리그 데이터 저장 및 상태 갱신
+    const updatedLeague = { ...league, matches: updatedMatches };
+    updateLeague(league.id, updatedLeague);
+    setLeague(updatedLeague);
+    recalculateStandings(updatedLeague);
 
-  // 2. 리그 데이터 저장 및 상태 업데이트
-  const updatedLeague = { ...league, matches: updatedMatches };
-  updateLeague(league.id, updatedLeague); // 로컬 스토리지 저장
-  setLeague(updatedLeague);
-  recalculateStandings(updatedLeague); // 순위표 갱신
+    // 3. 다음 라운드 생성 체크 (플레이인/플레이오프)
+    checkAndGenerateNextPlayInRound(updatedMatches);
+    checkAndGenerateNextPlayoffRound(updatedMatches);
 
-  // 3. 다음 라운드 생성 로직 체크 (플레이인/플레이오프)
-  checkAndGenerateNextPlayInRound(updatedMatches);
-  checkAndGenerateNextPlayoffRound(updatedMatches);
+    // 4. 모달 닫기 및 데이터 초기화
+    setIsLiveGameMode(false);
+    setLiveMatchData(null);
+    
+    // 5. 알림
+    setTimeout(() => alert(`경기 종료! 승리: ${resultData.winner}`), 100);
+  };
 
-  // 4. 라이브 모드 종료 및 초기화
-  setIsLiveGameMode(false);
-  setLiveMatchData(null);
+  // [3] 드래프트 시작 핸들러
+  const handleDraftStart = () => {
+    if (hasDrafted) return;
+    setIsDrafting(true);
+    const pool = teams.filter(t => t.id !== 1 && t.id !== 2);
+    setDraftPool(pool);
+    setDraftGroups({ baron: [1], elder: [2] }); 
+
+    if (isCaptain) {
+        if (myTeam.id === 1) { setDraftTurn('user'); } 
+        else { setDraftTurn('cpu'); triggerCpuPick(pool, { baron: [1], elder: [2] }, 'cpu'); }
+    } else {
+        handleAutoDraft(pool);
+    }
+  };
+
+  const pickComputerTeam = (available) => {
+    const sorted = [...available].sort((a, b) => b.power - a.power);
+    const topTeam = sorted[0];
+    const topPower = topTeam.power;
+    let chance = 0.5;
+    if (topPower >= 84) chance = 0.90; else if (topPower >= 80) chance = 0.70;
+    if (Math.random() < chance) return topTeam;
+    if (available.length > 1) {
+        const others = available.filter(t => t.id !== topTeam.id);
+        return others[Math.floor(Math.random() * others.length)];
+    }
+    return topTeam;
+  };
+
+  const triggerCpuPick = (currentPool, currentGroups, turn) => {
+    draftTimeoutRef.current = setTimeout(() => {
+        if (currentPool.length === 0) { finalizeDraft(currentGroups); return; }
+        const picked = pickComputerTeam(currentPool);
+        const newPool = currentPool.filter(t => t.id !== picked.id);
+        let newGroups = { ...currentGroups };
+        if (myTeam.id === 1) newGroups.elder.push(picked.id); else newGroups.baron.push(picked.id);
+        setDraftPool(newPool); setDraftGroups(newGroups); setDraftTurn('user');
+        if (newPool.length === 0) finalizeDraft(newGroups);
+    }, 800);
+  };
+
+  const handleUserPick = (teamId) => {
+    if (draftTurn !== 'user') return;
+    const picked = teams.find(t => t.id === teamId);
+    const newPool = draftPool.filter(t => t.id !== teamId);
+    let newGroups = { ...draftGroups };
+    if (myTeam.id === 1) newGroups.baron.push(picked.id); else newGroups.elder.push(picked.id);
+    setDraftPool(newPool); setDraftGroups(newGroups); setDraftTurn('cpu'); 
+    if (newPool.length === 0) finalizeDraft(newGroups); else triggerCpuPick(newPool, newGroups, 'cpu');
+  };
+
+  const handleAutoDraft = (pool) => {
+    let currentPool = [...pool];
+    let baron = [1]; let elder = [2];
+    let turn = 0; 
+    while (currentPool.length > 0) {
+        const picked = pickComputerTeam(currentPool);
+        currentPool = currentPool.filter(t => t.id !== picked.id);
+        if (turn === 0) baron.push(picked.id); else elder.push(picked.id);
+        turn = 1 - turn;
+    }
+    finalizeDraft({ baron, elder });
+  };
+
+  const finalizeDraft = (groups) => {
+    const matches = generateSchedule(groups.baron, groups.elder);
+    const updated = updateLeague(league.id, { groups, matches });
+    if (updated) {
+      setLeague(prev => ({...prev, ...updated}));
+      setTimeout(() => { setIsDrafting(false); setActiveTab('standings'); alert("팀 구성 및 일정이 완료되었습니다!"); }, 500);
+    }
+  };
+
+  const handlePrevTeam = () => { const idx = teams.findIndex(t => t.id === viewingTeam.id); setViewingTeamId(teams[(idx - 1 + teams.length) % teams.length].id); };
+  const handleNextTeam = () => { const idx = teams.findIndex(t => t.id === viewingTeam.id); setViewingTeamId(teams[(idx + 1) % teams.length].id); };
+
+  const menuItems = [
+    { id: 'dashboard', name: '대시보드', icon: '📊' },
+    { id: 'roster', name: '로스터', icon: '👥' },
+    { id: 'standings', name: '순위표', icon: '🏆' },
+    { id: 'playoffs', name: '플레이오프', icon: '👑' },
+    { id: 'finance', name: '재정', icon: '💰' }, 
+    { id: 'schedule', name: '일정', icon: '📅' },
+    { id: 'team_schedule', name: '팀 일정', icon: '📅' },
+    { id: 'meta', name: '메타', icon: '📈' }, 
+  ];
   
-  // 5. 완료 메시지
-  alert(`경기 종료! 승리: ${resultData.winner}`);
-};
+  const myRecord = computedStandings[myTeam.id] || { w: 0, l: 0, diff: 0 };
+  const finance = teamFinanceData[viewingTeam.name] || { total_expenditure: 0, cap_expenditure: 0, luxury_tax: 0 };
 
-// ==========================================
+  const getSortedGroup = (groupIds) => {
+    return groupIds.sort((a, b) => {
+      const recA = computedStandings[a] || { w: 0, diff: 0 };
+      const recB = computedStandings[b] || { w: 0, diff: 0 };
+      if (recA.w !== recB.w) return recB.w - recA.w;
+      return recB.diff - recA.diff;
+    });
+  };
+
+  const calculateGroupScore = (groupType) => {
+      if (!league.groups || !league.groups[groupType]) return 0;
+      const groupIds = league.groups[groupType];
+      return league.matches.filter(m => {
+          if (m.status !== 'finished') return false;
+          if (m.type === 'playin') return false; 
+          const winnerTeam = teams.find(t => t.name === m.result.winner);
+          if (!winnerTeam) return false;
+          return groupIds.includes(winnerTeam.id);
+      }).reduce((acc, m) => acc + (m.type === 'super' ? 2 : 1), 0);
+  };
+
+  const baronTotalWins = calculateGroupScore('baron');
+  const elderTotalWins = calculateGroupScore('elder');
+
+  const updateChampionMeta = (currentChamps) => {
+    const probabilities = {
+        1: { 1: 0.40, 2: 0.40, 3: 0.15, 4: 0.04, 5: 0.01 },
+        2: { 1: 0.25, 2: 0.40, 3: 0.25, 4: 0.08, 5: 0.02 },
+        3: { 1: 0.07, 2: 0.23, 3: 0.40, 4: 0.23, 5: 0.07 },
+        4: { 1: 0.02, 2: 0.08, 3: 0.25, 4: 0.40, 5: 0.25 },
+        5: { 1: 0.01, 2: 0.04, 3: 0.15, 4: 0.25, 5: 0.40 },
+    };
+
+    const getNewTier = (currentTier) => {
+        const rand = Math.random();
+        let cumulative = 0;
+        const chances = probabilities[currentTier];
+        for (const tier in chances) {
+            cumulative += chances[tier];
+            if (rand < cumulative) {
+                return parseInt(tier, 10);
+            }
+        }
+        return currentTier; 
+    };
+
+    const newChampionList = currentChamps.map(champ => {
+        let newTier = getNewTier(champ.tier);
+        return { ...champ, tier: newTier };
+    });
+
+    return newChampionList;
+  };
+
+  const handleGenerateSuperWeek = () => {
+    const newChampionList = updateChampionMeta(league.currentChampionList);
+    const newMetaVersion = '16.02';
+
+    const baronSorted = getSortedGroup([...league.groups.baron]);
+    const elderSorted = getSortedGroup([...league.groups.elder]);
+    let newMatches = [];
+    const days = ['1.28 (수)', '1.29 (목)', '1.30 (금)', '1.31 (토)', '2.1 (일)']; 
+
+    let pairs = [];
+    for(let i=0; i<5; i++) {
+        pairs.push({ t1: baronSorted[i], t2: elderSorted[i], rank: i+1 });
+    }
+    pairs.sort(() => Math.random() - 0.5);
+
+    const cleanMatches = league.matches.filter(m => m.type !== 'tbd');
+
+    pairs.forEach((pair, idx) => {
+        newMatches.push({
+            id: Date.now() + idx,
+            t1: pair.t1,
+            t2: pair.t2,
+            date: days[idx] || '2.1 (일)', 
+            time: '17:00',
+            type: 'super', 
+            format: 'BO5', 
+            status: 'pending'
+        });
+    });
+
+    const updatedMatches = [...cleanMatches, ...newMatches];
+    updatedMatches.sort((a, b) => {
+        const dayA = parseFloat(a.date.split(' ')[0]);
+        const dayB = parseFloat(b.date.split(' ')[0]);
+        return dayA - dayB;
+    });
+
+    updateLeague(league.id, { 
+        matches: updatedMatches,
+        currentChampionList: newChampionList,
+        metaVersion: newMetaVersion
+    });
+    setLeague(prev => ({ 
+        ...prev, 
+        matches: updatedMatches,
+        currentChampionList: newChampionList,
+        metaVersion: newMetaVersion
+    }));
+    alert(`🔥 슈퍼위크 일정이 생성되고, 메타가 16.02 패치로 변경되었습니다!`);
+  };
+
+  const handleGeneratePlayIn = () => {
+      let isBaronWinner;
+      if (baronTotalWins > elderTotalWins) {
+        isBaronWinner = true;
+      } else if (baronTotalWins < elderTotalWins) {
+        isBaronWinner = false;
+      } else {
+        const baronDiffTotal = (league.groups?.baron || []).reduce((s, id) => s + ((computedStandings[id]?.diff) || 0), 0);
+        const elderDiffTotal = (league.groups?.elder || []).reduce((s, id) => s + ((computedStandings[id]?.diff) || 0), 0);
+
+        if (baronDiffTotal > elderDiffTotal) isBaronWinner = true;
+        else if (baronDiffTotal < elderDiffTotal) isBaronWinner = false;
+        else {
+          const baronPower = (league.groups?.baron || []).reduce((s, id) => s + ((teams.find(t => t.id === id)?.power) || 0), 0);
+          const elderPower = (league.groups?.elder || []).reduce((s, id) => s + ((teams.find(t => t.id === id)?.power) || 0), 0);
+          if (baronPower > elderPower) isBaronWinner = true;
+          else if (baronPower < elderPower) isBaronWinner = false;
+          else isBaronWinner = Math.random() < 0.5;
+        }
+      }
+      
+      const baronSorted = getSortedGroup([...league.groups.baron]);
+      const elderSorted = getSortedGroup([...league.groups.elder]);
+
+      const seasonSummary = {
+          winnerGroup: isBaronWinner ? 'Baron' : 'Elder',
+          poTeams: [],
+          playInTeams: [],
+          eliminated: null
+      };
+
+      let playInTeams = [];
+      
+      if (isBaronWinner) {
+          seasonSummary.poTeams.push({ id: baronSorted[0], seed: 1 });
+          seasonSummary.poTeams.push({ id: baronSorted[1], seed: 2 });
+          playInTeams.push(baronSorted[2], baronSorted[3], baronSorted[4]);
+
+          seasonSummary.poTeams.push({ id: elderSorted[0], seed: 3 });
+          playInTeams.push(elderSorted[1], elderSorted[2], elderSorted[3]);
+          seasonSummary.eliminated = elderSorted[4];
+      } else {
+          seasonSummary.poTeams.push({ id: elderSorted[0], seed: 1 });
+          seasonSummary.poTeams.push({ id: elderSorted[1], seed: 2 });
+          playInTeams.push(elderSorted[2], elderSorted[3], elderSorted[4]);
+
+          seasonSummary.poTeams.push({ id: baronSorted[0], seed: 3 });
+          playInTeams.push(baronSorted[1], baronSorted[2], baronSorted[3]);
+          seasonSummary.eliminated = baronSorted[4];
+      }
+
+      playInTeams.sort((a, b) => {
+          const recA = computedStandings[a];
+          const recB = computedStandings[b];
+          if (recA.w !== recB.w) return recB.w - recA.w;
+          if (recA.diff !== recB.diff) return recB.diff - recA.diff;
+          return Math.random() - 0.5;
+      });
+
+      const seededTeams = playInTeams.map((tid, idx) => ({ id: tid, seed: idx + 1 }));
+      seasonSummary.playInTeams = seededTeams;
+      
+      const seed3 = seededTeams[2].id;
+      const seed6 = seededTeams[5].id;
+      const seed4 = seededTeams[3].id;
+      const seed5 = seededTeams[4].id;
+
+      const newMatches = [
+          { id: Date.now() + 1, t1: seed3, t2: seed6, date: '2.6 (금)', time: '17:00', type: 'playin', format: 'BO3', status: 'pending', round: 1, label: '플레이-인 1라운드' },
+          { id: Date.now() + 2, t1: seed4, t2: seed5, date: '2.6 (금)', time: '19:30', type: 'playin', format: 'BO3', status: 'pending', round: 1, label: '플레이-인 1라운드' }
+      ];
+
+      const updatedMatches = [...league.matches, ...newMatches];
+      
+      updateLeague(league.id, { matches: updatedMatches, playInSeeds: seededTeams, seasonSummary }); 
+      setLeague(prev => ({ ...prev, matches: updatedMatches, playInSeeds: seededTeams, seasonSummary }));
+      setShowPlayInBracket(true);
+      alert('🛡️ 플레이-인 대진이 생성되었습니다! (1,2시드 2라운드 직행)');
+  };
+  
+  const isRegularSeasonFinished = league.matches 
+    ? league.matches.filter(m => m.type === 'regular').every(m => m.status === 'finished') 
+    : false;
+  
+  const hasSuperWeekGenerated = league.matches
+    ? league.matches.some(m => m.type === 'super')
+    : false;
+
+  const isSuperWeekFinished = league.matches
+    ? league.matches.filter(m => m.type === 'super').length > 0 && league.matches.filter(m => m.type === 'super').every(m => m.status === 'finished')
+    : false;
+
+  const hasPlayInGenerated = league.matches
+    ? league.matches.some(m => m.type === 'playin')
+    : false;
+    
+  const isPlayInFinished = hasPlayInGenerated && league.matches.filter(m => m.type === 'playin').every(m => m.status === 'finished');
+    
+  const hasPlayoffsGenerated = league.matches
+    ? league.matches.some(m => m.type === 'playoff')
+    : false;
+
+  const handleGeneratePlayoffs = () => {
+    if (!isPlayInFinished || hasPlayoffsGenerated) return;
+
+    const directPO = league.seasonSummary.poTeams;
+    const playInR2Winners = league.matches
+        .filter(m => m.type === 'playin' && m.date.includes('2.7') && m.status === 'finished')
+        .map(m => teams.find(t => t.name === m.result.winner).id);
+    const playInFinalWinner = league.matches
+        .filter(m => m.type === 'playin' && m.date.includes('2.8') && m.status === 'finished')
+        .map(m => teams.find(t => t.name === m.result.winner).id);
+    
+    const playInQualifiers = [...playInR2Winners, ...playInFinalWinner];
+
+    const playInQualifiersWithOriginalSeed = playInQualifiers.map(id => {
+        const originalSeed = league.playInSeeds.find(s => s.id === id);
+        return { id, originalSeed: originalSeed ? originalSeed.seed : 99 };
+    }).sort((a, b) => a.originalSeed - b.originalSeed);
+
+    const playoffSeeds = [
+        ...directPO,
+        { id: playInQualifiersWithOriginalSeed[0].id, seed: 4 },
+        { id: playInQualifiersWithOriginalSeed[1].id, seed: 5 },
+        { id: playInQualifiersWithOriginalSeed[2].id, seed: 6 },
+    ].sort((a, b) => a.seed - b.seed);
+
+    const seed3Team = playoffSeeds.find(s => s.seed === 3);
+    const playInTeamsForSelection = playoffSeeds.filter(s => s.seed >= 4);
+
+    const generateR1Matches = (pickedTeam) => {
+        const remainingTeams = playInTeamsForSelection.filter(t => t.id !== pickedTeam.id);
+        const r1m1 = { id: Date.now() + 300, round: 1, match: 1, label: '1라운드', t1: seed3Team.id, t2: pickedTeam.id, date: '2.11 (수)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: seed3Team.id };
+        const r1m2 = { id: Date.now() + 301, round: 1, match: 2, label: '1라운드', t1: remainingTeams[0].id, t2: remainingTeams[1].id, date: '2.12 (목)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: 'coin' };
+        
+        if (Math.random() < 0.5) {
+            [r1m1.date, r1m2.date] = [r1m2.date, r1m1.date];
+        }
+
+        const newMatches = [...league.matches, r1m1, r1m2];
+        updateLeague(league.id, { matches: newMatches, playoffSeeds });
+        setLeague(prev => ({ ...prev, matches: newMatches, playoffSeeds }));
+        alert("👑 플레이오프 1라운드 대진이 완성되었습니다!");
+        setOpponentChoice(null);
+        setActiveTab('playoffs');
+    };
+
+    if (seed3Team.id === myTeam.id) {
+        setOpponentChoice({
+            type: 'playoff_r1',
+            title: '플레이오프 1라운드 상대 선택',
+            description: '플레이-인에서 올라온 팀 중 한 팀을 상대로 지명할 수 있습니다.',
+            picker: teams.find(t => t.id === seed3Team.id),
+            opponents: playInTeamsForSelection.map(s => teams.find(t => t.id === s.id)),
+            onConfirm: (pickedTeam) => generateR1Matches(pickedTeam)
+        });
+    } else {
+        const picked = playInTeamsForSelection.find(s => s.seed === 6);
+        generateR1Matches(teams.find(t => t.id === picked.id));
+    }
+  };
+
+  const grandFinal = league.matches.find(m => m.type === 'playoff' && m.round === 5);
+  const isSeasonOver = grandFinal && grandFinal.status === 'finished';
+
+  const parseDate = (dateStr) => {
+    if (!dateStr || typeof dateStr !== 'string') return 0;
+    const parts = dateStr.split(' ')[0].split('.');
+    if (parts.length < 2) return 0;
+    return parseFloat(parts[0]) * 100 + parseFloat(parts[1]);
+  };
+
+  let effectiveDate;
+  if (isSeasonOver) {
+    effectiveDate = '시즌 종료';
+  } else if (nextGlobalMatch) {
+    effectiveDate = nextGlobalMatch.date;
+  } else if (hasDrafted) {
+    const lastMatch = league.matches.filter(m => m.status === 'finished').sort((a,b) => parseDate(b.date) - parseDate(a.date))[0];
+    if (isPlayInFinished) effectiveDate = "2.9 (월) 이후";
+    else if (isSuperWeekFinished) effectiveDate = "2.2 (월) 이후";
+    else if (isRegularSeasonFinished) effectiveDate = "1.26 (월) 이후";
+    else effectiveDate = lastMatch ? `${lastMatch.date} 이후` : '대진 생성 대기 중';
+  } else {
+    effectiveDate = '2026 프리시즌';
+  }
+
+  const getTeamSeed = (teamId, matchType) => {
+    const seedData = matchType === 'playin' ? league.playInSeeds : league.playoffSeeds;
+    return seedData?.find(s => s.id === teamId)?.seed;
+  };
+  const formatTeamName = (teamId, matchType) => {
+    const t = teams.find(x => x.id === teamId);
+    if (!t) return 'TBD';
+    
+    let name = t.name;
+    if ((matchType === 'playin' || matchType === 'playoff') && (league.playInSeeds || league.playoffSeeds)) {
+      const s = getTeamSeed(teamId, matchType);
+      if (s) {
+        name = `${t.name} (${s}시드)`;
+      }
+    }
+    return name;
+  };
+
+  const MatchupBox = ({ match, showScore = true }) => {
+    if (!match || (!match.t1 && !match.t2)) {
+        return <div className="h-16 border-2 border-dashed rounded-lg flex items-center justify-center text-gray-400 text-sm w-full">TBD</div>;
+    }
+    const t1 = teams.find(t => t.id === match.t1);
+    const t2 = teams.find(t => t.id === match.t2);
+    const winnerId = match.status === 'finished' ? teams.find(t => t.name === match.result.winner)?.id : null;
+
+    const team1Name = t1 ? formatTeamName(t1.id, match.type) : 'TBD';
+    const team2Name = t2 ? formatTeamName(t2.id, match.type) : 'TBD';
+
+    return (
+        <div className={`bg-white border-2 rounded-lg shadow-sm w-full ${match.status === 'pending' ? 'border-gray-300' : 'border-gray-400'}`}>
+            <div className={`flex justify-between items-center p-2 rounded-t-md ${winnerId === t1?.id ? 'bg-blue-100' : 'bg-gray-50'}`}>
+                <span className={`font-bold text-sm ${winnerId === t1?.id ? 'text-blue-700' : 'text-gray-800'}`}>{team1Name}</span>
+                {showScore && <span className={`font-black text-sm ${winnerId === t1?.id ? 'text-blue-700' : 'text-gray-500'}`}>{match.status === 'finished' ? match.result.score.split(':')[0] : ''}</span>}
+            </div>
+            <div className={`flex justify-between items-center p-2 rounded-b-md ${winnerId === t2?.id ? 'bg-blue-100' : 'bg-gray-50'}`}>
+                <span className={`font-bold text-sm ${winnerId === t2?.id ? 'text-blue-700' : 'text-gray-800'}`}>{team2Name}</span>
+                {showScore && <span className={`font-black text-sm ${winnerId === t2?.id ? 'text-blue-700' : 'text-gray-500'}`}>{match.status === 'finished' ? match.result.score.split(':')[1] : ''}</span>}
+            </div>
+        </div>
+    );
+  };
+
+  // ==========================================
+
+  
 
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden font-sans relative">
