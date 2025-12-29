@@ -1,511 +1,145 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Routes, Route, useNavigate, useParams, Navigate } from 'react-router-dom';
-import playerList from './data/players.json';
-import rawChampionList from './data/champions.json';
+import { calculateCombatPower, processGameTick } from '../utils/SimulationEngine';
+import playerList from '../data/players.json';
+import championList from '../data/champions.json';
 
-// ==========================================
-// 1. 상수 및 설정 (Constants & Config)
-// ==========================================
+const GameSimulation = () => {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [speed, setSpeed] = useState(1000); // 1초당 1분 (ms)
 
-const GAME_CONSTANTS = {
-  DRAGONS: {
-    TYPES: ['화학공학', '바람', '대지', '화염', '바다', '마법공학'],
-    BUFFS: {
-      '화학공학': { desc: '강인함/회복', combatPower: 1.05 },
-      '바람': { desc: '궁극기/이속', combatPower: 1.04 },
-      '대지': { desc: '방마저', combatPower: 1.06 },
-      '화염': { desc: '공주력', combatPower: 1.07 },
-      '바다': { desc: '재생', combatPower: 1.04 },
-      '마법공학': { desc: '가속/공속', combatPower: 1.05 },
-      '장로': { desc: '처형/태우기', combatPower: 1.25 } // 막강한 버프
-    }
-  },
-  STRUCTURES: {
-    OUTER: { hp: 5000, name: '1차 포탑', gold: 675, plateGold: 250 }, // 미드 2차 등의 예외 골드는 로직에서 처리
-    INNER: { hp: 4000, name: '2차 포탑', gold: 675 },
-    INHIB_TURRET: { hp: 3500, name: '억제기 포탑', gold: 375 },
-    INHIBITOR: { hp: 4000, name: '억제기', respawnTime: 5 }, // 5분
-    NEXUS_TURRET: { hp: 3000, name: '쌍둥이 포탑', respawnTime: 5 },
-    NEXUS: { hp: 5500, name: '넥서스' }
-  },
-  TIMERS: {
-    DRAGON_SPAWN: 5,
-    GRUBS_SPAWN: 6,
-    PLATES_FALL: 14,
-    HERALD_SPAWN: 14,
-    BARON_SPAWN: 20,
-    ELDER_SPAWN_DELAY: 6, // 영혼 획득 후 6분 뒤
-    BARON_BUFF_DURATION: 3,
-    OBJ_RESPAWN: 5 // 용/바론 리젠
-  }
-};
-
-const SIM_CONSTANTS = {
-  WEIGHTS: { STATS: 0.55, META: 0.25, MASTERY: 0.20 },
-  META_COEFF: { STANDARD: { 1: 1.0, 2: 0.95, 3: 0.90, 4: 0.85, 5: 0.80 } },
-  OTP_SCORE_THRESHOLD: 80,
-  OTP_TIER_BOOST: 2,
-  DIFFICULTY_MULTIPLIERS: { easy: 0.8, normal: 1.0, hard: 1.1, insane: 1.25 }
-};
-
-const DRAFT_SEQUENCE = [
-  { type: 'BAN', side: 'BLUE', label: '블루 1밴' }, { type: 'BAN', side: 'RED', label: '레드 1밴' },
-  { type: 'BAN', side: 'BLUE', label: '블루 2밴' }, { type: 'BAN', side: 'RED', label: '레드 2밴' },
-  { type: 'BAN', side: 'BLUE', label: '블루 3밴' }, { type: 'BAN', side: 'RED', label: '레드 3밴' },
-  { type: 'PICK', side: 'BLUE', label: '블루 1픽' }, { type: 'PICK', side: 'RED', label: '레드 1픽' },
-  { type: 'PICK', side: 'RED', label: '레드 2픽' }, { type: 'PICK', side: 'BLUE', label: '블루 2픽' },
-  { type: 'PICK', side: 'BLUE', label: '블루 3픽' }, { type: 'PICK', side: 'RED', label: '레드 3픽' },
-  { type: 'BAN', side: 'RED', label: '레드 4밴' }, { type: 'BAN', side: 'BLUE', label: '블루 4밴' },
-  { type: 'BAN', side: 'RED', label: '레드 5밴' }, { type: 'BAN', side: 'BLUE', label: '블루 5밴' },
-  { type: 'PICK', side: 'RED', label: '레드 4픽' }, { type: 'PICK', side: 'BLUE', label: '블루 4픽' },
-  { type: 'PICK', side: 'BLUE', label: '블루 5픽' }, { type: 'PICK', side: 'RED', label: '레드 5픽' }
-];
-
-const MASTERY_MAP = playerList.reduce((acc, player) => {
-  acc[player.이름] = { id: player.이름, pool: [] };
-  return acc;
-}, {});
-
-// ==========================================
-// 2. 유틸리티 및 드래프트 로직 (Utility & Draft)
-// ==========================================
-
-function calculateChampionScore(player, champion, masteryData) {
-  const playerStat = player.종합 || 85; 
-  let metaScore = SIM_CONSTANTS.META_COEFF.STANDARD[Math.min(champion.tier, 5)] * 100;
-  let masteryScore = 70;
-  if (masteryData) {
-    masteryScore = (masteryData.winRate * 0.5) + (masteryData.kda * 10) + 20;
-  } else if (champion.tier <= 2) {
-    masteryScore = 80;
-  }
-  return (playerStat * SIM_CONSTANTS.WEIGHTS.STATS) + 
-         (metaScore * SIM_CONSTANTS.WEIGHTS.META) + 
-         (masteryScore * SIM_CONSTANTS.WEIGHTS.MASTERY);
-}
-
-function getBestAvailableChampion(player, availableChampions) {
-  let bestChamp = null;
-  let maxScore = -1;
-  const playerData = MASTERY_MAP[player.이름];
-  const roleChamps = availableChampions.filter(c => c.role === player.포지션);
-  const pool = roleChamps.length > 0 ? roleChamps : availableChampions;
-
-  for (const champ of pool) {
-    const mastery = playerData?.pool?.find(m => m.name === champ.name);
-    const score = calculateChampionScore(player, champ, mastery);
-    const randomFactor = 1 + (Math.random() * 0.1 - 0.05);
-    if (score * randomFactor > maxScore) {
-      maxScore = score * randomFactor;
-      bestChamp = { ...champ, mastery };
-    }
-  }
-  return bestChamp || pool[0];
-}
-
-function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChampionList) {
-  let localBans = new Set([...fearlessBans]);
-  let picks = { BLUE: {}, RED: {} }; 
-  let blueBans = [], redBans = [];
-  let remainingRoles = { BLUE: ['TOP','JGL','MID','ADC','SUP'], RED: ['TOP','JGL','MID','ADC','SUP'] };
-
-  DRAFT_SEQUENCE.forEach(step => {
-    const actingTeam = step.side === 'BLUE' ? blueTeam : redTeam;
-    const opponentTeam = step.side === 'BLUE' ? redTeam : blueTeam;
-    const availableChamps = currentChampionList.filter(c => !localBans.has(c.name));
-
-    if (step.type === 'BAN') {
-      let targetRole = remainingRoles[step.side === 'BLUE' ? 'RED' : 'BLUE'][0]; // 단순화: 남은 첫 포지션 저격
-      if(!targetRole) targetRole = 'MID'; 
-      const targetPlayer = opponentTeam.roster.find(p => p.포지션 === targetRole) || opponentTeam.roster[0];
-      const banCandidate = getBestAvailableChampion(targetPlayer, availableChamps);
-      if (banCandidate) {
-        localBans.add(banCandidate.name);
-        step.side === 'BLUE' ? blueBans.push(banCandidate.name) : redBans.push(banCandidate.name);
-      }
-    } else {
-      let bestPick = null, bestPickRole = '', highestScore = -1;
-      remainingRoles[step.side].forEach(role => {
-        const player = actingTeam.roster.find(p => p.포지션 === role);
-        const champ = getBestAvailableChampion(player, availableChamps);
-        const score = calculateChampionScore(player, champ, champ.mastery);
-        if (score > highestScore) {
-          highestScore = score;
-          bestPick = champ;
-          bestPickRole = role;
-        }
-      });
-      if (bestPick) {
-        localBans.add(bestPick.name);
-        picks[step.side][bestPickRole] = bestPick;
-        remainingRoles[step.side] = remainingRoles[step.side].filter(r => r !== bestPickRole);
-      }
-    }
+  // 게임 상태 초기화
+  const [gameState, setGameState] = useState({
+    time: 0,
+    level: 1,
+    goldA: 2500, // 5명 * 500
+    goldB: 2500,
+    killsA: 0,
+    killsB: 0,
+    towersA: 0, // A팀이 파괴한 타워 수
+    towersB: 0,
+    buffsA: { dragons: [], soul: null, baron: false, grubs: 0, elder: false },
+    buffsB: { dragons: [], soul: null, baron: false, grubs: 0, elder: false },
+    currentObjective: { dragon: null, baron: false, herald: false, grubs: false, elder: false },
+    timers: { dragonRespawn: null, baronRespawn: null, elderRespawn: null },
+    soulType: null, // 3번째 용부터 고정될 속성
+    messages: [],
+    // 전투력은 매 틱 계산 후 저장
+    teamA_CP: 0,
+    teamB_CP: 0
   });
 
-  const mapPicks = (side, roster) => ['TOP','JGL','MID','ADC','SUP'].map(pos => {
-    const c = picks[side][pos];
-    const p = roster.find(pl => pl.포지션 === pos);
-    return { champName: c.name, tier: c.tier, mastery: c.mastery, playerName: p.이름, playerOvr: p.종합, position: pos };
-  });
+  // 로스터 세팅 (예시로 하드코딩, 실제론 props나 선택창에서 받아옴)
+  const teamARoster = [
+    { player: playerList[0], champion: championList.find(c => c.name === 'Aatrox') }, // 예시
+    // ... 나머지 4명
+  ];
+  const teamBRoster = [
+    { player: playerList[1], champion: championList.find(c => c.name === 'Malphite') },
+    // ... 나머지 4명
+  ];
 
-  return { picks: { A: mapPicks('BLUE', blueTeam.roster), B: mapPicks('RED', redTeam.roster) }, bans: { A: blueBans, B: redBans } };
-}
+  // 시뮬레이션 루프
+  useEffect(() => {
+    let interval = null;
 
-// ==========================================
-// 3. 인게임 시뮬레이션 엔진 (In-Game Engine)
-// ==========================================
+    if (isPlaying) {
+      interval = setInterval(() => {
+        setGameState(prev => {
+          // 1. 현재 상태 기준 양팀 전투력 실시간 계산
+          const cpA = teamARoster.reduce((acc, curr) => 
+            acc + calculateCombatPower(curr.player, curr.champion, prev.time, prev.buffsA), 0);
+            
+          const cpB = teamBRoster.reduce((acc, curr) => 
+            acc + calculateCombatPower(curr.player, curr.champion, prev.time, prev.buffsB), 0);
+          
+          // 카운터 관계 적용 (라인별 비교 후 팀 전체 CP 보정) -> 약식으로 여기에 추가 가능
 
-class GameState {
-  constructor(teamA, teamB, picksA, picksB, difficulty, playerTeamName) {
-    this.time = 0; // 0분 시작
-    this.teamA = { info: teamA, picks: picksA, gold: 0, kills: 0, dragons: [], structures: this.initStructures() };
-    this.teamB = { info: teamB, picks: picksB, gold: 0, kills: 0, dragons: [], structures: this.initStructures() };
-    this.logs = [];
-    this.nexusAlive = true;
-    this.winner = null;
-    this.difficulty = difficulty;
-    this.playerTeamName = playerTeamName;
-
-    // 오브젝트 상태
-    this.dragonType = GAME_CONSTANTS.DRAGONS.TYPES[Math.floor(Math.random() * GAME_CONSTANTS.DRAGONS.TYPES.length)];
-    this.nextDragonTime = GAME_CONSTANTS.TIMERS.DRAGON_SPAWN;
-    this.dragonSoulType = null; // 3번째 용부터 고정
-    
-    this.grubsAlive = true; // 6분 유충
-    this.heraldAlive = true; // 14분 전령
-    this.baronAlive = false; // 20분 출현
-    this.nextBaronTime = GAME_CONSTANTS.TIMERS.BARON_SPAWN;
-    
-    this.activeBuffs = { A: {}, B: {} }; // { baron: expiryTime, elder: expiryTime }
-  }
-
-  initStructures() {
-    // 탑/미드/바텀 + 넥서스
-    const lane = () => ({
-      outer: { alive: true, hp: GAME_CONSTANTS.STRUCTURES.OUTER.hp },
-      inner: { alive: true, hp: GAME_CONSTANTS.STRUCTURES.INNER.hp },
-      inhibTurret: { alive: true, hp: GAME_CONSTANTS.STRUCTURES.INHIB_TURRET.hp },
-      inhib: { alive: true, respawnAt: null }
-    });
-    return {
-      TOP: lane(), MID: lane(), BOT: lane(),
-      NEXUS: { 
-        left: { alive: true, hp: GAME_CONSTANTS.STRUCTURES.NEXUS_TURRET.hp, respawnAt: null }, 
-        right: { alive: true, hp: GAME_CONSTANTS.STRUCTURES.NEXUS_TURRET.hp, respawnAt: null },
-        core: { alive: true, hp: GAME_CONSTANTS.STRUCTURES.NEXUS.hp }
-      }
-    };
-  }
-
-  // 매 분(tick)마다 실행
-  tick() {
-    this.time++;
-    this.checkRespawns(this.teamA);
-    this.checkRespawns(this.teamB);
-    this.checkBuffExpiry();
-
-    let eventLog = `⏰ ${this.time}분: `;
-    let keyEvent = null;
-
-    // 1. 이벤트 체크
-    if (this.time === GAME_CONSTANTS.TIMERS.PLATES_FALL) {
-      this.logs.push(`🛡️ 14분: 포탑 방패가 소멸했습니다.`);
-    }
-    
-    // 2. 오브젝트 스폰 확인
-    let objectiveAvailable = null;
-    if (this.time >= this.nextDragonTime) objectiveAvailable = 'DRAGON';
-    else if (this.time === GAME_CONSTANTS.TIMERS.GRUBS_SPAWN && this.grubsAlive) objectiveAvailable = 'GRUBS';
-    else if (this.time === GAME_CONSTANTS.TIMERS.HERALD_SPAWN && this.heraldAlive) objectiveAvailable = 'HERALD';
-    else if (this.time >= this.nextBaronTime) objectiveAvailable = 'BARON';
-
-    // 3. 전투력 계산 및 교전
-    const powerA = this.calculateTeamPower('A');
-    const powerB = this.calculateTeamPower('B');
-    
-    // 난이도 보정 (상대팀 버프)
-    let adjustedPowerB = powerB;
-    if (this.teamA.info.name === this.playerTeamName) {
-        const mult = SIM_CONSTANTS.DIFFICULTY_MULTIPLIERS[this.difficulty] || 1.0;
-        adjustedPowerB *= mult;
-    }
-
-    // 승패 결정 확률 (Power 차이에 비례, 랜덤성 추가)
-    const totalPower = powerA + adjustedPowerB;
-    const winChanceA = powerA / totalPower;
-    const didAWin = Math.random() < winChanceA;
-    const winnerSide = didAWin ? 'A' : 'B';
-    const loserSide = didAWin ? 'B' : 'A';
-    const winningTeam = didAWin ? this.teamA : this.teamB;
-    const losingTeam = didAWin ? this.teamB : this.teamA;
-
-    // 4. 결과 처리
-    // 교전 승리 -> 킬 골드 + 오브젝트 획득 시도 + 구조물 타격
-    winningTeam.kills += Math.floor(Math.random() * 2); // 0~1킬 발생 가정
-    winningTeam.gold += 300; 
-
-    if (objectiveAvailable) {
-      this.handleObjective(winnerSide, objectiveAvailable);
+          // 2. 엔진 틱 진행 (전투력을 넘겨줌)
+          const stateWithCP = { ...prev, teamA_CP: cpA, teamB_CP: cpB };
+          return processGameTick(stateWithCP, teamARoster, teamBRoster);
+        });
+      }, speed);
     } else {
-      // 오브젝트가 없으면 라인 푸시 (구조물 철거)
-      this.handlePush(winnerSide, losingTeam);
+      clearInterval(interval);
     }
 
-    // 5. 게임 종료 체크
-    if (!this.teamA.structures.NEXUS.core.alive) {
-      this.winner = this.teamB.info.name;
-      this.nexusAlive = false;
-      this.logs.push(`💥 ${this.teamB.info.name}가 넥서스를 파괴했습니다! GG!`);
-    } else if (!this.teamB.structures.NEXUS.core.alive) {
-      this.winner = this.teamA.info.name;
-      this.nexusAlive = false;
-      this.logs.push(`💥 ${this.teamA.info.name}가 넥서스를 파괴했습니다! GG!`);
-    }
-  }
+    return () => clearInterval(interval);
+  }, [isPlaying, speed]);
 
-  calculateTeamPower(side) {
-    const team = side === 'A' ? this.teamA : this.teamB;
-    let power = 0;
-    
-    // 챔피언 기본 스펙 + 성장 기대치
-    team.picks.forEach(p => {
-        let stat = p.playerOvr; 
-        // 시간대별 가중치 (초반/중반/후반)
-        if (this.time < 15) stat = stat * 0.6 + (p.tier * 2); // 초반은 챔프빨
-        else stat = stat * 0.8 + (team.gold / 1000); // 후반은 성장빨
-        power += stat;
-    });
+  // 스크롤 자동 이동 (로그)
+  const logEndRef = useRef(null);
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [gameState.messages]);
 
-    // 드래곤 버프
-    team.dragons.forEach(d => {
-        power *= GAME_CONSTANTS.DRAGONS.BUFFS[d].combatPower;
-    });
-    
-    // 바론/장로 버프
-    if (this.activeBuffs[side].baron) power *= 1.15; // 바론 버프 강력함
-    if (this.activeBuffs[side].elder) power *= 1.25; // 장로 버프 매우 강력함
+  return (
+    <div className="p-4 bg-gray-900 text-white min-h-screen">
+      <div className="flex justify-between mb-4">
+        <h1 className="text-2xl font-bold">2028 LoL Simulation</h1>
+        <div className="space-x-2">
+          <button onClick={() => setIsPlaying(!isPlaying)} className="px-4 py-2 bg-blue-600 rounded">
+            {isPlaying ? '일시정지' : '시작'}
+          </button>
+          <button onClick={() => setSpeed(speed === 1000 ? 200 : 1000)} className="px-4 py-2 bg-gray-600 rounded">
+            {speed === 1000 ? '배속 x1' : '배속 x5'}
+          </button>
+        </div>
+      </div>
 
-    return power;
-  }
+      {/* 스코어보드 */}
+      <div className="grid grid-cols-3 gap-4 text-center mb-8">
+        <div className="bg-blue-900 p-4 rounded">
+          <h2 className="text-xl">BLUE TEAM</h2>
+          <p className="text-3xl font-bold">{gameState.killsA}</p>
+          <p>Gold: {gameState.goldA.toLocaleString()}</p>
+          <p>Towers: {gameState.towersA}</p>
+          <p>CP: {Math.round(gameState.teamA_CP)}</p>
+          <div className="text-sm mt-2 text-blue-200">
+             용: {gameState.buffsA.dragons.join(', ')} 
+             {gameState.buffsA.soul && ` [${gameState.buffsA.soul} 영혼]`}
+          </div>
+        </div>
+        
+        <div className="flex flex-col items-center justify-center">
+          <div className="text-4xl font-mono text-yellow-400">
+            {Math.floor(gameState.time)}분
+          </div>
+          <div className="text-sm text-gray-400 mt-2">
+            현재 페이즈: {gameState.time < 15 ? '초반 (라인전)' : gameState.time < 26 ? '중반 (운영)' : '후반 (한타)'}
+          </div>
+          <div className="mt-4 text-red-400 font-bold">
+            {gameState.currentObjective.dragon ? `드래곤 출현: ${gameState.currentObjective.dragon}` : ''}
+            {gameState.currentObjective.baron ? <div className="animate-pulse">내셔 남작 출현!</div> : ''}
+          </div>
+        </div>
 
-  handleObjective(side, type) {
-    const team = side === 'A' ? this.teamA : this.teamB;
-    const teamName = team.info.name;
+        <div className="bg-red-900 p-4 rounded">
+          <h2 className="text-xl">RED TEAM</h2>
+          <p className="text-3xl font-bold">{gameState.killsB}</p>
+          <p>Gold: {gameState.goldB.toLocaleString()}</p>
+          <p>Towers: {gameState.towersB}</p>
+          <p>CP: {Math.round(gameState.teamB_CP)}</p>
+          <div className="text-sm mt-2 text-red-200">
+             용: {gameState.buffsB.dragons.join(', ')}
+             {gameState.buffsB.soul && ` [${gameState.buffsB.soul} 영혼]`}
+          </div>
+        </div>
+      </div>
 
-    if (type === 'DRAGON') {
-      const isElder = team.dragons.length >= 4 || this.teamA.dragons.length >= 4 || this.teamB.dragons.length >= 4; 
-      // 로직 수정: 한 팀이 4용(영혼)을 먹은 뒤에 나오는게 장로
-      const soulClaimed = (this.teamA.dragons.length >= 4 || this.teamB.dragons.length >= 4);
-      
-      if (soulClaimed) {
-         this.activeBuffs[side].elder = this.time + 3; // 3분 지속 (게임적 허용)
-         this.nextDragonTime = this.time + GAME_CONSTANTS.TIMERS.ELDER_SPAWN_DELAY; // 장로 리젠
-         this.logs.push(`🐲 [장로] ${teamName}가 장로 드래곤을 처치했습니다! 적들을 처형합니다!`);
-      } else {
-         let currentDrag = this.dragonType;
-         if (this.teamA.dragons.length + this.teamB.dragons.length >= 2) {
-            // 3번째 용부터는 소울 속성 고정
-            if (!this.dragonSoulType) this.dragonSoulType = this.dragonType;
-            currentDrag = this.dragonSoulType;
-         }
-         
-         team.dragons.push(currentDrag);
-         this.logs.push(`🐉 [드래곤] ${teamName}가 ${currentDrag} 드래곤을 처치했습니다. (${team.dragons.length}스택)`);
-         
-         if (team.dragons.length === 4) {
-             this.logs.push(`🌟 [영혼] ${teamName}가 ${currentDrag} 영혼을 획득했습니다!`);
-         }
+      {/* 게임 로그 */}
+      <div className="bg-gray-800 p-4 rounded h-64 overflow-y-auto font-mono text-sm">
+        {gameState.messages.map((msg, idx) => (
+          <div key={idx} className="mb-1 border-b border-gray-700 pb-1">
+            {msg}
+          </div>
+        ))}
+        <div ref={logEndRef} />
+      </div>
+    </div>
+  );
+};
 
-         // 다음 용 설정
-         this.nextDragonTime = this.time + GAME_CONSTANTS.TIMERS.OBJ_RESPAWN;
-         // 2번째 용까지는 랜덤, 그 이후는 고정된 소울 타입
-         if (!this.dragonSoulType) {
-             this.dragonType = GAME_CONSTANTS.DRAGONS.TYPES[Math.floor(Math.random() * GAME_CONSTANTS.DRAGONS.TYPES.length)];
-             // 이전과 다르게 (단순화: 그냥 랜덤 돌림)
-         } else {
-             this.dragonType = this.dragonSoulType;
-         }
-      }
-    } else if (type === 'BARON') {
-      this.activeBuffs[side].baron = this.time + GAME_CONSTANTS.TIMERS.BARON_BUFF_DURATION;
-      this.nextBaronTime = this.time + GAME_CONSTANTS.TIMERS.OBJ_RESPAWN;
-      team.gold += 1500;
-      this.logs.push(`👾 [바론] ${teamName}가 내셔 남작을 처치했습니다! 미니언이 강화됩니다.`);
-    } else if (type === 'GRUBS') {
-      this.grubsAlive = false;
-      this.logs.push(`🐛 [유충] ${teamName}가 공허 유충을 처치하고 포탑 철거 능력을 얻습니다.`);
-    } else if (type === 'HERALD') {
-      this.heraldAlive = false;
-      this.logs.push(`🐚 [전령] ${teamName}가 협곡의 전령을 처치했습니다!`);
-      // 전령 즉시 사용 가정: 포탑에 큰 데미지
-      this.handlePush(side, side === 'A' ? this.teamB : this.teamA, true);
-    }
-  }
 
-  handlePush(attackerSide, defenderTeam, useHerald = false) {
-    // 3라인 중 랜덤 혹은 가장 많이 밀린 라인 공략
-    const lanes = ['TOP', 'MID', 'BOT'];
-    const targetLane = lanes[Math.floor(Math.random() * lanes.length)];
-    const laneStructs = defenderTeam.structures[targetLane];
-    const attackerName = attackerSide === 'A' ? this.teamA.info.name : this.teamB.info.name;
-
-    let target = null;
-    let dmg = 1500; // 기본 데미지
-    if (this.activeBuffs[attackerSide].baron) dmg *= 2; // 바론 버프시 철거력 2배
-    if (useHerald) dmg += 2500; // 전령 데미지
-
-    // 순서: 1차 -> 2차 -> 억제기포탑 -> 억제기 -> 쌍둥이 -> 넥서스
-    if (laneStructs.outer.alive) target = laneStructs.outer;
-    else if (laneStructs.inner.alive) target = laneStructs.inner;
-    else if (laneStructs.inhibTurret.alive) target = laneStructs.inhibTurret;
-    else if (laneStructs.inhib.alive) target = laneStructs.inhib;
-    else {
-        // 쌍둥이 포탑 (랜덤 하나)
-        const twin = Math.random() > 0.5 ? defenderTeam.structures.NEXUS.left : defenderTeam.structures.NEXUS.right;
-        if (twin.alive) target = twin;
-        else if (defenderTeam.structures.NEXUS.left.alive) target = defenderTeam.structures.NEXUS.left;
-        else if (defenderTeam.structures.NEXUS.right.alive) target = defenderTeam.structures.NEXUS.right;
-        else target = defenderTeam.structures.NEXUS.core;
-    }
-
-    if (target) {
-        target.hp -= dmg;
-        if (target.hp <= 0) {
-            target.alive = false;
-            target.hp = 0;
-            
-            // 골드 보상
-            let goldReward = 0;
-            if (target === laneStructs.outer) goldReward = GAME_CONSTANTS.STRUCTURES.OUTER.gold;
-            if (target === laneStructs.inner) goldReward = GAME_CONSTANTS.STRUCTURES.INNER.gold; // 미드/사이드 구분 생략하고 통일
-            if (target === laneStructs.inhibTurret) goldReward = GAME_CONSTANTS.STRUCTURES.INHIB_TURRET.gold;
-            
-            // 포탑 방패 (14분 전)
-            if (this.time < 14 && target === laneStructs.outer) {
-                goldReward += (GAME_CONSTANTS.STRUCTURES.OUTER.plateGold * 5); // 완파시 모든 채굴 가정
-            }
-
-            if (attackerSide === 'A') this.teamA.gold += goldReward;
-            else this.teamB.gold += goldReward;
-
-            let structName = target.name || '구조물';
-            if (target === defenderTeam.structures.NEXUS.core) structName = '넥서스';
-            
-            this.logs.push(`🔨 [철거] ${attackerName}가 상대의 ${targetLane} ${structName}을(를) 파괴했습니다!`);
-
-            // 억제기/쌍둥이 재생 타이머 설정
-            if (target === laneStructs.inhib || target === defenderTeam.structures.NEXUS.left || target === defenderTeam.structures.NEXUS.right) {
-                 target.respawnAt = this.time + 5; // 5분 뒤 재생
-                 this.logs.push(`⚠️ ${structName} 파괴됨! 5분 뒤 재생성됩니다.`);
-            }
-        }
-    }
-  }
-
-  checkRespawns(team) {
-    const check = (obj, name) => {
-        if (!obj.alive && obj.respawnAt && this.time >= obj.respawnAt) {
-            obj.alive = true;
-            obj.hp = 1000; // 일부 체력으로 부활
-            obj.respawnAt = null;
-            this.logs.push(`♻️ ${team.info.name}의 ${name}이(가) 재생성되었습니다!`);
-        }
-    };
-    ['TOP', 'MID', 'BOT'].forEach(line => check(team.structures[line].inhib, `${line} 억제기`));
-    check(team.structures.NEXUS.left, '쌍둥이 포탑');
-    check(team.structures.NEXUS.right, '쌍둥이 포탑');
-  }
-
-  checkBuffExpiry() {
-      ['A', 'B'].forEach(side => {
-          if (this.activeBuffs[side].baron && this.time >= this.activeBuffs[side].baron) {
-              this.activeBuffs[side].baron = null;
-              // 로그 생략 (너무 많음)
-          }
-          if (this.activeBuffs[side].elder && this.time >= this.activeBuffs[side].elder) {
-              this.activeBuffs[side].elder = null;
-          }
-      });
-  }
-}
-
-// ==========================================
-// 4. 메인 실행 함수들 (Execution Wrappers)
-// ==========================================
-
-function simulateSet(teamA, teamB, setNumber, fearlessBans, simOptions) {
-  const { currentChampionList, difficulty, playerTeamName } = simOptions;
-  
-  // 1. 밴픽 진행
-  const draftResult = runDraftSimulation(teamA, teamB, fearlessBans, currentChampionList);
-  
-  // 2. 게임 시뮬레이션 인스턴스 생성
-  const game = new GameState(teamA, teamB, draftResult.picks.A, draftResult.picks.B, difficulty, playerTeamName);
-
-  // 3. 넥서스 깨질 때까지 루프
-  while (game.nexusAlive && game.time < 60) { // 무한루프 방지 60분 제한
-      game.tick();
-  }
-  if(game.time >= 60 && game.nexusAlive) {
-      // 60분 강제 종료 (골드 판정)
-      game.winner = game.teamA.gold > game.teamB.gold ? teamA.name : teamB.name;
-      game.logs.push(`⏰ 경기 시간 초과! 골드 우위로 ${game.winner} 판정승.`);
-  }
-
-  const usedChamps = [...draftResult.picks.A.map(p=>p.champName), ...draftResult.picks.B.map(p=>p.champName)];
-
-  return {
-    winnerName: game.winner,
-    picks: draftResult.picks,
-    bans: draftResult.bans,
-    logs: game.logs,
-    usedChamps: usedChamps,
-    score: { A: game.teamA.kills, B: game.teamB.kills }, // 킬 스코어 표기
-    gold: { A: game.teamA.gold, B: game.teamB.gold }
-  };
-}
-
-function simulateMatch(teamA, teamB, format = 'BO3', simOptions) {
-  const targetWins = format === 'BO5' ? 3 : 2;
-  let winsA = 0, winsB = 0;
-  let currentSet = 1;
-  let globalBanList = [];
-  let matchHistory = [];
-
-  while (winsA < targetWins && winsB < targetWins) {
-    const currentFearlessBans = [...globalBanList];
-    const setResult = simulateSet(teamA, teamB, currentSet, currentFearlessBans, simOptions);
-    
-    matchHistory.push({
-      setNumber: currentSet,
-      winner: setResult.winnerName,
-      picks: setResult.picks,
-      bans: setResult.bans,
-      fearlessBans: currentFearlessBans,
-      logs: setResult.logs,
-      scores: setResult.score,
-      gold: setResult.gold
-    });
-
-    globalBanList = [...globalBanList, ...setResult.usedChamps];
-    if (setResult.winnerName === teamA.name) winsA++;
-    else winsB++;
-    currentSet++;
-  }
-
-  return {
-    winner: winsA > winsB ? teamA.name : teamB.name,
-    loser: winsA > winsB ? teamB.name : teamA.name,
-    scoreA: winsA,
-    scoreB: winsB,
-    scoreString: `${winsA}:${winsB}`,
-    history: matchHistory 
-  };
-}
-
-// React 컴포넌트는 기존 구조 유지하며 위 함수들을 사용하면 됩니다.
-// export default ...
 
 // ==========================================
 // 1. 데이터 및 유틸리티

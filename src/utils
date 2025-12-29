@@ -1,278 +1,261 @@
-// D:\lckgm\src\utils\simulationEngine.js
+// utils/SimulationEngine.js
 
-// 1. 데이터 Import (상대 경로 반영)
-// src/utils 에서 src/data 로 가기 위해 '../data' 사용
-import allMasteryRaw from '../data/player_mastery/index'; // index.js는 폴더명만 써도 자동으로 인식됨
-import championList from '../data/champions.json';
+// --- 1. 상수 및 설정 정의 ---
 
-// 만약 gameRules.js가 src/utils에 있다면:
-import { GAME_CONSTANTS } from './gameRules'; 
-
-// ==========================================
-// 2. 데이터 전처리 (Data Pre-processing)
-// ==========================================
-// 배열 형태의 숙련도 데이터를 { "PlayerID": { ... } } 형태의 맵으로 변환하여 검색 속도 향상
-const MASTERY_MAP = allMasteryRaw.reduce((acc, player) => {
-  // player_mastery json 파일들의 id 필드 ("Clear", "Faker" 등)를 키로 사용
-  if (player.id) {
-    acc[player.id] = player;
-  }
-  return acc;
-}, {});
-
-// ==========================================
-// 3. 시뮬레이션 설정값 (Settings)
-// ==========================================
-const SIM_CONSTANTS = {
-  // 가중치 (Total 1.0) - [55:25:20] 비율
-  WEIGHTS: {
-    STATS: 0.55,    // 선수 기본 능력치 (players.json)
-    META: 0.25,     // 챔피언 티어 (champions.json)
-    MASTERY: 0.20   // 숙련도 (player_mastery)
-  },
-  // 메타 계수 ( 5티어 체계)
-  META_COEFF: {
-    STANDARD: { 1: 1.0, 2: 0.95, 3: 0.90, 4: 0.85, 5: 0.80 },
-   
-  // 숙련도 보정 변수
-  LOW_SAMPLE_THRESHOLD: 5,    // 경기 수 5회 이하일 때 데이터 신뢰도 낮음
-  OTP_SCORE_THRESHOLD: 80,    // 숙련도 점수 80 이상이면 '장인'으로 인정
-  OTP_TIER_BOOST: 2,          // 장인일 때 챔피언 티어 보정 (예: 4티어 -> 2티어 효율)
-  VAR_RANGE: 0.12             // 경기 당 랜덤 변수 (±12%)
+// 시간대별 능력치 가중치
+const PHASE_WEIGHTS = {
+  EARLY: { laning: 0.4, mechanics: 0.3, growth: 0.2, stability: 0.1, macro: 0.0, teamfight: 0.0 }, // 0-14분
+  MID:   { laning: 0.0, mechanics: 0.2, growth: 0.25, stability: 0.15, macro: 0.35, teamfight: 0.1 }, // 15-25분
+  LATE:  { laning: 0.0, mechanics: 0.2, growth: 0.0, stability: 0.3, macro: 0.1, teamfight: 0.4 }  // 26분+
 };
 
-// ==========================================
-// 4. 메인 함수 (Main Function)
-// ==========================================
-export function simulateMatch(teamA, teamB) {
-  const log = [];
-  let scoreA = 0;
-  let scoreB = 0;
+// 챔피언 티어별 계수 (메타 점수)
+const TIER_MULTIPLIER = { 1: 1.0, 2: 0.95, 3: 0.9, 4: 0.85, 5: 0.8 };
 
-  // 1. 드래곤 속성 결정 (랜덤)
-  const dragonType = GAME_CONSTANTS.DRAGONS.TYPES[Math.floor(Math.random() * GAME_CONSTANTS.DRAGONS.TYPES.length)];
-  const dragonBuff = GAME_CONSTANTS.DRAGONS.BUFFS[dragonType];
+// 역할군 카운터 관계 (공격자 -> 수비자 : 데미지 계수)
+// 마법사/원거리 > 탱커/전사 > 암살자 > 마법사/원거리
+const ROLE_COUNTERS = {
+  'Mage': ['Tank', 'Fighter'],
+  'Marksman': ['Tank', 'Fighter'],
+  'Tank': ['Assassin'],
+  'Fighter': ['Assassin'],
+  'Assassin': ['Mage', 'Marksman']
+};
+
+// 드래곤 및 오브젝트 버프 효과 (제공해주신 수치 반영)
+const BUFF_EFFECTS = {
+  // 일반 용 (스택당 증가)
+  'Infernal': { 'Marksman': 0.03, 'Mage': 0.03, 'Fighter': 0.03, 'Tank': 0.01, 'Support': 0.01, 'Assassin': 0.0, default: 0 },
+  'Mountain': { 'Tank': 0.03, 'Fighter': 0.02, 'Support': 0.02, 'Marksman': 0.01, 'Mage': 0.01, 'Assassin': 0.01, default: 0 },
+  'Cloud':    { 'Assassin': 0.04, 'Tank': 0.02, 'Support': 0.02, 'Fighter': 0.01, 'Marksman': 0.05, 'Mage': 0.05, default: 0 }, // 원/마 5%로 해석
+  'Ocean':    { 'Tank': 0.03, 'Fighter': 0.03, 'Mage': 0.015, 'Support': 0.015, 'Assassin': 0.01, 'Marksman': 0.01, default: 0 },
+  'Hextech':  { 'Marksman': 0.03, 'Mage': 0.02, 'Assassin': 0.015, 'Fighter': 0.015, 'Tank': 0.01, 'Support': 0.01, default: 0 },
+  'Chemtech': { 'Fighter': 0.04, 'Tank': 0.03, 'Support': 0.02, 'Assassin': 0.01, 'Mage': 0.01, 'Marksman': 0.01, default: 0 },
+
+  // 드래곤 영혼 (획득 시 1회 적용)
+  'InfernalSoul': { 'Marksman': 0.25, 'Mage': 0.25, 'Assassin': 0.22, 'Fighter': 0.15, 'Tank': 0.08, 'Support': 0.08 },
+  'MountainSoul': { 'Tank': 0.25, 'Fighter': 0.22, 'Marksman': 0.15, 'Mage': 0.15, 'Assassin': 0.12, 'Support': 0.10 },
+  'CloudSoul':    { 'Fighter': 0.22, 'Tank': 0.22, 'Assassin': 0.20, 'Support': 0.15, 'Marksman': 0.12, 'Mage': 0.12 },
+  'OceanSoul':    { 'Fighter': 0.25, 'Tank': 0.25, 'Mage': 0.18, 'Marksman': 0.15, 'Support': 0.10, 'Assassin': 0.05 },
+  'HextechSoul':  { 'Marksman': 0.24, 'Mage': 0.20, 'Fighter': 0.20, 'Tank': 0.15, 'Assassin': 0.15, 'Support': 0.10 },
+  'ChemtechSoul': { 'Fighter': 0.28, 'Tank': 0.22, 'Assassin': 0.15, 'Marksman': 0.10, 'Mage': 0.10, 'Support': 0.10 },
+};
+
+// --- 2. 헬퍼 함수들 ---
+
+// 역할군(Role) 파싱 함수 (데이터에 '전사(돌격형)' 등으로 되어있을 경우 앞글자 매칭)
+const getRoleKey = (roleString) => {
+  if (roleString.includes('원거리') || roleString.includes('AD')) return 'Marksman';
+  if (roleString.includes('마법사') || roleString.includes('AP')) return 'Mage';
+  if (roleString.includes('전사')) return 'Fighter';
+  if (roleString.includes('탱커')) return 'Tank';
+  if (roleString.includes('암살자')) return 'Assassin';
+  if (roleString.includes('서포터')) return 'Support';
+  return 'Fighter'; // Default
+};
+
+// 전투력 계산 함수 (핵심 로직)
+export const calculateCombatPower = (player, champion, time, activeBuffs) => {
+  // 1. 페이즈 확인
+  let phase = 'EARLY';
+  if (time >= 26) phase = 'LATE';
+  else if (time >= 15) phase = 'MID';
+
+  const weights = PHASE_WEIGHTS[phase];
   
-  // 2. 밴픽 (Draft Phase) - 선수별 최적 챔피언 선택
-  const picksA = draftTeam(teamA.roster);
-  const picksB = draftTeam(teamB.roster);
-
-  log.push(`📢 [경기 시작] ${teamA.name} vs ${teamB.name}`);
-  log.push(`🐉 전장: ${dragonType} 드래곤 협곡 (${dragonBuff.description})`);
-  log.push(`✨ Key Matchup: ${picksA[2].champName}(${teamA.roster[2].id}) vs ${picksB[2].champName}(${teamB.roster[2].id})`);
-
-  // 3. 시뮬레이션 (Phase 1~3)
+  // 2. 선수 기본 능력치 점수 (55% 비중)
+  // stats 객체가 players.json에 있다고 가정 (laning, mechanics 등 0~100 점수)
+  const rawStats = 
+    (player.stats.laning * weights.laning) +
+    (player.stats.mechanics * weights.mechanics) +
+    (player.stats.teamfight * weights.teamfight) +
+    (player.stats.macro * weights.macro) +
+    (player.stats.stability * weights.stability) +
+    (player.stats.growth * weights.growth);
   
-  // Phase 1: EARLY (라인전)
-  const p1 = calculatePhase('EARLY', teamA, teamB, picksA, picksB, null, 1.0);
-  scoreA += p1.scoreA; scoreB += p1.scoreB;
-  log.push(p1.log);
+  // 3. 메타 점수 (25% 비중)
+  const metaScore = (champion.tier ? TIER_MULTIPLIER[champion.tier] : 1.0) * 100;
 
-  // Phase 2: MID (운영) - 초반 승자에게 스노우볼 보너스(1.1배)
-  const midBonusTeam = p1.scoreA > p1.scoreB ? 'A' : 'B';
-  const p2 = calculatePhase('MID', teamA, teamB, picksA, picksB, midBonusTeam, 1.1);
-  scoreA += p2.scoreA; scoreB += p2.scoreB;
-  log.push(p2.log);
+  // 4. 숙련도 점수 (20% 비중 - 2025시즌 7:3 역대)
+  // 데이터에 winRate(승률)나 games(판수)가 있다고 가정하고 이를 점수화(0~100)하는 로직 필요
+  // 여기서는 단순히 승률 * 100으로 가정
+  const seasonScore = (champion.season2025.winRate || 0.5) * 100;
+  const allTimeScore = (champion.allTime.winRate || 0.5) * 100;
+  const masteryScore = (seasonScore * 0.7) + (allTimeScore * 0.3);
 
-  // Phase 3: LATE (한타) - 중반 승자에게 오브젝트 버프(1.15배)
-  const lateBonusTeam = p2.scoreA > p2.scoreB ? 'A' : 'B';
-  const p3 = calculatePhase('LATE', teamA, teamB, picksA, picksB, lateBonusTeam, 1.15);
-  scoreA += p3.scoreA; scoreB += p3.scoreB;
-  log.push(p3.log);
+  // 5. 기본 전투력 합산
+  let totalCP = (rawStats * 0.55) + (metaScore * 0.25) + (masteryScore * 0.20);
 
-  // 4. 결과 반환
-  const winner = scoreA > scoreB ? teamA : teamB;
-  const loser = scoreA > scoreB ? teamB : teamA;
-
-  return {
-    winner: winner.name,
-    loser: loser.name,
-    scoreA: Math.round(scoreA),
-    scoreB: Math.round(scoreB),
-    logs: log,
-    picks: { A: picksA, B: picksB } // 결과창에서 픽 정보를 보여줄 때 사용
-  };
-}
-
-// ==========================================
-// 5. 핵심 로직 (Core Logic)
-// ==========================================
-
-/**
- * 🕵️‍♂️ 가상 밴픽 (Draft System)
- * 선수의 '숙련도 데이터(pool)'와 '현재 메타(champions.json)'를 조합해 챔피언 선택
- */
-function draftTeam(roster) {
-  return roster.map(player => {
-    // A. 현재 메타 챔피언 (1~2티어) 추출
-    const metaPool = championList.filter(c => c.role === player.포지션 && c.tier <= 2);
-    
-    // B. 선수 숙련도 데이터 확인
-    // MASTERY_MAP에서 해당 선수 ID로 데이터를 찾음
-    const playerData = MASTERY_MAP[player.id];
-    let masteryPool = [];
-    
-    if (playerData && playerData.pool) {
-      // 2025 시즌 모스트와 커리어 모스트를 섞음
-      const seasonPicks = playerData.pool.filter(p => p.category === 'Season 2025').slice(0, 3);
-      const careerPicks = playerData.pool.filter(p => p.category === 'Career').slice(0, 3);
-      masteryPool = [...seasonPicks, ...careerPicks];
-    }
-
-    // C. 픽 결정 로직
-    let finalPick = null;
-    
-    // 70% 확률로 본인의 '숙련도 챔피언' 선택 (데이터가 있을 경우)
-    if (masteryPool.length > 0 && Math.random() < 0.7) {
-      const selectedMastery = masteryPool[Math.floor(Math.random() * masteryPool.length)];
-      // 선택된 챔피언의 기본 정보(티어 등)를 champions.json에서 찾음
-      const champInfo = championList.find(c => c.name === selectedMastery.name) || { name: selectedMastery.name, tier: 3 };
-      finalPick = { ...champInfo, mastery: selectedMastery };
-    } else {
-      // 30% 확률 혹은 숙련도 데이터가 없으면 '메타 챔피언' 선택
-      const selectedMeta = metaPool[Math.floor(Math.random() * metaPool.length)] || { name: "Unknown", tier: 3 };
-      
-      // 메타 픽이라도 본인 숙련도 데이터가 있는지 확인
-      let masteryInfo = null;
-      if (playerData && playerData.pool) {
-        masteryInfo = playerData.pool.find(p => p.name === selectedMeta.name);
-      }
-      finalPick = { ...selectedMeta, mastery: masteryInfo };
-    }
-
-    return {
-      champName: finalPick.name,
-      tier: finalPick.tier || 3,
-      mastery: finalPick.mastery // { games, winRate, kda } or null
-    };
+  // 6. 버프 적용 (계수 곱연산)
+  const role = getRoleKey(champion.role);
+  
+  // 용 스택 버프
+  activeBuffs.dragons.forEach(dragonType => {
+    const multiplier = BUFF_EFFECTS[dragonType] ? (BUFF_EFFECTS[dragonType][role] || BUFF_EFFECTS[dragonType].default) : 0;
+    totalCP *= (1 + multiplier);
   });
-}
 
-/**
- * ⚔️ 페이즈 계산 (Calculation)
- */
-function calculatePhase(phase, tA, tB, picksA, picksB, bonusTeam, bonusVal) {
-  let powerA = 0;
-  let powerB = 0;
+  // 영혼 버프
+  if (activeBuffs.soul) {
+    const soulMult = BUFF_EFFECTS[activeBuffs.soul][role] || 0;
+    totalCP *= (1 + soulMult);
+  }
 
-  for (let i = 0; i < 5; i++) {
-    const pA = tA.roster[i];
-    const pB = tB.roster[i];
-    const pickA = picksA[i];
-    const pickB = picksB[i];
+  // 바론 (운영 20%, 성장 10% -> 전체 CP에 약식 반영 or 특정 스탯 뻥튀기)
+  // 여기서는 전체 CP 증가로 단순화하되 운영 가중치가 높은 페이즈에 더 유리하게 할 수 있음
+  if (activeBuffs.baron) {
+    totalCP *= 1.25; // 운영+성장 통합 근사치
+  }
 
-    // 1. [능력치] (55%) - players.json의 상세 스탯
-    let statA = getPhaseStat(phase, pA);
-    let statB = getPhaseStat(phase, pB);
+  // 장로 (한타 50%)
+  if (activeBuffs.elder) {
+    totalCP *= 1.5;
+  }
 
-    // *원딜 특수 로직*: 서포터(인덱스 4) 능력치 30% 흡수
-    if (pA.포지션 === 'ADC') statA += getPhaseStat(phase, tA.roster[4]) * 0.3;
-    if (pB.포지션 === 'ADC') statB += getPhaseStat(phase, tB.roster[4]) * 0.3;
+  // 공허 유충 (운영 10%)
+  if (activeBuffs.grubs > 0) {
+     totalCP *= (1 + (0.1 * activeBuffs.grubs)); // 유충 1묶음당 10% 가정 (혹은 전체 10%)
+  }
 
-    // *포지션 퀘스트 보너스* (gameRules.js 연동)
-    if (phase === 'LATE') {
-      if (pA.포지션 === 'TOP') statA *= GAME_CONSTANTS.ROLE_QUEST_BONUS.TOP.effect.splitPushPower;
-      if (pB.포지션 === 'TOP') statB *= GAME_CONSTANTS.ROLE_QUEST_BONUS.TOP.effect.splitPushPower;
-      if (pA.포지션 === 'ADC') statA *= GAME_CONSTANTS.ROLE_QUEST_BONUS.ADC.effect.damageMultiplier;
-      if (pB.포지션 === 'ADC') statB *= GAME_CONSTANTS.ROLE_QUEST_BONUS.ADC.effect.damageMultiplier;
-    } else if (phase === 'MID') {
-      if (pA.포지션 === 'MID') statA *= GAME_CONSTANTS.ROLE_QUEST_BONUS.MID.effect.roamingSpeed;
-      if (pB.포지션 === 'MID') statB *= GAME_CONSTANTS.ROLE_QUEST_BONUS.MID.effect.roamingSpeed;
+  return totalCP;
+};
+
+
+// --- 3. 게임 틱(1분) 처리 함수 ---
+
+export const processGameTick = (prevState, teamA, teamB) => {
+  const nextState = { ...prevState };
+  nextState.time += 1; // 1분 증가
+  const { time } = nextState;
+
+  // 0. 초기화 (0분)
+  if (time === 0) return nextState;
+
+  // 1. 레벨링 (1분당 1업)
+  // 최대 18레벨 제한 로직은 UI에서 처리하거나 여기서 cap 씌움
+  nextState.level = Math.min(18, time);
+
+  // 2. 골드 획득 (기본 500 시작은 state 초기값, 여기선 분당 수급)
+  // 분당 골드 + CS 가정 (약 120G + @) -> 단순화하여 분당 300G 추가
+  nextState.goldA += 300; 
+  nextState.goldB += 300;
+
+  // 3. 이벤트 스케줄러 (오브젝트 생성)
+  
+  // 드래곤 생성 (5분, 이후 죽은 뒤 5분)
+  if (time === 5 || (nextState.timers.dragonRespawn && time === nextState.timers.dragonRespawn)) {
+    // 랜덤 용 선택 (3번째부터는 고정)
+    const dragonTypes = ['Infernal', 'Mountain', 'Cloud', 'Ocean', 'Hextech', 'Chemtech'];
+    if (nextState.dragonsTaken.length < 2) {
+        nextState.currentObjective.dragon = dragonTypes[Math.floor(Math.random() * dragonTypes.length)];
+    } else {
+        // 3번째 용부터는 이전 속성 따라감 (만약 로직상 2번째에 결정해야 하면 저장 필요)
+        // 여기서는 편의상 2번째 먹혔을 때 결정된 영혼 속성을 계속 쓴다고 가정
+        nextState.currentObjective.dragon = nextState.soulType || dragonTypes[Math.floor(Math.random() * dragonTypes.length)];
+        if (!nextState.soulType) nextState.soulType = nextState.currentObjective.dragon; 
     }
-
-    // 2. [숙련도] (20%) - player_mastery 데이터
-    const mastA = calculateMasteryScore(pA, pickA.mastery);
-    const mastB = calculateMasteryScore(pB, pickB.mastery);
-
-    // 3. [메타] (25%) - 챔피언 티어 + 장인 보정
-    const metaA = getMetaScore(pA.포지션, pickA.tier, mastA);
-    const metaB = getMetaScore(pB.포지션, pickB.tier, mastB);
-
-    // [최종 점수 합산]
-    const scoreA = (statA * SIM_CONSTANTS.WEIGHTS.STATS) +
-                   (mastA * SIM_CONSTANTS.WEIGHTS.MASTERY) +
-                   (metaA * SIM_CONSTANTS.WEIGHTS.META);
-
-    const scoreB = (statB * SIM_CONSTANTS.WEIGHTS.STATS) +
-                   (mastB * SIM_CONSTANTS.WEIGHTS.MASTERY) +
-                   (metaB * SIM_CONSTANTS.WEIGHTS.META);
-
-    // [랜덤 변수] (컨디션 ±12%)
-    powerA += scoreA * (1 + (Math.random() * SIM_CONSTANTS.VAR_RANGE * 2 - SIM_CONSTANTS.VAR_RANGE));
-    powerB += scoreB * (1 + (Math.random() * SIM_CONSTANTS.VAR_RANGE * 2 - SIM_CONSTANTS.VAR_RANGE));
+    nextState.timers.dragonRespawn = null;
+    nextState.messages.push(`${time}분: 드래곤(${nextState.currentObjective.dragon})이 생성되었습니다.`);
   }
 
-  // [팀 보너스 적용]
-  if (bonusTeam === 'A') powerA *= bonusVal;
-  if (bonusTeam === 'B') powerB *= bonusVal;
+  // 공허 유충 (6분)
+  if (time === 6) {
+    nextState.currentObjective.grubs = true;
+    nextState.messages.push(`${time}분: 공허 유충이 생성되었습니다.`);
+  }
 
-  return {
-    scoreA: powerA,
-    scoreB: powerB,
-    log: generateLog(phase, powerA, powerB, tA.name, tB.name)
-  };
-}
+  // 전령 (14분) - 포탑 골드 소멸
+  if (time === 14) {
+    nextState.currentObjective.herald = true;
+    nextState.messages.push(`${time}분: 협곡의 전령 생성 / 포탑 방패 소멸.`);
+    // (로직 추가: 포탑 방패 골드 계산 중단 플래그 등)
+  }
 
-// --- Helper Functions ---
+  // 바론 (20분, 죽은 뒤 5분)
+  if (time === 20 || (nextState.timers.baronRespawn && time === nextState.timers.baronRespawn)) {
+    nextState.currentObjective.baron = true;
+    nextState.messages.push(`${time}분: 내셔 남작이 생성되었습니다.`);
+    nextState.timers.baronRespawn = null;
+  }
 
-function getPhaseStat(phase, player) {
-  const s = player.상세;
-  // 페이즈별 가중치 (라인전/운영/한타)
-  if (phase === 'EARLY') return (s.라인전 * 0.6) + (s.무력 * 0.4);
-  if (phase === 'MID') return (s.운영 * 0.5) + (s.성장 * 0.3) + (s.한타 * 0.2);
-  return (s.한타 * 0.5) + (s.무력 * 0.3) + (s.안정성 * 0.2);
-}
+  // 4. 전투 및 결과 시뮬레이션 (확률적)
+  // 팀별 총 전투력 합산
+  let cpA = 0; 
+  let cpB = 0;
 
-// 숙련도 점수 계산 (로그 함수 가중치 적용)
-function calculateMasteryScore(player, masteryData) {
-  // 데이터가 없으면(연습용 픽) 기본 OVR의 80%만 반영
-  if (!masteryData) return player.종합 * 0.8;
-
-  const { games, winRate, kda } = masteryData;
+  // 실제 사용시에는 teamA.roster.map(...) 등으로 순회하며 calculateCombatPower 호출
+  // 이 함수는 외부에서 계산된 CP를 받아와서 승패 판정만 하는 것이 깔끔함.
+  // 하지만 여기서는 엔진 내부에서 처리한다고 가정.
   
-  // 점수 환산 공식: (승률 * 0.5) + (KDA * 10) + 기본점 20
-  // 예: 승률 50% + KDA 3.0 = 25 + 30 + 20 = 75점
-  let baseScore = (winRate * 0.5) + (kda * 10) + 20;
+  // (외부 컴포넌트에서 매 틱마다 updateCP를 수행해서 state에 넣어줬다고 가정)
+  cpA = nextState.teamA_CP || 1000;
+  cpB = nextState.teamB_CP || 1000;
+
+  // 승패 판정 (랜덤성 부여)
+  const totalCP = cpA + cpB;
+  const winChanceA = cpA / totalCP;
+  const randomVal = Math.random();
+
+  // 킬/오브젝트 획득 로직
+  // 단순히 매분 싸우는 게 아니라, 오브젝트가 있거나 랜덤 인카운터일 때 싸움
+  const isFight = Math.random() < 0.3; // 30% 확률로 교전 발생
+
+  if (isFight) {
+    if (randomVal < winChanceA) {
+        // A팀 승리 (킬 발생)
+        nextState.killsA += 1;
+        nextState.goldA += 300; // 킬 골드
+        nextState.messages.push(`${time}분: 블루팀 킬 획득!`);
+        
+        // 오브젝트가 있다면 획득
+        if (nextState.currentObjective.dragon) {
+            nextState.buffsA.dragons.push(nextState.currentObjective.dragon);
+            nextState.messages.push(`${time}분: 블루팀 드래곤(${nextState.currentObjective.dragon}) 획득!`);
+            nextState.currentObjective.dragon = null;
+            nextState.timers.dragonRespawn = time + 5;
+            
+            // 영혼 체크
+            if (nextState.buffsA.dragons.length === 4) {
+                nextState.buffsA.soul = nextState.soulType;
+                nextState.timers.elderRespawn = time + 6; // 영혼 획득 6분 후 장로
+                nextState.messages.push(`블루팀 ${nextState.soulType} 영혼 획득!`);
+            }
+        }
+        // 바론/전령 등 유사 로직 처리...
+    } else {
+        // B팀 승리 (대칭 로직)
+        nextState.killsB += 1;
+        nextState.goldB += 300;
+        nextState.messages.push(`${time}분: 레드팀 킬 획득!`);
+        
+        if (nextState.currentObjective.dragon) {
+            nextState.buffsB.dragons.push(nextState.currentObjective.dragon);
+            nextState.messages.push(`${time}분: 레드팀 드래곤 획득!`);
+            nextState.currentObjective.dragon = null;
+            nextState.timers.dragonRespawn = time + 5;
+            // 영혼 체크 로직...
+        }
+    }
+  }
   
-  // 판수 보너스: 로그 함수 (많이 할수록 점수가 오르지만 상승폭은 줄어듦)
-  // 10판: +5점, 100판: +10점 정도
-  const volumeBonus = Math.log10(games + 1) * 5;
-
-  return Math.min(100, baseScore + volumeBonus);
-}
-
-// 메타 점수 계산 (장인 보정 포함)
-function getMetaScore(position, tier, masteryScore) {
-  let finalTier = tier;
-
-  // 장인 보정: 숙련도 80점 이상이면 티어를 2단계 높게 쳐줌 (4티어 -> 2티어 성능)
-  if (masteryScore >= SIM_CONSTANTS.OTP_SCORE_THRESHOLD) {
-    finalTier = Math.max(1, tier - SIM_CONSTANTS.OTP_TIER_BOOST);
+  // 장로 드래곤 스폰 체크
+  if (nextState.timers.elderRespawn && time === nextState.timers.elderRespawn) {
+      nextState.currentObjective.elder = true;
+      nextState.messages.push(`${time}분: 장로 드래곤이 생성되었습니다!`);
   }
 
-  let coeff = 1.0;
-  if (position === 'ADC') {
-    // 원딜 3티어 체계
-    const t = Math.max(1, Math.min(3, finalTier));
-    coeff = SIM_CONSTANTS.META_COEFF.ADC[t];
-  } else {
-    // 일반 5티어 체계
-    const t = Math.max(1, Math.min(5, finalTier));
-    coeff = SIM_CONSTANTS.META_COEFF.STANDARD[t];
+  // 타워 철거 로직 (누적된 격차에 따라)
+  // 예: 골드 차이가 2000 이상 나면 타워 하나 밀림
+  const goldDiff = nextState.goldA - nextState.goldB;
+  if (goldDiff > 3000 && nextState.towersA < 9) { // A가 유리
+      nextState.towersA += 1; // A가 깬 타워 수 (상대 타워 파괴)
+      nextState.goldA += 500; // 타워 골드
+      nextState.messages.push(`블루팀 포탑 파괴!`);
+  } else if (goldDiff < -3000 && nextState.towersB < 9) {
+      nextState.towersB += 1;
+      nextState.goldB += 500;
+      nextState.messages.push(`레드팀 포탑 파괴!`);
   }
 
-  return 100 * coeff;
-}
-
-function generateLog(phase, sA, sB, nA, nB) {
-  const diff = sA - sB;
-  const leader = diff > 0 ? nA : nB;
-  
-  if (phase === 'EARLY') {
-    return diff > 0 ? `⚔️ [초반] ${leader}, 강력한 라인전으로 주도권을 잡습니다.` : `⚔️ [초반] ${leader} 정글러의 갱킹이 적중했습니다.`;
-  } else if (phase === 'MID') {
-    return diff > 0 ? `🗺️ [중반] ${leader}, 운영 단계에서 상대를 압도합니다.` : `🗺️ [중반] ${leader}, 잘라먹기 플레이로 이득을 봅니다.`;
-  } else {
-    return diff > 0 ? `💥 [후반] ${leader}, 한타 대승! 넥서스를 파괴합니다.` : `💥 [후반] ${leader}의 기적적인 역전승!`;
-  }
-}
+  return nextState;
+};
