@@ -4,7 +4,7 @@ import playerList from './data/players.json';
 import rawChampionList from './data/champions.json';
 
 // ==========================================
-// [통합] LoL eSports 시뮬레이션 엔진 (v3.3)
+// [통합] LoL eSports 시뮬레이션 엔진 (v3.4) - 조합 밸런스 패치 적용
 // ==========================================
 
 const SIDES = { BLUE: 'BLUE', RED: 'RED' };
@@ -73,7 +73,7 @@ const GAME_RULES = {
     BARON: { spawn: 20, duration: 3, gold: 1500, combat_bonus: 1.3 }, 
     ELDER: { spawn_after_soul: 6, duration: 3, combat_bonus: 1.6 },
     DRAGON: { initial_spawn: 5, respawn: 5, gold: 100 },
-    PLATES: { start_time: 4, end_time: 14, count: 6 } // [수정] 방패 채굴 시작 시간 추가
+    PLATES: { start_time: 4, end_time: 14, count: 6 }
   },
   GOLD: {
     START: 500, PASSIVE_PER_MIN: 125, KILL: 300, ASSIST: 150,
@@ -257,14 +257,26 @@ function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChampionList
   };
 }
 
-// 4. 팀 파워 계산
+// 4. 팀 파워 계산 [수정됨: AD/AP 밸런스 로직 추가]
 function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks) {
   let totalPower = 0;
   const phase = time >= 28 ? 'LATE' : (time >= 15 ? 'MID' : 'EARLY');
   const weights = GAME_RULES.WEIGHTS.PHASE[phase];
+  
+  // 조합 밸런스 체크를 위한 변수
+  let adCount = 0;
+  let apCount = 0;
 
   teamPicks.forEach((pick, idx) => {
     if (!pick || !pick.playerData) return;
+    
+    // 데미지 타입 카운트 (데이터가 없으면 AD로 가정하거나 하이브리드로 처리)
+    // champions.json에 dmg_type 필드가 있어야 정확함. 없으면 'AD'로 default.
+    const dmgType = pick.dmgType || 'AD'; 
+    if (dmgType === 'AD') adCount++;
+    else if (dmgType === 'AP') apCount++;
+    // Hybrid는 카운트하지 않거나 양쪽에 0.5씩 더할 수 있으나 단순화를 위해 제외
+
     const player = pick.playerData;
     const stats = player.상세 || { 라인전: 80, 무력: 80, 운영: 80, 성장: 80, 한타: 80, 안정성: 80 };
     
@@ -302,8 +314,26 @@ function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks) 
     totalPower += combatPower;
   });
 
+  // [신규 로직] 올 AD / 올 AP 페널티 적용
+  // 기준: 한 속성이 4명 이상일 때
+  const isUnbalanced = adCount >= 4 || apCount >= 4;
+  let balanceMultiplier = 1.0;
+
+  if (isUnbalanced) {
+      if (time < 15) {
+          balanceMultiplier = 1.0; // 초반: 페널티 없음 (라인전 단계는 강할 수 있음)
+      } else if (time < 28) {
+          balanceMultiplier = 0.95; // 중반: 5% 감소 (방템 1~2코어 시점)
+      } else {
+          balanceMultiplier = 0.85; // 후반: 15% 감소 (방관 효율 한계)
+      }
+  }
+
+  totalPower *= balanceMultiplier;
+
   const scalingFactor = time < 15 ? 80000 : 60000;
   totalPower *= (1 + (goldDiff / scalingFactor));
+  
   return totalPower;
 }
 
@@ -500,7 +530,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
             if (state.elderBuff.side === winner) pushPower += 2.0;
 
             if (!enemyLane.tier1.destroyed) {
-                // [수정사항 1] 4분 이후부터 채굴 가능
+                // 4분 이후부터 채굴 가능
                 if (time >= GAME_RULES.OBJECTIVES.PLATES.start_time && time < GAME_RULES.OBJECTIVES.PLATES.end_time) {
                     if (Math.random() < 0.4 * pushPower) {
                          if (enemyLane.tier1.plates > 0) {
@@ -564,7 +594,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
         });
     }
 
-    // [수정사항 2] 시간 순 정렬 후 로그 반영
+    // 시간 순 정렬 후 로그 반영
     minuteEvents.sort((a, b) => a.sec - b.sec);
     minuteEvents.forEach(evt => logs.push(evt.message));
   }
@@ -583,7 +613,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
   };
 }
 
-// 6. 결과 처리 및 포맷팅
+// 6. 결과 처리 및 포맷팅 [수정됨: 챔피언 데이터 전달 강화]
 function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions) {
   const { currentChampionList } = simOptions;
 
@@ -608,6 +638,8 @@ function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions) {
           return {
               ...p,
               ...champData,
+              // dmg_type 필드 안전하게 전달 (없으면 AD로 간주)
+              dmgType: champData.dmg_type || 'AD', 
               classType: getChampionClass(champData, playerData.포지션),
               playerData: playerData,
           };
