@@ -4,10 +4,9 @@ import playerList from './data/players.json';
 import rawChampionList from './data/champions.json';
 
 // ==========================================
-// [통합] LoL eSports 시뮬레이션 엔진 (v7.0)
-// - [NEW] 레벨 & 경험치 시스템 (분당 XP, 레벨업)
-// - [NEW] 데스 타이머 & 부활 로직 (시간/레벨 비례)
-// - [NEW] 사망 시 전투력 제외 및 재화 수급 페널티
+// [통합] LoL eSports 시뮬레이션 엔진 (v8.0)
+// - [MOD] 데스 타이머 공식 정밀 수정
+// - [KEEP] 레벨/경험치, 골드/XP 페널티, POG, 밴픽 시스템 유지
 // ==========================================
 
 const SIDES = { BLUE: 'BLUE', RED: 'RED' };
@@ -41,7 +40,6 @@ const SIM_CONSTANTS = {
       LATE:  { TOP: 0.15, JGL: 0.20, MID: 0.25, ADC: 0.30, SUP: 0.10 }
   },
 
-  // [NEW] 경험치/골드 기본 수치 정의
   BASE_INCOME: {
       XP:   { TOP: 500, JGL: 500, MID: 500, ADC: 475, SUP: 400 },
       GOLD: { TOP: 375, JGL: 325, MID: 425, ADC: 455, SUP: 260 }
@@ -172,7 +170,6 @@ function calculateChampionScore(player, champion, masteryData) {
          (masteryScore * SIM_CONSTANTS.WEIGHTS.MASTERY);
 }
 
-// 3지선다 픽
 function selectPickFromTop3(player, availableChampions) {
   const playerData = MASTERY_MAP[player.이름];
   const roleChamps = availableChampions.filter(c => c.role === player.포지션);
@@ -201,7 +198,6 @@ function selectPickFromTop3(player, availableChampions) {
   return top3[0];
 }
 
-// 확률 기반 밴
 function selectBanFromProbabilities(opponentTeam, availableChampions) {
     let candidates = [];
     
@@ -331,7 +327,6 @@ function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChampionList
   };
 }
 
-// [NEW] 팀 전투력 계산 (데스 상태인 선수 제외)
 function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks, currentAbsSecond) {
   let totalPower = 0;
   
@@ -345,7 +340,7 @@ function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks, 
   teamPicks.forEach((pick, idx) => {
     if (!pick || !pick.playerData) return;
     
-    // [NEW] 사망자는 전투력에서 완전 제외 (수적 열세 반영)
+    // [KEEP] 사망자는 전투력에서 제외
     if (pick.deadUntil > currentAbsSecond) return;
 
     const laneKeys = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
@@ -380,7 +375,6 @@ function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks, 
     
     let combatPower = (rawStat * SIM_CONSTANTS.WEIGHTS.STATS) + (metaScore * SIM_CONSTANTS.WEIGHTS.META) + (masteryScore * SIM_CONSTANTS.WEIGHTS.MASTERY);
 
-    // [MOD] 레벨에 따른 전투력 보정 추가
     combatPower *= (1 + (pick.level * 0.05));
 
     const currentGold = pick.currentGold || 500;
@@ -440,74 +434,65 @@ function resolveCombat(powerA, powerB) {
     return Math.random() < winChanceA ? SIDES.BLUE : SIDES.RED;
 }
 
-// [NEW] 분당 골드 및 XP 계산 (데스 페널티 적용을 위해 aliveRatio 인자 추가)
 function calculateIndividualIncome(pick, time, aliveRatio = 1.0) {
     const role = pick.playerData.포지션;
     const stats = pick.playerData.상세 || { 라인전: 80, 무력: 80, 안정성: 80, 성장: 80, 운영: 80, 한타: 80 };
     
-    // 기본 수치 로드
     const baseGold = SIM_CONSTANTS.BASE_INCOME.GOLD[role] || 350;
     const baseXP = SIM_CONSTANTS.BASE_INCOME.XP[role] || 500;
     
     let multiplierGold = 0;
     let multiplierXP = 0;
     
-    // 시간대별 공식 적용
     if (time < 15) {
-        // 초반: 라인전, 무력, 안정성
         const factor = (stats.라인전 * 0.5 + stats.무력 * 0.3 + stats.안정성 * 0.2) / 90;
         multiplierGold = factor;
         multiplierXP = factor;
     } else if (time < 30) {
-        // 중반: 성장, 운영, 무력
         const factor = (stats.성장 * 0.4 + stats.운영 * 0.4 + stats.무력 * 0.2) / 90;
         multiplierGold = factor;
         multiplierXP = factor;
     } else {
-        // 후반: 한타, 운영, 안정성
         const factor = (stats.한타 * 0.3 + stats.운영 * 0.3 + stats.안정성 * 0.3) / 90;
         multiplierGold = factor;
-        // 후반 XP도 동일 로직 적용 가정
         multiplierXP = factor;
     }
     
-    // 죽어있는 시간만큼 차감
     const finalGold = Math.floor(baseGold * multiplierGold * aliveRatio);
     const finalXP = Math.floor(baseXP * multiplierXP * aliveRatio);
     
     return { gold: finalGold, xp: finalXP };
 }
 
-// [NEW] 데스 타이머 계산
+// [MOD] 데스 타이머 공식 업데이트
 function calculateDeathTimer(level, time) {
-    let baseTime = 8 * level;
-    let extraTime = 0;
+    // 1. 기본 + 레벨 비례
+    let timer = 8 + (level * 1.5);
 
-    // 25분 이상
-    if (time > 25) {
-        extraTime = time * (time - 25) * 0.3;
-    } 
-    // 15분 이상
-    else if (time > 15) {
-        extraTime = time * (time - 15) * 0.2;
+    // 2. 15분 이후 추가 페널티
+    if (time > 15) {
+        timer += (time - 15) * 0.15;
     }
 
-    // 최대 150초 제한
-    return Math.min(150, baseTime + extraTime);
+    // 3. 25분 이후 추가 페널티
+    if (time > 25) {
+        timer += (time - 25) * 0.3;
+    }
+
+    // 최대 150초 제한 (안전장치)
+    return Math.min(150, timer);
 }
 
-// 5. 인게임 시뮬레이션 엔진
 function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
   let time = 0; 
   const logs = [];
   const { difficulty, playerTeamName } = simOptions;
   
-  // 초기화 (레벨, XP, 데스 타이머 추가)
   [...picksBlue, ...picksRed].forEach(p => {
       p.currentGold = GAME_RULES.GOLD.START;
       p.level = 1;
       p.xp = 0;
-      p.deadUntil = 0; // 부활하는 절대 시간 (초)
+      p.deadUntil = 0; 
       p.stats = { kills: 0, deaths: 0, assists: 0, damage: 0, takenDamage: 0 }; 
       p.flashEndTime = 0; 
   });
@@ -556,8 +541,6 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
       }
 
       const picks = teamSide === SIDES.BLUE ? picksBlue : picksRed;
-      // 죽어있는 선수는 골드 획득 불가? (보통 킬/어시는 죽어도 들어옴, 분당 수급만 제외)
-      // 여기서는 킬/어시 보너스이므로 죽어도 지급
       picks[playerIdx].currentGold += finalAmount;
       state.gold[teamSide] += finalAmount;
   };
@@ -581,7 +564,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
       const losingPicks = winnerSide === SIDES.BLUE ? picksRed : picksBlue;
       
       winningPicks.forEach(p => {
-         if (p.deadUntil > (time * 60)) return; // 죽은 사람 제외
+         if (p.deadUntil > (time * 60)) return; 
          const dmg = (p.currentGold / 10) + (Math.random() * 500);
          p.stats.damage += dmg;
          const target = losingPicks[Math.floor(Math.random() * 5)];
@@ -603,16 +586,13 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
         minuteEvents.push({ sec: second, message: `${formatTime(time, second)} ${msg}` });
     };
     
-    // [NEW] 분당 골드 및 XP 지급 (생존 시간 비례)
     const processIncome = (picks, teamSide) => {
         picks.forEach(p => {
-            // 이번 분(time-1분 ~ time분) 동안 살아있었던 비율 계산
             const startMinAbs = (time - 1) * 60;
             const endMinAbs = time * 60;
             let deadDuration = 0;
             
             if (p.deadUntil > startMinAbs) {
-                // 이번 분에 죽어있는 시간이 포함됨
                 const endOfDeath = Math.min(endMinAbs, p.deadUntil);
                 deadDuration = Math.max(0, endOfDeath - startMinAbs);
             }
@@ -623,10 +603,8 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
             p.currentGold += income.gold;
             state.gold[teamSide] += income.gold;
             
-            // 레벨업 로직
             if (p.level < 18) {
                 p.xp += income.xp;
-                // 필요 경험치: 180 + (현재레벨 * 100)
                 let requiredXP = 180 + (p.level * 100);
                 while (p.xp >= requiredXP && p.level < 18) {
                     p.xp -= requiredXP;
@@ -657,7 +635,6 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
       grubs: state.grubs[side]
     });
 
-    // [MOD] 현재 초(0초 기준)를 넘겨서 죽은 사람 제외하고 파워 계산
     let powerBlue = calculateTeamPower(picksBlue, time, getActiveBuffs(SIDES.BLUE), 0, picksRed, time * 60);
     let powerRed = calculateTeamPower(picksRed, time, getActiveBuffs(SIDES.RED), 0, picksBlue, time * 60);
     
@@ -691,7 +668,6 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
         const eventSec = Math.floor(Math.random() * (60 - minValidSec)) + minValidSec;
         const eventAbsTime = currentMinuteStartAbs + eventSec;
 
-        // 용 싸움 시점에서의 전투력 재계산 (부활 이슈 때문)
         const pBlueObj = calculateTeamPower(picksBlue, time, getActiveBuffs(SIDES.BLUE), 0, picksRed, eventAbsTime);
         const pRedObj = calculateTeamPower(picksRed, time, getActiveBuffs(SIDES.RED), 0, picksBlue, eventAbsTime);
 
@@ -761,7 +737,6 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
         const combatSec = Math.floor(Math.random() * 45);
         const combatAbsTime = time * 60 + combatSec;
 
-        // 전투 발생 시점 파워 재계산
         const pBlueCombat = calculateTeamPower(picksBlue, time, getActiveBuffs(SIDES.BLUE), 0, picksRed, combatAbsTime);
         const pRedCombat = calculateTeamPower(picksRed, time, getActiveBuffs(SIDES.RED), 0, picksBlue, combatAbsTime);
         
@@ -781,7 +756,6 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
             const winningTeamPicks = winner === SIDES.BLUE ? picksBlue : picksRed;
             const losingTeamPicks = loser === SIDES.BLUE ? picksBlue : picksRed;
             
-            // 산 사람 중에서 킬러/희생자 선정
             const getAlivePlayers = (picks) => picks.filter(p => p.deadUntil <= combatAbsTime);
 
             for(let k=0; k<winnerKills; k++) {
@@ -796,7 +770,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
                 killer.stats.kills += 1;
                 victim.stats.deaths += 1;
                 
-                // [NEW] 데스 타이머 설정
+                // [NEW] 데스 타이머 공식 적용
                 const deathTime = calculateDeathTimer(victim.level, time);
                 victim.deadUntil = combatAbsTime + deathTime;
 
@@ -813,7 +787,6 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
 
                 const assistCount = Math.floor(Math.random() * 2) + 1;
                 for(let a=0; a<assistCount; a++) {
-                   // 어시스트도 산 사람만 가능하다고 가정 (편의상 전체에서 랜덤)
                    const assistIdx = (winningTeamPicks.indexOf(killer) + a + 1) % 5;
                    winningTeamPicks[assistIdx].stats.assists += 1;
                    grantGoldToPlayer(winner, assistIdx, GAME_RULES.GOLD.ASSIST);
