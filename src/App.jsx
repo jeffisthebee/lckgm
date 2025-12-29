@@ -563,7 +563,7 @@ const Simulation = () => {
   );
 };
 
-export default Simulation;
+
 
 // ==========================================
 // 1. 데이터 및 유틸리티
