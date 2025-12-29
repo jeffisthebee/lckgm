@@ -9,6 +9,29 @@ import rawChampionList from './data/champions.json';
 // - [FIX] 로그 타임스탬프 정렬 (넥서스 파괴 시점 동기화)
 // - [KEEP] 레벨/경험치, POG, 밴픽, 골드 시스템 유지
 // ==========================================
+// ==========================================
+// [1단계] 파일 맨 위쪽 (import 밑, 상수들 근처)에 두세요.
+// ==========================================
+const getTeamRoster = (teamName) => {
+  // playerList가 없으면 빈 배열 반환하여 에러 방지
+  if (!playerList) {
+      console.error("playerList 데이터가 없습니다.");
+      return [];
+  }
+  const positions = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
+  const players = playerList.filter(p => p.팀 === teamName);
+  
+  if (players.length === 0) {
+      console.warn(`[주의] ${teamName} 팀의 선수를 찾을 수 없습니다.`);
+      // 선수가 없으면 가짜 데이터라도 만들어서 반환 (흰 화면 방지)
+      return positions.map(pos => ({ 
+          이름: 'Unknown', 포지션: pos, 종합: 70, 
+          상세: { 라인전: 70, 무력: 70, 한타: 70, 성장: 70, 안정성: 70, 운영: 70 } 
+      }));
+  }
+  // 포지션별 선수가 없으면 첫 번째 선수로 채움
+  return positions.map(pos => players.find(p => p.포지션 === pos) || players[0]); 
+};
 
 const SIDES = { BLUE: 'BLUE', RED: 'RED' };
 const LANES = ['TOP', 'JGL', 'MID', 'ADC', 'SUP']; 
@@ -1108,12 +1131,6 @@ const teamFinanceData = {
   "DNS": { "total_expenditure": 29.5, "cap_expenditure": 25.5, "luxury_tax": 0.0 }
 };
 
-// Dashboard 컴포넌트 밖, teams 배열 정의 아래쯤에 두는 것을 추천
-const getTeamRoster = (teamName) => {
-  const positions = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
-  const players = playerList.filter(p => p.팀 === teamName);
-  return positions.map(pos => players.find(p => p.포지션 === pos) || players[0]); 
-};
 
 const difficulties = [
   { value: 'easy', label: '쉬움', color: 'green' },
@@ -1510,253 +1527,210 @@ function DetailedMatchResultModal({ result, onClose, teamA, teamB }) {
 }
 
 // ==========================================
-// [수정 3] LiveGamePlayer 컴포넌트 (Dashboard 함수 위에 위치)
+// [3단계] Dashboard 컴포넌트 바로 위에 붙여넣기
 // ==========================================
 function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onClose }) {
+  // Hooks는 조건문 위에 있어야 함 (React 규칙)
   const [currentSet, setCurrentSet] = useState(1);
   const [winsA, setWinsA] = useState(0);
   const [winsB, setWinsB] = useState(0);
   const [phase, setPhase] = useState('READY'); 
   const [simulationData, setSimulationData] = useState(null);
-  const [globalBanList, setGlobalBanList] = useState([]);
-  const [matchHistory, setMatchHistory] = useState([]);
-  const [error, setError] = useState(null); // 에러 상태 추가
-
-  // 인게임 상태
+  const [displayLogs, setDisplayLogs] = useState([]);
+  const [liveStats, setLiveStats] = useState(null); // 초기값 null
   const [gameTime, setGameTime] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
-  const [displayLogs, setDisplayLogs] = useState([]);
-  const [liveStats, setLiveStats] = useState({ kills: { BLUE: 0, RED: 0 }, gold: { BLUE: 0, RED: 0 }, towers: { BLUE: 0, RED: 0 }, drakes: { BLUE: 0, RED: 0 }, grubs: { BLUE: 0, RED: 0 }, players: [] });
   const [draftStep, setDraftStep] = useState(0);
+  const [globalBanList, setGlobalBanList] = useState([]);
+  const [matchHistory, setMatchHistory] = useState([]);
 
-  // 세트 시작 함수
+  // 데이터 유효성 검사 (흰 화면 방지 1차)
+  if (!teamA || !teamB || !match) {
+      return (
+          <div className="fixed inset-0 bg-black text-red-500 z-[200] flex items-center justify-center">
+              <div>치명적 오류: 매치 데이터가 누락되었습니다.</div>
+              <button onClick={onClose} className="bg-white text-black px-4 py-2 mt-4">닫기</button>
+          </div>
+      );
+  }
+
+  // 시뮬레이션 시작 함수
   const startSet = useCallback(() => {
     try {
-        // 안전 장치: 로스터 확인
-        if (!teamA?.roster || teamA.roster.length === 0) throw new Error(`${teamA.name} 로스터 데이터가 없습니다.`);
-        if (!teamB?.roster || teamB.roster.length === 0) throw new Error(`${teamB.name} 로스터 데이터가 없습니다.`);
-
-        setPhase('DRAFT');
-        setDraftStep(0);
-        setGameTime(0);
-        setDisplayLogs([]);
-        setError(null);
-        
         const blueTeam = currentSet % 2 !== 0 ? teamA : teamB;
         const redTeam = currentSet % 2 !== 0 ? teamB : teamA;
-        
-        // 시뮬레이션 실행 (에러 발생 시 catch로 이동)
+
+        // 시뮬레이터 실행
         const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
         
-        if (!result || !result.picks) throw new Error("시뮬레이션 결과 생성 실패");
+        if (!result || !result.picks) throw new Error("시뮬레이션 결과가 비어있습니다.");
 
-        const initPlayers = [
-            ...result.picks.A.map(p => ({ ...p, side: 'BLUE', k:0, d:0, a:0, currentGold: 500, lvl: 1 })),
-            ...result.picks.B.map(p => ({ ...p, side: 'RED', k:0, d:0, a:0, currentGold: 500, lvl: 1 }))
-        ];
-
+        // 초기 스탯 세팅
         setLiveStats({
             kills: { BLUE: 0, RED: 0 },
             gold: { BLUE: 2500, RED: 2500 },
             towers: { BLUE: 0, RED: 0 },
             drakes: { BLUE: 0, RED: 0 },
             grubs: { BLUE: 0, RED: 0 },
-            players: initPlayers
+            players: [
+                ...result.picks.A.map(p => ({ ...p, side: 'BLUE', k:0, d:0, a:0, currentGold: 500, lvl: 1 })),
+                ...result.picks.B.map(p => ({ ...p, side: 'RED', k:0, d:0, a:0, currentGold: 500, lvl: 1 }))
+            ]
         });
+        
         setSimulationData({ ...result, blueTeam, redTeam });
-    } catch (err) {
-        console.error("LiveGamePlayer Error:", err);
-        setError(err.message);
-    }
-  }, [currentSet, teamA, teamB, globalBanList, simOptions]);
+        setGameTime(0);
+        setDisplayLogs([]);
+        setPhase('DRAFT');
+        setDraftStep(0);
 
+    } catch (e) {
+        console.error(e);
+        alert("시뮬레이션 중 오류 발생: " + e.message);
+        onClose();
+    }
+  }, [currentSet, teamA, teamB, globalBanList, simOptions, onClose]);
+
+  // 초기 실행
   useEffect(() => { if (phase === 'READY') startSet(); }, [phase, startSet]);
 
   // 밴픽 타이머
   useEffect(() => {
-    if (phase !== 'DRAFT' || !simulationData) return;
+    if (phase !== 'DRAFT') return;
     const timer = setTimeout(() => {
-        if (draftStep < 20) setDraftStep(prev => prev + 1);
-        else setTimeout(() => setPhase('GAME'), 1000);
+        if (draftStep < 20) setDraftStep(p => p + 1);
+        else setPhase('GAME');
     }, 200);
     return () => clearTimeout(timer);
-  }, [phase, draftStep, simulationData]);
+  }, [phase, draftStep]);
 
-  // 인게임 타이머
+  // 인게임 루프
   useEffect(() => {
-    if (phase !== 'GAME' || !simulationData) return;
-    const tickRate = 1000 / playbackSpeed;
+    if (phase !== 'GAME' || !simulationData || !liveStats) return;
     const timer = setInterval(() => {
         setGameTime(prev => {
             const next = prev + 1;
+            // 종료 조건
             const totalMin = simulationData.totalMinutes || 30;
-            const finalSec = simulationData.gameTime.includes('초') ? parseInt(simulationData.gameTime.split('분')[0])*60 + parseInt(simulationData.gameTime.split('분')[1]) : totalMin * 60;
-
+            const finalSec = simulationData.gameTime.includes('초') 
+                ? parseInt(simulationData.gameTime.split('분')[0])*60 + parseInt(simulationData.gameTime.split('분')[1]) 
+                : totalMin * 60;
+            
             if (next >= finalSec) {
-                clearInterval(timer);
                 setPhase('SET_RESULT');
                 return next;
             }
-            // 로그 매칭
+
+            // 로그 처리
             const currentLogs = simulationData.logs.filter(log => {
                 const m = log.match(/\[(\d+):(\d+)\]/);
-                if (!m) return false;
-                return (parseInt(m[1]) * 60 + parseInt(m[2])) === next;
+                return m && (parseInt(m[1]) * 60 + parseInt(m[2])) === next;
             });
 
             if (currentLogs.length > 0) {
                 setDisplayLogs(prev => [...prev, ...currentLogs]);
-                setLiveStats(prev => {
-                    const nextStats = { ...prev };
+                // 스탯 업데이트 (함수형 업데이트 사용)
+                setLiveStats(prevStats => {
+                    const newStats = { ...prevStats, players: [...prevStats.players] };
                     currentLogs.forEach(log => {
                         if (log.includes('➜ ☠️')) {
-                            const killer = log.match(/\[(.+?)\]\s(.+?)\(/)?.[2]?.trim();
-                            const victim = log.match(/➜\s☠️\s\[(.+?)\]\s(.+?)\(/)?.[2]?.trim();
-                            nextStats.players = nextStats.players.map(p => {
-                                if (p.playerName === killer) { nextStats.kills[p.side]++; return {...p, k:p.k+1, currentGold: p.currentGold+300}; }
-                                if (p.playerName === victim) { return {...p, d:p.d+1}; }
+                            const k = log.match(/\[(.+?)\]\s(.+?)\(/)?.[2]?.trim();
+                            const v = log.match(/➜\s☠️\s\[(.+?)\]\s(.+?)\(/)?.[2]?.trim();
+                            newStats.players = newStats.players.map(p => {
+                                if (p.playerName === k) { newStats.kills[p.side]++; return {...p, k:p.k+1, currentGold:p.currentGold+300}; }
+                                if (p.playerName === v) return {...p, d:p.d+1};
                                 return p;
                             });
                         }
-                        if (log.includes('포탑 파괴')) {
-                            const tName = log.split(',')[0].replace(/\[.*?\]/,'').trim().split(' ')[1];
-                            const side = simulationData.blueTeam.name === tName ? 'BLUE' : 'RED';
-                            nextStats.towers[side]++; nextStats.gold[side]+=1000;
+                        if (log.includes('포탑')) {
+                            const team = log.split(',')[0].includes(simulationData.blueTeam.name) ? 'BLUE' : 'RED';
+                            newStats.towers[team]++;
                         }
-                        if (log.includes('용 처치')) nextStats.drakes[log.includes(simulationData.blueTeam.name)?'BLUE':'RED']++;
-                        if (log.includes('유충')) nextStats.grubs[log.includes(simulationData.blueTeam.name)?'BLUE':'RED']++;
                     });
-                    nextStats.players = nextStats.players.map(p => ({...p, currentGold: p.currentGold + 3, lvl: Math.min(18, 1 + Math.floor(next/100))}));
-                    return nextStats;
+                    return newStats;
                 });
             }
             return next;
         });
-    }, tickRate);
+    }, 1000 / playbackSpeed);
     return () => clearInterval(timer);
-  }, [phase, simulationData, playbackSpeed]);
+  }, [phase, simulationData, playbackSpeed, liveStats]); // liveStats 의존성 확인
 
-  // 에러 화면 처리
-  if (error) return (
-    <div className="fixed inset-0 bg-gray-900 z-[200] flex flex-col items-center justify-center text-white">
-        <h2 className="text-3xl font-bold text-red-500 mb-4">⚠️ 오류 발생</h2>
-        <p className="text-xl mb-6">{error}</p>
-        <button onClick={onClose} className="px-6 py-3 bg-white text-black font-bold rounded hover:bg-gray-200">닫기</button>
-    </div>
-  );
-
-  // 로딩 화면 처리
-  if (!simulationData) return (
-    <div className="fixed inset-0 bg-black z-[200] flex items-center justify-center text-white">
-        <div className="text-2xl font-bold animate-pulse">경기 데이터 로딩 중...</div>
-    </div>
-  );
+  // 렌더링 (흰 화면 방지용 조건부 렌더링)
+  if (!simulationData || !liveStats) return <div className="fixed inset-0 bg-black text-white flex items-center justify-center z-[200]">로딩 중...</div>;
 
   const { blueTeam, redTeam, picks, bans } = simulationData;
-  const isBlueWin = simulationData.winnerName === simulationData.blueTeam.name;
+  const isBlueWin = simulationData.winnerName === blueTeam.name;
 
   return (
     <div className="fixed inset-0 bg-black z-[200] flex flex-col font-mono text-white">
-        {/* 상단 스코어보드 */}
-        <div className="h-16 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-6 shadow-lg relative z-10">
-            <div className="flex items-center gap-4 w-1/3">
-                <span className="text-3xl font-black text-blue-500">{blueTeam.name}</span>
-                <span className="text-2xl font-bold">{phase === 'DRAFT' ? winsA : liveStats.kills.BLUE}</span>
-                <div className="flex gap-2 text-xs text-gray-400"><span>🏰{liveStats.towers.BLUE}</span><span>🐉{liveStats.drakes.BLUE}</span></div>
+        {/* 상단바 */}
+        <div className="h-16 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-6 z-10">
+            <div className="w-1/3 flex items-center gap-4 text-blue-500 font-bold text-2xl">
+                {blueTeam.name} <span className="text-white">{phase==='DRAFT'?winsA:liveStats.kills.BLUE}</span>
             </div>
-            <div className="text-center w-1/3">
-                <div className="text-2xl font-black text-yellow-400">{phase === 'DRAFT' ? 'BAN / PICK' : phase === 'SET_RESULT' ? 'RESULT' : `${Math.floor(gameTime/60)}:${(gameTime%60).toString().padStart(2,'0')}`}</div>
-                <div className="text-xs text-gray-500">SET {currentSet}</div>
-            </div>
-            <div className="flex items-center gap-4 w-1/3 justify-end">
-                <div className="flex gap-2 text-xs text-gray-400"><span>🐉{liveStats.drakes.RED}</span><span>🏰{liveStats.towers.RED}</span></div>
-                <span className="text-2xl font-bold">{phase === 'DRAFT' ? winsB : liveStats.kills.RED}</span>
-                <span className="text-3xl font-black text-red-500">{redTeam.name}</span>
+            <div className="text-yellow-400 font-black text-2xl">{phase==='GAME' ? `${Math.floor(gameTime/60)}:${String(gameTime%60).padStart(2,'0')}` : phase}</div>
+            <div className="w-1/3 flex items-center justify-end gap-4 text-red-500 font-bold text-2xl">
+                <span className="text-white">{phase==='DRAFT'?winsB:liveStats.kills.RED}</span> {redTeam.name}
             </div>
         </div>
 
-        {/* 메인 화면 영역 */}
-        <div className="flex-1 relative overflow-hidden flex bg-black">
-            {phase === 'DRAFT' ? (
-                <div className="w-full h-full flex p-10 gap-10">
-                    <div className="flex-1 space-y-2">
-                        {picks.A.map((p,i) => <div key={i} className={`p-4 border-l-4 ${i < draftStep/2 ? 'border-blue-500 bg-gray-900' : 'border-gray-700 bg-black'} transition-all`}><div className="text-sm text-blue-400 font-bold">{['TOP','JGL','MID','ADC','SUP'][i]}</div><div className="text-2xl font-black">{p.champName}</div><div className="text-gray-500">{p.playerName}</div></div>)}
-                        <div className="mt-4 flex gap-2">{bans.A.map((b,i) => <span key={i} className="text-xs text-gray-500 line-through">{b}</span>)}</div>
-                    </div>
-                    <div className="flex items-center justify-center"><div className="text-6xl font-black italic text-gray-800">VS</div></div>
-                    <div className="flex-1 space-y-2 text-right">
-                        {picks.B.map((p,i) => <div key={i} className={`p-4 border-r-4 ${i < draftStep/2 ? 'border-red-500 bg-gray-900' : 'border-gray-700 bg-black'} transition-all`}><div className="text-sm text-red-400 font-bold">{['TOP','JGL','MID','ADC','SUP'][i]}</div><div className="text-2xl font-black">{p.champName}</div><div className="text-gray-500">{p.playerName}</div></div>)}
-                        <div className="mt-4 flex gap-2 justify-end">{bans.B.map((b,i) => <span key={i} className="text-xs text-gray-500 line-through">{b}</span>)}</div>
-                    </div>
+        {/* 메인 화면 */}
+        <div className="flex-1 bg-black relative flex">
+            {phase === 'DRAFT' && (
+                <div className="w-full flex justify-between p-10">
+                    <div className="space-y-2">{picks.A.map((p,i) => <div key={i} className={`p-4 border-l-4 ${i < draftStep/2 ? 'border-blue-500 bg-gray-800' : 'border-gray-800'}`}>{p.champName}</div>)}</div>
+                    <div className="text-6xl font-black self-center text-gray-800">VS</div>
+                    <div className="space-y-2 text-right">{picks.B.map((p,i) => <div key={i} className={`p-4 border-r-4 ${i < draftStep/2 ? 'border-red-500 bg-gray-800' : 'border-gray-800'}`}>{p.champName}</div>)}</div>
                 </div>
-            ) : phase === 'GAME' ? (
-                <div className="w-full h-full flex">
-                    <div className="w-72 bg-gray-900 border-r border-gray-800 p-2 space-y-2">
-                        {liveStats.players.filter(p=>p.side==='BLUE').map((p,i) => (
-                            <div key={i} className="bg-black p-2 border-l-2 border-blue-600 relative overflow-hidden">
-                                <div className="flex justify-between items-end mb-1"><span className="font-bold text-sm">{p.playerName}</span><span className="text-xs text-gray-500">{p.champName}</span></div>
-                                <div className="flex justify-between text-xs text-gray-300 mb-1"><span>{p.k}/{p.d}/{p.a}</span><span className="text-yellow-500">Lv.{p.lvl}</span></div>
-                                <div className="h-1 bg-gray-800 w-full"><div className="h-full bg-green-500 transition-all duration-500" style={{width: `${Math.random()*40+60}%`}}></div></div>
-                            </div>
-                        ))}
-                    </div>
-                    <div className="flex-1 relative flex flex-col justify-end items-center pb-10 bg-[url('https://lolstatic-a.akamaihd.net/frontpage/apps/prod/harbinger-l10-website/ko-kr/production/ko-kr/static/summoners-rift-0e06241d7239247d4e51240c15985834.jpg')] bg-cover">
-                        <div className="absolute inset-0 bg-black/60"></div>
-                        <div className="z-10 absolute top-10 flex flex-col gap-2 w-full px-20 items-center">
-                            {displayLogs.slice(-3).reverse().map((l,i) => <div key={i} className="px-6 py-2 bg-gray-900/90 rounded border border-gray-600 text-lg font-bold animate-bounce shadow-xl">{l.split(']')[1]}</div>)}
-                        </div>
-                        <div className="z-10 w-3/4 h-32 bg-black/80 border border-gray-600 rounded p-2 overflow-y-auto text-xs space-y-1">
-                            {displayLogs.map((l,i) => <div key={i} className="text-gray-300">{l}</div>)}
-                        </div>
-                        <div className="z-10 mt-4 flex gap-2">
-                            {[1, 4, 16, 50].map(s => <button key={s} onClick={()=>setPlaybackSpeed(s)} className={`px-3 py-1 rounded text-xs font-bold ${playbackSpeed===s?'bg-yellow-500 text-black':'bg-gray-700'}`}>x{s}</button>)}
-                            <button onClick={()=>setGameTime(9999)} className="px-3 py-1 rounded text-xs font-bold bg-red-600">SKIP</button>
-                        </div>
-                    </div>
-                    <div className="w-72 bg-gray-900 border-l border-gray-800 p-2 space-y-2">
-                        {liveStats.players.filter(p=>p.side==='RED').map((p,i) => (
-                            <div key={i} className="bg-black p-2 border-r-2 border-red-600 relative overflow-hidden text-right">
-                                <div className="flex justify-between items-end mb-1 flex-row-reverse"><span className="font-bold text-sm">{p.playerName}</span><span className="text-xs text-gray-500">{p.champName}</span></div>
-                                <div className="flex justify-between text-xs text-gray-300 mb-1 flex-row-reverse"><span>{p.k}/{p.d}/{p.a}</span><span className="text-yellow-500">Lv.{p.lvl}</span></div>
-                                <div className="h-1 bg-gray-800 w-full flex justify-end"><div className="h-full bg-green-500 transition-all duration-500" style={{width: `${Math.random()*40+60}%`}}></div></div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center bg-gray-900">
-                    <h2 className="text-5xl font-black text-white mb-4">{simulationData.winnerName} WIN!</h2>
-                    <div className="text-xl text-gray-400 mb-10">{simulationData.resultSummary.split('|')[1]}</div>
-                    <div className="flex gap-20 text-8xl font-black mb-12">
-                        <span className={isBlueWin ? 'text-blue-500' : 'text-gray-700'}>{isBlueWin ? winsA + 1 : winsA}</span>
-                        <span className="text-gray-700 text-4xl mt-8">vs</span>
-                        <span className={!isBlueWin ? 'text-red-500' : 'text-gray-700'}>{!isBlueWin ? winsB + 1 : winsB}</span>
-                    </div>
-                    <button onClick={() => {
-                        const newWinsA = winsA + (isBlueWin ? 1 : 0);
-                        const newWinsB = winsB + (!isBlueWin ? 1 : 0);
-                        const target = match.format === 'BO5' ? 3 : 2;
-                        
-                        setWinsA(newWinsA);
-                        setWinsB(newWinsB);
-                        setMatchHistory(prev => [...prev, { set: currentSet, winner: simulationData.winnerName, score: `${liveStats.kills.BLUE}:${liveStats.kills.RED}` }]);
-                        setGlobalBanList(prev => [...prev, ...simulationData.usedChamps]);
+            )}
 
-                        if (newWinsA >= target || newWinsB >= target) {
-                            onMatchComplete(match, { winner: newWinsA > newWinsB ? teamA.name : teamB.name, scoreString: `${newWinsA}:${newWinsB}`, history: [...matchHistory, {set: currentSet, winner: simulationData.winnerName}] });
-                        } else {
-                            setCurrentSet(s => s + 1);
-                            setPhase('READY');
-                        }
-                    }} className="px-10 py-4 bg-white text-black font-black text-2xl rounded hover:bg-gray-200">
-                        다음으로 진행 (NEXT)
-                    </button>
+            {phase === 'GAME' && (
+                <div className="w-full flex relative">
+                    {/* 선수 목록 */}
+                    <div className="w-64 bg-gray-900 p-2 space-y-1">
+                        {liveStats.players.filter(p=>p.side==='BLUE').map((p,i)=><div key={i} className="text-xs bg-black p-2 border-l-2 border-blue-500">{p.champName} ({p.k}/{p.d}/{p.a})</div>)}
+                    </div>
+                    {/* 로그 화면 */}
+                    <div className="flex-1 relative flex flex-col justify-end items-center pb-10">
+                        <div className="absolute inset-0 bg-gray-800 opacity-20"></div> {/* 배경 */}
+                        <div className="z-10 text-center space-y-2 mb-4">
+                             {displayLogs.slice(-3).map((l,i)=><div key={i} className="text-lg font-bold bg-black/50 px-4 py-1 rounded">{l.split(']')[1]}</div>)}
+                        </div>
+                        <div className="z-10 flex gap-2">
+                             {[1,4,16].map(s=><button key={s} onClick={()=>setPlaybackSpeed(s)} className="bg-gray-700 px-3 py-1 rounded text-xs">x{s}</button>)}
+                             <button onClick={()=>setGameTime(9999)} className="bg-red-600 px-3 py-1 rounded text-xs">SKIP</button>
+                        </div>
+                    </div>
+                    <div className="w-64 bg-gray-900 p-2 space-y-1">
+                        {liveStats.players.filter(p=>p.side==='RED').map((p,i)=><div key={i} className="text-xs bg-black p-2 border-r-2 border-red-500 text-right">{p.champName} ({p.k}/{p.d}/{p.a})</div>)}
+                    </div>
+                </div>
+            )}
+
+            {phase === 'SET_RESULT' && (
+                <div className="w-full flex flex-col items-center justify-center">
+                    <h1 className="text-6xl font-black text-white mb-8">{simulationData.winnerName} WIN!</h1>
+                    <button onClick={() => {
+                         const nA = winsA + (isBlueWin?1:0); const nB = winsB + (!isBlueWin?1:0);
+                         setWinsA(nA); setWinsB(nB);
+                         setMatchHistory(h => [...h, {set:currentSet, winner:simulationData.winnerName}]);
+                         setGlobalBanList(b => [...b, ...simulationData.usedChamps]);
+
+                         const target = match.format==='BO5'?3:2;
+                         if(nA>=target || nB>=target) {
+                             onMatchComplete(match, {winner:nA>nB?teamA.name:teamB.name, scoreString:`${nA}:${nB}`, history:matchHistory});
+                         } else {
+                             setCurrentSet(s=>s+1); setPhase('READY');
+                         }
+                    }} className="text-2xl font-bold bg-blue-600 px-8 py-3 rounded hover:bg-blue-500">NEXT</button>
                 </div>
             )}
         </div>
     </div>
   );
 }
+
 
 // --- Dashboard ---
 function Dashboard() {
@@ -2145,26 +2119,45 @@ function Dashboard() {
     runSimulationForMatch(nextGlobalMatch, false);
   };
 
- // [수정 2] 내 경기 시작 함수 (로스터 데이터 주입 필수)
- const handleStartMyMatch = () => {
-  if (!nextGlobalMatch || !isMyNextMatch) return;
-  
-  // [핵심] 여기서 선수 명단을 반드시 가져와서 합쳐줘야 합니다.
-  const t1Roster = getTeamRoster(t1.name);
-  const t2Roster = getTeamRoster(t2.name);
+ // ==========================================
+  // [2단계] Dashboard 컴포넌트 내부의 함수 교체
+  // ==========================================
+  const handleStartMyMatch = () => {
+    // 1. 경기 데이터 확인
+    if (!nextGlobalMatch) {
+        alert("진행할 경기가 없습니다.");
+        return;
+    }
 
-  if (!t1Roster || t1Roster.length === 0 || !t2Roster || t2Roster.length === 0) {
-      alert("팀 로스터 정보를 불러올 수 없습니다. 데이터를 확인해주세요.");
-      return;
-  }
+    // 2. 팀 ID로 팀 데이터 찾기 (안전장치 추가)
+    const t1Obj = teams.find(t => t.id === nextGlobalMatch.t1);
+    const t2Obj = teams.find(t => t.id === nextGlobalMatch.t2);
 
-  setLiveMatchData({
-      match: nextGlobalMatch,
-      teamA: { ...t1, roster: t1Roster }, // roster 포함
-      teamB: { ...t2, roster: t2Roster }  // roster 포함
-  });
-  setIsLiveGameMode(true);
-};
+    // 3. 팀 데이터를 못 찾았으면 중단 (여기서 흰 화면 발생함)
+    if (!t1Obj || !t2Obj) {
+        console.error("팀 정보를 찾을 수 없습니다.", nextGlobalMatch);
+        alert(`팀 데이터 오류! ID: ${nextGlobalMatch.t1} vs ${nextGlobalMatch.t2}`);
+        return;
+    }
+
+    // 4. 로스터 가져오기 (1단계 함수 사용)
+    const t1Roster = getTeamRoster(t1Obj.name);
+    const t2Roster = getTeamRoster(t2Obj.name);
+
+    // 5. 로스터 비어있으면 경고
+    if (!t1Roster || t1Roster.length === 0 || !t2Roster || t2Roster.length === 0) {
+        alert("선수 데이터를 불러오는데 실패했습니다. playerList.json을 확인하세요.");
+        return;
+    }
+
+    // 6. 모든 데이터가 정상이면 실행
+    setLiveMatchData({
+        match: nextGlobalMatch,
+        teamA: { ...t1Obj, roster: t1Roster },
+        teamB: { ...t2Obj, roster: t2Roster }
+    });
+    setIsLiveGameMode(true);
+  };
 
   const handleDraftStart = () => {
     if (hasDrafted) return;
