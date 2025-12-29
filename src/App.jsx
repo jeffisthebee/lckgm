@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-// import { Routes, Route, ... } from 'react-router-dom'; 
+import { Routes, Route, useNavigate, useParams, Navigate } from 'react-router-dom';
 
 import playerList from './data/players.json';
 import rawChampionList from './data/champions.json';
@@ -562,8 +562,6 @@ const Simulation = () => {
     </div>
   );
 };
-
-
 
 // ==========================================
 // 1. 데이터 및 유틸리티
