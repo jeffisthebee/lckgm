@@ -4,7 +4,7 @@ import playerList from './data/players.json';
 import rawChampionList from './data/champions.json';
 
 // ==========================================
-// [통합] LoL eSports 시뮬레이션 엔진 (Final Version - Updated)
+// [통합] LoL eSports 시뮬레이션 엔진 (Final Version - Fix)
 // ==========================================
 
 const SIDES = { BLUE: 'BLUE', RED: 'RED' };
@@ -70,18 +70,17 @@ const GAME_RULES = {
   OBJECTIVES: {
     GRUBS: { time: 6, count: 3, gold: 300 }, 
     HERALD: { time: 14, gold: 300 },
-    BARON: { spawn: 20, duration: 3, gold: 1500, combat_bonus: 1.3 }, // 바론 버프 강화
+    BARON: { spawn: 20, duration: 3, gold: 1500, combat_bonus: 1.3 }, 
     ELDER: { spawn_after_soul: 6, duration: 3, combat_bonus: 1.6 },
     DRAGON: { initial_spawn: 5, respawn: 5, gold: 100 },
-    PLATES: { end_time: 14, count: 6 } // 포탑 방패 설정
+    PLATES: { end_time: 14, count: 6 } 
   },
   GOLD: {
     START: 500, PASSIVE_PER_MIN: 125, KILL: 300, ASSIST: 150,
-    // 상세 포탑 골드 로직 적용
     TURRET: { 
-        OUTER_PLATE: { local: 250, team: 50 }, // 방패 1칸당
+        OUTER_PLATE: { local: 250, team: 50 }, 
         INNER_MID: { local: 425, team: 25 },
-        INNER_SIDE: { local: 675, team: 25 }, // 탑/바텀
+        INNER_SIDE: { local: 675, team: 25 }, 
         INHIB_TURRET: { local: 375, team: 25 }
     },
   },
@@ -258,7 +257,7 @@ function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChampionList
   };
 }
 
-// 4. 팀 파워 계산 (구조물 골드 반영을 위해 골드 가중치 조정)
+// 4. 팀 파워 계산
 function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks) {
   let totalPower = 0;
   const phase = time >= 28 ? 'LATE' : (time >= 15 ? 'MID' : 'EARLY');
@@ -305,7 +304,6 @@ function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks) 
     totalPower += combatPower;
   });
 
-  // 골드 차이 반영 (초반 스노우볼링 완화)
   const scalingFactor = time < 15 ? 80000 : 60000;
   totalPower *= (1 + (goldDiff / scalingFactor));
   return totalPower;
@@ -318,7 +316,7 @@ function resolveCombat(powerA, powerB) {
     return Math.random() < winChanceA ? SIDES.BLUE : SIDES.RED;
 }
 
-// 5. 인게임 시뮬레이션 엔진 (포탑/골드/페이스조절 반영)
+// 5. 인게임 시뮬레이션 엔진
 function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
   let time = 0;
   const logs = [];
@@ -331,18 +329,16 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
   const mapElementType = shuffledDragons[2];
   let dragonSpawnCount = 0;
 
-  // [신규] 구조물 상태 초기화
   const initLane = () => ({
       tier1: { hp: 100, plates: 6, destroyed: false },
       tier2: { hp: 100, destroyed: false },
       tier3: { hp: 100, destroyed: false },
-      inhib: { respawnTime: 0, destroyed: false } // 억제기 재생 시간
+      inhib: { respawnTime: 0, destroyed: false }
   });
 
   let state = {
     gold: { [SIDES.BLUE]: GAME_RULES.GOLD.START * 5, [SIDES.RED]: GAME_RULES.GOLD.START * 5 },
     kills: { [SIDES.BLUE]: 0, [SIDES.RED]: 0 },
-    // 라인별 구조물 상세 트래킹
     structures: {
         [SIDES.BLUE]: { TOP: initLane(), MID: initLane(), BOT: initLane() },
         [SIDES.RED]: { TOP: initLane(), MID: initLane(), BOT: initLane() }
@@ -361,11 +357,9 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
   while (state.nexusHealth[SIDES.BLUE] > 0 && state.nexusHealth[SIDES.RED] > 0 && time < 70) {
     time++;
     
-    // 골드 수급 (패시브)
     state.gold[SIDES.BLUE] += GAME_RULES.GOLD.PASSIVE_PER_MIN * 5;
     state.gold[SIDES.RED] += GAME_RULES.GOLD.PASSIVE_PER_MIN * 5;
 
-    // 억제기 재생 로직 (5분 후 재생)
     [SIDES.BLUE, SIDES.RED].forEach(side => {
         MAP_LANES.forEach(lane => {
             const inhib = state.structures[side][lane].inhib;
@@ -376,7 +370,6 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
         });
     });
 
-    // 팀 파워 계산
     const getActiveBuffs = (side) => ({
       dragonStacks: state.dragons[side].reduce((acc, d) => ({ ...acc, [d]: (acc[d] || 0) + 1 }), {}),
       soul: state.soul?.side === side ? { type: state.soul.type } : null,
@@ -393,13 +386,11 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
         if (teamBlue.name !== playerTeamName) powerBlue *= multiplier;
         if (teamRed.name !== playerTeamName) powerRed *= multiplier;
     }
-    // 변수
     powerBlue *= (1 + (Math.random() * SIM_CONSTANTS.VAR_RANGE * 2 - SIM_CONSTANTS.VAR_RANGE));
     powerRed *= (1 + (Math.random() * SIM_CONSTANTS.VAR_RANGE * 2 - SIM_CONSTANTS.VAR_RANGE));
 
     let eventLog = null;
 
-    // --- 오브젝트 교전 ---
     if (time === GAME_RULES.OBJECTIVES.GRUBS.time) {
       const winner = resolveCombat(powerBlue, powerRed);
       state.grubs[winner] += GAME_RULES.OBJECTIVES.GRUBS.count;
@@ -409,7 +400,6 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
 
     if (time === GAME_RULES.OBJECTIVES.HERALD.time) {
       const winner = resolveCombat(powerBlue, powerRed);
-      // 전령 획득 시 즉시 골드 + 추후 포탑 데미지 보정(아래 로직에 반영됨)
       state.gold[winner] += GAME_RULES.OBJECTIVES.HERALD.gold; 
       eventLog = `[${time}분] 👁️ ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 전령 획득`;
     }
@@ -432,12 +422,11 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
     }
 
     if (time >= state.nextBaronTime && !(state.baronBuff.side && state.baronBuff.endTime >= time)) {
-      // 바론은 시도 확률이 존재 (유리할 때, 혹은 시간 지남에 따라)
       if (Math.random() > 0.6 || time > 30) { 
-        const winner = resolveCombat(powerBlue * 0.9, powerRed * 0.9); // 바론 둥지 디버프 감안
+        const winner = resolveCombat(powerBlue * 0.9, powerRed * 0.9);
         state.baronBuff = { side: winner, endTime: time + GAME_RULES.OBJECTIVES.BARON.duration };
         state.gold[winner] += GAME_RULES.OBJECTIVES.BARON.gold;
-        state.nextBaronTime = time + GAME_RULES.OBJECTIVES.DRAGON.respawn; // 바론 리젠 시간은 드래곤과 비슷하게 5-6분
+        state.nextBaronTime = time + GAME_RULES.OBJECTIVES.DRAGON.respawn;
         eventLog = `[${time}분] 🟣 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 내셔 남작 처치!`;
       }
     }
@@ -449,25 +438,20 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
       eventLog = `[${time}분] 🐲 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 장로 드래곤 처치!`;
     }
 
-    // --- 라인전 및 공성 시뮬레이션 (핵심 변경) ---
     const powerDiffRatio = Math.abs(powerBlue - powerRed) / ((powerBlue + powerRed) / 2);
-    // 교전 발생 확률 (시간이 지날수록, 힘 차이가 날수록 증가)
+    
     if (powerDiffRatio > 0.05 || Math.random() < (0.3 + (time * 0.005))) {
         const winner = powerBlue > powerRed ? SIDES.BLUE : SIDES.RED;
         const loser = winner === SIDES.BLUE ? SIDES.RED : SIDES.BLUE;
         const winnerName = winner === SIDES.BLUE ? teamBlue.name : teamRed.name;
         
-        // 1. 킬 발생
         if (Math.random() < 0.6) {
-            const kills = 1 + Math.floor(Math.random() * 2); // 1~3킬
+            const kills = 1 + Math.floor(Math.random() * 2);
             state.kills[winner] += kills;
-            // 제압 골드 등 고려하여 평균치보다 약간 높게
             state.gold[winner] += (GAME_RULES.GOLD.KILL + GAME_RULES.GOLD.ASSIST) * kills; 
             if (!eventLog && Math.random() < 0.3) eventLog = `[${time}분] ${winnerName} 교전 승리 (${kills}킬)`;
         }
 
-        // 2. 포탑 공략 (라인 선택)
-        // 바론 버프 시 모든 라인 압박, 아니면 랜덤 라인
         let targetLanes = [MAP_LANES[Math.floor(Math.random() * MAP_LANES.length)]];
         if (state.baronBuff.side === winner) targetLanes = MAP_LANES;
 
@@ -477,15 +461,11 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
             if (state.baronBuff.side === winner) pushPower += 1.0;
             if (state.elderBuff.side === winner) pushPower += 2.0;
 
-            // 순차적 공략: 1차 -> 2차 -> 3차 -> 억제기 -> 넥서스
             if (!enemyLane.tier1.destroyed) {
-                // 1차 포탑 공략
                 if (time < GAME_RULES.OBJECTIVES.PLATES.end_time) {
-                    // 방패 존재 시
-                    if (Math.random() < 0.4 * pushPower) { // 방패 깨질 확률
+                    if (Math.random() < 0.4 * pushPower) {
                          if (enemyLane.tier1.plates > 0) {
                              enemyLane.tier1.plates--;
-                             // [골드 수정] 방패 1칸: 250(로컬) + 50*5(팀) = 500G 가치로 단순 합산 (팀 골드에 추가)
                              const plateGold = GAME_RULES.GOLD.TURRET.OUTER_PLATE.local + (GAME_RULES.GOLD.TURRET.OUTER_PLATE.team * 5);
                              state.gold[winner] += plateGold;
                              
@@ -493,48 +473,39 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
                              
                              if (enemyLane.tier1.plates === 0) {
                                  enemyLane.tier1.destroyed = true;
-                                 eventLog = `[${time}분] 💥 ${winnerName}, ${lane} 1차 포탑 파괴 (퍼블)`; // 퍼블 골드는 생략(단순화)
+                                 eventLog = `[${time}분] 💥 ${winnerName}, ${lane} 1차 포탑 파괴`;
                              }
                          }
                     }
                 } else {
-                    // 14분 이후 방패 소멸, 체력 깎기
                     if (Math.random() < 0.3 * pushPower) {
                         enemyLane.tier1.destroyed = true;
-                        // 1차 파괴 보상 (방패 다 까진 후의 잔여분 보상은 적지만, 파괴 보상으로 퉁침)
                         state.gold[winner] += 500; 
                         if (!eventLog) eventLog = `[${time}분] 💥 ${winnerName}, ${lane} 1차 포탑 파괴`;
                     }
                 }
             } else if (!enemyLane.tier2.destroyed) {
-                // 2차 포탑 공략
                 if (Math.random() < 0.25 * pushPower) {
                     enemyLane.tier2.destroyed = true;
-                    // [골드 수정] 미드 425+25*5 / 사이드 675+25*5
                     let localG = lane === 'MID' ? GAME_RULES.GOLD.TURRET.INNER_MID.local : GAME_RULES.GOLD.TURRET.INNER_SIDE.local;
                     let teamG = lane === 'MID' ? GAME_RULES.GOLD.TURRET.INNER_MID.team : GAME_RULES.GOLD.TURRET.INNER_SIDE.team;
                     state.gold[winner] += (localG + (teamG * 5));
                     if (!eventLog) eventLog = `[${time}분] 💥 ${winnerName}, ${lane} 2차 포탑 파괴`;
                 }
             } else if (!enemyLane.tier3.destroyed) {
-                // 3차 포탑 공략
                 if (Math.random() < 0.2 * pushPower) {
                     enemyLane.tier3.destroyed = true;
-                    // [골드 수정] 375 + 25*5
                     state.gold[winner] += (GAME_RULES.GOLD.TURRET.INHIB_TURRET.local + (GAME_RULES.GOLD.TURRET.INHIB_TURRET.team * 5));
                     if (!eventLog) eventLog = `[${time}분] 🚨 ${winnerName}, ${lane} 3차(억제기) 포탑 파괴`;
                 }
             } else if (!enemyLane.inhib.destroyed) {
-                // 억제기 공략
                 if (Math.random() < 0.3 * pushPower) {
                     enemyLane.inhib.destroyed = true;
                     enemyLane.inhib.respawnTime = time + 5;
-                    state.gold[winner] += 50; // 억제기 파괴 소량 골드
+                    state.gold[winner] += 50;
                     eventLog = `[${time}분] 🚧 ${winnerName}, ${lane} 억제기 파괴! 슈퍼 미니언 생성`;
                 }
             } else {
-                // 넥서스 공략 (억제기가 하나라도 깨져있어야 함)
-                // 쌍둥이 포탑은 로직 단순화를 위해 넥서스 체력에 포함시킴
                 if (Math.random() < 0.2 * pushPower) {
                     let dmg = 10 + (powerDiffRatio * 100);
                     if (state.baronBuff.side === winner) dmg *= 1.5;
@@ -542,7 +513,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
                     
                     state.nexusHealth[loser] -= dmg;
                     if (state.nexusHealth[loser] <= 0) {
-                         eventLog = `[${time}분] 👑 ${winnerName}이(가) 넥서스를 파괴합니다! GG`;
+                        // 로그 중복 방지를 위해 여기서는 eventLog만 설정
                     } else if (!eventLog && Math.random() < 0.5) {
                          eventLog = `[${time}분] ${winnerName}, 쌍둥이 포탑 및 넥서스 타격 중...`;
                     }
@@ -555,32 +526,37 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
   }
 
   const winnerSide = state.nexusHealth[SIDES.BLUE] > state.nexusHealth[SIDES.RED] ? SIDES.BLUE : SIDES.RED;
+  const winnerName = winnerSide === SIDES.BLUE ? teamBlue.name : teamRed.name;
+  
+  // [수정사항 1] 넥서스 파괴 로그 강제 추가
+  logs.push(`[${time}분] 👑 ${winnerName}이(가) 넥서스를 파괴합니다! GG`);
+
   const randomSeconds = Math.floor(Math.random() * 60);
   const formattedSeconds = randomSeconds < 10 ? `0${randomSeconds}` : randomSeconds;
 
   return {
-    winnerName: winnerSide === SIDES.BLUE ? teamBlue.name : teamRed.name,
+    winnerName: winnerName,
     gameTime: `${time}분 ${formattedSeconds}초`,
     logs,
-    finalKills: state.kills,
+    finalKills: state.kills, // { BLUE: n, RED: n } 형태로 반환
   };
 }
 
 // 6. 결과 처리 및 포맷팅
-function simulateSet(teamA, teamB, setNumber, fearlessBans, simOptions) {
+function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions) {
   const { currentChampionList } = simOptions;
 
   // 1. 밴픽
-  const draftResult = runDraftSimulation(teamA, teamB, fearlessBans, currentChampionList);
+  const draftResult = runDraftSimulation(teamBlue, teamRed, fearlessBans, currentChampionList);
   
   if (draftResult.picks.A.length < 5 || draftResult.picks.B.length < 5) {
     return {
-        winnerName: teamA.name,
+        winnerName: teamBlue.name,
         picks: draftResult.picks,
         bans: draftResult.bans,
         logs: [`[오류] 로스터 부족으로 시뮬레이션 불가`],
         usedChamps: [],
-        score: { A: '0', B: '0' },
+        score: { [teamBlue.name]: '0', [teamRed.name]: '0' },
         resultSummary: '경기 취소'
     };
   }
@@ -598,18 +574,20 @@ function simulateSet(teamA, teamB, setNumber, fearlessBans, simOptions) {
       });
   };
 
-  const picksA_detailed = addPlayerData(draftResult.picks.A, teamA.roster);
-  const picksB_detailed = addPlayerData(draftResult.picks.B, teamB.roster);
+  const picksBlue_detailed = addPlayerData(draftResult.picks.A, teamBlue.roster);
+  const picksRed_detailed = addPlayerData(draftResult.picks.B, teamRed.roster);
 
   // 2. 인게임
-  const gameResult = runGameTickEngine(teamA, teamB, picksA_detailed, picksB_detailed, simOptions);
+  const gameResult = runGameTickEngine(teamBlue, teamRed, picksBlue_detailed, picksRed_detailed, simOptions);
 
   // 3. 포맷팅
   const usedChamps = [...draftResult.picks.A.map(p => p.champName), ...draftResult.picks.B.map(p => p.champName)];
-  const scoreA = gameResult.winnerName === teamA.name ? gameResult.finalKills[SIDES.BLUE] : gameResult.finalKills[SIDES.RED];
-  const scoreB = gameResult.winnerName === teamB.name ? gameResult.finalKills[SIDES.BLUE] : gameResult.finalKills[SIDES.RED];
   
-  const resultSummary = `⏱️ ${gameResult.gameTime} | ⚔️ ${teamA.name} ${scoreA} : ${scoreB} ${teamB.name} | 🏆 승리: ${gameResult.winnerName}`;
+  // [수정사항 2] 킬 스코어 매핑 수정 (블루팀 킬은 블루팀 점수로, 레드팀 킬은 레드팀 점수로)
+  const scoreBlue = gameResult.finalKills[SIDES.BLUE];
+  const scoreRed = gameResult.finalKills[SIDES.RED];
+  
+  const resultSummary = `⏱️ ${gameResult.gameTime} | ⚔️ ${teamBlue.name} ${scoreBlue} : ${scoreRed} ${teamRed.name} | 🏆 승리: ${gameResult.winnerName}`;
 
   const finalLogs = [
     `========== [ 경기 결과 ] ==========`,
@@ -625,7 +603,10 @@ function simulateSet(teamA, teamB, setNumber, fearlessBans, simOptions) {
     bans: draftResult.bans,
     logs: finalLogs,
     usedChamps: usedChamps,
-    score: { A: String(scoreA), B: String(scoreB) }
+    score: { 
+        [teamBlue.name]: String(scoreBlue), 
+        [teamRed.name]: String(scoreRed) 
+    }
   };
 }
 
@@ -639,23 +620,30 @@ function simulateMatch(teamA, teamB, format = 'BO3', simOptions) {
 
   while (winsA < targetWins && winsB < targetWins) {
     const currentFearlessBans = [...globalBanList];
+    // 세트 번호에 따라 진영 결정 (홀수세트: A가 블루, 짝수세트: B가 블루)
     const blueTeam = currentSet % 2 !== 0 ? teamA : teamB;
     const redTeam = currentSet % 2 !== 0 ? teamB : teamA;
 
+    // simulateSet 호출 시 항상 (블루, 레드) 순서로 전달
     const setResult = simulateSet(blueTeam, redTeam, currentSet, currentFearlessBans, simOptions);
     
     if (setResult.winnerName === teamA.name) winsA++;
     else winsB++;
 
+    // A팀과 B팀 관점에서 데이터 정리
+    const scoreA = setResult.score[teamA.name];
+    const scoreB = setResult.score[teamB.name];
+
     matchHistory.push({
       setNumber: currentSet,
       winner: setResult.winnerName,
+      // A팀이 블루였으면 그대로, 레드였으면 픽/밴 데이터 교차하여 저장
       picks: blueTeam.name === teamA.name ? setResult.picks : { A: setResult.picks.B, B: setResult.picks.A },
       bans: blueTeam.name === teamA.name ? setResult.bans : { A: setResult.bans.B, B: setResult.bans.A },
       fearlessBans: currentFearlessBans,
       logs: setResult.logs,
       resultSummary: setResult.resultSummary,
-      scores: blueTeam.name === teamA.name ? setResult.score : { A: setResult.score.B, B: setResult.score.A }
+      scores: { A: scoreA, B: scoreB }
     });
 
     globalBanList = [...globalBanList, ...setResult.usedChamps];
