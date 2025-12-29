@@ -1510,7 +1510,7 @@ function DetailedMatchResultModal({ result, onClose, teamA, teamB }) {
 }
 
 // ==========================================
-// [수정됨] 실시간 중계 화면 컴포넌트 (Dashboard 위에 붙여넣기)
+// [수정 3] LiveGamePlayer 컴포넌트 (Dashboard 함수 위에 위치)
 // ==========================================
 function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onClose }) {
   const [currentSet, setCurrentSet] = useState(1);
@@ -1520,7 +1520,7 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
   const [simulationData, setSimulationData] = useState(null);
   const [globalBanList, setGlobalBanList] = useState([]);
   const [matchHistory, setMatchHistory] = useState([]);
-  const [errorMsg, setErrorMsg] = useState(null); // 에러 상태 추가
+  const [error, setError] = useState(null); // 에러 상태 추가
 
   // 인게임 상태
   const [gameTime, setGameTime] = useState(0);
@@ -1532,23 +1532,24 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
   // 세트 시작 함수
   const startSet = useCallback(() => {
     try {
+        // 안전 장치: 로스터 확인
+        if (!teamA?.roster || teamA.roster.length === 0) throw new Error(`${teamA.name} 로스터 데이터가 없습니다.`);
+        if (!teamB?.roster || teamB.roster.length === 0) throw new Error(`${teamB.name} 로스터 데이터가 없습니다.`);
+
         setPhase('DRAFT');
         setDraftStep(0);
         setGameTime(0);
         setDisplayLogs([]);
-        setErrorMsg(null);
+        setError(null);
         
         const blueTeam = currentSet % 2 !== 0 ? teamA : teamB;
         const redTeam = currentSet % 2 !== 0 ? teamB : teamA;
         
-        // 로스터 확인 (에러 방지용)
-        if (!blueTeam.roster || !redTeam.roster) {
-            throw new Error("팀 로스터 정보가 누락되었습니다.");
-        }
-
-        // 시뮬레이션 미리 실행
+        // 시뮬레이션 실행 (에러 발생 시 catch로 이동)
         const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
         
+        if (!result || !result.picks) throw new Error("시뮬레이션 결과 생성 실패");
+
         const initPlayers = [
             ...result.picks.A.map(p => ({ ...p, side: 'BLUE', k:0, d:0, a:0, currentGold: 500, lvl: 1 })),
             ...result.picks.B.map(p => ({ ...p, side: 'RED', k:0, d:0, a:0, currentGold: 500, lvl: 1 }))
@@ -1564,8 +1565,8 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
         });
         setSimulationData({ ...result, blueTeam, redTeam });
     } catch (err) {
-        console.error("Simulation Error:", err);
-        setErrorMsg(err.message);
+        console.error("LiveGamePlayer Error:", err);
+        setError(err.message);
     }
   }, [currentSet, teamA, teamB, globalBanList, simOptions]);
 
@@ -1635,14 +1636,28 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
     return () => clearInterval(timer);
   }, [phase, simulationData, playbackSpeed]);
 
-  if (errorMsg) return <div className="fixed inset-0 bg-black text-white flex flex-col items-center justify-center z-[200]"><h2 className="text-xl font-bold text-red-500">오류 발생</h2><p>{errorMsg}</p><button onClick={onClose} className="mt-4 px-4 py-2 bg-gray-700 rounded">닫기</button></div>;
-  if (!simulationData) return <div className="fixed inset-0 bg-black text-white flex items-center justify-center z-[200]">로딩 중...</div>;
+  // 에러 화면 처리
+  if (error) return (
+    <div className="fixed inset-0 bg-gray-900 z-[200] flex flex-col items-center justify-center text-white">
+        <h2 className="text-3xl font-bold text-red-500 mb-4">⚠️ 오류 발생</h2>
+        <p className="text-xl mb-6">{error}</p>
+        <button onClick={onClose} className="px-6 py-3 bg-white text-black font-bold rounded hover:bg-gray-200">닫기</button>
+    </div>
+  );
+
+  // 로딩 화면 처리
+  if (!simulationData) return (
+    <div className="fixed inset-0 bg-black z-[200] flex items-center justify-center text-white">
+        <div className="text-2xl font-bold animate-pulse">경기 데이터 로딩 중...</div>
+    </div>
+  );
 
   const { blueTeam, redTeam, picks, bans } = simulationData;
   const isBlueWin = simulationData.winnerName === simulationData.blueTeam.name;
 
   return (
     <div className="fixed inset-0 bg-black z-[200] flex flex-col font-mono text-white">
+        {/* 상단 스코어보드 */}
         <div className="h-16 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-6 shadow-lg relative z-10">
             <div className="flex items-center gap-4 w-1/3">
                 <span className="text-3xl font-black text-blue-500">{blueTeam.name}</span>
@@ -1660,6 +1675,7 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
             </div>
         </div>
 
+        {/* 메인 화면 영역 */}
         <div className="flex-1 relative overflow-hidden flex bg-black">
             {phase === 'DRAFT' ? (
                 <div className="w-full h-full flex p-10 gap-10">
@@ -1720,13 +1736,21 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                         const newWinsA = winsA + (isBlueWin ? 1 : 0);
                         const newWinsB = winsB + (!isBlueWin ? 1 : 0);
                         const target = match.format === 'BO5' ? 3 : 2;
-                        setWinsA(newWinsA); setWinsB(newWinsB);
+                        
+                        setWinsA(newWinsA);
+                        setWinsB(newWinsB);
                         setMatchHistory(prev => [...prev, { set: currentSet, winner: simulationData.winnerName, score: `${liveStats.kills.BLUE}:${liveStats.kills.RED}` }]);
                         setGlobalBanList(prev => [...prev, ...simulationData.usedChamps]);
+
                         if (newWinsA >= target || newWinsB >= target) {
                             onMatchComplete(match, { winner: newWinsA > newWinsB ? teamA.name : teamB.name, scoreString: `${newWinsA}:${newWinsB}`, history: [...matchHistory, {set: currentSet, winner: simulationData.winnerName}] });
-                        } else { setCurrentSet(s => s + 1); setPhase('READY'); }
-                    }} className="px-10 py-4 bg-white text-black font-black text-2xl rounded hover:bg-gray-200">다음으로 진행 (NEXT)</button>
+                        } else {
+                            setCurrentSet(s => s + 1);
+                            setPhase('READY');
+                        }
+                    }} className="px-10 py-4 bg-white text-black font-black text-2xl rounded hover:bg-gray-200">
+                        다음으로 진행 (NEXT)
+                    </button>
                 </div>
             )}
         </div>
@@ -1785,28 +1809,36 @@ function Dashboard() {
   }, [leagueId]);
 
   // Fix 1: 순위표 재계산 함수 (전체 매치 기록 기반)
+  // [수정 1] 순위표 계산 함수 (플레이오프/플레이인 제외 로직 강화)
   const recalculateStandings = (lg) => {
-      const newStandings = {};
-      teams.forEach(t => { newStandings[t.id] = { w: 0, l: 0, diff: 0 }; });
+    const newStandings = {};
+    teams.forEach(t => { newStandings[t.id] = { w: 0, l: 0, diff: 0 }; });
 
-      lg.matches.forEach(m => {
-          if (m.status === 'finished' && (m.type === 'regular' || m.type === 'super')) {
-              const winner = teams.find(t => t.name === m.result.winner);
-              const actualLoser = (m.t1 === winner.id) ? teams.find(t => t.id === m.t2) : teams.find(t => t.id === m.t1);
-              
-              if(winner && actualLoser) {
-                  newStandings[winner.id].w += 1;
-                  newStandings[actualLoser.id].l += 1;
-                  
-                  const scores = m.result.score.split(':').map(Number);
-                  const diff = Math.abs(scores[0] - scores[1]);
-                  newStandings[winner.id].diff += diff;
-                  newStandings[actualLoser.id].diff -= diff;
-              }
-          }
-      });
-      setComputedStandings(newStandings);
-  };
+    lg.matches.forEach(m => {
+        // [중요] 플레이인, 플레이오프, TBD 경기는 순위표 계산에서 절대적으로 제외
+        if (m.type === 'playin' || m.type === 'playoff' || m.type === 'tbd') return;
+
+        if (m.status === 'finished' && (m.type === 'regular' || m.type === 'super')) {
+            const winner = teams.find(t => t.name === m.result.winner);
+            // m.t1, m.t2가 ID일 수도 있고 객체일 수도 있으므로 안전하게 처리
+            const t1Id = typeof m.t1 === 'object' ? m.t1.id : m.t1;
+            const t2Id = typeof m.t2 === 'object' ? m.t2.id : m.t2;
+            
+            const actualLoserId = (t1Id === winner.id) ? t2Id : t1Id;
+            
+            if(winner && actualLoserId) {
+                newStandings[winner.id].w += 1;
+                newStandings[actualLoserId].l += 1;
+                
+                const scores = m.result.score.split(':').map(Number);
+                const diff = Math.abs(scores[0] - scores[1]);
+                newStandings[winner.id].diff += diff;
+                newStandings[actualLoserId].diff -= diff;
+            }
+        }
+    });
+    setComputedStandings(newStandings);
+};
 
   const handleMenuClick = (tabId) => {
     setActiveTab(tabId);
@@ -2113,18 +2145,23 @@ function Dashboard() {
     runSimulationForMatch(nextGlobalMatch, false);
   };
 
- // Dashboard 내부 수정
+ // [수정 2] 내 경기 시작 함수 (로스터 데이터 주입 필수)
  const handleStartMyMatch = () => {
   if (!nextGlobalMatch || !isMyNextMatch) return;
   
-  // [중요] 여기서 getTeamRoster를 사용해 선수 명단을 포함시킵니다!
+  // [핵심] 여기서 선수 명단을 반드시 가져와서 합쳐줘야 합니다.
   const t1Roster = getTeamRoster(t1.name);
   const t2Roster = getTeamRoster(t2.name);
 
+  if (!t1Roster || t1Roster.length === 0 || !t2Roster || t2Roster.length === 0) {
+      alert("팀 로스터 정보를 불러올 수 없습니다. 데이터를 확인해주세요.");
+      return;
+  }
+
   setLiveMatchData({
       match: nextGlobalMatch,
-      teamA: { ...t1, roster: t1Roster }, // roster 추가됨
-      teamB: { ...t2, roster: t2Roster }  // roster 추가됨
+      teamA: { ...t1, roster: t1Roster }, // roster 포함
+      teamB: { ...t2, roster: t2Roster }  // roster 포함
   });
   setIsLiveGameMode(true);
 };
