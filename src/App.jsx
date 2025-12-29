@@ -4,7 +4,10 @@ import playerList from './data/players.json';
 import rawChampionList from './data/champions.json';
 
 // ==========================================
-// [통합] LoL eSports 시뮬레이션 엔진 (v3.4) - 조합 밸런스 패치 적용
+// [통합] LoL eSports 시뮬레이션 엔진 (v3.5)
+// - 난이도 계수 완화
+// - 승패 판정 완전 확률제 도입
+// - 시간대별 포지션 영향력(가중치) 차등 적용
 // ==========================================
 
 const SIDES = { BLUE: 'BLUE', RED: 'RED' };
@@ -27,8 +30,20 @@ const SIM_CONSTANTS = {
   OTP_SCORE_THRESHOLD: 80,
   OTP_TIER_BOOST: 2,
   VAR_RANGE: 0.12,
+  
+  // [수정 사항 1] 난이도 계수 하향 조정
   DIFFICULTY_MULTIPLIERS: {
-    easy: 0.8, normal: 1.0, hard: 1.1, insane: 1.25
+    easy: 0.8,    // 쉬움: 상대가 80% 힘만 냄
+    normal: 1.0,  // 보통: 100%
+    hard: 1.05,   // 어려움: 상대가 5% 더 강함 (기존 1.1에서 완화)
+    insane: 1.1   // 극악: 상대가 10% 더 강함 (기존 1.25에서 완화)
+  },
+
+  // [수정 사항 3] 시간대별 포지션 영향력 가중치
+  POSITION_WEIGHTS: {
+      EARLY: { TOP: 0.25, JGL: 0.30, MID: 0.30, ADC: 0.10, SUP: 0.05 }, // 상체 메타
+      MID:   { TOP: 0.20, JGL: 0.25, MID: 0.25, ADC: 0.20, SUP: 0.10 }, // 밸런스
+      LATE:  { TOP: 0.15, JGL: 0.20, MID: 0.25, ADC: 0.30, SUP: 0.10 }  // 원딜 캐리
   }
 };
 
@@ -61,6 +76,7 @@ const GAME_RULES = {
     TOP: '전사', JGL: '전사', MID: '마법사', ADC: '원거리', SUP: '서포터',
   },
   WEIGHTS: {
+    // 선수 개인 능력치 해석 비중 (기존 유지)
     PHASE: {
       EARLY: { laning: 0.45, mechanics: 0.30, growth: 0.15, stability: 0.10, macro: 0, teamfight: 0 },
       MID: { macro: 0.35, growth: 0.25, mechanics: 0.20, stability: 0.10, teamfight: 0.10, laning: 0 },
@@ -257,29 +273,35 @@ function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChampionList
   };
 }
 
-// 4. 팀 파워 계산 [수정됨: AD/AP 밸런스 로직 추가]
+// 4. 팀 파워 계산 [수정됨: 포지션 가중치 + AD/AP 밸런스 + 난이도 반영]
 function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks) {
   let totalPower = 0;
-  const phase = time >= 28 ? 'LATE' : (time >= 15 ? 'MID' : 'EARLY');
-  const weights = GAME_RULES.WEIGHTS.PHASE[phase];
   
-  // 조합 밸런스 체크를 위한 변수
+  // 시간대(Phase) 결정
+  const phaseKey = time >= 30 ? 'LATE' : (time >= 15 ? 'MID' : 'EARLY');
+  const weights = GAME_RULES.WEIGHTS.PHASE[phaseKey];
+  const positionWeights = SIM_CONSTANTS.POSITION_WEIGHTS[phaseKey]; // [수정 사항 3] 포지션 가중치 가져오기
+
+  // 조합 밸런스 체크 변수
   let adCount = 0;
   let apCount = 0;
 
   teamPicks.forEach((pick, idx) => {
     if (!pick || !pick.playerData) return;
     
-    // 데미지 타입 카운트 (데이터가 없으면 AD로 가정하거나 하이브리드로 처리)
-    // champions.json에 dmg_type 필드가 있어야 정확함. 없으면 'AD'로 default.
+    // 0:Top, 1:Jgl, 2:Mid, 3:Adc, 4:Sup (picks 배열 순서 보장 가정)
+    const laneKeys = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
+    const roleKey = laneKeys[idx] || pick.playerData.포지션; 
+    
+    // AD/AP 카운트
     const dmgType = pick.dmgType || 'AD'; 
     if (dmgType === 'AD') adCount++;
     else if (dmgType === 'AP') apCount++;
-    // Hybrid는 카운트하지 않거나 양쪽에 0.5씩 더할 수 있으나 단순화를 위해 제외
 
     const player = pick.playerData;
     const stats = player.상세 || { 라인전: 80, 무력: 80, 운영: 80, 성장: 80, 한타: 80, 안정성: 80 };
     
+    // 1. 선수 스탯 기반 기본 퍼포먼스
     let rawStat = 
       (stats.라인전 || 50) * weights.laning + (stats.무력 || 50) * weights.mechanics +
       (stats.성장 || 50) * weights.growth + (stats.운영 || 50) * weights.macro +
@@ -288,8 +310,10 @@ function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks) 
     const masteryScore = calculateMasteryScore(player, pick.mastery);
     const metaScore = getMetaScore(player.포지션, pick.tier, masteryScore);
     
+    // 2. 챔피언 점수 합산
     let combatPower = (rawStat * SIM_CONSTANTS.WEIGHTS.STATS) + (metaScore * SIM_CONSTANTS.WEIGHTS.META) + (masteryScore * SIM_CONSTANTS.WEIGHTS.MASTERY);
 
+    // 3. 상성 보정
     const enemyLaner = enemyPicks[idx];
     if (enemyLaner) {
         const myClass = pick.classType;
@@ -297,6 +321,7 @@ function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks) 
         if (GAME_RULES.COUNTERS[myClass]?.includes(enemyClass)) combatPower *= 1.05;
     }
 
+    // 4. 드래곤/바론/장로 버프 적용
     Object.entries(activeBuffs.dragonStacks).forEach(([dType, count]) => {
       const buffTable = GAME_RULES.DRAGON_BUFFS[dType];
       if (buffTable && buffTable[pick.classType]) combatPower *= (1 + (buffTable[pick.classType] * count));
@@ -311,45 +336,48 @@ function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks) 
     if (activeBuffs.baron) combatPower *= GAME_RULES.OBJECTIVES.BARON.combat_bonus;
     if (activeBuffs.grubs > 0) combatPower *= (1 + (0.01 * activeBuffs.grubs));
 
-    totalPower += combatPower;
+    // [수정 사항 3] 포지션별 가중치 적용
+    // 해당 시간대에 이 포지션이 얼마나 중요한가? (비중 * 5 하여 총합 스케일 유지)
+    const posWeight = positionWeights[roleKey] || 0.2; 
+    totalPower += (combatPower * posWeight * 5);
   });
 
-  // [신규 로직] 올 AD / 올 AP 페널티 적용
-  // 기준: 한 속성이 4명 이상일 때
+  // AD/AP 편중 페널티 (v3.4 유지)
   const isUnbalanced = adCount >= 4 || apCount >= 4;
   let balanceMultiplier = 1.0;
 
   if (isUnbalanced) {
-      if (time < 15) {
-          balanceMultiplier = 1.0; // 초반: 페널티 없음 (라인전 단계는 강할 수 있음)
-      } else if (time < 28) {
-          balanceMultiplier = 0.95; // 중반: 5% 감소 (방템 1~2코어 시점)
-      } else {
-          balanceMultiplier = 0.85; // 후반: 15% 감소 (방관 효율 한계)
-      }
+      if (time < 15) balanceMultiplier = 1.0; 
+      else if (time < 28) balanceMultiplier = 0.95; 
+      else balanceMultiplier = 0.85; 
   }
-
   totalPower *= balanceMultiplier;
 
+  // 골드 차이 반영
   const scalingFactor = time < 15 ? 80000 : 60000;
   totalPower *= (1 + (goldDiff / scalingFactor));
   
   return totalPower;
 }
 
+// [수정 사항 2] 승패 판정 로직: 단순 비교 -> 확률(Power / Total)
 function resolveCombat(powerA, powerB) {
     const totalPower = powerA + powerB;
     if (totalPower === 0) return Math.random() < 0.5 ? SIDES.BLUE : SIDES.RED;
+    
+    // 승리 확률 = 내 힘 / (내 힘 + 상대 힘)
     const winChanceA = powerA / totalPower;
+    
     return Math.random() < winChanceA ? SIDES.BLUE : SIDES.RED;
 }
 
-// 5. 인게임 시뮬레이션 엔진 (초 단위 로그 시스템 적용)
+// 5. 인게임 시뮬레이션 엔진
 function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
   let time = 0;
   const logs = [];
   const { difficulty, playerTeamName } = simOptions;
   
+  // ... (초기화 로직 유지) ...
   const dragonTypes = ['화염', '대지', '바람', '바다', '마법공학', '화학공학'];
   const shuffledDragons = dragonTypes.sort(() => Math.random() - 0.5);
   const firstDragonType = shuffledDragons[0];
@@ -382,16 +410,11 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
     nextElderTime: Infinity,
   };
 
-  // 시간 포맷팅 헬퍼
   const formatTime = (m, s) => `[${m}:${s < 10 ? '0' + s : s}]`;
 
   while (state.nexusHealth[SIDES.BLUE] > 0 && state.nexusHealth[SIDES.RED] > 0 && time < 70) {
     time++;
-    
-    // 이 분(Minute)에 발생한 사건들을 모을 배열
     let minuteEvents = [];
-
-    // 이벤트 추가 헬퍼
     const addEvent = (second, msg) => {
         minuteEvents.push({ sec: second, message: `${formatTime(time, second)} ${msg}` });
     };
@@ -420,15 +443,18 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
     let powerBlue = calculateTeamPower(picksBlue, time, getActiveBuffs(SIDES.BLUE), state.gold[SIDES.BLUE] - state.gold[SIDES.RED], picksRed);
     let powerRed = calculateTeamPower(picksRed, time, getActiveBuffs(SIDES.RED), state.gold[SIDES.RED] - state.gold[SIDES.BLUE], picksBlue);
     
+    // [수정 사항 1] 난이도 적용 (계수 하향됨)
     if (playerTeamName && difficulty) {
         const multiplier = SIM_CONSTANTS.DIFFICULTY_MULTIPLIERS[difficulty] || 1.0;
         if (teamBlue.name !== playerTeamName) powerBlue *= multiplier;
         if (teamRed.name !== playerTeamName) powerRed *= multiplier;
     }
+    
+    // 랜덤 변수 약간 추가 (기존 유지)
     powerBlue *= (1 + (Math.random() * SIM_CONSTANTS.VAR_RANGE * 2 - SIM_CONSTANTS.VAR_RANGE));
     powerRed *= (1 + (Math.random() * SIM_CONSTANTS.VAR_RANGE * 2 - SIM_CONSTANTS.VAR_RANGE));
 
-    // --- 고정 오브젝트 스폰 (0초 기준) ---
+    // --- 고정 오브젝트 스폰 (resolveCombat 사용 시 모두 확률 기반으로 작동) ---
     if (time === GAME_RULES.OBJECTIVES.GRUBS.time) {
       const winner = resolveCombat(powerBlue, powerRed);
       state.grubs[winner] += GAME_RULES.OBJECTIVES.GRUBS.count;
@@ -466,6 +492,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
 
     if (time >= state.nextBaronTime && !(state.baronBuff.side && state.baronBuff.endTime >= time)) {
       if (Math.random() > 0.6 || time > 30) { 
+        // 바론은 둥지 안쪽 디버프 등을 고려해 공격측 파워 약간 감소시킬 수 있으나 여기선 단순 확률
         const winner = resolveCombat(powerBlue * 0.9, powerRed * 0.9);
         state.baronBuff = { side: winner, endTime: time + GAME_RULES.OBJECTIVES.BARON.duration };
         state.gold[winner] += GAME_RULES.OBJECTIVES.BARON.gold;
@@ -483,19 +510,20 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
 
     const powerDiffRatio = Math.abs(powerBlue - powerRed) / ((powerBlue + powerRed) / 2);
     
-    // --- 교전 및 라인 로직 (랜덤 초 생성) ---
+    // --- 교전 및 라인 로직 ---
+    // 교전이 일어날 "확률"은 격차가 클수록 높거나, 시간이 지날수록 높음
     if (powerDiffRatio > 0.05 || Math.random() < (0.3 + (time * 0.005))) {
-        // 교전 발생 시간 (0~45초 사이)
         const combatSec = Math.floor(Math.random() * 45);
         
-        const winner = powerBlue > powerRed ? SIDES.BLUE : SIDES.RED;
+        // [수정 사항 2] 여기서도 resolveCombat을 통해 철저한 확률 싸움
+        const winner = resolveCombat(powerBlue, powerRed);
         const loser = winner === SIDES.BLUE ? SIDES.RED : SIDES.BLUE;
         const winnerName = winner === SIDES.BLUE ? teamBlue.name : teamRed.name;
         const loserName = loser === SIDES.BLUE ? teamBlue.name : teamRed.name;
         
         let combatOccurred = false;
 
-        // 1. 킬 발생 로직
+        // 1. 킬 발생
         if (Math.random() < 0.6) {
             combatOccurred = true;
             const winnerKills = 1 + Math.floor(Math.random() * 2);
@@ -504,6 +532,8 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
             
             let combatMsg = `${winnerName} 교전 승리 (${winnerKills}킬)`;
             
+            // 반격킬 확률도 현재 파워 비례로 하면 더 정교함. 
+            // 여기선 단순 확률이나, 열세 팀도 가끔 킬을 딴다는 의미로 유지
             if (Math.random() < 0.35) {
                 state.kills[loser] += 1;
                 state.gold[loser] += (GAME_RULES.GOLD.KILL + GAME_RULES.GOLD.ASSIST);
@@ -512,7 +542,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
             addEvent(combatSec, combatMsg);
         }
 
-        // 2. 포탑 공략 로직 (교전 후 약간의 시간차인 combatSec + 5초부터 시작)
+        // 2. 포탑 공략 (이긴 팀이 주도권)
         let pushBaseSec = combatOccurred ? combatSec + 5 : Math.floor(Math.random() * 50);
         if (pushBaseSec > 59) pushBaseSec = 59;
 
@@ -520,17 +550,15 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
         if (state.baronBuff.side === winner) targetLanes = MAP_LANES;
 
         targetLanes.forEach((lane, idx) => {
-            // 다중 라인 푸시 시 시간차 두기
             let currentPushSec = pushBaseSec + (idx * 3); 
             if (currentPushSec > 59) currentPushSec = 59;
 
             const enemyLane = state.structures[loser][lane];
-            let pushPower = 1.0 + (powerDiffRatio * 2);
+            let pushPower = 1.0 + (powerDiffRatio * 2); // 격차가 클수록 더 강하게 밈
             if (state.baronBuff.side === winner) pushPower += 1.0;
             if (state.elderBuff.side === winner) pushPower += 2.0;
 
             if (!enemyLane.tier1.destroyed) {
-                // 4분 이후부터 채굴 가능
                 if (time >= GAME_RULES.OBJECTIVES.PLATES.start_time && time < GAME_RULES.OBJECTIVES.PLATES.end_time) {
                     if (Math.random() < 0.4 * pushPower) {
                          if (enemyLane.tier1.plates > 0) {
@@ -549,7 +577,6 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
                          }
                     }
                 } else if (time >= GAME_RULES.OBJECTIVES.PLATES.end_time) {
-                    // 14분 이후 일반 철거
                     if (Math.random() < 0.3 * pushPower) {
                         enemyLane.tier1.destroyed = true;
                         state.gold[winner] += 500; 
@@ -584,7 +611,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
                     if (state.elderBuff.side === winner) dmg *= 2.0;
                     
                     state.nexusHealth[loser] -= dmg;
-                    if (state.nexusHealth[loser] <= 0) {
+                     if (state.nexusHealth[loser] <= 0) {
                         // End logic handled by loop condition
                     } else if (Math.random() < 0.5) {
                          addEvent(currentPushSec, `${winnerName}, 쌍둥이 포탑 및 넥서스 타격 중...`);
@@ -594,7 +621,6 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
         });
     }
 
-    // 시간 순 정렬 후 로그 반영
     minuteEvents.sort((a, b) => a.sec - b.sec);
     minuteEvents.forEach(evt => logs.push(evt.message));
   }
@@ -613,7 +639,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
   };
 }
 
-// 6. 결과 처리 및 포맷팅 [수정됨: 챔피언 데이터 전달 강화]
+// 6. 결과 처리 및 포맷팅 (v3.4 유지)
 function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions) {
   const { currentChampionList } = simOptions;
 
@@ -638,7 +664,6 @@ function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions) {
           return {
               ...p,
               ...champData,
-              // dmg_type 필드 안전하게 전달 (없으면 AD로 간주)
               dmgType: champData.dmg_type || 'AD', 
               classType: getChampionClass(champData, playerData.포지션),
               playerData: playerData,
