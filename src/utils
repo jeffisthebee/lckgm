@@ -30,11 +30,10 @@ const SIM_CONSTANTS = {
     META: 0.25,     // 챔피언 티어 (champions.json)
     MASTERY: 0.20   // 숙련도 (player_mastery)
   },
-  // 메타 계수 (원딜 3티어 체계, 그 외 5티어 체계)
+  // 메타 계수 ( 5티어 체계)
   META_COEFF: {
     STANDARD: { 1: 1.0, 2: 0.95, 3: 0.90, 4: 0.85, 5: 0.80 },
-    ADC:      { 1: 1.0, 2: 0.92, 3: 0.84 }
-  },
+   
   // 숙련도 보정 변수
   LOW_SAMPLE_THRESHOLD: 5,    // 경기 수 5회 이하일 때 데이터 신뢰도 낮음
   OTP_SCORE_THRESHOLD: 80,    // 숙련도 점수 80 이상이면 '장인'으로 인정

@@ -48,7 +48,7 @@
         { "name": "Ryze", "games": 27, "winRate": 66.7, "kda": 3.9, "category": "Career" },
         { "name": "Gragas", "games": 23, "winRate": 43.5, "kda": 3.7, "category": "Career" },
         { "name": "Akali", "games": 22, "winRate": 45.5, "kda": 3.0, "category": "Career" },
-        { "name": "Aurora", "games": 0, "winRate": 71.4, "kda": 4.9, "category": "Career" },
+        { "name": "Aurora", "games": 14, "winRate": 71.4, "kda": 4.9, "category": "Career" },
         { "name": "Urgot", "games": 14, "winRate": 28.6, "kda": 2.3, "category": "Career" },
         { "name": "Lucian", "games": 14, "winRate": 42.9, "kda": 3.5, "category": "Career" },
         { "name": "Mordekaiser", "games": 13, "winRate": 69.2, "kda": 2.5, "category": "Career" },
