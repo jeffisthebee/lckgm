@@ -4,7 +4,7 @@ import playerList from './data/players.json';
 import rawChampionList from './data/champions.json';
 
 // ==========================================
-// 0. 시뮬레이션 엔진 및 상수 (통합 및 개선 버전)
+// 0. 시뮬레이션 엔진 및 상수 (한국어 통일 및 로직 개선)
 // ==========================================
 
 const SIDES = { BLUE: 'BLUE', RED: 'RED' };
@@ -46,32 +46,36 @@ const SIM_CONSTANTS = {
 };
 
 const GAME_RULES = {
+  // 역할군 명칭 한국어 통일
   CHAMPION_CLASSES: {
-    ASSASSIN: 'Assassin', FIGHTER: 'Fighter', MAGE: 'Mage',
-    MARKSMAN: 'Marksman', TANK: 'Tank', SUPPORT: 'Support',
+    ASSASSIN: '암살자', FIGHTER: '전사', MAGE: '마법사',
+    MARKSMAN: '원거리', TANK: '탱커', SUPPORT: '서포터',
   },
+  // 드래곤 버프 및 역할군 키 한국어 변경
   DRAGON_BUFFS: {
-    Infernal: { Marksman: 0.03, Mage: 0.03, Fighter: 0.05, Tank: 0.01, Support: 0.01, Assassin: 0.01 },
-    Mountain: { Tank: 0.03, Fighter: 0.02, Support: 0.02, Marksman: 0.01, Mage: 0.01, Assassin: 0.01 },
-    Cloud: { Assassin: 0.04, Tank: 0.02, Support: 0.02, Fighter: 0.01, Marksman: 0.05, Mage: 0.05 },
-    Ocean: { Tank: 0.03, Fighter: 0.03, Mage: 0.015, Support: 0.015, Assassin: 0.01, Marksman: 0.01 },
-    Hextech: { Marksman: 0.03, Mage: 0.02, Assassin: 0.015, Fighter: 0.015, Tank: 0.01, Support: 0.01 },
-    Chemtech: { Fighter: 0.04, Tank: 0.03, Support: 0.02, Assassin: 0.01, Marksman: 0.01, Mage: 0.01 },
+    '화염': { '원거리': 0.03, '마법사': 0.03, '전사': 0.05, '탱커': 0.01, '서포터': 0.01, '암살자': 0.01 },
+    '대지': { '탱커': 0.03, '전사': 0.02, '서포터': 0.02, '원거리': 0.01, '마법사': 0.01, '암살자': 0.01 },
+    '바람': { '암살자': 0.04, '탱커': 0.02, '서포터': 0.02, '전사': 0.01, '원거리': 0.05, '마법사': 0.05 },
+    '바다': { '탱커': 0.03, '전사': 0.03, '마법사': 0.015, '서포터': 0.015, '암살자': 0.01, '원거리': 0.01 },
+    '마법공학': { '원거리': 0.03, '마법사': 0.02, '암살자': 0.015, '전사': 0.015, '탱커': 0.01, '서포터': 0.01 },
+    '화학공학': { '전사': 0.04, '탱커': 0.03, '서포터': 0.02, '암살자': 0.01, '원거리': 0.01, '마법사': 0.01 },
   },
+  // 드래곤 영혼 및 역할군 키 한국어 변경
   DRAGON_SOULS: {
-    Infernal: { Marksman: 0.25, Mage: 0.25, Assassin: 0.22, Fighter: 0.15, Tank: 0.08, Support: 0.08 },
-    Mountain: { Tank: 0.25, Fighter: 0.22, Marksman: 0.15, Mage: 0.15, Assassin: 0.12, Support: 0.10 },
-    Cloud: { Fighter: 0.22, Tank: 0.22, Assassin: 0.20, Support: 0.15, Marksman: 0.12, Mage: 0.12 },
-    Ocean: { Fighter: 0.25, Tank: 0.25, Mage: 0.18, Marksman: 0.15, Support: 0.10, Assassin: 0.05 },
-    Hextech: { Marksman: 0.24, Mage: 0.20, Fighter: 0.20, Tank: 0.15, Assassin: 0.15, Support: 0.10 },
-    Chemtech: { Fighter: 0.28, Tank: 0.22, Assassin: 0.15, Marksman: 0.10, Mage: 0.10, Support: 0.10 },
+    '화염': { '원거리': 0.25, '마법사': 0.25, '암살자': 0.22, '전사': 0.15, '탱커': 0.08, '서포터': 0.08 },
+    '대지': { '탱커': 0.25, '전사': 0.22, '원거리': 0.15, '마법사': 0.15, '암살자': 0.12, '서포터': 0.10 },
+    '바람': { '전사': 0.22, '탱커': 0.22, '암살자': 0.20, '서포터': 0.15, '원거리': 0.12, '마법사': 0.12 },
+    '바다': { '전사': 0.25, '탱커': 0.25, '마법사': 0.18, '원거리': 0.15, '서포터': 0.10, '암살자': 0.05 },
+    '마법공학': { '원거리': 0.24, '마법사': 0.20, '전사': 0.20, '탱커': 0.15, '암살자': 0.15, '서포터': 0.10 },
+    '화학공학': { '전사': 0.28, '탱커': 0.22, '암살자': 0.15, '원거리': 0.10, '마법사': 0.10, '서포터': 0.10 },
   },
+  // 상성표 한국어 변경
   COUNTERS: {
-    Mage: ['Tank', 'Fighter'], Marksman: ['Tank', 'Fighter'],
-    Tank: ['Assassin'], Fighter: ['Assassin'], Assassin: ['Mage', 'Marksman'],
+    '마법사': ['탱커', '전사'], '원거리': ['탱커', '전사'],
+    '탱커': ['암살자'], '전사': ['암살자'], '암살자': ['마법사', '원거리'],
   },
   DEFAULT_ROLES: {
-    TOP: 'Fighter', JGL: 'Fighter', MID: 'Mage', ADC: 'Marksman', SUP: 'Support',
+    TOP: '전사', JGL: '전사', MID: '마법사', ADC: '원거리', SUP: '서포터',
   },
   WEIGHTS: {
     PHASE: {
@@ -123,15 +127,21 @@ const MASTERY_MAP = playerList.reduce((acc, player) => {
 const championList = rawChampionList;
 
 // --- 헬퍼 함수 ---
+// 한국어 역할군 반환으로 수정
 const getChampionClass = (champ, position) => {
-  if (!champ) return GAME_RULES.DEFAULT_ROLES[position] || 'Fighter';
+  if (!champ) return GAME_RULES.DEFAULT_ROLES[position] || '전사';
+  
+  // 데이터가 영어로 들어오더라도 한국어로 변환, 이미 한국어면 그대로 사용
   const classMapping = {
-    '암살자': 'Assassin', '전사': 'Fighter', '원거리': 'Marksman',
-    '마법사': 'Mage', '탱커': 'Tank', '서포터': 'Support'
+    'Assassin': '암살자', 'Fighter': '전사', 'Marksman': '원거리',
+    'Mage': '마법사', 'Tank': '탱커', 'Support': '서포터',
+    '암살자': '암살자', '전사': '전사', '원거리': '원거리',
+    '마법사': '마법사', '탱커': '탱커', '서포터': '서포터'
   };
+
   if (champ.role_detail && classMapping[champ.role_detail]) return classMapping[champ.role_detail];
-  if (champ.tags && champ.tags[0] && Object.values(GAME_RULES.CHAMPION_CLASSES).includes(champ.tags[0])) return champ.tags[0];
-  return GAME_RULES.DEFAULT_ROLES[position] || 'Fighter';
+  if (champ.tags && champ.tags[0] && classMapping[champ.tags[0]]) return classMapping[champ.tags[0]];
+  return GAME_RULES.DEFAULT_ROLES[position] || '전사';
 };
 
 function calculateMasteryScore(player, masteryData) {
@@ -242,7 +252,7 @@ function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChampionList
   const mapPicks = (side, teamRoster) => {
     return ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(pos => {
       const c = picks[side][pos];
-      if (!c) return null; // 픽이 안된 경우 처리
+      if (!c) return null;
       const p = teamRoster.find(pl => pl.포지션 === pos);
       return { 
         champName: c.name, 
@@ -251,7 +261,7 @@ function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChampionList
         playerName: p.이름, 
         playerOvr: p.종합
       };
-    }).filter(Boolean); // null 값 제거
+    }).filter(Boolean);
   };
 
   return {
@@ -290,6 +300,7 @@ function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks) 
         }
     }
 
+    // 드래곤 버프 적용 (한국어 키 사용)
     Object.entries(activeBuffs.dragonStacks).forEach(([dType, count]) => {
       const buffTable = GAME_RULES.DRAGON_BUFFS[dType];
       if (buffTable && buffTable[pick.classType]) {
@@ -327,7 +338,8 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
   const logs = [];
   const { difficulty, playerTeamName } = simOptions;
   
-  const dragonPool = ['Infernal', 'Mountain', 'Cloud', 'Ocean', 'Hextech', 'Chemtech'];
+  // 드래곤 풀 한국어로 변경
+  const dragonPool = ['화염', '대지', '바람', '바다', '마법공학', '화학공학'];
   const gameDragons = Array.from({ length: 4 }, () => dragonPool[Math.floor(Math.random() * dragonPool.length)]);
   const soulDragonType = gameDragons[3];
 
@@ -457,7 +469,8 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
             } else {
                 state.nexusHealth[loser] -= (15 + (powerDiffRatio * 100));
                 if (state.nexusHealth[loser] <= 0) {
-                    if (!eventLog) eventLog = `[${time}분] 👑 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name}이(가) 넥서스를 파괴하고 승리합니다!`;
+                    // 요청하신 문구로 수정 및 강제 이벤트 로그 설정
+                    eventLog = `[${time}분] 👑 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name}이(가) 넥서스를 파괴합니다!`;
                 }
             }
         }
@@ -480,7 +493,6 @@ function simulateSet(teamA, teamB, setNumber, fearlessBans, simOptions) {
   // 1. 밴픽 진행
   const draftResult = runDraftSimulation(teamA, teamB, fearlessBans, currentChampionList);
   
-  // 밴픽이 불완전할 경우 (챔피언 부족 등) 처리
   if (draftResult.picks.A.length < 5 || draftResult.picks.B.length < 5) {
     const winnerName = draftResult.picks.A.length > draftResult.picks.B.length ? teamA.name : teamB.name;
     const loserName = winnerName === teamA.name ? teamB.name : teamA.name;
@@ -541,7 +553,6 @@ function simulateMatch(teamA, teamB, format = 'BO3', simOptions) {
 
   while (winsA < targetWins && winsB < targetWins) {
     const currentFearlessBans = [...globalBanList];
-    // 진영 교체: 1, 3, 5세트는 A팀이 블루, 2, 4세트는 B팀이 블루
     const blueTeam = currentSet % 2 !== 0 ? teamA : teamB;
     const redTeam = currentSet % 2 !== 0 ? teamB : teamA;
 
@@ -553,7 +564,6 @@ function simulateMatch(teamA, teamB, format = 'BO3', simOptions) {
     matchHistory.push({
       setNumber: currentSet,
       winner: setResult.winnerName,
-      // 결과 표시를 위해 팀 A, B 기준으로 재정렬
       picks: blueTeam.name === teamA.name ? setResult.picks : { A: setResult.picks.B, B: setResult.picks.A },
       bans: blueTeam.name === teamA.name ? setResult.bans : { A: setResult.bans.B, B: setResult.bans.A },
       fearlessBans: currentFearlessBans,
