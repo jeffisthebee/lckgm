@@ -4,12 +4,12 @@ import playerList from './data/players.json';
 import rawChampionList from './data/champions.json';
 
 // ==========================================
-// [통합] LoL eSports 시뮬레이션 엔진 (v3.2)
+// [통합] LoL eSports 시뮬레이션 엔진 (v3.3)
 // ==========================================
 
 const SIDES = { BLUE: 'BLUE', RED: 'RED' };
-const LANES = ['TOP', 'JGL', 'MID', 'ADC', 'SUP']; // 포지션
-const MAP_LANES = ['TOP', 'MID', 'BOT']; // 맵 라인
+const LANES = ['TOP', 'JGL', 'MID', 'ADC', 'SUP']; 
+const MAP_LANES = ['TOP', 'MID', 'BOT']; 
 
 // 1. 게임 상수 및 규칙
 const GAME_CONSTANTS = {
@@ -73,12 +73,12 @@ const GAME_RULES = {
     BARON: { spawn: 20, duration: 3, gold: 1500, combat_bonus: 1.3 }, 
     ELDER: { spawn_after_soul: 6, duration: 3, combat_bonus: 1.6 },
     DRAGON: { initial_spawn: 5, respawn: 5, gold: 100 },
-    PLATES: { end_time: 14, count: 6 } 
+    PLATES: { start_time: 4, end_time: 14, count: 6 } // [수정] 방패 채굴 시작 시간 추가
   },
   GOLD: {
     START: 500, PASSIVE_PER_MIN: 125, KILL: 300, ASSIST: 150,
     TURRET: { 
-        OUTER_PLATE: { local: 250, team: 50 }, // 1칸당
+        OUTER_PLATE: { local: 250, team: 50 },
         INNER_MID: { local: 425, team: 25 },
         INNER_SIDE: { local: 675, team: 25 }, 
         INHIB_TURRET: { local: 375, team: 25 }
@@ -278,7 +278,6 @@ function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks) 
     
     let combatPower = (rawStat * SIM_CONSTANTS.WEIGHTS.STATS) + (metaScore * SIM_CONSTANTS.WEIGHTS.META) + (masteryScore * SIM_CONSTANTS.WEIGHTS.MASTERY);
 
-    // 상성
     const enemyLaner = enemyPicks[idx];
     if (enemyLaner) {
         const myClass = pick.classType;
@@ -286,7 +285,6 @@ function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks) 
         if (GAME_RULES.COUNTERS[myClass]?.includes(enemyClass)) combatPower *= 1.05;
     }
 
-    // 버프
     Object.entries(activeBuffs.dragonStacks).forEach(([dType, count]) => {
       const buffTable = GAME_RULES.DRAGON_BUFFS[dType];
       if (buffTable && buffTable[pick.classType]) combatPower *= (1 + (buffTable[pick.classType] * count));
@@ -316,7 +314,7 @@ function resolveCombat(powerA, powerB) {
     return Math.random() < winChanceA ? SIDES.BLUE : SIDES.RED;
 }
 
-// 5. 인게임 시뮬레이션 엔진
+// 5. 인게임 시뮬레이션 엔진 (초 단위 로그 시스템 적용)
 function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
   let time = 0;
   const logs = [];
@@ -354,8 +352,19 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
     nextElderTime: Infinity,
   };
 
+  // 시간 포맷팅 헬퍼
+  const formatTime = (m, s) => `[${m}:${s < 10 ? '0' + s : s}]`;
+
   while (state.nexusHealth[SIDES.BLUE] > 0 && state.nexusHealth[SIDES.RED] > 0 && time < 70) {
     time++;
+    
+    // 이 분(Minute)에 발생한 사건들을 모을 배열
+    let minuteEvents = [];
+
+    // 이벤트 추가 헬퍼
+    const addEvent = (second, msg) => {
+        minuteEvents.push({ sec: second, message: `${formatTime(time, second)} ${msg}` });
+    };
     
     state.gold[SIDES.BLUE] += GAME_RULES.GOLD.PASSIVE_PER_MIN * 5;
     state.gold[SIDES.RED] += GAME_RULES.GOLD.PASSIVE_PER_MIN * 5;
@@ -365,7 +374,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
             const inhib = state.structures[side][lane].inhib;
             if (inhib.destroyed && inhib.respawnTime <= time) {
                 inhib.destroyed = false;
-                logs.push(`[${time}분] ${side === SIDES.BLUE ? teamBlue.name : teamRed.name}의 ${lane} 억제기가 재생되었습니다.`);
+                addEvent(0, `${side === SIDES.BLUE ? teamBlue.name : teamRed.name}의 ${lane} 억제기가 재생되었습니다.`);
             }
         });
     });
@@ -389,19 +398,18 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
     powerBlue *= (1 + (Math.random() * SIM_CONSTANTS.VAR_RANGE * 2 - SIM_CONSTANTS.VAR_RANGE));
     powerRed *= (1 + (Math.random() * SIM_CONSTANTS.VAR_RANGE * 2 - SIM_CONSTANTS.VAR_RANGE));
 
-    let eventLog = ""; // 문자열 누적을 위해 빈 문자열로 초기화
-
+    // --- 고정 오브젝트 스폰 (0초 기준) ---
     if (time === GAME_RULES.OBJECTIVES.GRUBS.time) {
       const winner = resolveCombat(powerBlue, powerRed);
       state.grubs[winner] += GAME_RULES.OBJECTIVES.GRUBS.count;
       state.gold[winner] += GAME_RULES.OBJECTIVES.GRUBS.gold;
-      eventLog = `[${time}분] 🐛 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 공허 유충 처치`;
+      addEvent(5, `🐛 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 공허 유충 처치`);
     }
 
     if (time === GAME_RULES.OBJECTIVES.HERALD.time) {
       const winner = resolveCombat(powerBlue, powerRed);
       state.gold[winner] += GAME_RULES.OBJECTIVES.HERALD.gold; 
-      eventLog = `[${time}분] 👁️ ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 전령 획득`;
+      addEvent(10, `👁️ ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 전령 획득`);
     }
 
     if (time >= state.nextDragonTime && !state.soul) {
@@ -415,15 +423,15 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
       state.gold[winner] += GAME_RULES.OBJECTIVES.DRAGON.gold;
       dragonSpawnCount++;
 
-      eventLog = `[${time}분] 🐉 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name}, ${currentDragonName} 용 처치`;
-      
+      let msg = `🐉 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name}, ${currentDragonName} 용 처치`;
       if (state.dragons[winner].length === 4) {
         state.soul = { side: winner, type: mapElementType };
         state.nextElderTime = time + GAME_RULES.OBJECTIVES.ELDER.spawn_after_soul;
-        eventLog += ` (👑 ${mapElementType} 영혼 획득!)`;
+        msg += ` (👑 ${mapElementType} 영혼 획득!)`;
       } else {
         state.nextDragonTime = time + GAME_RULES.OBJECTIVES.DRAGON.respawn;
       }
+      addEvent(Math.floor(Math.random() * 20) + 10, msg);
     }
 
     if (time >= state.nextBaronTime && !(state.baronBuff.side && state.baronBuff.endTime >= time)) {
@@ -432,7 +440,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
         state.baronBuff = { side: winner, endTime: time + GAME_RULES.OBJECTIVES.BARON.duration };
         state.gold[winner] += GAME_RULES.OBJECTIVES.BARON.gold;
         state.nextBaronTime = time + GAME_RULES.OBJECTIVES.DRAGON.respawn;
-        eventLog = `[${time}분] 🟣 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 내셔 남작 처치!`;
+        addEvent(Math.floor(Math.random() * 30) + 15, `🟣 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 내셔 남작 처치!`);
       }
     }
 
@@ -440,74 +448,82 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
       const winner = resolveCombat(powerBlue, powerRed);
       state.elderBuff = { side: winner, endTime: time + GAME_RULES.OBJECTIVES.ELDER.duration };
       state.nextElderTime = time + GAME_RULES.OBJECTIVES.ELDER.spawn_after_soul;
-      eventLog = `[${time}분] 🐲 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 장로 드래곤 처치!`;
+      addEvent(Math.floor(Math.random() * 30) + 20, `🐲 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 장로 드래곤 처치!`);
     }
 
     const powerDiffRatio = Math.abs(powerBlue - powerRed) / ((powerBlue + powerRed) / 2);
     
-    // 교전 및 라인 로직
+    // --- 교전 및 라인 로직 (랜덤 초 생성) ---
     if (powerDiffRatio > 0.05 || Math.random() < (0.3 + (time * 0.005))) {
+        // 교전 발생 시간 (0~45초 사이)
+        const combatSec = Math.floor(Math.random() * 45);
+        
         const winner = powerBlue > powerRed ? SIDES.BLUE : SIDES.RED;
         const loser = winner === SIDES.BLUE ? SIDES.RED : SIDES.BLUE;
         const winnerName = winner === SIDES.BLUE ? teamBlue.name : teamRed.name;
         const loserName = loser === SIDES.BLUE ? teamBlue.name : teamRed.name;
         
+        let combatOccurred = false;
+
         // 1. 킬 발생 로직
         if (Math.random() < 0.6) {
+            combatOccurred = true;
             const winnerKills = 1 + Math.floor(Math.random() * 2);
             state.kills[winner] += winnerKills;
             state.gold[winner] += (GAME_RULES.GOLD.KILL + GAME_RULES.GOLD.ASSIST) * winnerKills;
             
-            let combatMsg = `[${time}분] ${winnerName} 교전 승리 (${winnerKills}킬)`;
+            let combatMsg = `${winnerName} 교전 승리 (${winnerKills}킬)`;
             
-            // [수정사항 2] 반격 킬 로그 추가
             if (Math.random() < 0.35) {
                 state.kills[loser] += 1;
                 state.gold[loser] += (GAME_RULES.GOLD.KILL + GAME_RULES.GOLD.ASSIST);
                 combatMsg += ` (상대 ${loserName} 1킬 반격)`;
             }
-
-            if (!eventLog) eventLog = combatMsg;
-            else eventLog += ` | ${combatMsg}`;
+            addEvent(combatSec, combatMsg);
         }
+
+        // 2. 포탑 공략 로직 (교전 후 약간의 시간차인 combatSec + 5초부터 시작)
+        let pushBaseSec = combatOccurred ? combatSec + 5 : Math.floor(Math.random() * 50);
+        if (pushBaseSec > 59) pushBaseSec = 59;
 
         let targetLanes = [MAP_LANES[Math.floor(Math.random() * MAP_LANES.length)]];
         if (state.baronBuff.side === winner) targetLanes = MAP_LANES;
 
-        targetLanes.forEach(lane => {
+        targetLanes.forEach((lane, idx) => {
+            // 다중 라인 푸시 시 시간차 두기
+            let currentPushSec = pushBaseSec + (idx * 3); 
+            if (currentPushSec > 59) currentPushSec = 59;
+
             const enemyLane = state.structures[loser][lane];
             let pushPower = 1.0 + (powerDiffRatio * 2);
             if (state.baronBuff.side === winner) pushPower += 1.0;
             if (state.elderBuff.side === winner) pushPower += 2.0;
 
             if (!enemyLane.tier1.destroyed) {
-                if (time < GAME_RULES.OBJECTIVES.PLATES.end_time) {
+                // [수정사항 1] 4분 이후부터 채굴 가능
+                if (time >= GAME_RULES.OBJECTIVES.PLATES.start_time && time < GAME_RULES.OBJECTIVES.PLATES.end_time) {
                     if (Math.random() < 0.4 * pushPower) {
                          if (enemyLane.tier1.plates > 0) {
                              enemyLane.tier1.plates--;
                              const plateGold = GAME_RULES.GOLD.TURRET.OUTER_PLATE.local + (GAME_RULES.GOLD.TURRET.OUTER_PLATE.team * 5);
                              state.gold[winner] += plateGold;
                              
-                             // [수정사항 1] 방패 채굴 로그 무조건 출력
                              const plateCount = 6 - enemyLane.tier1.plates;
-                             let plateMsg = `[${time}분] 💰 ${winnerName}, ${lane} 포탑 방패 채굴 (${plateCount}/6)`;
+                             let plateMsg = `💰 ${winnerName}, ${lane} 포탑 방패 채굴 (${plateCount}/6)`;
                              
                              if (enemyLane.tier1.plates === 0) {
                                  enemyLane.tier1.destroyed = true;
-                                 plateMsg = `[${time}분] 💥 ${winnerName}, ${lane} 1차 포탑 파괴 (모든 방패 파괴)`;
+                                 plateMsg = `💥 ${winnerName}, ${lane} 1차 포탑 파괴 (모든 방패 파괴)`;
                              }
-
-                             if (!eventLog) eventLog = plateMsg;
-                             else eventLog += ` | ${plateMsg}`;
+                             addEvent(currentPushSec, plateMsg);
                          }
                     }
-                } else {
+                } else if (time >= GAME_RULES.OBJECTIVES.PLATES.end_time) {
+                    // 14분 이후 일반 철거
                     if (Math.random() < 0.3 * pushPower) {
                         enemyLane.tier1.destroyed = true;
                         state.gold[winner] += 500; 
-                        let pushMsg = `[${time}분] 💥 ${winnerName}, ${lane} 1차 포탑 파괴`;
-                        if (!eventLog) eventLog = pushMsg;
-                        else eventLog += ` | ${pushMsg}`;
+                        addEvent(currentPushSec, `💥 ${winnerName}, ${lane} 1차 포탑 파괴`);
                     }
                 }
             } else if (!enemyLane.tier2.destroyed) {
@@ -516,26 +532,20 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
                     let localG = lane === 'MID' ? GAME_RULES.GOLD.TURRET.INNER_MID.local : GAME_RULES.GOLD.TURRET.INNER_SIDE.local;
                     let teamG = lane === 'MID' ? GAME_RULES.GOLD.TURRET.INNER_MID.team : GAME_RULES.GOLD.TURRET.INNER_SIDE.team;
                     state.gold[winner] += (localG + (teamG * 5));
-                    let pushMsg = `[${time}분] 💥 ${winnerName}, ${lane} 2차 포탑 파괴`;
-                    if (!eventLog) eventLog = pushMsg;
-                    else eventLog += ` | ${pushMsg}`;
+                    addEvent(currentPushSec, `💥 ${winnerName}, ${lane} 2차 포탑 파괴`);
                 }
             } else if (!enemyLane.tier3.destroyed) {
                 if (Math.random() < 0.2 * pushPower) {
                     enemyLane.tier3.destroyed = true;
                     state.gold[winner] += (GAME_RULES.GOLD.TURRET.INHIB_TURRET.local + (GAME_RULES.GOLD.TURRET.INHIB_TURRET.team * 5));
-                    let pushMsg = `[${time}분] 🚨 ${winnerName}, ${lane} 3차(억제기) 포탑 파괴`;
-                    if (!eventLog) eventLog = pushMsg;
-                    else eventLog += ` | ${pushMsg}`;
+                    addEvent(currentPushSec, `🚨 ${winnerName}, ${lane} 3차(억제기) 포탑 파괴`);
                 }
             } else if (!enemyLane.inhib.destroyed) {
                 if (Math.random() < 0.3 * pushPower) {
                     enemyLane.inhib.destroyed = true;
                     enemyLane.inhib.respawnTime = time + 5;
                     state.gold[winner] += 50;
-                    let pushMsg = `[${time}분] 🚧 ${winnerName}, ${lane} 억제기 파괴! 슈퍼 미니언 생성`;
-                    if (!eventLog) eventLog = pushMsg;
-                    else eventLog += ` | ${pushMsg}`;
+                    addEvent(currentPushSec, `🚧 ${winnerName}, ${lane} 억제기 파괴! 슈퍼 미니언 생성`);
                 }
             } else {
                 if (Math.random() < 0.2 * pushPower) {
@@ -545,29 +555,29 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
                     
                     state.nexusHealth[loser] -= dmg;
                     if (state.nexusHealth[loser] <= 0) {
-                        // End logic
-                    } else if (!eventLog && Math.random() < 0.5) {
-                         eventLog = `[${time}분] ${winnerName}, 쌍둥이 포탑 및 넥서스 타격 중...`;
+                        // End logic handled by loop condition
+                    } else if (Math.random() < 0.5) {
+                         addEvent(currentPushSec, `${winnerName}, 쌍둥이 포탑 및 넥서스 타격 중...`);
                     }
                 }
             }
         });
     }
 
-    if (eventLog) logs.push(eventLog);
+    // [수정사항 2] 시간 순 정렬 후 로그 반영
+    minuteEvents.sort((a, b) => a.sec - b.sec);
+    minuteEvents.forEach(evt => logs.push(evt.message));
   }
 
   const winnerSide = state.nexusHealth[SIDES.BLUE] > state.nexusHealth[SIDES.RED] ? SIDES.BLUE : SIDES.RED;
   const winnerName = winnerSide === SIDES.BLUE ? teamBlue.name : teamRed.name;
-  
-  logs.push(`[${time}분] 👑 ${winnerName}이(가) 넥서스를 파괴합니다! GG`);
-
   const randomSeconds = Math.floor(Math.random() * 60);
-  const formattedSeconds = randomSeconds < 10 ? `0${randomSeconds}` : randomSeconds;
+  
+  logs.push(`${formatTime(time, randomSeconds)} 👑 ${winnerName}이(가) 넥서스를 파괴합니다! GG`);
 
   return {
     winnerName: winnerName,
-    gameTime: `${time}분 ${formattedSeconds}초`,
+    gameTime: `${time}분 ${randomSeconds}초`,
     logs,
     finalKills: state.kills,
   };
