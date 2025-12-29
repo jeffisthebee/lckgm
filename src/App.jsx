@@ -4,9 +4,10 @@ import playerList from './data/players.json';
 import rawChampionList from './data/champions.json';
 
 // ==========================================
-// [통합] LoL eSports 시뮬레이션 엔진 (v8.0)
-// - [MOD] 데스 타이머 공식 정밀 수정
-// - [KEEP] 레벨/경험치, 골드/XP 페널티, POG, 밴픽 시스템 유지
+// [통합] LoL eSports 시뮬레이션 엔진 (v9.0)
+// - [MOD] 데스 타이머 후반 페널티 강화 (30분/35분 구간)
+// - [FIX] 로그 타임스탬프 정렬 (넥서스 파괴 시점 동기화)
+// - [KEEP] 레벨/경험치, POG, 밴픽, 골드 시스템 유지
 // ==========================================
 
 const SIDES = { BLUE: 'BLUE', RED: 'RED' };
@@ -464,20 +465,16 @@ function calculateIndividualIncome(pick, time, aliveRatio = 1.0) {
     return { gold: finalGold, xp: finalXP };
 }
 
-// [MOD] 데스 타이머 공식 업데이트
+// [MOD] 데스 타이머 공식 업데이트 (30분, 35분 구간 추가)
 function calculateDeathTimer(level, time) {
     // 1. 기본 + 레벨 비례
     let timer = 8 + (level * 1.5);
 
-    // 2. 15분 이후 추가 페널티
-    if (time > 15) {
-        timer += (time - 15) * 0.15;
-    }
-
-    // 3. 25분 이후 추가 페널티
-    if (time > 25) {
-        timer += (time - 25) * 0.3;
-    }
+    // 2. 시간대별 추가 페널티 (누적)
+    if (time > 15) timer += (time - 15) * 0.15;
+    if (time > 25) timer += (time - 25) * 0.3;
+    if (time > 30) timer += (time - 30) * 0.4; // [NEW] 30분 이후 +0.4/분
+    if (time > 35) timer += (time - 35) * 0.5; // [NEW] 35분 이후 +0.5/분
 
     // 최대 150초 제한 (안전장치)
     return Math.min(150, timer);
@@ -487,6 +484,8 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
   let time = 0; 
   const logs = [];
   const { difficulty, playerTeamName } = simOptions;
+  let gameOver = false; // [FIX] 게임 종료 상태 추적용 플래그
+  let endSecond = 0;    // [FIX] 게임 종료 정확한 시간(초)
   
   [...picksBlue, ...picksRed].forEach(p => {
       p.currentGold = GAME_RULES.GOLD.START;
@@ -770,7 +769,6 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
                 killer.stats.kills += 1;
                 victim.stats.deaths += 1;
                 
-                // [NEW] 데스 타이머 공식 적용
                 const deathTime = calculateDeathTimer(victim.level, time);
                 victim.deadUntil = combatAbsTime + deathTime;
 
@@ -894,28 +892,41 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
                     
                     state.nexusHealth[loser] -= dmg;
                      if (state.nexusHealth[loser] <= 0) {
-                    } else if (Math.random() < 0.5) {
+                         // [FIX] 넥서스 파괴 시점 기록 및 루프 종료 준비
+                         addEvent(currentPushSec, `👑 ${winnerName}이(가) 넥서스를 파괴합니다! GG`);
+                         gameOver = true;
+                         endSecond = currentPushSec;
+                         break; // 구조물 루프 탈출
+                     } else if (Math.random() < 0.5) {
                          addEvent(currentPushSec, `${winnerName}, 쌍둥이 포탑 및 넥서스 타격 중...`);
-                    }
+                     }
                 }
             }
         });
     }
 
+    // [FIX] 이벤트 시간 순 정렬 및 게임 종료 시점 이후 로그 필터링
     minuteEvents.sort((a, b) => a.sec - b.sec);
+    
+    if (gameOver) {
+        minuteEvents = minuteEvents.filter(e => e.sec <= endSecond);
+        minuteEvents.forEach(evt => logs.push(evt.message));
+        break; // 메인 게임 루프 탈출
+    }
+
     minuteEvents.forEach(evt => logs.push(evt.message));
   }
 
   const winnerSide = state.nexusHealth[SIDES.BLUE] > state.nexusHealth[SIDES.RED] ? SIDES.BLUE : SIDES.RED;
   const winnerName = winnerSide === SIDES.BLUE ? teamBlue.name : teamRed.name;
-  const randomSeconds = Math.floor(Math.random() * 60);
   
-  logs.push(`${formatTime(time, randomSeconds)} 👑 ${winnerName}이(가) 넥서스를 파괴합니다! GG`);
+  // [FIX] 최종 시간 포맷팅 수정
+  const finalTimeStr = gameOver ? formatTime(time, endSecond) : formatTime(time, 0);
 
   return {
     winnerName: winnerName,
     winnerSide: winnerSide,
-    gameTime: `${time}분 ${randomSeconds}초`,
+    gameTime: `${time}분 ${gameOver ? endSecond : 0}초`, // [FIX] 정확한 종료 초 표기
     totalMinutes: time,
     logs,
     finalKills: state.kills,
