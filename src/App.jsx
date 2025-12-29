@@ -2206,7 +2206,7 @@ function Dashboard() {
   // [수정됨] Dashboard 내부 로직 통합 (여기서부터 복사하세요)
   // ==========================================
 
-  // [1] 내 경기 시작하기 (안전장치 추가됨)
+  // [수정됨] 안전장치가 강화된 내 경기 시작 함수
   const handleStartMyMatch = () => {
     try {
       // 1. 경기 데이터 확인
@@ -2214,43 +2214,44 @@ function Dashboard() {
         alert("진행할 경기가 없습니다.");
         return;
       }
-  
-      // 2. 팀 ID 정규화 (숫자로 변환)
-      const t1Id = typeof nextGlobalMatch.t1 === 'object' ? nextGlobalMatch.t1.id : parseInt(nextGlobalMatch.t1);
-      const t2Id = typeof nextGlobalMatch.t2 === 'object' ? nextGlobalMatch.t2.id : parseInt(nextGlobalMatch.t2);
-  
-      // 3. 팀 객체 찾기
+
+      // 2. 팀 ID 정규화 (숫자형/객체형 모두 대응)
+      // nextGlobalMatch.t1이 객체일 수도 있고, 숫자 ID일 수도 있습니다.
+      const t1Id = typeof nextGlobalMatch.t1 === 'object' ? nextGlobalMatch.t1.id : parseInt(nextGlobalMatch.t1, 10);
+      const t2Id = typeof nextGlobalMatch.t2 === 'object' ? nextGlobalMatch.t2.id : parseInt(nextGlobalMatch.t2, 10);
+
+      // 3. 팀 객체 찾기 (데이터 검증 필수)
       const t1Obj = teams.find(t => t.id === t1Id);
       const t2Obj = teams.find(t => t.id === t2Id);
-  
+
+      // [핵심 오류 방지] 팀 데이터를 찾지 못했을 경우 중단
       if (!t1Obj || !t2Obj) {
-        console.error("팀 찾기 실패:", { t1Id, t2Id, nextGlobalMatch });
-        alert(`팀 데이터 오류! T1 ID: ${t1Id}, T2 ID: ${t2Id}`);
+        console.error("팀 데이터 매칭 실패:", { match: nextGlobalMatch, t1Id, t2Id });
+        alert(`팀 데이터를 찾을 수 없습니다. (ID: ${t1Id} vs ${t2Id})\n데이터 초기화가 필요할 수 있습니다.`);
         return;
       }
-  
-      // 4. 로스터 가져오기 (안전 장치 추가)
+
+      // 4. 로스터 가져오기
       const t1Roster = getTeamRoster(t1Obj.name);
       const t2Roster = getTeamRoster(t2Obj.name);
-  
+
+      // [핵심 오류 방지] 로스터가 비어있거나 부족할 경우
       if (!t1Roster || t1Roster.length < 5) {
-        alert(`${t1Obj.name} 로스터가 부족합니다. (현재: ${t1Roster?.length || 0}명)`);
+        alert(`[오류] ${t1Obj.name} 팀의 로스터 데이터가 손상되었습니다.`);
         return;
       }
       if (!t2Roster || t2Roster.length < 5) {
-        alert(`${t2Obj.name} 로스터가 부족합니다. (현재: ${t2Roster?.length || 0}명)`);
+        alert(`[오류] ${t2Obj.name} 팀의 로스터 데이터가 손상되었습니다.`);
         return;
       }
-  
-      // 5. 라이브 매치 데이터 설정
-      console.log("경기 시작:", {
-        match: nextGlobalMatch,
+
+      // 5. 라이브 매치 데이터 설정 및 모드 진입
+      console.log("경기 시뮬레이션 시작:", {
         teamA: t1Obj.name,
         teamB: t2Obj.name,
-        rosterA: t1Roster.length,
-        rosterB: t2Roster.length
+        patch: league.metaVersion || 'Unknown'
       });
-  
+
       setLiveMatchData({
         match: nextGlobalMatch,
         teamA: { ...t1Obj, roster: t1Roster },
@@ -2258,61 +2259,10 @@ function Dashboard() {
       });
       
       setIsLiveGameMode(true);
-  
+
     } catch (error) {
-      console.error("경기 시작 오류:", error);
+      console.error("경기 시작 중 치명적 오류 발생:", error);
       alert(`경기 시작 실패: ${error.message}`);
-    }
-  };
-
-  // [2] 경기 종료 처리 (이 함수가 없으면 흰 화면 뜸)
-  const handleLiveMatchComplete = (match, resultData) => {
-    // 1. 매치 결과 업데이트
-    const updatedMatches = league.matches.map(m => {
-        if (m.id === match.id) {
-            return {
-                ...m,
-                status: 'finished',
-                result: {
-                    winner: resultData.winner,
-                    score: resultData.scoreString
-                }
-            };
-        }
-        return m;
-    });
-
-    // 2. 리그 데이터 저장 및 상태 갱신
-    const updatedLeague = { ...league, matches: updatedMatches };
-    updateLeague(league.id, updatedLeague);
-    setLeague(updatedLeague);
-    recalculateStandings(updatedLeague);
-
-    // 3. 다음 라운드 생성 체크 (플레이인/플레이오프)
-    checkAndGenerateNextPlayInRound(updatedMatches);
-    checkAndGenerateNextPlayoffRound(updatedMatches);
-
-    // 4. 모달 닫기 및 데이터 초기화
-    setIsLiveGameMode(false);
-    setLiveMatchData(null);
-    
-    // 5. 알림
-    setTimeout(() => alert(`경기 종료! 승리: ${resultData.winner}`), 100);
-  };
-
-  // [3] 드래프트 시작 핸들러
-  const handleDraftStart = () => {
-    if (hasDrafted) return;
-    setIsDrafting(true);
-    const pool = teams.filter(t => t.id !== 1 && t.id !== 2);
-    setDraftPool(pool);
-    setDraftGroups({ baron: [1], elder: [2] }); 
-
-    if (isCaptain) {
-        if (myTeam.id === 1) { setDraftTurn('user'); } 
-        else { setDraftTurn('cpu'); triggerCpuPick(pool, { baron: [1], elder: [2] }, 'cpu'); }
-    } else {
-        handleAutoDraft(pool);
     }
   };
 
@@ -2766,21 +2716,25 @@ function Dashboard() {
         </div>
       )}
 
-      {isLiveGameMode && liveMatchData && (
+{isLiveGameMode && liveMatchData && (
         <LiveGamePlayer 
             match={liveMatchData.match}
             teamA={liveMatchData.teamA}
             teamB={liveMatchData.teamB}
             simOptions={{
-                currentChampionList: league.currentChampionList,
+                // [핵심 수정] league.currentChampionList가 없을 경우 기본 championList를 사용하도록 Fallback 처리
+                currentChampionList: league.currentChampionList || championList,
                 difficulty: league.difficulty,
                 playerTeamName: myTeam.name
             }}
             onMatchComplete={handleLiveMatchComplete}
-            onClose={() => setIsLiveGameMode(false)}
+            onClose={() => {
+                setIsLiveGameMode(false);
+                setLiveMatchData(null);
+            }}
         />
       )}
-      {/* [끝] 여기까지 추가 */}
+      
 
       {isDrafting && (
         <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
