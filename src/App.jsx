@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Routes, Route, useNavigate, useParams, Navigate } from 'react-router-dom';
 import playerList from './data/players.json';
 import rawChampionList from './data/champions.json';
