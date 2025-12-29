@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-// import { Routes, Route, useNavigate, useParams, Navigate } from 'react-router-dom';
+import { Routes, Route, useNavigate, useParams, Navigate } from 'react-router-dom';
 
 // 데이터 임포트 (경로는 실제 프로젝트에 맞게 조정)
 import playerList from './data/players.json';
