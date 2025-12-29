@@ -4,11 +4,12 @@ import playerList from './data/players.json';
 import rawChampionList from './data/champions.json';
 
 // ==========================================
-// 0. 시뮬레이션 엔진 및 상수 (한국어 통일 및 로직 개선)
+// [통합] LoL eSports 시뮬레이션 엔진 (Final Version)
 // ==========================================
 
 const SIDES = { BLUE: 'BLUE', RED: 'RED' };
 
+// 1. 게임 상수 및 규칙 (한국어 통일)
 const GAME_CONSTANTS = {
   DRAGONS: {
     TYPES: ['화학공학', '바람', '대지', '화염', '바다', '마법공학'],
@@ -20,11 +21,6 @@ const GAME_CONSTANTS = {
       '바다': { description: '체력 재생' },
       '마법공학': { description: '스킬 가속 및 공속' }
     }
-  },
-  ROLE_QUEST_BONUS: {
-    TOP: { effect: { splitPushPower: 1.1 } },
-    MID: { effect: { roamingSpeed: 1.1 } },
-    ADC: { effect: { damageMultiplier: 1.15 } }
   }
 };
 
@@ -51,7 +47,7 @@ const GAME_RULES = {
     ASSASSIN: '암살자', FIGHTER: '전사', MAGE: '마법사',
     MARKSMAN: '원거리', TANK: '탱커', SUPPORT: '서포터',
   },
-  // 드래곤 버프 및 역할군 키 한국어 변경
+  // 드래곤 버프 (키값 한국어)
   DRAGON_BUFFS: {
     '화염': { '원거리': 0.03, '마법사': 0.03, '전사': 0.05, '탱커': 0.01, '서포터': 0.01, '암살자': 0.01 },
     '대지': { '탱커': 0.03, '전사': 0.02, '서포터': 0.02, '원거리': 0.01, '마법사': 0.01, '암살자': 0.01 },
@@ -60,7 +56,7 @@ const GAME_RULES = {
     '마법공학': { '원거리': 0.03, '마법사': 0.02, '암살자': 0.015, '전사': 0.015, '탱커': 0.01, '서포터': 0.01 },
     '화학공학': { '전사': 0.04, '탱커': 0.03, '서포터': 0.02, '암살자': 0.01, '원거리': 0.01, '마법사': 0.01 },
   },
-  // 드래곤 영혼 및 역할군 키 한국어 변경
+  // 드래곤 영혼 (키값 한국어)
   DRAGON_SOULS: {
     '화염': { '원거리': 0.25, '마법사': 0.25, '암살자': 0.22, '전사': 0.15, '탱커': 0.08, '서포터': 0.08 },
     '대지': { '탱커': 0.25, '전사': 0.22, '원거리': 0.15, '마법사': 0.15, '암살자': 0.12, '서포터': 0.10 },
@@ -69,7 +65,6 @@ const GAME_RULES = {
     '마법공학': { '원거리': 0.24, '마법사': 0.20, '전사': 0.20, '탱커': 0.15, '암살자': 0.15, '서포터': 0.10 },
     '화학공학': { '전사': 0.28, '탱커': 0.22, '암살자': 0.15, '원거리': 0.10, '마법사': 0.10, '서포터': 0.10 },
   },
-  // 상성표 한국어 변경
   COUNTERS: {
     '마법사': ['탱커', '전사'], '원거리': ['탱커', '전사'],
     '탱커': ['암살자'], '전사': ['암살자'], '암살자': ['마법사', '원거리'],
@@ -119,6 +114,7 @@ const DRAFT_SEQUENCE = [
   { type: 'PICK', side: 'RED', label: '레드 5픽' }
 ];
 
+// 숙련도 맵 초기화 (외부 playerList 변수 참조)
 const MASTERY_MAP = playerList.reduce((acc, player) => {
   acc[player.이름] = { id: player.이름, pool: [] };
   return acc;
@@ -126,12 +122,11 @@ const MASTERY_MAP = playerList.reduce((acc, player) => {
 
 const championList = rawChampionList;
 
-// --- 헬퍼 함수 ---
-// 한국어 역할군 반환으로 수정
+// 2. 헬퍼 함수들
 const getChampionClass = (champ, position) => {
   if (!champ) return GAME_RULES.DEFAULT_ROLES[position] || '전사';
   
-  // 데이터가 영어로 들어오더라도 한국어로 변환, 이미 한국어면 그대로 사용
+  // 영어 -> 한국어 변환 매핑
   const classMapping = {
     'Assassin': '암살자', 'Fighter': '전사', 'Marksman': '원거리',
     'Mage': '마법사', 'Tank': '탱커', 'Support': '서포터',
@@ -195,6 +190,7 @@ function getBestAvailableChampion(player, availableChampions) {
   return bestChamp || pool[0];
 }
 
+// 3. 밴픽 시뮬레이션
 function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChampionList) {
   let localBans = new Set([...fearlessBans]);
   let picks = { BLUE: {}, RED: {} }; 
@@ -271,6 +267,7 @@ function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChampionList
   };
 }
 
+// 4. 팀 파워 계산
 function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks) {
   let totalPower = 0;
   const phase = time >= 26 ? 'LATE' : (time >= 15 ? 'MID' : 'EARLY');
@@ -291,6 +288,7 @@ function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks) 
     
     let combatPower = (rawStat * SIM_CONSTANTS.WEIGHTS.STATS) + (metaScore * SIM_CONSTANTS.WEIGHTS.META) + (masteryScore * SIM_CONSTANTS.WEIGHTS.MASTERY);
 
+    // 상성 관계 (한국어 클래스명 사용)
     const enemyLaner = enemyPicks[idx];
     if (enemyLaner) {
         const myClass = pick.classType;
@@ -300,7 +298,7 @@ function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks) 
         }
     }
 
-    // 드래곤 버프 적용 (한국어 키 사용)
+    // 드래곤 버프 적용
     Object.entries(activeBuffs.dragonStacks).forEach(([dType, count]) => {
       const buffTable = GAME_RULES.DRAGON_BUFFS[dType];
       if (buffTable && buffTable[pick.classType]) {
@@ -308,6 +306,7 @@ function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks) 
       }
     });
 
+    // 드래곤 영혼 적용
     if (activeBuffs.soul) {
       const soulTable = GAME_RULES.DRAGON_SOULS[activeBuffs.soul.type];
       if (soulTable && soulTable[pick.classType]) {
@@ -333,27 +332,19 @@ function resolveCombat(powerA, powerB) {
     return Math.random() < winChanceA ? SIDES.BLUE : SIDES.RED;
 }
 
-// ==========================================
-// [수정됨] 인게임 시뮬레이션 엔진 (드래곤 로직 & 결과 요약 개선)
-// ==========================================
-
+// 5. 인게임 시뮬레이션 엔진 (핵심 로직 수정됨)
 function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
-  let time = 0; // 분 단위
+  let time = 0;
   const logs = [];
   const { difficulty, playerTeamName } = simOptions;
   
-  // 1. 드래곤 순서 및 영혼 로직 수정 (LoL 공식 규칙 적용)
+  // 드래곤 설정 (LoL 공식 규칙: 1, 2용은 랜덤 & 서로 다름. 3번째부터는 협곡 속성 고정)
   const dragonTypes = ['화염', '대지', '바람', '바다', '마법공학', '화학공학'];
-  
-  // 랜덤으로 섞기
   const shuffledDragons = dragonTypes.sort(() => Math.random() - 0.5);
-  
   const firstDragonType = shuffledDragons[0];
   const secondDragonType = shuffledDragons[1];
-  const mapElementType = shuffledDragons[2]; // 3번째 용이자 협곡의 주인 (영혼 타입)
-  
-  // 드래곤 스택 계산용 변수
-  let dragonSpawnCount = 0; 
+  const mapElementType = shuffledDragons[2]; // 협곡의 주인 (영혼 타입)
+  let dragonSpawnCount = 0;
 
   let state = {
     gold: { [SIDES.BLUE]: GAME_RULES.GOLD.START * 5, [SIDES.RED]: GAME_RULES.GOLD.START * 5 },
@@ -371,15 +362,12 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
     nexusHealth: { [SIDES.BLUE]: 100, [SIDES.RED]: 100 }
   };
 
-  // 게임 루프
   while (state.nexusHealth[SIDES.BLUE] > 0 && state.nexusHealth[SIDES.RED] > 0 && time < 70) {
     time++;
     
-    // 골드 획득
     state.gold[SIDES.BLUE] += GAME_RULES.GOLD.PASSIVE_PER_MIN * 5;
     state.gold[SIDES.RED] += GAME_RULES.GOLD.PASSIVE_PER_MIN * 5;
 
-    // 버프 상태 확인
     const getActiveBuffs = (side) => ({
       dragonStacks: state.dragons[side].reduce((acc, d) => ({ ...acc, [d]: (acc[d] || 0) + 1 }), {}),
       soul: state.soul?.side === side ? { type: state.soul.type } : null,
@@ -391,26 +379,20 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
     const activeBuffsBlue = getActiveBuffs(SIDES.BLUE);
     const activeBuffsRed = getActiveBuffs(SIDES.RED);
 
-    // 팀 파워 계산
     let powerBlue = calculateTeamPower(picksBlue, time, activeBuffsBlue, state.gold[SIDES.BLUE] - state.gold[SIDES.RED], picksRed);
     let powerRed = calculateTeamPower(picksRed, time, activeBuffsRed, state.gold[SIDES.RED] - state.gold[SIDES.BLUE], picksBlue);
     
-    // 난이도 보정
     if (playerTeamName && difficulty) {
         const multiplier = SIM_CONSTANTS.DIFFICULTY_MULTIPLIERS[difficulty] || 1.0;
         if (teamBlue.name !== playerTeamName) powerBlue *= multiplier;
         if (teamRed.name !== playerTeamName) powerRed *= multiplier;
     }
 
-    // 변수 적용
     powerBlue *= (1 + (Math.random() * SIM_CONSTANTS.VAR_RANGE * 2 - SIM_CONSTANTS.VAR_RANGE));
     powerRed *= (1 + (Math.random() * SIM_CONSTANTS.VAR_RANGE * 2 - SIM_CONSTANTS.VAR_RANGE));
 
     let eventLog = null;
 
-    // --- 오브젝트 이벤트 ---
-
-    // 유충
     if (time === GAME_RULES.OBJECTIVES.GRUBS.time) {
       const winner = resolveCombat(powerBlue, powerRed);
       state.grubs[winner] += GAME_RULES.OBJECTIVES.GRUBS.count;
@@ -418,7 +400,6 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
       eventLog = `[${time}분] ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name}이(가) 공허 유충을 처치합니다!`;
     }
 
-    // 전령
     if (time === GAME_RULES.OBJECTIVES.HERALD.time) {
       const winner = resolveCombat(powerBlue, powerRed);
       const loser = winner === SIDES.BLUE ? SIDES.RED : SIDES.BLUE;
@@ -429,14 +410,13 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
       }
     }
 
-    // [수정됨] 드래곤 스폰 로직
     if (time >= state.nextDragonTime && !state.soul) {
       const winner = resolveCombat(powerBlue, powerRed);
       
       let currentDragonName = '';
       if (dragonSpawnCount === 0) currentDragonName = firstDragonType;
       else if (dragonSpawnCount === 1) currentDragonName = secondDragonType;
-      else currentDragonName = mapElementType; // 3번째부터는 무조건 맵 속성 용
+      else currentDragonName = mapElementType;
 
       state.dragons[winner].push(currentDragonName);
       state.gold[winner] += GAME_RULES.OBJECTIVES.DRAGON.gold;
@@ -444,59 +424,48 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
 
       eventLog = `[${time}분] ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name}, ${currentDragonName} 드래곤 처치!`;
       
-      // 영혼 획득 체크 (4스택)
       if (state.dragons[winner].length === 4) {
-        state.soul = { side: winner, type: mapElementType }; // 영혼 종류는 맵 속성과 동일
+        state.soul = { side: winner, type: mapElementType };
         state.nextElderTime = time + GAME_RULES.OBJECTIVES.ELDER.spawn_after_soul;
         eventLog += ` (👑 ${mapElementType} 영혼 획득!)`;
       } else {
         state.nextDragonTime = time + GAME_RULES.OBJECTIVES.DRAGON.respawn;
-        // 2번째 용이 처치된 직후라면 협곡 변화 알림
         if (dragonSpawnCount === 2) {
              eventLog += ` (협곡이 ${mapElementType} 속성으로 변화합니다)`;
         }
       }
     }
 
-    // 바론
     if (time >= state.nextBaronTime && !(state.baronBuff.side && state.baronBuff.endTime >= time)) {
-      if (Math.random() > 0.6) { // 바론은 바로바로 안 칠수도 있음
+      if (Math.random() > 0.6) {
         const winner = resolveCombat(powerBlue * 0.9, powerRed * 0.9);
         state.baronBuff = { side: winner, endTime: time + GAME_RULES.OBJECTIVES.BARON.duration };
         state.gold[winner] += GAME_RULES.OBJECTIVES.BARON.gold;
-        state.nextBaronTime = time + GAME_RULES.OBJECTIVES.DRAGON.respawn; // 바론 리젠시간 대신 드래곤 리젠시간 변수 재활용 (약 5~6분)
+        state.nextBaronTime = time + GAME_RULES.OBJECTIVES.DRAGON.respawn;
         eventLog = `[${time}분] 🟣 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name}이(가) 내셔 남작을 처치합니다!`;
       }
     }
 
-    // 장로
     if (time >= state.nextElderTime && !(state.elderBuff.side && state.elderBuff.endTime >= time)) {
       const winner = resolveCombat(powerBlue, powerRed);
       state.elderBuff = { side: winner, endTime: time + GAME_RULES.OBJECTIVES.ELDER.duration };
       state.nextElderTime = time + GAME_RULES.OBJECTIVES.ELDER.spawn_after_soul;
-      eventLog = `[${time}분] 🐲 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name}이(가) 장로 드래곤을 처치합니다! (게임이 곧 끝납니다)`;
+      eventLog = `[${time}분] 🐲 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name}이(가) 장로 드래곤을 처치합니다!`;
     }
 
-    // --- 교전 및 타워 철거 ---
     const powerDiffRatio = Math.abs(powerBlue - powerRed) / ((powerBlue + powerRed) / 2);
-    
-    // 교전 발생 조건 (힘 차이가 너무 나면 일방적 이득, 비슷하면 킬 교환)
     if (powerDiffRatio > 0.05 || Math.random() < 0.3) {
         const winner = powerBlue > powerRed ? SIDES.BLUE : SIDES.RED;
         const loser = winner === SIDES.BLUE ? SIDES.RED : SIDES.BLUE;
         
-        // 킬 발생
         if (Math.random() < 0.5) {
-            const kills = 1 + Math.floor(Math.random() * 2); // 1~3킬
+            const kills = 1 + Math.floor(Math.random() * 2);
             state.kills[winner] += kills;
-            // 지는 팀도 가끔 킬을 땀
-            if (Math.random() < 0.3) state.kills[loser] += 1;
-
+            if (Math.random() < 0.3) state.kills[loser] += 1; // 반격 킬
             state.gold[winner] += (GAME_RULES.GOLD.KILL + GAME_RULES.GOLD.ASSIST) * kills;
             if (!eventLog && Math.random() < 0.4) eventLog = `[${time}분] ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 교전 승리 (${kills}킬)`;
         }
         
-        // 철거 확률
         let pushChance = 0.2 + (powerDiffRatio * 2);
         if (state.baronBuff.side === winner) pushChance = 0.8;
         if (state.elderBuff.side === winner) pushChance = 0.99;
@@ -511,14 +480,12 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
                 state.gold[winner] += GAME_RULES.GOLD.TURRET.INHIB;
                 if (!eventLog) eventLog = `[${time}분] ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 억제기 파괴!`;
             } else {
-                // 넥서스 타격
                 state.nexusHealth[loser] -= (15 + (powerDiffRatio * 150));
                 if (state.baronBuff.side === winner) state.nexusHealth[loser] -= 30;
                 if (state.elderBuff.side === winner) state.nexusHealth[loser] -= 100;
-
+                
                 if (state.nexusHealth[loser] <= 0) {
-                    // [수정됨] 넥서스 파괴 문구 명시
-                    eventLog = `[${time}분] 👑 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name}이(가) 넥서스를 파괴하며 승리합니다!`;
+                    eventLog = `[${time}분] 👑 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name}이(가) 넥서스를 파괴합니다!`;
                 }
             }
         }
@@ -528,40 +495,38 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
   }
 
   const winnerSide = state.nexusHealth[SIDES.BLUE] > state.nexusHealth[SIDES.RED] ? SIDES.BLUE : SIDES.RED;
-  
-  // 리얼한 시간(초 단위) 생성을 위한 랜덤값
   const randomSeconds = Math.floor(Math.random() * 60);
   const formattedSeconds = randomSeconds < 10 ? `0${randomSeconds}` : randomSeconds;
-  
+
   return {
     winnerName: winnerSide === SIDES.BLUE ? teamBlue.name : teamRed.name,
-    gameTime: `${time}분 ${formattedSeconds}초`, // 초 단위 추가
+    gameTime: `${time}분 ${formattedSeconds}초`,
     logs,
     finalKills: state.kills,
   };
 }
 
-// [수정됨] 세트 결과 포맷팅 함수
+// 6. 결과 처리 및 포맷팅 (요약 헤더 추가됨)
 function simulateSet(teamA, teamB, setNumber, fearlessBans, simOptions) {
-  const { currentChampionList } = simOptions;
+  const { currentChampionList, difficulty, playerTeamName } = simOptions;
 
   // 1. 밴픽 진행
   const draftResult = runDraftSimulation(teamA, teamB, fearlessBans, currentChampionList);
   
   if (draftResult.picks.A.length < 5 || draftResult.picks.B.length < 5) {
-      // (기존 에러 처리 로직 유지)
-      const winnerName = draftResult.picks.A.length > draftResult.picks.B.length ? teamA.name : teamB.name;
-      return {
-          winnerName,
-          resultSummary: `[몰수승] ${winnerName} 승리`,
-          picks: draftResult.picks,
-          bans: draftResult.bans,
-          logs: [`[오류] 챔피언 선택 불가로 인한 경기 종료`],
-          usedChamps: [],
-          score: { A: '0', B: '0' }
-      };
+    const winnerName = draftResult.picks.A.length > draftResult.picks.B.length ? teamA.name : teamB.name;
+    return {
+        winnerName,
+        picks: draftResult.picks,
+        bans: draftResult.bans,
+        logs: [`[오류] 챔피언 선택 불가로 기권패 처리`],
+        usedChamps: [],
+        score: { A: '0', B: '0' },
+        resultSummary: '기권승'
+    };
   }
 
+  // 밴픽 결과에 상세 데이터 추가
   const addPlayerData = (picks, roster) => {
       return picks.map(p => {
           const playerData = roster.find(player => player.이름 === p.playerName);
@@ -581,27 +546,26 @@ function simulateSet(teamA, teamB, setNumber, fearlessBans, simOptions) {
   // 2. 인게임 시뮬레이션
   const gameResult = runGameTickEngine(teamA, teamB, picksA_detailed, picksB_detailed, simOptions);
 
-  // 3. 결과 포맷팅 및 요약 헤더 생성
+  // 3. 결과 포맷팅
   const usedChamps = [...draftResult.picks.A.map(p => p.champName), ...draftResult.picks.B.map(p => p.champName)];
-  
-  // 스코어 계산
+
+  // 스코어 및 요약 헤더 생성
   const scoreA = gameResult.winnerName === teamA.name ? gameResult.finalKills[SIDES.BLUE] : gameResult.finalKills[SIDES.RED];
   const scoreB = gameResult.winnerName === teamB.name ? gameResult.finalKills[SIDES.BLUE] : gameResult.finalKills[SIDES.RED];
   
-  // [추가됨] 화면 상단에 보여줄 요약 텍스트
   const resultSummary = `⏱️ ${gameResult.gameTime} | ⚔️ ${teamA.name} ${scoreA} : ${scoreB} ${teamB.name} | 🏆 승리: ${gameResult.winnerName}`;
 
-  // 로그의 맨 앞에 요약 정보를 추가하여 화면이 작을 때도 바로 보이게 함
+  // 로그 최상단에 요약 정보 추가
   const finalLogs = [
-      `========== [ 경기 결과 ] ==========`,
-      resultSummary,
-      `===================================`,
-      ...gameResult.logs
+    `========== [ 경기 결과 ] ==========`,
+    resultSummary,
+    `===================================`,
+    ...gameResult.logs
   ];
 
   return {
     winnerName: gameResult.winnerName,
-    resultSummary: resultSummary, // UI에서 별도로 쓸 수 있도록 키 추가
+    resultSummary: resultSummary,
     picks: draftResult.picks,
     bans: draftResult.bans,
     logs: finalLogs,
@@ -612,6 +576,41 @@ function simulateSet(teamA, teamB, setNumber, fearlessBans, simOptions) {
     }
   };
 }
+
+function simulateMatch(teamA, teamB, format = 'BO3', simOptions) {
+  const targetWins = format === 'BO5' ? 3 : 2;
+  let winsA = 0;
+  let winsB = 0;
+  let currentSet = 1;
+  let globalBanList = [];
+  
+  let matchHistory = [];
+
+  while (winsA < targetWins && winsB < targetWins) {
+    const currentFearlessBans = [...globalBanList];
+    const blueTeam = currentSet % 2 !== 0 ? teamA : teamB;
+    const redTeam = currentSet % 2 !== 0 ? teamB : teamA;
+
+    const setResult = simulateSet(blueTeam, redTeam, currentSet, currentFearlessBans, simOptions);
+    
+    if (setResult.winnerName === teamA.name) winsA++;
+    else winsB++;
+
+    matchHistory.push({
+      setNumber: currentSet,
+      winner: setResult.winnerName,
+      picks: blueTeam.name === teamA.name ? setResult.picks : { A: setResult.picks.B, B: setResult.picks.A },
+      bans: blueTeam.name === teamA.name ? setResult.bans : { A: setResult.bans.B, B: setResult.bans.A },
+      fearlessBans: currentFearlessBans,
+      logs: setResult.logs,
+      resultSummary: setResult.resultSummary, // 히스토리에도 요약 추가
+      scores: blueTeam.name === teamA.name ? setResult.score : { A: setResult.score.B, B: setResult.score.A }
+    });
+
+    globalBanList = [...globalBanList, ...setResult.usedChamps];
+    
+    currentSet++;
+  }
 
   const finalWinner = winsA > winsB ? teamA : teamB;
   const finalLoser = winsA > winsB ? teamB : teamA;
