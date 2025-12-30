@@ -347,7 +347,9 @@ function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChampionList
   return {
     picks: { A: mapPicks('BLUE', blueTeam.roster), B: mapPicks('RED', redTeam.roster) },
     bans: { A: blueBans, B: redBans },
-    draftLogs: logs
+    draftLogs: logs,
+    // expose the incoming global/fearless bans so callers (simulateSet / UI) can display them
+    fearlessBans: Array.isArray(fearlessBans) ? [...fearlessBans] : (fearlessBans ? [fearlessBans] : [])
   };
 }
 
