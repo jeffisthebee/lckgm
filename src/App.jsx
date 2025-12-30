@@ -503,23 +503,20 @@ function calculateDeathTimer(level, time) {
     return Math.min(150, timer);
 }
 
-// REPLACE: runGameTickEngine function in src/App.jsx with the following updated implementation
-// - Adds level-up minute events so LiveGamePlayer can show level progression
-// - Keeps behavior identical otherwise
 function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
-  let time = 0;
+  let time = 0; 
   const logs = [];
-  const { difficulty, playerTeamName } = simOptions || {};
-  let gameOver = false;
-  let endSecond = 0;
-
+  const { difficulty, playerTeamName } = simOptions;
+  let gameOver = false; // [FIX] 게임 종료 상태 추적용 플래그
+  let endSecond = 0;    // [FIX] 게임 종료 정확한 시간(초)
+   
   [...picksBlue, ...picksRed].forEach(p => {
       p.currentGold = GAME_RULES.GOLD.START;
-      p.level = p.level || 1;
-      p.xp = p.xp || 0;
-      p.deadUntil = 0;
-      p.stats = p.stats || { kills: 0, deaths: 0, assists: 0, damage: 0, takenDamage: 0 };
-      p.flashEndTime = 0;
+      p.level = 1;
+      p.xp = 0;
+      p.deadUntil = 0; 
+      p.stats = { kills: 0, deaths: 0, assists: 0, damage: 0, takenDamage: 0 }; 
+      p.flashEndTime = 0; 
   });
 
   const dragonTypes = ['화염', '대지', '바람', '바다', '마법공학', '화학공학'];
@@ -544,28 +541,18 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
         [SIDES.RED]: { TOP: initLane(), MID: initLane(), BOT: initLane() }
     },
     nexusHealth: { [SIDES.BLUE]: 100, [SIDES.RED]: 100 },
-    dragons: { [SIDES.BLUE]: [], [SIDES.RED]: [] },
+    dragons: { [SIDES.BLUE]: [], [SIDES.RED]: [] }, 
     grubs: { [SIDES.BLUE]: 0, [SIDES.RED]: 0 },
     soul: null,
     baronBuff: { side: null, endTime: 0 },
     elderBuff: { side: null, endTime: 0 },
-    nextDragonTimeAbs: GAME_RULES.OBJECTIVES.DRAGON.initial_spawn * 60,
-    nextBaronTimeAbs: GAME_RULES.OBJECTIVES.BARON.spawn * 60,
+    nextDragonTimeAbs: GAME_RULES.OBJECTIVES.DRAGON.initial_spawn * 60, 
+    nextBaronTimeAbs: GAME_RULES.OBJECTIVES.BARON.spawn * 60,        
     nextElderTimeAbs: Infinity,
   };
 
   const formatTime = (m, s) => `[${m}:${s < 10 ? '0' + s : s}]`;
-
-  const addEvent = (second, msg) => {
-    logs.push(msg);
-  };
-
-  // helper used inside minute loop to collect per-minute events
-  const minuteAddEventFactory = (logsArr, timeMinute) => (second, msg) => {
-    // push a fully-formatted string (timestamp included) so other code can parse [m:ss]
-    logsArr.push(`${formatTime(timeMinute, second)} ${msg}`);
-  };
-
+   
   const grantGoldToPlayer = (teamSide, playerIdx, amount) => {
       let finalAmount = amount;
       const myTeamGold = state.gold[teamSide];
@@ -597,34 +584,36 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
   const simulateDamage = (winnerSide, powerA, powerB) => {
       const winningPicks = winnerSide === SIDES.BLUE ? picksBlue : picksRed;
       const losingPicks = winnerSide === SIDES.BLUE ? picksRed : picksBlue;
-
+      
       winningPicks.forEach(p => {
-         if (p.deadUntil > (time * 60)) return;
+         if (p.deadUntil > (time * 60)) return; 
          const dmg = (p.currentGold / 10) + (Math.random() * 500);
          p.stats.damage += dmg;
-         const target = losingPicks[Math.floor(Math.random() * losingPicks.length)];
-         if (target) target.stats.takenDamage += dmg;
+         const target = losingPicks[Math.floor(Math.random() * 5)];
+         target.stats.takenDamage += dmg;
       });
       losingPicks.forEach(p => {
          if (p.deadUntil > (time * 60)) return;
          const dmg = (p.currentGold / 15) + (Math.random() * 300);
          p.stats.damage += dmg;
-         const target = winningPicks[Math.floor(Math.random() * winningPicks.length)];
-         if (target) target.stats.takenDamage += dmg;
+         const target = winningPicks[Math.floor(Math.random() * 5)];
+         target.stats.takenDamage += dmg;
       });
   };
 
   while (state.nexusHealth[SIDES.BLUE] > 0 && state.nexusHealth[SIDES.RED] > 0 && time < 70) {
     time++;
     let minuteEvents = [];
-    const minuteAddEvent = minuteAddEventFactory(minuteEvents, time);
-
+    const addEvent = (second, msg) => {
+        minuteEvents.push({ sec: second, message: `${formatTime(time, second)} ${msg}` });
+    };
+    
     const processIncome = (picks, teamSide) => {
         picks.forEach(p => {
             const startMinAbs = (time - 1) * 60;
             const endMinAbs = time * 60;
             let deadDuration = 0;
-
+            
             if (p.deadUntil > startMinAbs) {
                 const endOfDeath = Math.min(endMinAbs, p.deadUntil);
                 deadDuration = Math.max(0, endOfDeath - startMinAbs);
@@ -632,10 +621,10 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
             const aliveRatio = (60 - deadDuration) / 60;
 
             const income = calculateIndividualIncome(p, time, aliveRatio);
-
+            
             p.currentGold += income.gold;
             state.gold[teamSide] += income.gold;
-
+            
             if (p.level < 18) {
                 p.xp += income.xp;
                 let requiredXP = 180 + (p.level * 100);
@@ -643,10 +632,6 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
                     p.xp -= requiredXP;
                     p.level++;
                     requiredXP = 180 + (p.level * 100);
-                    // Add a minute event so LiveGamePlayer can pick up the level-up and reflect it live
-                    // choose a semi-random second within the minute for flavor
-                    const sec = Math.min(59, Math.max(1, Math.floor(Math.random() * 50)));
-                    minuteAddEvent(sec, `🔼 ${p.playerData?.이름 || p.playerName || 'Player'} 레벨업! LV ${p.level}`);
                 }
             }
         });
@@ -659,7 +644,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
             const inhib = state.structures[side][lane].inhib;
             if (inhib.destroyed && inhib.respawnTime <= time) {
                 inhib.destroyed = false;
-                minuteAddEvent(0, `${side === SIDES.BLUE ? teamBlue.name : teamRed.name}의 ${lane} 억제기가 재생되었습니다.`);
+                addEvent(0, `${side === SIDES.BLUE ? teamBlue.name : teamRed.name}의 ${lane} 억제기가 재생되었습니다.`);
             }
         });
     });
@@ -674,29 +659,29 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
 
     let powerBlue = calculateTeamPower(picksBlue, time, getActiveBuffs(SIDES.BLUE), 0, picksRed, time * 60);
     let powerRed = calculateTeamPower(picksRed, time, getActiveBuffs(SIDES.RED), 0, picksBlue, time * 60);
-
+    
     if (playerTeamName && difficulty) {
         const multiplier = SIM_CONSTANTS.DIFFICULTY_MULTIPLIERS[difficulty] || 1.0;
         if (teamBlue.name !== playerTeamName) powerBlue *= multiplier;
         if (teamRed.name !== playerTeamName) powerRed *= multiplier;
     }
-
+    
     powerBlue *= (1 + (Math.random() * SIM_CONSTANTS.VAR_RANGE * 2 - SIM_CONSTANTS.VAR_RANGE));
     powerRed *= (1 + (Math.random() * SIM_CONSTANTS.VAR_RANGE * 2 - SIM_CONSTANTS.VAR_RANGE));
 
     if (time === GAME_RULES.OBJECTIVES.GRUBS.time) {
       const winner = resolveCombat(powerBlue, powerRed);
       state.grubs[winner] += GAME_RULES.OBJECTIVES.GRUBS.count;
-      grantTeamGold(winner, GAME_RULES.OBJECTIVES.GRUBS.gold / 5);
+      grantTeamGold(winner, GAME_RULES.OBJECTIVES.GRUBS.gold / 5); 
       simulateDamage(winner, powerBlue, powerRed);
-      minuteAddEvent(5, `🐛 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 공허 유충 처치`);
+      addEvent(5, `🐛 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 공허 유충 처치`);
     }
 
     if (time === GAME_RULES.OBJECTIVES.HERALD.time) {
       const winner = resolveCombat(powerBlue, powerRed);
       grantTeamGold(winner, GAME_RULES.OBJECTIVES.HERALD.gold / 5);
       simulateDamage(winner, powerBlue, powerRed);
-      minuteAddEvent(10, `👁️ ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 전령 획득`);
+      addEvent(10, `👁️ ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 전령 획득`);
     }
 
     if ((time * 60 + 59) >= state.nextDragonTimeAbs && !state.soul && state.nextDragonTimeAbs !== Infinity) {
@@ -721,6 +706,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
         dragonSpawnCount++;
 
         let msg = `🐉 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name}, ${currentDragonName} 용 처치`;
+        
         if (state.dragons[winner].length === 4) {
             state.soul = { side: winner, type: mapElementType };
             state.nextDragonTimeAbs = Infinity;
@@ -729,11 +715,11 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
         } else {
             state.nextDragonTimeAbs = eventAbsTime + (GAME_RULES.OBJECTIVES.DRAGON.respawn * 60);
         }
-        minuteAddEvent(eventSec, msg);
+        addEvent(eventSec, msg);
     }
 
     if ((time * 60 + 59) >= state.nextBaronTimeAbs && !(state.baronBuff.side && state.baronBuff.endTime >= time)) {
-      if (Math.random() > 0.6 || time > 30) {
+      if (Math.random() > 0.6 || time > 30) { 
         const currentMinuteStartAbs = time * 60;
         const minValidSec = (currentMinuteStartAbs < state.nextBaronTimeAbs) ? (state.nextBaronTimeAbs - currentMinuteStartAbs) : 0;
         const eventSec = Math.floor(Math.random() * (60 - minValidSec)) + minValidSec;
@@ -746,8 +732,8 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
         simulateDamage(winner, pBlueObj, pRedObj);
         state.baronBuff = { side: winner, endTime: time + GAME_RULES.OBJECTIVES.BARON.duration };
         grantTeamGold(winner, GAME_RULES.OBJECTIVES.BARON.gold / 5);
-        state.nextBaronTimeAbs = eventAbsTime + (GAME_RULES.OBJECTIVES.DRAGON.respawn * 60);
-        minuteAddEvent(eventSec, `🟣 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 내셔 남작 처치!`);
+        state.nextBaronTimeAbs = eventAbsTime + (GAME_RULES.OBJECTIVES.DRAGON.respawn * 60); 
+        addEvent(eventSec, `🟣 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 내셔 남작 처치!`);
       }
     }
 
@@ -763,23 +749,23 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
         const winner = resolveCombat(pBlueObj, pRedObj);
         simulateDamage(winner, pBlueObj, pRedObj);
         state.elderBuff = { side: winner, endTime: time + GAME_RULES.OBJECTIVES.ELDER.duration };
-        state.nextElderTimeAbs = eventAbsTime + (GAME_RULES.OBJECTIVES.ELDER.spawn_after_soul * 60);
-        minuteAddEvent(eventSec, `🐲 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 장로 드래곤 처치!`);
+        state.nextElderTimeAbs = eventAbsTime + (GAME_RULES.OBJECTIVES.ELDER.spawn_after_soul * 60); 
+        addEvent(eventSec, `🐲 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 장로 드래곤 처치!`);
     }
 
     const powerDiffRatio = Math.abs(powerBlue - powerRed) / ((powerBlue + powerRed) / 2);
-
+    
     if (powerDiffRatio > 0.05 || Math.random() < (0.3 + (time * 0.005))) {
         const combatSec = Math.floor(Math.random() * 45);
         const combatAbsTime = time * 60 + combatSec;
 
         const pBlueCombat = calculateTeamPower(picksBlue, time, getActiveBuffs(SIDES.BLUE), 0, picksRed, combatAbsTime);
         const pRedCombat = calculateTeamPower(picksRed, time, getActiveBuffs(SIDES.RED), 0, picksBlue, combatAbsTime);
-
+        
         const winner = resolveCombat(pBlueCombat, pRedCombat);
         const loser = winner === SIDES.BLUE ? SIDES.RED : SIDES.BLUE;
         const winnerName = winner === SIDES.BLUE ? teamBlue.name : teamRed.name;
-
+        
         let combatOccurred = false;
 
         if (Math.random() < 0.6) {
@@ -788,10 +774,10 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
 
             const winnerKills = 1 + Math.floor(Math.random() * 2);
             state.kills[winner] += winnerKills;
-
+            
             const winningTeamPicks = winner === SIDES.BLUE ? picksBlue : picksRed;
             const losingTeamPicks = loser === SIDES.BLUE ? picksBlue : picksRed;
-
+            
             const getAlivePlayers = (picks) => picks.filter(p => p.deadUntil <= combatAbsTime);
 
             for(let k=0; k<winnerKills; k++) {
@@ -802,56 +788,54 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
 
                 const killer = aliveWinners[Math.floor(Math.random() * aliveWinners.length)];
                 const victim = aliveLosers[Math.floor(Math.random() * aliveLosers.length)];
-
+                
                 killer.stats.kills += 1;
                 victim.stats.deaths += 1;
-
+                
                 const deathTime = calculateDeathTimer(victim.level, time);
-                victim.deadUntil = combatAbsTime + Math.floor(deathTime);
+                victim.deadUntil = combatAbsTime + deathTime;
 
                 grantGoldToPlayer(winner, winningTeamPicks.indexOf(killer), GAME_RULES.GOLD.KILL);
-
+                
                 let flashMsg = '';
                 if (Math.random() < 0.35) {
-                    killer.flashEndTime = time + 5;
+                    killer.flashEndTime = time + 5; 
                     flashMsg = ' (⚡점멸 소모)';
                 }
                 if (Math.random() < 0.35) {
-                    victim.flashEndTime = time + 5;
+                    victim.flashEndTime = time + 5; 
                 }
 
                 const assistCount = Math.floor(Math.random() * 2) + 1;
-                const assistPlayers = [];
                 for(let a=0; a<assistCount; a++) {
                    const assistIdx = (winningTeamPicks.indexOf(killer) + a + 1) % 5;
                    winningTeamPicks[assistIdx].stats.assists += 1;
                    grantGoldToPlayer(winner, assistIdx, GAME_RULES.GOLD.ASSIST);
-                   assistPlayers.push(winningTeamPicks[assistIdx].playerName || winningTeamPicks[assistIdx].playerData?.이름);
                 }
 
-                const killMsg = `⚔️ [${killer.playerData?.포지션 || killer.playerRole}] ${killer.playerName || killer.playerData?.이름} (${killer.champName}) ➜ ☠️ [${victim.playerData?.포지션 || victim.playerRole}] ${victim.playerName || victim.playerData?.이름} (${victim.champName})${flashMsg} | 어시스트: ${assistPlayers.join(', ')}`;
-                minuteAddEvent(combatSec + k, killMsg);
+                const killMsg = `⚔️ [${killer.playerData.포지션}] ${killer.playerName}(${killer.champName}) ➜ ☠️ [${victim.playerData.포지션}] ${victim.playerName}(${victim.champName})${flashMsg} (부활 ${Math.floor(deathTime)}초)`;
+                addEvent(combatSec + k, killMsg);
             }
-
+            
             if (Math.random() < 0.35) {
                 const aliveLosers = getAlivePlayers(losingTeamPicks);
                 const aliveWinners = getAlivePlayers(winningTeamPicks);
-
+                
                 if (aliveLosers.length > 0 && aliveWinners.length > 0) {
                     state.kills[loser] += 1;
                     const counterKiller = aliveLosers[Math.floor(Math.random() * aliveLosers.length)];
                     const counterVictim = aliveWinners[Math.floor(Math.random() * aliveWinners.length)];
-
+                    
                     counterKiller.stats.kills += 1;
                     counterVictim.stats.deaths += 1;
-
+                    
                     const cDeathTime = calculateDeathTimer(counterVictim.level, time);
-                    counterVictim.deadUntil = combatAbsTime + Math.floor(cDeathTime);
+                    counterVictim.deadUntil = combatAbsTime + cDeathTime;
 
                     if (Math.random() < 0.35) counterKiller.flashEndTime = time + 5;
 
                     grantGoldToPlayer(loser, losingTeamPicks.indexOf(counterKiller), GAME_RULES.GOLD.KILL + GAME_RULES.GOLD.ASSIST);
-                    minuteAddEvent(combatSec + 2, `🛡️ [${counterKiller.playerData?.포지션 || counterKiller.playerRole}] ${counterKiller.playerName}의 반격! (${counterVictim.champName} 제압)`);
+                    addEvent(combatSec + 2, `🛡️ [${counterKiller.playerData.포지션}] ${counterKiller.playerName}의 반격! (${counterVictim.champName} 제압, 부활 ${Math.floor(cDeathTime)}초)`);
                 }
             }
         }
@@ -863,17 +847,17 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
         if (state.baronBuff.side === winner) targetLanes = MAP_LANES;
 
         targetLanes.forEach((lane, idx) => {
-            let currentPushSec = pushBaseSec + (idx * 3);
+            let currentPushSec = pushBaseSec + (idx * 3); 
             if (currentPushSec > 59) currentPushSec = 59;
 
             const enemyLane = state.structures[loser][lane];
-            let pushPower = 1.0 + (powerDiffRatio * 2);
+            let pushPower = 1.0 + (powerDiffRatio * 2); 
             if (state.baronBuff.side === winner) pushPower += 1.0;
             if (state.elderBuff.side === winner) pushPower += 2.0;
-
-            let lanerIdx = 0;
+            
+            let lanerIdx = 0; 
             if (lane === 'MID') lanerIdx = 2;
-            if (lane === 'BOT') lanerIdx = 3;
+            if (lane === 'BOT') lanerIdx = 3; 
 
             if (!enemyLane.tier1.destroyed) {
                 if (time >= GAME_RULES.OBJECTIVES.PLATES.start_time && time < GAME_RULES.OBJECTIVES.PLATES.end_time) {
@@ -882,22 +866,22 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
                              enemyLane.tier1.plates--;
                              grantGoldToPlayer(winner, lanerIdx, GAME_RULES.GOLD.TURRET.OUTER_PLATE.local);
                              grantTeamGold(winner, GAME_RULES.GOLD.TURRET.OUTER_PLATE.team);
-
+                             
                              const plateCount = 6 - enemyLane.tier1.plates;
                              let plateMsg = `💰 ${winnerName}, ${lane} 포탑 방패 채굴 (${plateCount}/6)`;
                              if (enemyLane.tier1.plates === 0) {
                                  enemyLane.tier1.destroyed = true;
                                  plateMsg = `💥 ${winnerName}, ${lane} 1차 포탑 파괴 (모든 방패 파괴)`;
                              }
-                             minuteAddEvent(currentPushSec, plateMsg);
+                             addEvent(currentPushSec, plateMsg);
                          }
                     }
                 } else if (time >= GAME_RULES.OBJECTIVES.PLATES.end_time) {
                     if (Math.random() < 0.3 * pushPower) {
                         enemyLane.tier1.destroyed = true;
-                        grantGoldToPlayer(winner, lanerIdx, 300);
+                        grantGoldToPlayer(winner, lanerIdx, 300); 
                         grantTeamGold(winner, 50);
-                        minuteAddEvent(currentPushSec, `💥 ${winnerName}, ${lane} 1차 포탑 파괴`);
+                        addEvent(currentPushSec, `💥 ${winnerName}, ${lane} 1차 포탑 파괴`);
                     }
                 }
             } else if (!enemyLane.tier2.destroyed) {
@@ -907,130 +891,96 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
                     let teamG = lane === 'MID' ? GAME_RULES.GOLD.TURRET.INNER_MID.team : GAME_RULES.GOLD.TURRET.INNER_SIDE.team;
                     grantGoldToPlayer(winner, lanerIdx, localG);
                     grantTeamGold(winner, teamG);
-                    minuteAddEvent(currentPushSec, `💥 ${winnerName}, ${lane} 2차 포탑 파괴`);
+                    addEvent(currentPushSec, `💥 ${winnerName}, ${lane} 2차 포탑 파괴`);
                 }
             } else if (!enemyLane.tier3.destroyed) {
                 if (Math.random() < 0.2 * pushPower) {
                     enemyLane.tier3.destroyed = true;
                     grantGoldToPlayer(winner, lanerIdx, GAME_RULES.GOLD.TURRET.INHIB_TURRET.local);
                     grantTeamGold(winner, GAME_RULES.GOLD.TURRET.INHIB_TURRET.team);
-                    minuteAddEvent(currentPushSec, `🚨 ${winnerName}, ${lane} 3차(억제기) 포탑 파괴`);
+                    addEvent(currentPushSec, `🚨 ${winnerName}, ${lane} 3차(억제기) 포탑 파괴`);
                 }
             } else if (!enemyLane.inhib.destroyed) {
                 if (Math.random() < 0.3 * pushPower) {
                     enemyLane.inhib.destroyed = true;
                     enemyLane.inhib.respawnTime = time + 5;
                     grantTeamGold(winner, 10);
-                    minuteAddEvent(currentPushSec, `🚧 ${winnerName}, ${lane} 억제기 파괴! 슈퍼 미니언 생성`);
+                    addEvent(currentPushSec, `🚧 ${winnerName}, ${lane} 억제기 파괴! 슈퍼 미니언 생성`);
                 }
             } else {
                 if (Math.random() < 0.2 * pushPower) {
                     let dmg = 10 + (powerDiffRatio * 100);
                     if (state.baronBuff.side === winner) dmg *= 1.5;
                     if (state.elderBuff.side === winner) dmg *= 2.0;
-
+                    
                     state.nexusHealth[loser] -= dmg;
-
-                    if (state.nexusHealth[loser] <= 0) {
-                         const finalMsg = `👑 ${winnerName}이(가) 넥서스를 파괴합니다! GG`;
-                         minuteAddEvent(currentPushSec, finalMsg);
-
-                         // ensure this exact moment is recorded as the final event and we stop the simulation
+                     if (state.nexusHealth[loser] <= 0) {
+                         // [FIX] 넥서스 파괴 시점 기록 및 루프 종료 준비
+                         addEvent(currentPushSec, `👑 ${winnerName}이(가) 넥서스를 파괴합니다! GG`);
                          gameOver = true;
                          endSecond = currentPushSec;
-                    } else if (Math.random() < 0.5) {
-                         minuteAddEvent(currentPushSec, `${winnerName}, 쌍둥이 포탑 및 넥서스 타격 중...`);
-                    }
+                         
+                     } else if (Math.random() < 0.5) {
+                         addEvent(currentPushSec, `${winnerName}, 쌍둥이 포탑 및 넥서스 타격 중...`);
+                     }
                 }
             }
         });
     }
 
-    // append minuteEvents sorted into logs
-    minuteEvents.sort((a, b) => {
-      const aSec = parseInt(a.match(/\[(\d+):(\d+)\]/)?.[1] || '0') * 60 + parseInt(a.match(/\[(\d+):(\d+)\]/)?.[2] || '0');
-      const bSec = parseInt(b.match(/\[(\d+):(\d+)\]/)?.[1] || '0') * 60 + parseInt(b.match(/\[(\d+):(\d+)\]/)?.[2] || '0');
-      return aSec - bSec;
-    });
-
+    // [FIX] 이벤트 시간 순 정렬 및 게임 종료 시점 이후 로그 필터링
+    minuteEvents.sort((a, b) => a.sec - b.sec);
+    
     if (gameOver) {
-        // keep only events that occurred at or before the recorded endSecond
-        const toPush = minuteEvents.filter(e => {
-            const m = e.match(/\[(\d+):(\d+)\]/);
-            if (!m) return true;
-            const sec = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
-            return sec <= (time * 60 + endSecond);
-        });
-        logs.push(...toPush);
-        break; // exit main loop immediately
+        minuteEvents = minuteEvents.filter(e => e.sec <= endSecond);
+        minuteEvents.forEach(evt => logs.push(evt.message));
+        break; // 메인 게임 루프 탈출
     }
 
-    logs.push(...minuteEvents);
+    minuteEvents.forEach(evt => logs.push(evt.message));
   }
 
-  // final winner name
   const winnerSide = state.nexusHealth[SIDES.BLUE] > state.nexusHealth[SIDES.RED] ? SIDES.BLUE : SIDES.RED;
   const winnerName = winnerSide === SIDES.BLUE ? teamBlue.name : teamRed.name;
-
-  // determine final formatted time
-  const finalTimeStr = gameOver ? (() => {
-      // time variable holds final minute; endSecond has last second in that minute
-      return `[${time}:${endSecond < 10 ? '0' + endSecond : endSecond}]`;
-  })() : `[${time}:00]`;
-
-  // Ensure the final nexus-destroy message is last (safety)
-  if (gameOver) {
-      const lastMsg = logs[logs.length - 1] || '';
-      if (!lastMsg.includes('넥서스 파괴')) {
-          logs.push(`${formatTime(time, endSecond)} 👑 ${winnerName}이(가) 넥서스를 파괴합니다! GG`);
-      }
-  }
-
-  // Keep logs time-sorted as a final safety (they already include timestamps)
-  logs.sort();
-
-  // return endDelaySeconds so UI can wait a little after nexus death
-  const endDelaySeconds = 6;
+   
+  // [FIX] 최종 시간 포맷팅 수정
+  const finalTimeStr = gameOver ? formatTime(time, endSecond) : formatTime(time, 0);
 
   return {
     winnerName: winnerName,
     winnerSide: winnerSide,
-    gameTime: finalTimeStr,
+    gameTime: `${time}분 ${gameOver ? endSecond : 0}초`, // [FIX] 정확한 종료 초 표기
     totalMinutes: time,
     logs,
     finalKills: state.kills,
-    endDelaySeconds,
-    picksFinal: { BLUE: picksBlue, RED: picksRed } // include detailed picks so UI can show KDA/levels
   };
 }
 
-// REPLACE: simulateSet function in src/App.jsx with this updated version
-// - Returns picksDetailed (with stats/levels) via game engine output (picksFinal)
-// - Adds endDelaySeconds into returned object for LiveGamePlayer to wait after nexus destroyed
-// - Keeps previous return payload but augments with picksDetailed and endDelaySeconds
 function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions) {
   const { currentChampionList } = simOptions;
 
   const draftResult = runDraftSimulation(teamBlue, teamRed, fearlessBans, currentChampionList);
-
-  // If draft didn't produce full 5v5 picks, return a safe fallback result
-  if (!draftResult || !draftResult.picks || draftResult.picks.A.length < 5 || draftResult.picks.B.length < 5) {
-    return {
-      winnerName: null,
-      resultSummary: '밴픽 실패 또는 불완전한 밴픽(선수/챔피언 누락)',
-      picks: draftResult ? draftResult.picks : { A: [], B: [] },
-      bans: draftResult ? draftResult.bans : { A: [], B: [] },
-      logs: draftResult ? draftResult.draftLogs : [],
-      usedChamps: [],
-      score: { [teamBlue.name]: '0', [teamRed.name]: '0' },
-      gameTime: '0분 0초',
-      totalMinutes: 0
-    };
+  if (draftResult.picks.A.length < 5 || draftResult.picks.B.length < 5) {
+    // Replace the final return in function simulateSet(...) with this block
+  return {
+    winnerName: gameResult.winnerName,
+    resultSummary: resultSummary + ' ' + pogText,
+    picks: draftResult.picks,
+    bans: draftResult.bans,
+    logs: finalLogs,
+    usedChamps: usedChamps,
+    score: { 
+        [teamBlue.name]: String(scoreBlue), 
+        [teamRed.name]: String(scoreRed) 
+    },
+    // Add timing info so LiveGamePlayer can parse safely
+    gameTime: gameResult.gameTime,
+    totalMinutes: gameResult.totalMinutes
+  };
   }
-
   const getConditionModifier = (player) => {
       const stability = player.상세?.안정성 || 50;
-      const variancePercent = ((100 - stability) / stability) * 10;
+      const variancePercent = ((100 - stability) / stability) * 10; 
       const fluctuation = (Math.random() * variancePercent * 2) - variancePercent;
       return 1 + (fluctuation / 100);
   };
@@ -1042,10 +992,10 @@ function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions) {
           return {
               ...p,
               ...champData,
-              dmgType: champData ? (champData.dmg_type || 'AD') : 'AD',
-              classType: champData ? getChampionClass(champData, playerData?.포지션 || p.playerRole) : getChampionClass(null, playerData?.포지션 || p.playerRole),
-              playerData: playerData || { 이름: p.playerName, 포지션: p.playerRole || 'MID', 종합: 75, 상세: {} },
-              conditionModifier: getConditionModifier(playerData || {})
+              dmgType: champData.dmg_type || 'AD', 
+              classType: getChampionClass(champData, playerData.포지션),
+              playerData: playerData,
+              conditionModifier: getConditionModifier(playerData)
           };
       });
   };
@@ -1053,28 +1003,27 @@ function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions) {
   const picksBlue_detailed = addPlayerData(draftResult.picks.A, teamBlue.roster);
   const picksRed_detailed = addPlayerData(draftResult.picks.B, teamRed.roster);
 
-  // run the tick engine which returns logs and the final pick objects (with stats/level progression recorded)
   const gameResult = runGameTickEngine(teamBlue, teamRed, picksBlue_detailed, picksRed_detailed, simOptions);
 
   const usedChamps = [...draftResult.picks.A.map(p => p.champName), ...draftResult.picks.B.map(p => p.champName)];
   const scoreBlue = gameResult.finalKills[SIDES.BLUE];
   const scoreRed = gameResult.finalKills[SIDES.RED];
-
-  const winningPicks = gameResult.winnerSide === SIDES.BLUE ? gameResult.picksFinal.BLUE : gameResult.picksFinal.RED;
-
+   
+  const winningPicks = gameResult.winnerSide === SIDES.BLUE ? picksBlue_detailed : picksRed_detailed;
+   
   const candidates = winningPicks.map(p => {
       const k = p.stats.kills;
       const d = p.stats.deaths === 0 ? 1 : p.stats.deaths;
       const a = p.stats.assists;
       const kda = (k + a) / d;
-
-      const gold = p.currentGold || 0;
+      
+      const gold = p.currentGold;
       const role = p.playerData.포지션;
-
-      const dpm = (p.stats.damage || 0) / (gameResult.totalMinutes || 1);
+      
+      const dpm = p.stats.damage / gameResult.totalMinutes;
 
       let pogScore = (kda * 3) + (dpm / 100) + (gold / 1000) + (a * 1);
-
+      
       if (role === 'JGL' || role === '정글') pogScore *= 1.15;
       if (role === 'SUP' || role === '서포터') pogScore *= 1.05;
 
@@ -1082,10 +1031,10 @@ function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions) {
   });
 
   candidates.sort((a, b) => b.pogScore - a.pogScore);
-  const pogPlayer = candidates[0] || winningPicks[0];
+  const pogPlayer = candidates[0];
 
   const resultSummary = `⏱️ ${gameResult.gameTime} | ⚔️ ${teamBlue.name} ${scoreBlue} : ${scoreRed} ${teamRed.name} | 🏆 승리: ${gameResult.winnerName}`;
-  const pogText = pogPlayer ? `🏅 POG: [${pogPlayer.playerData.포지션}] ${pogPlayer.playerName} (${pogPlayer.champName}) - Score: ${pogPlayer.pogScore ? pogPlayer.pogScore.toFixed(1) : '0.0'}` : '🏅 POG: -';
+  const pogText = `🏅 POG: [${pogPlayer.playerData.포지션}] ${pogPlayer.playerName} (${pogPlayer.champName}) - Score: ${pogPlayer.pogScore.toFixed(1)}`;
 
   const finalLogs = [
     `========== [ 밴픽 단계 ] ==========`,
@@ -1093,7 +1042,7 @@ function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions) {
     `========== [ 경기 결과 ] ==========`,
     resultSummary,
     pogText,
-    pogPlayer ? `KDA: ${pogPlayer.stats.kills}/${pogPlayer.stats.deaths}/${pogPlayer.stats.assists} | DPM: ${Math.floor(pogPlayer.dpm)} | LV: ${pogPlayer.level || 1}` : '',
+    `KDA: ${pogPlayer.stats.kills}/${pogPlayer.stats.deaths}/${pogPlayer.stats.assists} | DPM: ${Math.floor(pogPlayer.dpm)} | LV: ${pogPlayer.level}`,
     `===================================`,
     ...gameResult.logs
   ];
@@ -1105,19 +1054,10 @@ function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions) {
     bans: draftResult.bans,
     logs: finalLogs,
     usedChamps: usedChamps,
-    score: {
-        [teamBlue.name]: String(scoreBlue),
-        [teamRed.name]: String(scoreRed)
-    },
-    // timing info so LiveGamePlayer can parse safely
-    gameTime: gameResult.gameTime,
-    totalMinutes: gameResult.totalMinutes,
-    // NEW: expose the detailed picks with stats/levels so LiveGamePlayer can show KDA & level progression
-    picksDetailed: {
-      A: gameResult.picksFinal.BLUE,
-      B: gameResult.picksFinal.RED
-    },
-    endDelaySeconds: gameResult.endDelaySeconds || 4
+    score: { 
+        [teamBlue.name]: String(scoreBlue), 
+        [teamRed.name]: String(scoreRed) 
+    }
   };
 }
 
@@ -1597,233 +1537,277 @@ function DetailedMatchResultModal({ result, onClose, teamA, teamB }) {
 
 // ==========================================
 // [3단계] Dashboard 컴포넌트 바로 위에 붙여넣기
-// REPLACE: the LiveGamePlayer startSet() and the GAME useEffect (playback) and the top bans display & playback speed buttons
-// REPLACEMENT: Replace the existing LiveGamePlayer component with the implementation below.
-// This version is self-contained, avoids referencing undefined variables (currentSet/globalBanList/etc.),
-// safely calls simulateSet, and provides a minimal playback UI + log processing. It should fix the white-screen crash.
-
+// ==========================================
+// ==========================================
+// [3단계] Dashboard 컴포넌트 바로 위에 붙여넣기
+// ==========================================
 function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onClose }) {
-  const [phase, setPhase] = useState('LOADING'); // LOADING -> PLAYING -> RESULT
+  // Hooks는 조건문 위에 있어야 함 (React 규칙)
+  const [currentSet, setCurrentSet] = useState(1);
+  const [winsA, setWinsA] = useState(0);
+  const [winsB, setWinsB] = useState(0);
+  const [phase, setPhase] = useState('READY'); 
   const [simulationData, setSimulationData] = useState(null);
   const [displayLogs, setDisplayLogs] = useState([]);
-  const [gameTimeSec, setGameTimeSec] = useState(0);
+  
+  // [FIX] liveStats 초기값을 객체 형태로 변경하여 null 참조 오류 방지
+  const [liveStats, setLiveStats] = useState({
+      kills: { BLUE: 0, RED: 0 },
+      gold: { BLUE: 2500, RED: 2500 },
+      towers: { BLUE: 0, RED: 0 },
+      drakes: { BLUE: 0, RED: 0 },
+      grubs: { BLUE: 0, RED: 0 },
+      players: []
+  });
+
+  const [gameTime, setGameTime] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
-  const timerRef = useRef(null);
+  const [draftStep, setDraftStep] = useState(0);
+  const [globalBanList, setGlobalBanList] = useState([]);
+  const [matchHistory, setMatchHistory] = useState([]);
 
-  // helper: parse a string like "[12:34]" or "12:34" -> seconds
-  const parseGameTimeStr = (s) => {
-    if (!s) return 0;
-    const m = s.match(/(\d+):(\d+)/);
-    if (!m) return 0;
-    return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
-  };
+  // 데이터 유효성 검사 (흰 화면 방지 1차)
+  if (!teamA || !teamB || !match) {
+      return (
+          <div className="fixed inset-0 bg-black text-red-500 z-[200] flex items-center justify-center">
+              <div>치명적 오류: 매치 데이터가 누락되었습니다.</div>
+              <button onClick={onClose} className="bg-white text-black px-4 py-2 mt-4">닫기</button>
+          </div>
+      );
+  }
 
-  // safe function to start simulation (runs once)
-  useEffect(() => {
-    let mounted = true;
+  // 시뮬레이션 시작 함수
+  const startSet = useCallback(() => {
+    try {
+        const blueTeam = currentSet % 2 !== 0 ? teamA : teamB;
+        const redTeam = currentSet % 2 !== 0 ? teamB : teamA;
 
-    const run = async () => {
-      try {
-        // simulateSet is defined in this file; call synchronously
-        const result = simulateSet(
-          { name: teamA.name, roster: teamA.roster || getTeamRoster(teamA.name) },
-          { name: teamB.name, roster: teamB.roster || getTeamRoster(teamB.name) },
-          1, // setNumber (single-set live play)
-          match?.fearlessBans || [],
-          simOptions || {}
-        );
+        // 시뮬레이터 실행
+        const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
+        
+        if (!result || !result.picks) throw new Error("시뮬레이션 결과가 비어있습니다.");
 
-        if (!mounted) return;
-
-        // ensure logs is an array
-        const logs = Array.isArray(result.logs) ? result.logs : (result.logs ? [result.logs] : []);
-        setSimulationData({ ...result, logs });
-        setDisplayLogs([]);
-        setPhase('PLAYING');
-
-        // initialize time to 0 (we will increment from 0 to final)
-        setGameTimeSec(0);
-      } catch (err) {
-        console.error('LiveGamePlayer simulate error', err);
-        alert('시뮬레이션 실패: ' + (err?.message || String(err)));
-        onClose && onClose();
-      }
-    };
-
-    run();
-
-    return () => { mounted = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // run once when mounted
-
-  // Playback loop: advances gameTimeSec and injects logs matching the second
-  useEffect(() => {
-    if (phase !== 'PLAYING' || !simulationData) return;
-
-    const finalSecFromData = parseGameTimeStr(simulationData.gameTime) || (simulationData.totalMinutes ? simulationData.totalMinutes * 60 : 30 * 60);
-    const endDelay = simulationData.endDelaySeconds || 0;
-    const absoluteFinalSecWithDelay = finalSecFromData + endDelay;
-
-    // clear any existing timer
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-
-    timerRef.current = setInterval(() => {
-      setGameTimeSec(prev => {
-        const next = prev + 1;
-
-        // collect logs that match this second (timestamps in logs as [m:ss])
-        const logsThisSecond = (simulationData.logs || []).filter(log => {
-          const m = log.match(/\[(\d+):(\d+)\]/);
-          if (!m) return false;
-          const sec = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
-          return sec === next;
+        // 초기 스탯 세팅
+        setLiveStats({
+            kills: { BLUE: 0, RED: 0 },
+            gold: { BLUE: 2500, RED: 2500 },
+            towers: { BLUE: 0, RED: 0 },
+            drakes: { BLUE: 0, RED: 0 },
+            grubs: { BLUE: 0, RED: 0 },
+            players: [
+                ...result.picks.A.map(p => ({ ...p, side: 'BLUE', k:0, d:0, a:0, currentGold: 500, lvl: 1 })),
+                ...result.picks.B.map(p => ({ ...p, side: 'RED', k:0, d:0, a:0, currentGold: 500, lvl: 1 }))
+            ]
         });
+        
+        setSimulationData({ ...result, blueTeam, redTeam });
+        setGameTime(0);
+        setDisplayLogs([]);
+        setPhase('DRAFT');
+        setDraftStep(0);
 
-        if (logsThisSecond.length > 0) {
-          setDisplayLogs(prevLogs => {
-            const merged = [...prevLogs, ...logsThisSecond];
-            return merged.slice(-300);
-          });
-        }
+    } catch (e) {
+        console.error(e);
+        alert("시뮬레이션 중 오류 발생: " + e.message);
+        onClose();
+    }
+  }, [currentSet, teamA, teamB, globalBanList, simOptions, onClose]);
 
-        // finish when we've reached final second + delay
-        if (next >= absoluteFinalSecWithDelay) {
-          clearInterval(timerRef.current);
-          timerRef.current = null;
-          setPhase('RESULT');
+  // 초기 실행
+  useEffect(() => { if (phase === 'READY') startSet(); }, [phase, startSet]);
 
-          // call onMatchComplete with match object and simulation result payload
-          if (onMatchComplete) {
-            try {
-              // Normalize result object shape expected by Dashboard.handleLiveMatchComplete
-              const normalized = {
-                winner: simulationData.winnerName || simulationData.result?.winner || simulationData.winner,
-                winnerName: simulationData.winnerName || simulationData.winner,
-                winnerSide: simulationData.winnerSide,
-                scoreString: simulationData.score ? `${simulationData.score?.[teamA.name] || ''}` : (simulationData.scoreString || simulationData.result?.score || ''),
-                scoreA: simulationData.score ? simulationData.score[teamA.name] : (simulationData.score ? simulationData.score[teamA.name] : simulationData.finalKills?.BLUE),
-                scoreB: simulationData.score ? simulationData.score[teamB.name] : (simulationData.score ? simulationData.score[teamB.name] : simulationData.finalKills?.RED),
-                // Provide the core result object so the Dashboard can update stored matches
-                ...simulationData
-              };
-              // Dashboard expects onMatchComplete(match, resultData)
-              onMatchComplete(match, normalized);
-            } catch (e) {
-              console.error('onMatchComplete failed', e);
-            }
-          }
-        }
-
-        return next;
-      });
-    }, 1000 / playbackSpeed);
-
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    };
-  }, [phase, simulationData, playbackSpeed, onMatchComplete, match, teamA, teamB]);
-
-  // cleanup on unmount
+  // 밴픽 타이머
   useEffect(() => {
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, []);
+    if (phase !== 'DRAFT') return;
+    const timer = setTimeout(() => {
+        if (draftStep < 20) setDraftStep(p => p + 1);
+        else setPhase('GAME');
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [phase, draftStep]);
 
-  // UI helpers
-  const renderControls = () => (
-    <div className="flex items-center gap-2">
-      <div className="text-sm text-gray-400 mr-2">Speed</div>
-      {[1, 4, 16, 32].map(s => (
-        <button
-          key={s}
-          onClick={() => setPlaybackSpeed(s)}
-          className={`px-3 py-1 rounded ${playbackSpeed === s ? 'bg-gray-800 text-white' : 'bg-gray-200 text-gray-800'}`}
-        >
-          {s}x
-        </button>
-      ))}
-      <button onClick={() => { setDisplayLogs([]); setGameTimeSec(0); }} className="ml-3 px-3 py-1 rounded bg-white border">Reset</button>
-      <button onClick={() => { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; setPhase('RESULT'); } }} className="ml-2 px-3 py-1 rounded bg-red-500 text-white">Abort</button>
-    </div>
-  );
+  // 인게임 루프
+  useEffect(() => {
+    // [FIX] simulationData가 없을 때 실행되지 않도록 가드 강화
+    if (phase !== 'GAME' || !simulationData) return;
+
+    const timer = setInterval(() => {
+        setGameTime(prev => {
+            const next = prev + 1;
+            // 종료 조건
+            const totalMin = simulationData.totalMinutes || 30;
+let finalSec = totalMin * 60;
+if (typeof simulationData.gameTime === 'string') {
+  // match "12분 34초" style safely and extract numbers
+  const m = simulationData.gameTime.match(/(\d+)\s*분\s*(\d+)\s*초/);
+  if (m) {
+    finalSec = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+  } else {
+    // fallback: try to parse numbers more loosely
+    const parts = simulationData.gameTime.split('분');
+    const mins = parseInt(parts[0], 10) || 0;
+    const secs = parts[1] ? parseInt(parts[1].replace(/[^0-9]/g, ''), 10) || 0 : 0;
+    finalSec = mins * 60 + secs;
+  }
+}
+            // 로그 처리
+            const currentLogs = simulationData.logs.filter(log => {
+                const m = log.match(/\[(\d+):(\d+)\]/);
+                return m && (parseInt(m[1]) * 60 + parseInt(m[2])) === next;
+            });
+
+            if (currentLogs.length > 0) {
+                setDisplayLogs(prev => [...prev, ...currentLogs].slice(-10)); // 로그가 너무 많아지는 것 방지
+                // 스탯 업데이트 (함수형 업데이트 사용)
+                setLiveStats(prevStats => {
+                    // 깊은 복사를 통해 불변성 유지
+                    const newStats = JSON.parse(JSON.stringify(prevStats));
+                    
+                    currentLogs.forEach(log => {
+                        if (log.includes('➜ ☠️')) {
+                            const killerName = log.match(/\[.+?\]\s(.+?)\(/)?.[1]?.trim();
+                            const victimName = log.match(/➜\s☠️\s\[.+?\]\s(.+?)\(/)?.[1]?.trim();
+                            
+                            let killerSide = null;
+                            newStats.players = newStats.players.map(p => {
+                                if (p.playerName === victimName) {
+                                    return {...p, d: p.d + 1};
+                                }
+                                return p;
+                            });
+                            newStats.players = newStats.players.map(p => {
+                                if (p.playerName === killerName) {
+                                    killerSide = p.side;
+                                    return {...p, k: p.k + 1, currentGold: p.currentGold + 300};
+                                }
+                                return p;
+                            });
+
+                            if(killerSide) {
+                                newStats.kills[killerSide]++;
+                            }
+                        }
+                        if (log.includes('포탑 파괴')) {
+                            const teamNameInLog = log.split(',')[0];
+                            const team = teamNameInLog.includes(simulationData.blueTeam.name) ? 'BLUE' : 'RED';
+                            newStats.towers[team]++;
+                        }
+                    });
+                    return newStats;
+                });
+            }
+            return next;
+        });
+    }, 1000 / playbackSpeed);
+    return () => clearInterval(timer);
+  }, [phase, simulationData, playbackSpeed]); // liveStats 의존성 제거
+
+  // [FIX] 로딩 조건 단순화
+  if (!simulationData) return <div className="fixed inset-0 bg-black text-white flex items-center justify-center z-[200]">로딩 중...</div>;
+
+  const { blueTeam, redTeam, picks, bans } = simulationData;
+  const isBlueWin = simulationData.winnerName === blueTeam.name;
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black bg-opacity-90 flex items-center justify-center p-4">
-      <div className="bg-gray-100 rounded-2xl w-full max-w-5xl h-[86vh] flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between p-4 bg-black text-white">
-          <div className="flex items-center gap-4">
-            <div className="font-black text-lg">LIVE SIMULATION</div>
-            <div className="text-sm text-gray-300"> {teamA.name} vs {teamB.name} </div>
-          </div>
-          <div className="flex items-center gap-4">
-            {renderControls()}
-            <button onClick={() => { if (timerRef.current) clearInterval(timerRef.current); onClose && onClose(); }} className="px-4 py-2 bg-gray-700 rounded">닫기</button>
-          </div>
+    <div className="fixed inset-0 bg-black z-[200] flex flex-col font-mono text-white">
+        {/* 상단바 */}
+        <div className="h-16 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-6 z-10">
+            <div className="w-1/3 flex items-center gap-4 text-blue-500 font-bold text-2xl">
+                {blueTeam.name} <span className="text-white">{phase==='DRAFT'?winsA:liveStats.kills.BLUE}</span>
+            </div>
+            <div className="text-yellow-400 font-black text-2xl">{phase==='GAME' ? `${Math.floor(gameTime/60)}:${String(gameTime%60).padStart(2,'0')}` : phase}</div>
+            <div className="w-1/3 flex items-center justify-end gap-4 text-red-500 font-bold text-2xl">
+                <span className="text-white">{phase==='DRAFT'?winsB:liveStats.kills.RED}</span> {redTeam.name}
+            </div>
         </div>
 
-        <div className="flex-1 flex overflow-hidden">
-          <div className="w-1/3 bg-white p-4 overflow-y-auto border-r">
-            <h4 className="font-bold mb-2">Game Info</h4>
-            <div className="text-sm text-gray-600 mb-4">Phase: {phase}</div>
-            <div className="text-sm text-gray-600 mb-4">Time: {Math.floor(gameTimeSec / 60)}:{String(gameTimeSec % 60).padStart(2, '0')}</div>
-
-            <h5 className="font-bold mt-2">Picks (Blue)</h5>
-            <div className="space-y-2 mb-4">
-              {(simulationData?.picksDetailed?.A || simulationData?.picks?.A || []).map((p, i) => (
-                <div key={i} className="p-2 border rounded text-sm bg-blue-50">
-                  <div className="font-bold">{p.playerName || p.playerData?.이름} - {p.champName}</div>
-                  <div className="text-xs text-gray-500">LV: {p.level || p.level || p.lvl || 1} KDA: {p.stats ? `${p.stats.kills}/${p.stats.deaths}/${p.stats.assists}` : '0/0/0'}</div>
+        {/* 메인 화면 */}
+        <div className="flex-1 bg-black relative flex">
+            {phase === 'DRAFT' && (
+                <div className="w-full flex justify-between p-10">
+                    <div className="space-y-2">{picks.A.map((p,i) => <div key={i} className={`p-4 border-l-4 ${i < (draftStep-7)/2 ? 'border-blue-500 bg-gray-800' : 'border-gray-800'}`}>{p.champName}</div>)}</div>
+                    <div className="text-6xl font-black self-center text-gray-800">VS</div>
+                    <div className="space-y-2 text-right">{picks.B.map((p,i) => <div key={i} className={`p-4 border-r-4 ${i < (draftStep-7)/2 ? 'border-red-500 bg-gray-800' : 'border-gray-800'}`}>{p.champName}</div>)}</div>
                 </div>
-              ))}
-            </div>
-
-            <h5 className="font-bold mt-2">Picks (Red)</h5>
-            <div className="space-y-2">
-              {(simulationData?.picksDetailed?.B || simulationData?.picks?.B || []).map((p, i) => (
-                <div key={i} className="p-2 border rounded text-sm bg-red-50">
-                  <div className="font-bold">{p.playerName || p.playerData?.이름} - {p.champName}</div>
-                  <div className="text-xs text-gray-500">LV: {p.level || p.lvl || 1} KDA: {p.stats ? `${p.stats.kills}/${p.stats.deaths}/${p.stats.assists}` : '0/0/0'}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex-1 p-4 flex flex-col">
-            <div className="flex-1 bg-black text-white p-3 rounded overflow-y-auto font-mono text-sm">
-              {displayLogs.length === 0 ? (
-                <div className="text-center text-gray-400 mt-8">경기 로그를 기다리는 중...</div>
-              ) : (
-                displayLogs.map((l, i) => <div key={i} className="whitespace-pre-wrap py-0.5 border-b border-black/10">{l}</div>)
-              )}
-            </div>
-          </div>
-
-          <div className="w-64 bg-white p-4 border-l overflow-y-auto">
-            <h4 className="font-bold mb-2">Summary</h4>
-            {phase === 'RESULT' ? (
-              <div className="text-sm text-gray-700">
-                <div>Winner: <strong>{simulationData?.winnerName || simulationData?.winner || 'TBD'}</strong></div>
-                <div>Game Time: <strong>{simulationData?.gameTime}</strong></div>
-                <div className="mt-2 font-bold">Final Kills</div>
-                <div>BLUE: {simulationData?.finalKills?.BLUE ?? 0}</div>
-                <div>RED: {simulationData?.finalKills?.RED ?? 0}</div>
-              </div>
-            ) : (
-              <div className="text-sm text-gray-500">경기 진행 중 또는 초기화 중입니다...</div>
             )}
-          </div>
+
+            {phase === 'GAME' && (
+                <div className="w-full flex relative">
+                    {/* 선수 목록 */}
+                    <div className="w-64 bg-gray-900 p-2 space-y-1">
+                    {liveStats.players.filter(p=>p.side==='BLUE').map((p,i) => (
+  <div key={i} className="text-xs bg-black p-2 border-l-2 border-blue-500">
+    <div className="font-bold">{p.champName} <span className="text-xs text-gray-400">- {p.playerName}</span></div>
+    <div className="text-[11px] text-gray-300">{p.k}/{p.d}/{p.a}</div>
+  </div>
+))}
+                    </div>
+                    {/* 로그 화면 */}
+                    <div className="flex-1 relative flex flex-col justify-end items-center pb-10">
+                        <div className="absolute inset-0 bg-gray-800 opacity-20"></div> {/* 배경 */}
+                        <div className="z-10 text-center space-y-2 mb-4">
+                             {displayLogs.slice(-3).map((l,i)=><div key={i} className="text-lg font-bold bg-black/50 px-4 py-1 rounded">{l.split(']')[1]}</div>)}
+                        </div>
+                        <div className="z-10 flex gap-2">
+                             {[1,4,16].map(s=><button key={s} onClick={()=>setPlaybackSpeed(s)} className={`px-3 py-1 rounded text-xs ${playbackSpeed === s ? 'bg-yellow-500 text-black' : 'bg-gray-700'}`}>x{s}</button>)}
+                             <button onClick={()=>{
+                                 const finalTime = parseInt(simulationData.gameTime.split('분')[0])*60 + parseInt(simulationData.gameTime.split('분')[1] || '0');
+                                 setGameTime(finalTime);
+                             }} className="bg-red-600 px-3 py-1 rounded text-xs">SKIP</button>
+                        </div>
+                    </div>
+                    <div className="w-64 bg-gray-900 p-2 space-y-1">
+                    {liveStats.players.filter(p=>p.side==='RED').map((p,i) => (
+  <div key={i} className="text-xs bg-black p-2 border-r-2 border-red-500 text-right">
+    <div className="font-bold">{p.champName} <span className="text-xs text-gray-400">- {p.playerName}</span></div>
+    <div className="text-[11px] text-gray-300">{p.k}/{p.d}/{p.a}</div>
+  </div>
+))}
+                    </div>
+                </div>
+            )}
+
+            {phase === 'SET_RESULT' && (
+                <div className="w-full flex flex-col items-center justify-center">
+                    <h1 className="text-6xl font-black text-white mb-8">{simulationData.winnerName} WIN!</h1>
+                    <button onClick={() => {
+                         const nA = winsA + (isBlueWin?1:0); const nB = winsB + (!isBlueWin?1:0);
+                         setWinsA(nA); setWinsB(nB);
+                         
+                         const newHistoryEntry = {
+                             setNumber: currentSet,
+                             winner: simulationData.winnerName,
+                             picks: simulationData.picks,
+                             bans: simulationData.bans,
+                             fearlessBans: globalBanList,
+                             logs: simulationData.logs,
+                             resultSummary: simulationData.resultSummary,
+                             scores: simulationData.score
+                         };
+                         const updatedHistory = [...matchHistory, newHistoryEntry];
+                         setMatchHistory(updatedHistory);
+                         setGlobalBanList(b => [...b, ...simulationData.usedChamps]);
+
+                         const target = match.format==='BO5'?3:2;
+                         if(nA>=target || nB>=target) {
+                             onMatchComplete(match, {
+                                 winner: nA > nB ? teamA.name : teamB.name, 
+                                 scoreA: nA,
+                                 scoreB: nB,
+                                 scoreString:`${nA}:${nB}`, 
+                                 history: updatedHistory
+                             });
+                         } else {
+                             setCurrentSet(s=>s+1); setPhase('READY');
+                         }
+                    }} className="text-2xl font-bold bg-blue-600 px-8 py-3 rounded hover:bg-blue-500">NEXT</button>
+                </div>
+            )}
         </div>
-      </div>
     </div>
   );
 }
+
 
 
 // --- Dashboard ---
@@ -2214,18 +2198,23 @@ function Dashboard() {
   };
 
 // ==========================================
-  
-// Replace the existing `handleStartMyMatch` in the Dashboard component with this block
-const handleStartMyMatch = () => {
+  // [수정됨] Dashboard 내부 로직 통합 (여기서부터 복사하세요)
+  // ==========================================
+
+  // [1] 내 경기 시작하기 (안전장치 추가됨)
+  const handleStartMyMatch = () => {
   try {
+    // 1. 경기 데이터 확인
     if (!nextGlobalMatch) {
       alert("진행할 경기가 없습니다.");
       return;
     }
 
+    // 2. 팀 ID 정규화 (숫자로 변환)
     const t1Id = typeof nextGlobalMatch.t1 === 'object' ? nextGlobalMatch.t1.id : parseInt(nextGlobalMatch.t1);
     const t2Id = typeof nextGlobalMatch.t2 === 'object' ? nextGlobalMatch.t2.id : parseInt(nextGlobalMatch.t2);
 
+    // 3. 팀 객체 찾기
     const t1Obj = teams.find(t => t.id === t1Id);
     const t2Obj = teams.find(t => t.id === t2Id);
 
@@ -2235,6 +2224,7 @@ const handleStartMyMatch = () => {
       return;
     }
 
+    // 4. 로스터 가져오기 (안전 장치 추가)
     const t1Roster = getTeamRoster(t1Obj.name);
     const t2Roster = getTeamRoster(t2Obj.name);
 
@@ -2247,17 +2237,22 @@ const handleStartMyMatch = () => {
       return;
     }
 
-    // Instead of running the simulation immediately, open the LiveGamePlayer UI
-    // LiveGamePlayer will call simulateSet internally and call onMatchComplete when finished.
+    // 5. 라이브 매치 데이터 설정
+    console.log("경기 시작:", {
+      match: nextGlobalMatch,
+      teamA: t1Obj.name,
+      teamB: t2Obj.name,
+      rosterA: t1Roster.length,
+      rosterB: t2Roster.length
+    });
+
     setLiveMatchData({
       match: nextGlobalMatch,
-      teamA: t1Obj,
-      teamB: t2Obj
+      teamA: { ...t1Obj, roster: t1Roster },
+      teamB: { ...t2Obj, roster: t2Roster }
     });
+    
     setIsLiveGameMode(true);
-
-    // optionally switch to dashboard tab to ensure UI is in correct view
-    setActiveTab('dashboard');
 
   } catch (error) {
     console.error("경기 시작 오류:", error);
@@ -2401,22 +2396,15 @@ const handleStartMyMatch = () => {
   };
 
   const calculateGroupScore = (groupType) => {
-    if (!league.groups || !league.groups[groupType]) return 0;
-    const groupIds = league.groups[groupType];
-  
-    return league.matches
-      .filter(m => {
-        if (m.status !== 'finished') return false;
-        // Exclude play-in and playoff matches from group tallies
-        if (m.type === 'playin' || m.type === 'playoff') return false;
-        // Only count regular season and superweek matches
-        if (m.type !== 'regular' && m.type !== 'super') return false;
-  
-        const winnerTeam = teams.find(t => t.name === m.result?.winner);
-        if (!winnerTeam) return false;
-        return groupIds.includes(winnerTeam.id);
-      })
-      .reduce((acc, m) => acc + (m.type === 'super' ? 2 : 1), 0);
+      if (!league.groups || !league.groups[groupType]) return 0;
+      const groupIds = league.groups[groupType];
+      return league.matches.filter(m => {
+          if (m.status !== 'finished') return false;
+          if (m.type === 'playin') return false; 
+          const winnerTeam = teams.find(t => t.name === m.result.winner);
+          if (!winnerTeam) return false;
+          return groupIds.includes(winnerTeam.id);
+      }).reduce((acc, m) => acc + (m.type === 'super' ? 2 : 1), 0);
   };
 
   const baronTotalWins = calculateGroupScore('baron');
@@ -3182,10 +3170,10 @@ const handleStartMyMatch = () => {
                         
                         return (
                             <div className="flex-1 overflow-x-auto pb-8">
-                                + <div className="flex flex-col space-y-12 min-w-[1400px] relative pt-24">
+                                <div className="flex flex-col space-y-24 min-w-[1400px] relative pt-12">
                                     {/* --- 승자조 --- */}
                                     <div className="relative border-b-2 border-dashed pb-16">
-                                    <h3 className="text-lg font-black text-blue-600 mb-4 relative">승자조 (Winner's Bracket)</h3>
+                                        <h3 className="text-lg font-black text-blue-600 mb-8 absolute -top-2">승자조 (Winner's Bracket)</h3>
                                         <div className="flex justify-between items-center mt-8">
                                             <BracketColumn title="1라운드">
                                                 <div className="flex flex-col justify-around space-y-32 h-[300px]">
@@ -3210,7 +3198,7 @@ const handleStartMyMatch = () => {
 
                                     {/* --- 패자조 --- */}
                                     <div className="relative pt-8">
-                                    + <h3 className="text-lg font-black text-red-600 mb-4 relative">패자조 (Loser's Bracket)</h3>
+                                        <h3 className="text-lg font-black text-red-600 mb-8 absolute -top-2">패자조 (Loser's Bracket)</h3>
                                         <div className="flex justify-start items-center space-x-24 mt-8">
                                             <BracketColumn title="패자조 1R">
                                                 <MatchupBox match={r2lm1_actual || { t1: getLoser(r1m1), t2: getLoser(r1m2), status: 'pending', type: 'playoff' }} />
