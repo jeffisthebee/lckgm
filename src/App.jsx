@@ -489,34 +489,20 @@ function calculateIndividualIncome(pick, time, aliveRatio = 1.0) {
 }
 
 // [MOD] 데스 타이머 공식 업데이트 (30분, 35분 구간 추가)
-function calculateDeathTimer(level, time) {
-    // 1. 기본 + 레벨 비례
-    let timer = 8 + (level * 1.5);
-
-    // 2. 시간대별 추가 페널티 (누적)
-    if (time > 15) timer += (time - 15) * 0.15;
-    if (time > 25) timer += (time - 25) * 0.3;
-    if (time > 30) timer += (time - 30) * 0.4; // [NEW] 30분 이후 +0.4/분
-    if (time > 35) timer += (time - 35) * 0.5; // [NEW] 35분 이후 +0.5/분
-
-    // 최대 150초 제한 (안전장치)
-    return Math.min(150, timer);
-}
-
 function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
   let time = 0; 
   const logs = [];
   const { difficulty, playerTeamName } = simOptions;
-  let gameOver = false; // [FIX] 게임 종료 상태 추적용 플래그
-  let endSecond = 0;    // [FIX] 게임 종료 정확한 시간(초)
-   
+  let gameOver = false;
+  let endSecond = 0;
+
   [...picksBlue, ...picksRed].forEach(p => {
       p.currentGold = GAME_RULES.GOLD.START;
       p.level = 1;
       p.xp = 0;
-      p.deadUntil = 0; 
-      p.stats = { kills: 0, deaths: 0, assists: 0, damage: 0, takenDamage: 0 }; 
-      p.flashEndTime = 0; 
+      p.deadUntil = 0;
+      p.stats = { kills: 0, deaths: 0, assists: 0, damage: 0, takenDamage: 0 };
+      p.flashEndTime = 0;
   });
 
   const dragonTypes = ['화염', '대지', '바람', '바다', '마법공학', '화학공학'];
@@ -541,18 +527,23 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
         [SIDES.RED]: { TOP: initLane(), MID: initLane(), BOT: initLane() }
     },
     nexusHealth: { [SIDES.BLUE]: 100, [SIDES.RED]: 100 },
-    dragons: { [SIDES.BLUE]: [], [SIDES.RED]: [] }, 
+    dragons: { [SIDES.BLUE]: [], [SIDES.RED]: [] },
     grubs: { [SIDES.BLUE]: 0, [SIDES.RED]: 0 },
     soul: null,
     baronBuff: { side: null, endTime: 0 },
     elderBuff: { side: null, endTime: 0 },
-    nextDragonTimeAbs: GAME_RULES.OBJECTIVES.DRAGON.initial_spawn * 60, 
-    nextBaronTimeAbs: GAME_RULES.OBJECTIVES.BARON.spawn * 60,        
+    nextDragonTimeAbs: GAME_RULES.OBJECTIVES.DRAGON.initial_spawn * 60,
+    nextBaronTimeAbs: GAME_RULES.OBJECTIVES.BARON.spawn * 60,
     nextElderTimeAbs: Infinity,
   };
 
   const formatTime = (m, s) => `[${m}:${s < 10 ? '0' + s : s}]`;
-   
+
+  const addEvent = (second, msg) => {
+    // We will store formatted message (includes time). Use minute context when called.
+    logs.push(msg);
+  };
+
   const grantGoldToPlayer = (teamSide, playerIdx, amount) => {
       let finalAmount = amount;
       const myTeamGold = state.gold[teamSide];
@@ -566,6 +557,416 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
       picks[playerIdx].currentGold += finalAmount;
       state.gold[teamSide] += finalAmount;
   };
+
+  const grantTeamGold = (teamSide, amountPerPlayer) => {
+      let finalAmount = amountPerPlayer;
+      const myTeamGold = state.gold[teamSide];
+      const enemyTeamGold = state.gold[teamSide === SIDES.BLUE ? SIDES.RED : SIDES.BLUE];
+
+      if (enemyTeamGold - myTeamGold >= 5000) {
+        finalAmount = Math.floor(amountPerPlayer * 1.15);
+      }
+
+      const targetPicks = teamSide === SIDES.BLUE ? picksBlue : picksRed;
+      targetPicks.forEach(p => p.currentGold += finalAmount);
+      state.gold[teamSide] += (finalAmount * 5);
+  };
+
+  const simulateDamage = (winnerSide, powerA, powerB) => {
+      const winningPicks = winnerSide === SIDES.BLUE ? picksBlue : picksRed;
+      const losingPicks = winnerSide === SIDES.BLUE ? picksRed : picksBlue;
+
+      winningPicks.forEach(p => {
+         if (p.deadUntil > (time * 60)) return;
+         const dmg = (p.currentGold / 10) + (Math.random() * 500);
+         p.stats.damage += dmg;
+         const target = losingPicks[Math.floor(Math.random() * losingPicks.length)];
+         if (target) target.stats.takenDamage += dmg;
+      });
+      losingPicks.forEach(p => {
+         if (p.deadUntil > (time * 60)) return;
+         const dmg = (p.currentGold / 15) + (Math.random() * 300);
+         p.stats.damage += dmg;
+         const target = winningPicks[Math.floor(Math.random() * winningPicks.length)];
+         if (target) target.stats.takenDamage += dmg;
+      });
+  };
+
+  while (state.nexusHealth[SIDES.BLUE] > 0 && state.nexusHealth[SIDES.RED] > 0 && time < 70) {
+    time++;
+    let minuteEvents = [];
+    const minuteAddEvent = (second, msg) => {
+        minuteEvents.push({ sec: second, message: `${formatTime(time, second)} ${msg}` });
+    };
+
+    const processIncome = (picks, teamSide) => {
+        picks.forEach(p => {
+            const startMinAbs = (time - 1) * 60;
+            const endMinAbs = time * 60;
+            let deadDuration = 0;
+
+            if (p.deadUntil > startMinAbs) {
+                const endOfDeath = Math.min(endMinAbs, p.deadUntil);
+                deadDuration = Math.max(0, endOfDeath - startMinAbs);
+            }
+            const aliveRatio = (60 - deadDuration) / 60;
+
+            const income = calculateIndividualIncome(p, time, aliveRatio);
+
+            p.currentGold += income.gold;
+            state.gold[teamSide] += income.gold;
+
+            if (p.level < 18) {
+                p.xp += income.xp;
+                let requiredXP = 180 + (p.level * 100);
+                while (p.xp >= requiredXP && p.level < 18) {
+                    p.xp -= requiredXP;
+                    p.level++;
+                    requiredXP = 180 + (p.level * 100);
+                }
+            }
+        });
+    };
+    processIncome(picksBlue, SIDES.BLUE);
+    processIncome(picksRed, SIDES.RED);
+
+    [SIDES.BLUE, SIDES.RED].forEach(side => {
+        MAP_LANES.forEach(lane => {
+            const inhib = state.structures[side][lane].inhib;
+            if (inhib.destroyed && inhib.respawnTime <= time) {
+                inhib.destroyed = false;
+                minuteAddEvent(0, `${side === SIDES.BLUE ? teamBlue.name : teamRed.name}의 ${lane} 억제기가 재생되었습니다.`);
+            }
+        });
+    });
+
+    const getActiveBuffs = (side) => ({
+      dragonStacks: state.dragons[side].reduce((acc, d) => ({ ...acc, [d]: (acc[d] || 0) + 1 }), {}),
+      soul: state.soul?.side === side ? { type: state.soul.type } : null,
+      baron: state.baronBuff.side === side && state.baronBuff.endTime >= time,
+      elder: state.elderBuff.side === side && state.elderBuff.endTime >= time,
+      grubs: state.grubs[side]
+    });
+
+    let powerBlue = calculateTeamPower(picksBlue, time, getActiveBuffs(SIDES.BLUE), 0, picksRed, time * 60);
+    let powerRed = calculateTeamPower(picksRed, time, getActiveBuffs(SIDES.RED), 0, picksBlue, time * 60);
+
+    if (playerTeamName && difficulty) {
+        const multiplier = SIM_CONSTANTS.DIFFICULTY_MULTIPLIERS[difficulty] || 1.0;
+        if (teamBlue.name !== playerTeamName) powerBlue *= multiplier;
+        if (teamRed.name !== playerTeamName) powerRed *= multiplier;
+    }
+
+    powerBlue *= (1 + (Math.random() * SIM_CONSTANTS.VAR_RANGE * 2 - SIM_CONSTANTS.VAR_RANGE));
+    powerRed *= (1 + (Math.random() * SIM_CONSTANTS.VAR_RANGE * 2 - SIM_CONSTANTS.VAR_RANGE));
+
+    if (time === GAME_RULES.OBJECTIVES.GRUBS.time) {
+      const winner = resolveCombat(powerBlue, powerRed);
+      state.grubs[winner] += GAME_RULES.OBJECTIVES.GRUBS.count;
+      grantTeamGold(winner, GAME_RULES.OBJECTIVES.GRUBS.gold / 5);
+      simulateDamage(winner, powerBlue, powerRed);
+      minuteAddEvent(5, `🐛 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 공허 유충 처치`);
+    }
+
+    if (time === GAME_RULES.OBJECTIVES.HERALD.time) {
+      const winner = resolveCombat(powerBlue, powerRed);
+      grantTeamGold(winner, GAME_RULES.OBJECTIVES.HERALD.gold / 5);
+      simulateDamage(winner, powerBlue, powerRed);
+      minuteAddEvent(10, `👁️ ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 전령 획득`);
+    }
+
+    if ((time * 60 + 59) >= state.nextDragonTimeAbs && !state.soul && state.nextDragonTimeAbs !== Infinity) {
+        const currentMinuteStartAbs = time * 60;
+        const minValidSec = (currentMinuteStartAbs < state.nextDragonTimeAbs) ? (state.nextDragonTimeAbs - currentMinuteStartAbs) : 0;
+        const eventSec = Math.floor(Math.random() * (60 - minValidSec)) + minValidSec;
+        const eventAbsTime = currentMinuteStartAbs + eventSec;
+
+        const pBlueObj = calculateTeamPower(picksBlue, time, getActiveBuffs(SIDES.BLUE), 0, picksRed, eventAbsTime);
+        const pRedObj = calculateTeamPower(picksRed, time, getActiveBuffs(SIDES.RED), 0, picksBlue, eventAbsTime);
+
+        const winner = resolveCombat(pBlueObj, pRedObj);
+        simulateDamage(winner, pBlueObj, pRedObj);
+
+        let currentDragonName;
+        if (dragonSpawnCount === 0) currentDragonName = firstDragonType;
+        else if (dragonSpawnCount === 1) currentDragonName = secondDragonType;
+        else currentDragonName = mapElementType;
+
+        state.dragons[winner].push(currentDragonName);
+        grantTeamGold(winner, GAME_RULES.OBJECTIVES.DRAGON.gold / 5);
+        dragonSpawnCount++;
+
+        let msg = `🐉 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name}, ${currentDragonName} 용 처치`;
+        if (state.dragons[winner].length === 4) {
+            state.soul = { side: winner, type: mapElementType };
+            state.nextDragonTimeAbs = Infinity;
+            state.nextElderTimeAbs = eventAbsTime + (GAME_RULES.OBJECTIVES.ELDER.spawn_after_soul * 60);
+            msg += ` (👑 ${mapElementType} 영혼 획득!)`;
+        } else {
+            state.nextDragonTimeAbs = eventAbsTime + (GAME_RULES.OBJECTIVES.DRAGON.respawn * 60);
+        }
+        minuteAddEvent(eventSec, msg);
+    }
+
+    if ((time * 60 + 59) >= state.nextBaronTimeAbs && !(state.baronBuff.side && state.baronBuff.endTime >= time)) {
+      if (Math.random() > 0.6 || time > 30) {
+        const currentMinuteStartAbs = time * 60;
+        const minValidSec = (currentMinuteStartAbs < state.nextBaronTimeAbs) ? (state.nextBaronTimeAbs - currentMinuteStartAbs) : 0;
+        const eventSec = Math.floor(Math.random() * (60 - minValidSec)) + minValidSec;
+        const eventAbsTime = currentMinuteStartAbs + eventSec;
+
+        const pBlueObj = calculateTeamPower(picksBlue, time, getActiveBuffs(SIDES.BLUE), 0, picksRed, eventAbsTime);
+        const pRedObj = calculateTeamPower(picksRed, time, getActiveBuffs(SIDES.RED), 0, picksBlue, eventAbsTime);
+
+        const winner = resolveCombat(pBlueObj * 0.9, pRedObj * 0.9);
+        simulateDamage(winner, pBlueObj, pRedObj);
+        state.baronBuff = { side: winner, endTime: time + GAME_RULES.OBJECTIVES.BARON.duration };
+        grantTeamGold(winner, GAME_RULES.OBJECTIVES.BARON.gold / 5);
+        state.nextBaronTimeAbs = eventAbsTime + (GAME_RULES.OBJECTIVES.DRAGON.respawn * 60);
+        minuteAddEvent(eventSec, `🟣 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 내셔 남작 처치!`);
+      }
+    }
+
+    if ((time * 60 + 59) >= state.nextElderTimeAbs && !(state.elderBuff.side && state.elderBuff.endTime >= time)) {
+        const currentMinuteStartAbs = time * 60;
+        const minValidSec = (currentMinuteStartAbs < state.nextElderTimeAbs) ? (state.nextElderTimeAbs - currentMinuteStartAbs) : 0;
+        const eventSec = Math.floor(Math.random() * (60 - minValidSec)) + minValidSec;
+        const eventAbsTime = currentMinuteStartAbs + eventSec;
+
+        const pBlueObj = calculateTeamPower(picksBlue, time, getActiveBuffs(SIDES.BLUE), 0, picksRed, eventAbsTime);
+        const pRedObj = calculateTeamPower(picksRed, time, getActiveBuffs(SIDES.RED), 0, picksBlue, eventAbsTime);
+
+        const winner = resolveCombat(pBlueObj, pRedObj);
+        simulateDamage(winner, pBlueObj, pRedObj);
+        state.elderBuff = { side: winner, endTime: time + GAME_RULES.OBJECTIVES.ELDER.duration };
+        state.nextElderTimeAbs = eventAbsTime + (GAME_RULES.OBJECTIVES.ELDER.spawn_after_soul * 60);
+        minuteAddEvent(eventSec, `🐲 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 장로 드래곤 처치!`);
+    }
+
+    const powerDiffRatio = Math.abs(powerBlue - powerRed) / ((powerBlue + powerRed) / 2);
+
+    if (powerDiffRatio > 0.05 || Math.random() < (0.3 + (time * 0.005))) {
+        const combatSec = Math.floor(Math.random() * 45);
+        const combatAbsTime = time * 60 + combatSec;
+
+        const pBlueCombat = calculateTeamPower(picksBlue, time, getActiveBuffs(SIDES.BLUE), 0, picksRed, combatAbsTime);
+        const pRedCombat = calculateTeamPower(picksRed, time, getActiveBuffs(SIDES.RED), 0, picksBlue, combatAbsTime);
+
+        const winner = resolveCombat(pBlueCombat, pRedCombat);
+        const loser = winner === SIDES.BLUE ? SIDES.RED : SIDES.BLUE;
+        const winnerName = winner === SIDES.BLUE ? teamBlue.name : teamRed.name;
+
+        let combatOccurred = false;
+
+        if (Math.random() < 0.6) {
+            combatOccurred = true;
+            simulateDamage(winner, pBlueCombat, pRedCombat);
+
+            const winnerKills = 1 + Math.floor(Math.random() * 2);
+            state.kills[winner] += winnerKills;
+
+            const winningTeamPicks = winner === SIDES.BLUE ? picksBlue : picksRed;
+            const losingTeamPicks = loser === SIDES.BLUE ? picksBlue : picksRed;
+
+            const getAlivePlayers = (picks) => picks.filter(p => p.deadUntil <= combatAbsTime);
+
+            for(let k=0; k<winnerKills; k++) {
+                const aliveWinners = getAlivePlayers(winningTeamPicks);
+                const aliveLosers = getAlivePlayers(losingTeamPicks);
+
+                if (aliveWinners.length === 0 || aliveLosers.length === 0) break;
+
+                const killer = aliveWinners[Math.floor(Math.random() * aliveWinners.length)];
+                const victim = aliveLosers[Math.floor(Math.random() * aliveLosers.length)];
+
+                killer.stats.kills += 1;
+                victim.stats.deaths += 1;
+
+                const deathTime = calculateDeathTimer(victim.level, time);
+                victim.deadUntil = combatAbsTime + Math.floor(deathTime);
+
+                grantGoldToPlayer(winner, winningTeamPicks.indexOf(killer), GAME_RULES.GOLD.KILL);
+
+                let flashMsg = '';
+                if (Math.random() < 0.35) {
+                    killer.flashEndTime = time + 5;
+                    flashMsg = ' (⚡점멸 소모)';
+                }
+                if (Math.random() < 0.35) {
+                    victim.flashEndTime = time + 5;
+                }
+
+                const assistCount = Math.floor(Math.random() * 2) + 1;
+                for(let a=0; a<assistCount; a++) {
+                   const assistIdx = (winningTeamPicks.indexOf(killer) + a + 1) % 5;
+                   winningTeamPicks[assistIdx].stats.assists += 1;
+                   grantGoldToPlayer(winner, assistIdx, GAME_RULES.GOLD.ASSIST);
+                }
+
+                const killMsg = `⚔️ [${killer.playerData.포지션}] ${killer.playerName}(${killer.champName}) ➜ ☠️ [${victim.playerData.포지션}] ${victim.playerName}(${victim.champName})`;
+                minuteAddEvent(combatSec + k, killMsg);
+
+                // If the nexus is low as a result of kills/pushes, check below in push logic
+            }
+
+            if (Math.random() < 0.35) {
+                const aliveLosers = getAlivePlayers(losingTeamPicks);
+                const aliveWinners = getAlivePlayers(winningTeamPicks);
+
+                if (aliveLosers.length > 0 && aliveWinners.length > 0) {
+                    state.kills[loser] += 1;
+                    const counterKiller = aliveLosers[Math.floor(Math.random() * aliveLosers.length)];
+                    const counterVictim = aliveWinners[Math.floor(Math.random() * aliveWinners.length)];
+
+                    counterKiller.stats.kills += 1;
+                    counterVictim.stats.deaths += 1;
+
+                    const cDeathTime = calculateDeathTimer(counterVictim.level, time);
+                    counterVictim.deadUntil = combatAbsTime + Math.floor(cDeathTime);
+
+                    if (Math.random() < 0.35) counterKiller.flashEndTime = time + 5;
+
+                    grantGoldToPlayer(loser, losingTeamPicks.indexOf(counterKiller), GAME_RULES.GOLD.KILL + GAME_RULES.GOLD.ASSIST);
+                    minuteAddEvent(combatSec + 2, `🛡️ [${counterKiller.playerData.포지션}] ${counterKiller.playerName}의 반격! (${counterVictim.champName} 제압)`);
+                }
+            }
+        }
+
+        let pushBaseSec = combatOccurred ? combatSec + 5 : Math.floor(Math.random() * 50);
+        if (pushBaseSec > 59) pushBaseSec = 59;
+
+        let targetLanes = [MAP_LANES[Math.floor(Math.random() * MAP_LANES.length)]];
+        if (state.baronBuff.side === winner) targetLanes = MAP_LANES;
+
+        targetLanes.forEach((lane, idx) => {
+            let currentPushSec = pushBaseSec + (idx * 3);
+            if (currentPushSec > 59) currentPushSec = 59;
+
+            const enemyLane = state.structures[loser][lane];
+            let pushPower = 1.0 + (powerDiffRatio * 2);
+            if (state.baronBuff.side === winner) pushPower += 1.0;
+            if (state.elderBuff.side === winner) pushPower += 2.0;
+
+            let lanerIdx = 0;
+            if (lane === 'MID') lanerIdx = 2;
+            if (lane === 'BOT') lanerIdx = 3;
+
+            if (!enemyLane.tier1.destroyed) {
+                if (time >= GAME_RULES.OBJECTIVES.PLATES.start_time && time < GAME_RULES.OBJECTIVES.PLATES.end_time) {
+                    if (Math.random() < 0.4 * pushPower) {
+                         if (enemyLane.tier1.plates > 0) {
+                             enemyLane.tier1.plates--;
+                             grantGoldToPlayer(winner, lanerIdx, GAME_RULES.GOLD.TURRET.OUTER_PLATE.local);
+                             grantTeamGold(winner, GAME_RULES.GOLD.TURRET.OUTER_PLATE.team);
+
+                             const plateCount = 6 - enemyLane.tier1.plates;
+                             let plateMsg = `💰 ${winnerName}, ${lane} 포탑 방패 채굴 (${plateCount}/6)`;
+                             if (enemyLane.tier1.plates === 0) {
+                                 enemyLane.tier1.destroyed = true;
+                                 plateMsg = `💥 ${winnerName}, ${lane} 1차 포탑 파괴 (모든 방패 파괴)`;
+                             }
+                             minuteAddEvent(currentPushSec, plateMsg);
+                         }
+                    }
+                } else if (time >= GAME_RULES.OBJECTIVES.PLATES.end_time) {
+                    if (Math.random() < 0.3 * pushPower) {
+                        enemyLane.tier1.destroyed = true;
+                        grantGoldToPlayer(winner, lanerIdx, 300);
+                        grantTeamGold(winner, 50);
+                        minuteAddEvent(currentPushSec, `💥 ${winnerName}, ${lane} 1차 포탑 파괴`);
+                    }
+                }
+            } else if (!enemyLane.tier2.destroyed) {
+                if (Math.random() < 0.25 * pushPower) {
+                    enemyLane.tier2.destroyed = true;
+                    let localG = lane === 'MID' ? GAME_RULES.GOLD.TURRET.INNER_MID.local : GAME_RULES.GOLD.TURRET.INNER_SIDE.local;
+                    let teamG = lane === 'MID' ? GAME_RULES.GOLD.TURRET.INNER_MID.team : GAME_RULES.GOLD.TURRET.INNER_SIDE.team;
+                    grantGoldToPlayer(winner, lanerIdx, localG);
+                    grantTeamGold(winner, teamG);
+                    minuteAddEvent(currentPushSec, `💥 ${winnerName}, ${lane} 2차 포탑 파괴`);
+                }
+            } else if (!enemyLane.tier3.destroyed) {
+                if (Math.random() < 0.2 * pushPower) {
+                    enemyLane.tier3.destroyed = true;
+                    grantGoldToPlayer(winner, lanerIdx, GAME_RULES.GOLD.TURRET.INHIB_TURRET.local);
+                    grantTeamGold(winner, GAME_RULES.GOLD.TURRET.INHIB_TURRET.team);
+                    minuteAddEvent(currentPushSec, `🚨 ${winnerName}, ${lane} 3차(억제기) 포탑 파괴`);
+                }
+            } else if (!enemyLane.inhib.destroyed) {
+                if (Math.random() < 0.3 * pushPower) {
+                    enemyLane.inhib.destroyed = true;
+                    enemyLane.inhib.respawnTime = time + 5;
+                    grantTeamGold(winner, 10);
+                    minuteAddEvent(currentPushSec, `🚧 ${winnerName}, ${lane} 억제기 파괴! 슈퍼 미니언 생성`);
+                }
+            } else {
+                if (Math.random() < 0.2 * pushPower) {
+                    let dmg = 10 + (powerDiffRatio * 100);
+                    if (state.baronBuff.side === winner) dmg *= 1.5;
+                    if (state.elderBuff.side === winner) dmg *= 2.0;
+
+                    state.nexusHealth[loser] -= dmg;
+
+                    if (state.nexusHealth[loser] <= 0) {
+                         const finalMsg = `👑 ${winnerName}이(가) 넥서스를 파괴합니다! GG`;
+                         minuteAddEvent(currentPushSec, finalMsg);
+
+                         // ensure this exact moment is recorded as the final event and we stop the simulation
+                         gameOver = true;
+                         endSecond = currentPushSec;
+                         // push minuteEvents filtered below and break out of loops
+                    } else if (Math.random() < 0.5) {
+                         minuteAddEvent(currentPushSec, `${winnerName}, 쌍둥이 포탑 및 넥서스 타격 중...`);
+                    }
+                }
+            }
+        });
+    }
+
+    // Sort minute events by their second and append only up to endSecond if gameOver
+    minuteEvents.sort((a, b) => a.sec - b.sec);
+
+    if (gameOver) {
+        // keep only events that occurred at or before the recorded endSecond
+        minuteEvents = minuteEvents.filter(e => e.sec <= endSecond);
+        minuteEvents.forEach(evt => logs.push(evt.message));
+        break; // exit main loop immediately
+    }
+
+    minuteEvents.forEach(evt => logs.push(evt.message));
+  }
+
+  // final winner name
+  const winnerSide = state.nexusHealth[SIDES.BLUE] > state.nexusHealth[SIDES.RED] ? SIDES.BLUE : SIDES.RED;
+  const winnerName = winnerSide === SIDES.BLUE ? teamBlue.name : teamRed.name;
+
+  // determine final formatted time
+  const finalTimeStr = gameOver ? (() => {
+      // if game ended early, time variable holds final minute; endSecond has last second in that minute
+      return `[${time}:${endSecond < 10 ? '0' + endSecond : endSecond}]`;
+  })() : `[${time}:00]`;
+
+  // Ensure the final nexus-destroy message is last (safety)
+  if (gameOver) {
+      const lastMsg = logs[logs.length - 1] || '';
+      if (!lastMsg.includes('넥서스 파괴')) {
+          logs.push(`${formatTime(time, endSecond)} 👑 ${winnerName}이(가) 넥서스를 파괴합니다! GG`);
+      }
+  }
+
+  // Keep logs time-sorted as a final safety (they already include timestamps)
+  // (simple lexical sort is fine because all messages start with [m:ss])
+  logs.sort();
+
+  return {
+    winnerName: winnerName,
+    winnerSide: winnerSide,
+    gameTime: finalTimeStr,
+    totalMinutes: time,
+    logs,
+    finalKills: state.kills,
+  };
+}
 
   const grantTeamGold = (teamSide, amountPerPlayer) => {
       let finalAmount = amountPerPlayer;
@@ -775,6 +1176,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
             const winnerKills = 1 + Math.floor(Math.random() * 2);
             state.kills[winner] += winnerKills;
             
+            
             const winningTeamPicks = winner === SIDES.BLUE ? picksBlue : picksRed;
             const losingTeamPicks = loser === SIDES.BLUE ? picksBlue : picksRed;
             
@@ -954,14 +1356,97 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
     logs,
     finalKills: state.kills,
   };
-}
+
 
 function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions) {
   const { currentChampionList } = simOptions;
 
   const draftResult = runDraftSimulation(teamBlue, teamRed, fearlessBans, currentChampionList);
-  if (draftResult.picks.A.length < 5 || draftResult.picks.B.length < 5) {
-    // Replace the final return in function simulateSet(...) with this block
+
+  // If draft didn't produce full 5v5 picks, return a safe fallback result
+  if (!draftResult || !draftResult.picks || draftResult.picks.A.length < 5 || draftResult.picks.B.length < 5) {
+    return {
+      winnerName: null,
+      resultSummary: '밴픽 실패 또는 불완전한 밴픽(선수/챔피언 누락)',
+      picks: draftResult ? draftResult.picks : { A: [], B: [] },
+      bans: draftResult ? draftResult.bans : { A: [], B: [] },
+      logs: draftResult ? draftResult.draftLogs : [],
+      usedChamps: [],
+      score: { [teamBlue.name]: '0', [teamRed.name]: '0' },
+      gameTime: '0분 0초',
+      totalMinutes: 0
+    };
+  }
+
+  const getConditionModifier = (player) => {
+      const stability = player.상세?.안정성 || 50;
+      const variancePercent = ((100 - stability) / stability) * 10;
+      const fluctuation = (Math.random() * variancePercent * 2) - variancePercent;
+      return 1 + (fluctuation / 100);
+  };
+
+  const addPlayerData = (picks, roster) => {
+      return picks.map(p => {
+          const playerData = roster.find(player => player.이름 === p.playerName);
+          const champData = currentChampionList.find(c => c.name === p.champName);
+          return {
+              ...p,
+              ...champData,
+              dmgType: champData ? (champData.dmg_type || 'AD') : 'AD',
+              classType: champData ? getChampionClass(champData, playerData?.포지션 || p.playerRole) : getChampionClass(null, playerData?.포지션 || p.playerRole),
+              playerData: playerData || { 이름: p.playerName, 포지션: p.playerRole || 'MID', 종합: 75, 상세: {} },
+              conditionModifier: getConditionModifier(playerData || {})
+          };
+      });
+  };
+
+  const picksBlue_detailed = addPlayerData(draftResult.picks.A, teamBlue.roster);
+  const picksRed_detailed = addPlayerData(draftResult.picks.B, teamRed.roster);
+
+  const gameResult = runGameTickEngine(teamBlue, teamRed, picksBlue_detailed, picksRed_detailed, simOptions);
+
+  const usedChamps = [...draftResult.picks.A.map(p => p.champName), ...draftResult.picks.B.map(p => p.champName)];
+  const scoreBlue = gameResult.finalKills[SIDES.BLUE];
+  const scoreRed = gameResult.finalKills[SIDES.RED];
+
+  const winningPicks = gameResult.winnerSide === SIDES.BLUE ? picksBlue_detailed : picksRed_detailed;
+
+  const candidates = winningPicks.map(p => {
+      const k = p.stats.kills;
+      const d = p.stats.deaths === 0 ? 1 : p.stats.deaths;
+      const a = p.stats.assists;
+      const kda = (k + a) / d;
+
+      const gold = p.currentGold || 0;
+      const role = p.playerData.포지션;
+
+      const dpm = (p.stats.damage || 0) / (gameResult.totalMinutes || 1);
+
+      let pogScore = (kda * 3) + (dpm / 100) + (gold / 1000) + (a * 1);
+
+      if (role === 'JGL' || role === '정글') pogScore *= 1.15;
+      if (role === 'SUP' || role === '서포터') pogScore *= 1.05;
+
+      return { ...p, kdaVal: kda, pogScore: pogScore, dpm: dpm };
+  });
+
+  candidates.sort((a, b) => b.pogScore - a.pogScore);
+  const pogPlayer = candidates[0] || winningPicks[0];
+
+  const resultSummary = `⏱️ ${gameResult.gameTime} | ⚔️ ${teamBlue.name} ${scoreBlue} : ${scoreRed} ${teamRed.name} | 🏆 승리: ${gameResult.winnerName}`;
+  const pogText = pogPlayer ? `🏅 POG: [${pogPlayer.playerData.포지션}] ${pogPlayer.playerName} (${pogPlayer.champName}) - Score: ${pogPlayer.pogScore ? pogPlayer.pogScore.toFixed(1) : '0.0'}` : '';
+
+  const finalLogs = [
+    `========== [ 밴픽 단계 ] ==========`,
+    ...draftResult.draftLogs,
+    `========== [ 경기 결과 ] ==========`,
+    resultSummary,
+    pogText,
+    pogPlayer ? `KDA: ${pogPlayer.stats.kills}/${pogPlayer.stats.deaths}/${pogPlayer.stats.assists} | DPM: ${Math.floor(pogPlayer.dpm)} | LV: ${pogPlayer.level || 1}` : '',
+    `===================================`,
+    ...gameResult.logs
+  ];
+
   return {
     winnerName: gameResult.winnerName,
     resultSummary: resultSummary + ' ' + pogText,
@@ -969,15 +1454,15 @@ function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions) {
     bans: draftResult.bans,
     logs: finalLogs,
     usedChamps: usedChamps,
-    score: { 
-        [teamBlue.name]: String(scoreBlue), 
-        [teamRed.name]: String(scoreRed) 
+    score: {
+        [teamBlue.name]: String(scoreBlue),
+        [teamRed.name]: String(scoreRed)
     },
-    // Add timing info so LiveGamePlayer can parse safely
+    // timing info so LiveGamePlayer can parse safely
     gameTime: gameResult.gameTime,
     totalMinutes: gameResult.totalMinutes
   };
-  }
+}
   const getConditionModifier = (player) => {
       const stability = player.상세?.안정성 || 50;
       const variancePercent = ((100 - stability) / stability) * 10; 
@@ -1059,7 +1544,7 @@ function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions) {
         [teamRed.name]: String(scoreRed) 
     }
   };
-}
+
 
 function simulateMatch(teamA, teamB, format = 'BO3', simOptions) {
   const targetWins = format === 'BO5' ? 3 : 2;
@@ -1542,15 +2027,14 @@ function DetailedMatchResultModal({ result, onClose, teamA, teamB }) {
 // [3단계] Dashboard 컴포넌트 바로 위에 붙여넣기
 // ==========================================
 function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onClose }) {
-  // Hooks는 조건문 위에 있어야 함 (React 규칙)
+  // Hooks are not conditional
   const [currentSet, setCurrentSet] = useState(1);
   const [winsA, setWinsA] = useState(0);
   const [winsB, setWinsB] = useState(0);
-  const [phase, setPhase] = useState('READY'); 
+  const [phase, setPhase] = useState('READY');
   const [simulationData, setSimulationData] = useState(null);
   const [displayLogs, setDisplayLogs] = useState([]);
-  
-  // [FIX] liveStats 초기값을 객체 형태로 변경하여 null 참조 오류 방지
+
   const [liveStats, setLiveStats] = useState({
       kills: { BLUE: 0, RED: 0 },
       gold: { BLUE: 2500, RED: 2500 },
@@ -1559,6 +2043,363 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
       grubs: { BLUE: 0, RED: 0 },
       players: []
   });
+
+  const [gameTime, setGameTime] = useState(0);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [draftStep, setDraftStep] = useState(0);
+  const [globalBanList, setGlobalBanList] = useState([]);
+  const [matchHistory, setMatchHistory] = useState([]);
+
+  // safety
+  if (!teamA || !teamB || !match) {
+      return (
+          <div className="fixed inset-0 bg-black text-red-500 z-[200] flex items-center justify-center">
+              <div>치명적 오류: 매치 데이터가 누락되었습니다.</div>
+              <button onClick={onClose} className="bg-white text-black px-4 py-2 mt-4">닫기</button>
+          </div>
+      );
+  }
+
+  // parse gameTime string like "12분 34초" -> seconds
+  const parseGameTimeStr = (s) => {
+    if (!s || typeof s !== 'string') return 0;
+    const m = s.match(/(\d+)\s*분\s*(\d+)\s*초/);
+    if (m) return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+    const loose = s.match(/(\d+)\s*분/);
+    if (loose) return parseInt(loose[1], 10) * 60;
+    return 0;
+  };
+
+  const startSet = useCallback(() => {
+    try {
+        const blueTeam = currentSet % 2 !== 0 ? teamA : teamB;
+        const redTeam = currentSet % 2 !== 0 ? teamB : teamA;
+
+        const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
+
+        if (!result || !result.picks) throw new Error("시뮬레이션 결과가 비어있습니다.");
+
+        setLiveStats({
+            kills: { BLUE: 0, RED: 0 },
+            gold: { BLUE: 2500, RED: 2500 },
+            towers: { BLUE: 0, RED: 0 },
+            drakes: { BLUE: 0, RED: 0 },
+            grubs: { BLUE: 0, RED: 0 },
+            players: [
+                ...result.picks.A.map(p => ({ ...p, side: 'BLUE', k:0, d:0, a:0, currentGold: 500, lvl: 1 })),
+                ...result.picks.B.map(p => ({ ...p, side: 'RED', k:0, d:0, a:0, currentGold: 500, lvl: 1 }))
+            ]
+        });
+
+        setSimulationData({ ...result, blueTeam, redTeam });
+        setGameTime(0);
+        setDisplayLogs([]);
+        setPhase('DRAFT');
+        setDraftStep(0);
+
+    } catch (e) {
+        console.error(e);
+        alert("시뮬레이션 중 오류 발생: " + e.message);
+        onClose();
+    }
+  }, [currentSet, teamA, teamB, globalBanList, simOptions, onClose]);
+
+  useEffect(() => { if (phase === 'READY') startSet(); }, [phase, startSet]);
+
+  // Draft animation/timer
+  useEffect(() => {
+    if (phase !== 'DRAFT') return;
+    const timer = setTimeout(() => {
+        if (draftStep < 20) setDraftStep(p => p + 1);
+        else setPhase('GAME');
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [phase, draftStep]);
+
+  // GAME loop
+  useEffect(() => {
+    if (phase !== 'GAME' || !simulationData) return;
+
+    const finalSecFromData = parseGameTimeStr(simulationData.gameTime) || (simulationData.totalMinutes ? simulationData.totalMinutes * 60 : 30*60);
+
+    const timer = setInterval(() => {
+        setGameTime(prev => {
+            const next = prev + 1;
+
+            // Process logs that match this absolute second (simulation logs start with [m:ss])
+            const logsThisSecond = simulationData.logs.filter(log => {
+                const m = log.match(/\[(\d+):(\d+)\]/);
+                if (!m) return false;
+                const sec = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+                return sec === next;
+            });
+
+            if (logsThisSecond.length > 0) {
+                setDisplayLogs(prev => {
+                    const merged = [...prev, ...logsThisSecond];
+                    // Keep many lines but avoid runaway memory
+                    return merged.slice(-80);
+                });
+
+                setLiveStats(prevStats => {
+                    const newStats = JSON.parse(JSON.stringify(prevStats));
+                    logsThisSecond.forEach(log => {
+                        if (log.includes('➜ ☠️') || log.includes('➜ ☠️') || log.includes('☠️')) {
+                            const killerName = log.match(/\]\s(.+?)\(/)?.[1]?.trim();
+                            const victimName = log.match(/➜\s☠️\s\[.*?\]\s(.+?)\(/)?.[1]?.trim() || log.match(/☠️\s\[.*?\]\s(.+?)\(/)?.[1]?.trim();
+
+                            // adjust kills/deaths
+                            newStats.players = newStats.players.map(p => {
+                                if (p.playerName === victimName) return {...p, d: (p.d || 0) + 1};
+                                return p;
+                            });
+                            newStats.players = newStats.players.map(p => {
+                                if (p.playerName === killerName) {
+                                    p.k = (p.k || 0) + 1;
+                                    p.currentGold = (p.currentGold || 0) + GAME_RULES.GOLD.KILL;
+                                    return p;
+                                }
+                                return p;
+                            });
+
+                            // update team totals
+                            const killerSide = newStats.players.find(p => p.playerName === killerName)?.side;
+                            if (killerSide) newStats.kills[killerSide] = (newStats.kills[killerSide] || 0) + 1;
+                        }
+                        if (log.includes('포탑 파괴') || log.includes('포탑 방패 채굴') || log.includes('억제기 파괴')) {
+                            // determine which team did it from log string
+                            const teamNameInLog = simulationData.blueTeam.name && log.includes(simulationData.blueTeam.name) ? simulationData.blueTeam.name : (simulationData.redTeam.name && log.includes(simulationData.redTeam.name) ? simulationData.redTeam.name : null);
+                            if (teamNameInLog) {
+                                const teamKey = teamNameInLog === simulationData.blueTeam.name ? 'BLUE' : 'RED';
+                                newStats.towers[teamKey] = (newStats.towers[teamKey] || 0) + 1;
+                            }
+                        }
+                    });
+                    return newStats;
+                });
+            }
+
+            // When we reach or pass finalSecFromData, mark set as complete
+            if (next >= finalSecFromData) {
+                // ensure final logs at exact second are added
+                const leftover = simulationData.logs.filter(log => {
+                    const m = log.match(/\[(\d+):(\d+)\]/);
+                    if (!m) return false;
+                    const sec = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+                    return sec >= prev && sec <= finalSecFromData;
+                });
+                if (leftover.length > 0) {
+                    setDisplayLogs(prev => [...prev, ...leftover].slice(-80));
+                }
+                setPhase('SET_RESULT');
+            }
+
+            return next;
+        });
+    }, 1000 / playbackSpeed);
+
+    return () => clearInterval(timer);
+  }, [phase, simulationData, playbackSpeed]);
+
+  // Don't render until simulationData is available
+  if (!simulationData) return <div className="fixed inset-0 bg-black text-white flex items-center justify-center z-[200]">로딩 중...</div>;
+
+  const { blueTeam, redTeam, picks, bans } = simulationData;
+  const isBlueWin = simulationData.winnerName === blueTeam.name;
+
+  // compute large totals for display
+  const totalKillsBlue = liveStats.kills.BLUE || 0;
+  const totalKillsRed = liveStats.kills.RED || 0;
+
+  // Ban list arrays
+  const blueBans = bans?.A || [];
+  const redBans = bans?.B || [];
+  const fearless = simulationData.fearlessBans || [];
+
+  return (
+    <div className="fixed inset-0 bg-black z-[200] flex flex-col font-mono text-white">
+        {/* top bar */}
+        <div className="h-20 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-6 z-10">
+            <div className="flex items-center gap-4">
+                <div className="text-blue-400 font-black text-3xl">{blueTeam.name}</div>
+                <div className="text-4xl font-extrabold text-white">{totalKillsBlue}</div>
+            </div>
+
+            <div className="text-yellow-400 font-black text-2xl">{phase === 'DRAFT' ? 'DRAFT' : `${Math.floor(gameTime/60)}:${String(gameTime%60).padStart(2,'0')}`}</div>
+
+            <div className="flex items-center gap-4">
+                <div className="text-4xl font-extrabold text-white">{totalKillsRed}</div>
+                <div className="text-red-400 font-black text-3xl">{redTeam.name}</div>
+            </div>
+        </div>
+
+        {/* bans row (visible at top always) */}
+        <div className="bg-gray-800 border-b border-gray-700 px-6 py-2 flex items-center gap-6 z-10">
+            <div className="flex items-center gap-2">
+                <div className="text-xs text-blue-300 font-bold uppercase">Blue Bans</div>
+                <div className="flex gap-1">
+                    {blueBans.map((b, i) => <span key={i} className="text-[12px] text-white bg-blue-600 px-2 py-0.5 rounded">{b}</span>)}
+                </div>
+            </div>
+
+            <div className="flex-1 text-center">
+                {fearless && fearless.length > 0 && (
+                    <div className="inline-flex gap-2 items-center">
+                        <span className="text-xs text-purple-300 font-bold">Fearless</span>
+                        {fearless.map((f, idx) => <span key={idx} className="text-[12px] bg-purple-700 text-white px-2 py-0.5 rounded">{f}</span>)}
+                    </div>
+                )}
+            </div>
+
+            <div className="flex items-center gap-2 justify-end">
+                <div className="text-xs text-red-300 font-bold uppercase">Red Bans</div>
+                <div className="flex gap-1">
+                    {redBans.map((b, i) => <span key={i} className="text-[12px] text-white bg-red-600 px-2 py-0.5 rounded">{b}</span>)}
+                </div>
+            </div>
+        </div>
+
+        {/* main content */}
+        <div className="flex-1 bg-black relative flex">
+            {phase === 'DRAFT' && (
+                <div className="w-full flex justify-between p-10">
+                    <div className="space-y-2">
+                      {picks.A.map((p,i) => (
+                        <div key={i} className={`p-4 border-l-4 ${i < (draftStep-7)/2 ? 'border-blue-500 bg-gray-800' : 'border-gray-800'}`}>{p.champName}</div>
+                      ))}
+                    </div>
+                    <div className="text-6xl font-black self-center text-gray-800">VS</div>
+                    <div className="space-y-2 text-right">
+                      {picks.B.map((p,i) => (
+                        <div key={i} className={`p-4 border-r-4 ${i < (draftStep-7)/2 ? 'border-red-500 bg-gray-800' : 'border-gray-800'}`}>{p.champName}</div>
+                      ))}
+                    </div>
+                </div>
+            )}
+
+            {phase === 'GAME' && (
+                <div className="w-full flex relative">
+                    {/* left player list */}
+                    <div className="w-72 bg-gray-900 p-2 space-y-1 overflow-y-auto">
+                      {liveStats.players.filter(p=>p.side==='BLUE').map((p,i) => {
+                        const k = p.k || 0, d = p.d || 0, a = p.a || 0;
+                        const kdaStr = `${k}/${d}/${a}`;
+                        const lvl = p.lvl || p.level || 1;
+                        return (
+                          <div key={i} className="text-xs bg-black p-2 border-l-4 border-blue-500">
+                            <div className="flex justify-between items-center">
+                              <div className="font-bold">{p.champName} <span className="text-xs text-gray-400">- {p.playerName}</span></div>
+                              <div className="text-right">
+                                <div className="text-sm font-extrabold">{k}/{d}/{a}</div>
+                                <div className="text-[11px] text-gray-400">LV {lvl}</div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* center area: large log & controls */}
+                    <div className="flex-1 relative flex flex-col items-center justify-end pb-10 px-6">
+                        <div className="absolute inset-0 bg-gradient-to-b from-black/40 to-transparent pointer-events-none"></div>
+
+                        {/* action log: full white, not clipped, scrollable */}
+                        <div className="w-full max-w-3xl z-10">
+                          <div className="bg-black/60 text-white p-4 rounded-lg h-64 overflow-y-auto whitespace-pre-wrap">
+                            {displayLogs.length === 0 ? <div className="text-gray-400">경기 로그가 여기에 표시됩니다...</div> : displayLogs.map((l,i)=>
+                              <div key={i} className="py-1 border-b border-white/5 text-sm">{l}</div>
+                            )}
+                          </div>
+
+                          {/* playback controls */}
+                          <div className="mt-3 flex items-center justify-between gap-4">
+                             <div className="flex gap-2">
+                               {[1,2,4].map(s => (
+                                 <button
+                                   key={s}
+                                   onClick={() => setPlaybackSpeed(s)}
+                                   className={`px-3 py-1 rounded text-xs ${playbackSpeed === s ? 'bg-yellow-500 text-black font-bold' : 'bg-gray-700 text-white'}`}
+                                 >
+                                   {s}x
+                                 </button>
+                               ))}
+                             </div>
+                             <div>
+                               <button onClick={()=>{
+                                 const finalSec = parseGameTimeStr(simulationData.gameTime) || (simulationData.totalMinutes * 60);
+                                 setGameTime(finalSec);
+                                 setPhase('SET_RESULT');
+                               }} className="bg-red-600 px-3 py-1 rounded text-xs font-bold">SKIP</button>
+                             </div>
+                          </div>
+                        </div>
+
+                    </div>
+
+                    {/* right player list */}
+                    <div className="w-72 bg-gray-900 p-2 space-y-1 overflow-y-auto">
+                      {liveStats.players.filter(p=>p.side==='RED').map((p,i) => {
+                        const k = p.k || 0, d = p.d || 0, a = p.a || 0;
+                        const lvl = p.lvl || p.level || 1;
+                        return (
+                          <div key={i} className="text-xs bg-black p-2 border-r-4 border-red-500 text-right">
+                            <div className="flex justify-between items-center">
+                              <div className="text-left">
+                                <div className="font-bold">{p.playerName} <span className="text-xs text-gray-400">- {p.champName}</span></div>
+                                <div className="text-[11px] text-gray-400">LV {lvl}</div>
+                              </div>
+                              <div className="text-sm font-extrabold">{p.k || 0}/{p.d || 0}/{p.a || 0}</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                </div>
+            )}
+
+            {phase === 'SET_RESULT' && (
+                <div className="w-full flex flex-col items-center justify-center">
+                    <h1 className="text-6xl font-black text-white mb-6">{simulationData.winnerName || '무승부'}</h1>
+                    <div className="text-white mb-6">{simulationData.resultSummary}</div>
+                    <button onClick={() => {
+                         const isBlue = simulationData.winnerName === teamA.name;
+                         const nA = winsA + (isBlue?1:0); const nB = winsB + (!isBlue?1:0);
+                         setWinsA(nA); setWinsB(nB);
+
+                         const newHistoryEntry = {
+                             setNumber: currentSet,
+                             winner: simulationData.winnerName,
+                             picks: simulationData.picks,
+                             bans: simulationData.bans,
+                             fearlessBans: globalBanList,
+                             logs: simulationData.logs,
+                             resultSummary: simulationData.resultSummary,
+                             scores: simulationData.score
+                         };
+                         const updatedHistory = [...matchHistory, newHistoryEntry];
+                         setMatchHistory(updatedHistory);
+                         setGlobalBanList(b => [...b, ...simulationData.usedChamps]);
+
+                         const target = match.format==='BO5'?3:2;
+                         if(nA>=target || nB>=target) {
+                             onMatchComplete(match, {
+                                 winner: nA > nB ? teamA.name : teamB.name,
+                                 scoreA: nA,
+                                 scoreB: nB,
+                                 scoreString:`${nA}:${nB}`,
+                                 history: updatedHistory
+                             });
+                         } else {
+                             setCurrentSet(s=>s+1);
+                             setPhase('READY');
+                         }
+                    }} className="text-2xl font-bold bg-blue-600 px-8 py-3 rounded hover:bg-blue-500">NEXT</button>
+                </div>
+            )}
+        </div>
+    </div>
+  );
+}
 
   const [gameTime, setGameTime] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
@@ -1806,7 +2647,7 @@ if (typeof simulationData.gameTime === 'string') {
         </div>
     </div>
   );
-}
+
 
 
 
