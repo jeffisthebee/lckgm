@@ -1641,6 +1641,40 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
   useEffect(() => {
     if (phase === 'READY') startSet();
   }, [phase, startSet]);
+  useEffect(() => {
+    if (phase !== 'DRAFT' || !simulationData) return;
+  
+    const draftLogs = simulationData.draftLogs || [];
+    setDisplayLogs([]); // start fresh for draft view
+    setDraftStep(0);
+  
+    let idx = 0;
+    const intervalMs = 450; // speed of revealing draft logs (adjustable)
+    const interval = setInterval(() => {
+      const nextLog = draftLogs[idx];
+      if (nextLog) {
+        setDisplayLogs(prev => {
+          const merged = [...prev, nextLog].slice(-200);
+          return merged;
+        });
+        idx++;
+        setDraftStep(idx);
+      }
+  
+      if (idx >= draftLogs.length) {
+        clearInterval(interval);
+        // small pause so the user can see final bans/picks, then start the game
+        const startDelay = 700;
+        setTimeout(() => {
+          setDisplayLogs([]); // clear draft logs so game logs display cleanly
+          setPhase('GAME');
+          setGameTime(0);
+        }, startDelay);
+      }
+    }, intervalMs);
+  
+    return () => clearInterval(interval);
+  }, [phase, simulationData]);
 
   // main playback / tick loop (fixed: useEffect spelled correctly and robust handling)
   useEffect(() => {
@@ -1777,17 +1811,62 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
       </div>
 
       <div className="flex-1 bg-black relative flex">
-        {phase === 'DRAFT' && (
-          <div className="w-full flex justify-between p-10 text-white">
-            <div className="space-y-2 w-1/3">
-              {picks.A.map((p,i) => <div key={i} className="p-4 border-l-4 border-blue-500">{p.champName} — {p.playerName}</div>)}
+      {phase === 'DRAFT' && (
+  <div className="w-full flex flex-col p-8 text-white">
+    <div className="flex justify-between items-start gap-6">
+      {/* Blue side: bans + picks */}
+      <div className="w-1/3">
+        <div className="text-sm font-bold text-blue-400 mb-2">Blue Bans</div>
+        <div className="flex gap-2 flex-wrap mb-4">
+          {(simulationData.bans?.A || []).map((b, i) => (
+            <div key={i} className="px-3 py-1 bg-gray-800 text-white text-xs rounded">{b}</div>
+          ))}
+        </div>
+
+        <div className="space-y-2">
+          {picks.A.map((p, i) => (
+            <div key={i} className="p-3 bg-blue-900/40 rounded border-l-4 border-blue-500">
+              <div className="font-bold text-sm">{p.champName}</div>
+              <div className="text-xs text-gray-300">{p.playerName}</div>
             </div>
-            <div className="text-6xl font-black self-center text-gray-300">VS</div>
-            <div className="space-y-2 text-right w-1/3">
-              {picks.B.map((p,i) => <div key={i} className="p-4 border-r-4 border-red-500">{p.champName} — {p.playerName}</div>)}
+          ))}
+        </div>
+      </div>
+
+      {/* Center: Draft logs */}
+      <div className="flex-1">
+        <div className="text-center text-gray-300 font-bold mb-2">DRAFT PROGRESSION</div>
+        <div className="h-64 bg-black/40 p-3 rounded overflow-y-auto font-mono text-sm">
+          {(displayLogs && displayLogs.length > 0) ? (
+            displayLogs.map((l, idx) => <div key={idx} className="py-1 border-b border-gray-800">{l}</div>)
+          ) : (
+            <div className="text-gray-500 text-sm">Draft is preparing... (bans and picks will appear)</div>
+          )}
+        </div>
+        <div className="text-center text-xs text-gray-400 mt-2">Progress: {draftStep} / {(simulationData.draftLogs || []).length}</div>
+      </div>
+
+      {/* Red side: bans + picks */}
+      <div className="w-1/3 text-right">
+        <div className="text-sm font-bold text-red-400 mb-2">Red Bans</div>
+        <div className="flex gap-2 justify-end flex-wrap mb-4">
+          {(simulationData.bans?.B || []).map((b, i) => (
+            <div key={i} className="px-3 py-1 bg-gray-800 text-white text-xs rounded">{b}</div>
+          ))}
+        </div>
+
+        <div className="space-y-2">
+          {picks.B.map((p, i) => (
+            <div key={i} className="p-3 bg-red-900/40 rounded border-r-4 border-red-500">
+              <div className="font-bold text-sm">{p.champName}</div>
+              <div className="text-xs text-gray-300">{p.playerName}</div>
             </div>
-          </div>
-        )}
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+)}
 
         {phase === 'GAME' && (
           <>
