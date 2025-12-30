@@ -2231,7 +2231,7 @@ function Dashboard() {
 
 // ==========================================
   
- // REPLACE the handleStartMyMatch function in Dashboard with this block
+// Replace the existing `handleStartMyMatch` in the Dashboard component with this block
 const handleStartMyMatch = () => {
   try {
     if (!nextGlobalMatch) {
@@ -2263,9 +2263,17 @@ const handleStartMyMatch = () => {
       return;
     }
 
-    // Instead of launching LiveGamePlayer (which may rely on many internal vars), run the simulation immediately
-    // and show the DetailedMatchResultModal using existing helper that sets myMatchResult and applies match result.
-    runSimulationForMatch(nextGlobalMatch, true);
+    // Instead of running the simulation immediately, open the LiveGamePlayer UI
+    // LiveGamePlayer will call simulateSet internally and call onMatchComplete when finished.
+    setLiveMatchData({
+      match: nextGlobalMatch,
+      teamA: t1Obj,
+      teamB: t2Obj
+    });
+    setIsLiveGameMode(true);
+
+    // optionally switch to dashboard tab to ensure UI is in correct view
+    setActiveTab('dashboard');
 
   } catch (error) {
     console.error("경기 시작 오류:", error);
