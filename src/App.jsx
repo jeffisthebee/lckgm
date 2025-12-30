@@ -2230,23 +2230,18 @@ function Dashboard() {
   };
 
 // ==========================================
-  // [수정됨] Dashboard 내부 로직 통합 (여기서부터 복사하세요)
-  // ==========================================
-
-  // [1] 내 경기 시작하기 (안전장치 추가됨)
-  const handleStartMyMatch = () => {
+  
+ // REPLACE the handleStartMyMatch function in Dashboard with this block
+const handleStartMyMatch = () => {
   try {
-    // 1. 경기 데이터 확인
     if (!nextGlobalMatch) {
       alert("진행할 경기가 없습니다.");
       return;
     }
 
-    // 2. 팀 ID 정규화 (숫자로 변환)
     const t1Id = typeof nextGlobalMatch.t1 === 'object' ? nextGlobalMatch.t1.id : parseInt(nextGlobalMatch.t1);
     const t2Id = typeof nextGlobalMatch.t2 === 'object' ? nextGlobalMatch.t2.id : parseInt(nextGlobalMatch.t2);
 
-    // 3. 팀 객체 찾기
     const t1Obj = teams.find(t => t.id === t1Id);
     const t2Obj = teams.find(t => t.id === t2Id);
 
@@ -2256,7 +2251,6 @@ function Dashboard() {
       return;
     }
 
-    // 4. 로스터 가져오기 (안전 장치 추가)
     const t1Roster = getTeamRoster(t1Obj.name);
     const t2Roster = getTeamRoster(t2Obj.name);
 
@@ -2269,22 +2263,9 @@ function Dashboard() {
       return;
     }
 
-    // 5. 라이브 매치 데이터 설정
-    console.log("경기 시작:", {
-      match: nextGlobalMatch,
-      teamA: t1Obj.name,
-      teamB: t2Obj.name,
-      rosterA: t1Roster.length,
-      rosterB: t2Roster.length
-    });
-
-    setLiveMatchData({
-      match: nextGlobalMatch,
-      teamA: { ...t1Obj, roster: t1Roster },
-      teamB: { ...t2Obj, roster: t2Roster }
-    });
-    
-    setIsLiveGameMode(true);
+    // Instead of launching LiveGamePlayer (which may rely on many internal vars), run the simulation immediately
+    // and show the DetailedMatchResultModal using existing helper that sets myMatchResult and applies match result.
+    runSimulationForMatch(nextGlobalMatch, true);
 
   } catch (error) {
     console.error("경기 시작 오류:", error);
@@ -2428,15 +2409,22 @@ function Dashboard() {
   };
 
   const calculateGroupScore = (groupType) => {
-      if (!league.groups || !league.groups[groupType]) return 0;
-      const groupIds = league.groups[groupType];
-      return league.matches.filter(m => {
-          if (m.status !== 'finished') return false;
-          if (m.type === 'playin') return false; 
-          const winnerTeam = teams.find(t => t.name === m.result.winner);
-          if (!winnerTeam) return false;
-          return groupIds.includes(winnerTeam.id);
-      }).reduce((acc, m) => acc + (m.type === 'super' ? 2 : 1), 0);
+    if (!league.groups || !league.groups[groupType]) return 0;
+    const groupIds = league.groups[groupType];
+  
+    return league.matches
+      .filter(m => {
+        if (m.status !== 'finished') return false;
+        // Exclude play-in and playoff matches from group tallies
+        if (m.type === 'playin' || m.type === 'playoff') return false;
+        // Only count regular season and superweek matches
+        if (m.type !== 'regular' && m.type !== 'super') return false;
+  
+        const winnerTeam = teams.find(t => t.name === m.result?.winner);
+        if (!winnerTeam) return false;
+        return groupIds.includes(winnerTeam.id);
+      })
+      .reduce((acc, m) => acc + (m.type === 'super' ? 2 : 1), 0);
   };
 
   const baronTotalWins = calculateGroupScore('baron');
@@ -3202,10 +3190,10 @@ function Dashboard() {
                         
                         return (
                             <div className="flex-1 overflow-x-auto pb-8">
-                                <div className="flex flex-col space-y-24 min-w-[1400px] relative pt-12">
+                                + <div className="flex flex-col space-y-12 min-w-[1400px] relative pt-24">
                                     {/* --- 승자조 --- */}
                                     <div className="relative border-b-2 border-dashed pb-16">
-                                        <h3 className="text-lg font-black text-blue-600 mb-8 absolute -top-2">승자조 (Winner's Bracket)</h3>
+                                    <h3 className="text-lg font-black text-blue-600 mb-4 relative">승자조 (Winner's Bracket)</h3>
                                         <div className="flex justify-between items-center mt-8">
                                             <BracketColumn title="1라운드">
                                                 <div className="flex flex-col justify-around space-y-32 h-[300px]">
@@ -3230,7 +3218,7 @@ function Dashboard() {
 
                                     {/* --- 패자조 --- */}
                                     <div className="relative pt-8">
-                                        <h3 className="text-lg font-black text-red-600 mb-8 absolute -top-2">패자조 (Loser's Bracket)</h3>
+                                    + <h3 className="text-lg font-black text-red-600 mb-4 relative">패자조 (Loser's Bracket)</h3>
                                         <div className="flex justify-start items-center space-x-24 mt-8">
                                             <BracketColumn title="패자조 1R">
                                                 <MatchupBox match={r2lm1_actual || { t1: getLoser(r1m1), t2: getLoser(r1m2), status: 'pending', type: 'playoff' }} />
