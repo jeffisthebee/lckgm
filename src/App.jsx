@@ -1641,7 +1641,7 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
   useEffect(() => { if (phase === 'READY') startSet(); }, [phase, startSet]);
 
   // 밴픽 타이머
-  useEffect(() => {
+  seEffect(() => {
     if (phase !== 'GAME' || !simulationData) return;
   
     const finalSec = simulationData.totalSeconds || (simulationData.totalMinutes || 30) * 60;
@@ -1741,7 +1741,7 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
   
     return () => clearInterval(timer);
   }, [phase, simulationData, playbackSpeed]);
-
+  
   // [FIX] 로딩 조건 단순화
   if (!simulationData) return <div className="fixed inset-0 bg-black text-white flex items-center justify-center z-[200]">로딩 중...</div>;
 
@@ -1752,14 +1752,20 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
     <div className="fixed inset-0 bg-black z-[200] flex flex-col font-mono text-white">
         {/* 상단바 */}
         <div className="h-16 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-6 z-10">
-            <div className="w-1/3 flex items-center gap-4 text-blue-500 font-bold text-2xl">
-                {blueTeam.name} <span className="text-white">{phase==='DRAFT'?winsA:liveStats.kills.BLUE}</span>
-            </div>
-            <div className="text-yellow-400 font-black text-2xl">{phase==='GAME' ? `${Math.floor(gameTime/60)}:${String(gameTime%60).padStart(2,'0')}` : phase}</div>
-            <div className="w-1/3 flex items-center justify-end gap-4 text-red-500 font-bold text-2xl">
-                <span className="text-white">{phase==='DRAFT'?winsB:liveStats.kills.RED}</span> {redTeam.name}
-            </div>
-        </div>
+  <div className="w-1/3 flex items-center gap-4">
+    <div className="text-2xl font-black text-blue-500">{blueTeam.name}</div>
+    <div className="bg-blue-600 text-white px-3 py-1 rounded font-bold">{liveStats.kills.BLUE || 0}</div>
+  </div>
+
+  <div className="text-yellow-400 font-black text-2xl">
+    {phase === 'DRAFT' ? phase : `${Math.floor(gameTime/60)}:${String(gameTime%60).padStart(2,'0')}`}
+  </div>
+
+  <div className="w-1/3 flex items-center justify-end gap-4">
+    <div className="bg-red-600 text-white px-3 py-1 rounded font-bold">{liveStats.kills.RED || 0}</div>
+    <div className="text-2xl font-black text-red-500">{redTeam.name}</div>
+  </div>
+</div>
 
         {/* 메인 화면 */}
         <div className="flex-1 bg-black relative flex">
