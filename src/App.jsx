@@ -1636,7 +1636,7 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
   const [globalBanList, setGlobalBanList] = useState([]);
   const [matchHistory, setMatchHistory] = useState([]);
 
-  // NEW: persist bans so picks/bans remain visible during GAME playback
+  // Persist bans so picks/bans remain visible during GAME playback
   const [draftBans, setDraftBans] = useState({ A: [], B: [], fearless: [] });
 
   // basic safety - don't render if required props missing
@@ -1684,6 +1684,7 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
         players
       });
 
+      // persist the actual blue/red team assignment from the simulation
       setSimulationData({ ...result, blueTeam, redTeam });
       setGameTime(0);
       setDisplayLogs([]);
@@ -1702,7 +1703,7 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
     if (phase === 'READY') startSet();
   }, [phase, startSet]);
 
-  // DRAFT reveal logic (unchanged flow) - ensures draftBans are set
+  // DRAFT reveal logic
   useEffect(() => {
     if (phase !== 'DRAFT' || !simulationData) return;
 
@@ -1862,7 +1863,18 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
   );
 
   const { blueTeam, redTeam, picks, bans } = simulationData;
-  const isBlueWin = simulationData.winnerName === blueTeam.name;
+
+  // Ensure the top-bar shows the actual blue/red side names and maps set wins -> correct side
+  const leftTeamName = blueTeam?.name || teamA.name;
+  const rightTeamName = redTeam?.name || teamB.name;
+
+  // winsA / winsB are stored as teamA/teamB wins; map them to left/right based on who is blue/red this set
+  const leftWins = (leftTeamName === teamA.name) ? winsA : winsB;
+  const rightWins = (rightTeamName === teamB.name) ? winsB : winsA;
+
+  // live kill counts (big, alongside set score)
+  const leftKills = liveStats.kills.BLUE || 0;
+  const rightKills = liveStats.kills.RED || 0;
 
   // Helper: format/display log line preserving time and making time white
   const renderLogLine = (l) => {
@@ -1877,14 +1889,34 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
     );
   };
 
+  // Draft -> allow user to skip to "게임으로 넘어가기" (시뮬레이션으로 넘어가기)
+  const skipDraftToGame = () => {
+    if (!simulationData) return;
+    // show all draft logs immediately so user can read full draft in game overlay
+    setDisplayLogs(simulationData.draftLogs || []);
+    setDraftBans({
+      A: simulationData.bans?.A || [],
+      B: simulationData.bans?.B || [],
+      fearless: simulationData.fearlessBans || simulationData.fearless || []
+    });
+    // move to GAME phase and start playback
+    setPhase('GAME');
+    setGameTime(0);
+  };
+
   // compute set score display (teamA vs teamB) - winsA/winsB track teamA/teamB wins
   return (
     <div className="fixed inset-0 bg-black z-[200] flex flex-col font-mono text-white">
       {/* top bar */}
       <div className="h-16 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-6 z-10">
         <div className="w-1/3 flex items-center gap-4">
-          <div className="text-2xl font-black text-blue-500">{teamA.name}</div>
-          <div className="bg-white text-black px-3 py-1 rounded font-bold">{winsA}</div>
+          <div>
+            <div className="text-sm font-bold text-blue-400">{leftTeamName}</div>
+            <div className="flex items-center gap-2">
+              <div className="text-2xl font-extrabold text-white">{leftKills}</div>
+              <div className="text-sm text-gray-400">({leftWins} sets)</div>
+            </div>
+          </div>
         </div>
 
         <div className="text-yellow-400 font-black text-2xl">
@@ -1892,8 +1924,13 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
         </div>
 
         <div className="w-1/3 flex items-center justify-end gap-4">
-          <div className="bg-white text-black px-3 py-1 rounded font-bold">{winsB}</div>
-          <div className="text-2xl font-black text-red-500">{teamB.name}</div>
+          <div className="text-right">
+            <div className="text-sm font-bold text-red-400">{rightTeamName}</div>
+            <div className="flex items-center gap-2 justify-end">
+              <div className="text-sm text-gray-400">({rightWins} sets)</div>
+              <div className="text-2xl font-extrabold text-white">{rightKills}</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1905,7 +1942,7 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
               <div className="w-1/3">
                 <div className="text-sm font-bold text-blue-400 mb-2">Blue Bans</div>
                 <div className="flex gap-2 flex-wrap mb-4">
-                  {(simulationData.bans?.A || []).map((b, i) => (
+                  {(simulationData.bans?.A || draftBans.A || []).map((b, i) => (
                     <div key={i} className="px-3 py-1 bg-gray-800 text-white text-xs rounded">{b}</div>
                   ))}
                 </div>
@@ -1920,9 +1957,20 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                 </div>
               </div>
 
-              {/* Center: Draft logs */}
+              {/* Center: Draft logs + "시뮬레이션으로 넘어가기" */}
               <div className="flex-1">
                 <div className="text-center text-gray-300 font-bold mb-2">DRAFT PROGRESSION</div>
+
+                {/* center: show fearless/global bans near logs */}
+                <div className="mb-3 flex items-center justify-center gap-3">
+                  <div className="text-xs font-bold text-purple-300 uppercase">Global bans:</div>
+                  <div className="flex gap-1">
+                    {(draftBans.fearless || simulationData.fearlessBans || []).map((b, i) => (
+                      <div key={i} className="px-2 py-0.5 bg-purple-700 text-white text-xs rounded">{b}</div>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="h-64 bg-black/40 p-3 rounded overflow-y-auto font-mono text-sm">
                   {(displayLogs && displayLogs.length > 0) ? (
                     displayLogs.map((l, idx) => <div key={idx} className="py-1 border-b border-gray-800">{l}</div>)
@@ -1930,14 +1978,21 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                     <div className="text-gray-500 text-sm">Draft is preparing... (bans and picks will appear)</div>
                   )}
                 </div>
-                <div className="text-center text-xs text-gray-400 mt-2">Progress: {draftStep} / {(simulationData.draftLogs || []).length}</div>
+
+                <div className="flex items-center justify-between mt-3">
+                  <div className="text-center text-xs text-gray-400">Progress: {draftStep} / {(simulationData.draftLogs || []).length}</div>
+                  <div className="flex gap-2">
+                    <button onClick={skipDraftToGame} className="px-4 py-2 bg-green-600 hover:bg-green-500 rounded text-sm font-bold">시뮬레이션으로 넘어가기</button>
+                    <button onClick={() => { /* optional: reveal full draft immediately */ setDisplayLogs(simulationData.draftLogs || []); setDraftStep((simulationData.draftLogs||[]).length); }} className="px-4 py-2 bg-gray-700 rounded text-sm">전체 보기</button>
+                  </div>
+                </div>
               </div>
 
               {/* Red side: bans + picks */}
               <div className="w-1/3 text-right">
                 <div className="text-sm font-bold text-red-400 mb-2">Red Bans</div>
                 <div className="flex gap-2 justify-end flex-wrap mb-4">
-                  {(simulationData.bans?.B || []).map((b, i) => (
+                  {(simulationData.bans?.B || draftBans.B || []).map((b, i) => (
                     <div key={i} className="px-3 py-1 bg-gray-800 text-white text-xs rounded">{b}</div>
                   ))}
                 </div>
