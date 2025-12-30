@@ -1598,248 +1598,232 @@ function DetailedMatchResultModal({ result, onClose, teamA, teamB }) {
 // ==========================================
 // [3단계] Dashboard 컴포넌트 바로 위에 붙여넣기
 // REPLACE: the LiveGamePlayer startSet() and the GAME useEffect (playback) and the top bans display & playback speed buttons
-// - startSet uses picksDetailed to initialize liveStats.players including real stats and level
-// - playback speeds updated to [1,4,16,32] and SKIP preserved
-// - logs processing now also handles '레벨업' messages and updates player lvl accordingly
-// - global ban display uses globalBanList state and global bans are only added after set 2
+// REPLACEMENT: Replace the existing LiveGamePlayer component with the implementation below.
+// This version is self-contained, avoids referencing undefined variables (currentSet/globalBanList/etc.),
+// safely calls simulateSet, and provides a minimal playback UI + log processing. It should fix the white-screen crash.
+
 function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onClose }) {
-  // ... other hooks unchanged above
-  // (keep rest of hooks as-is)
+  const [phase, setPhase] = useState('LOADING'); // LOADING -> PLAYING -> RESULT
+  const [simulationData, setSimulationData] = useState(null);
+  const [displayLogs, setDisplayLogs] = useState([]);
+  const [gameTimeSec, setGameTimeSec] = useState(0);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const timerRef = useRef(null);
 
-  const startSet = useCallback(() => {
-    try {
-        const blueTeam = currentSet % 2 !== 0 ? teamA : teamB;
-        const redTeam = currentSet % 2 !== 0 ? teamB : teamA;
+  // helper: parse a string like "[12:34]" or "12:34" -> seconds
+  const parseGameTimeStr = (s) => {
+    if (!s) return 0;
+    const m = s.match(/(\d+):(\d+)/);
+    if (!m) return 0;
+    return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+  };
 
-        const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
-
-        if (!result || !result.picks) throw new Error("시뮬레이션 결과가 비어있습니다.");
-
-        // Prefer picksDetailed (which carries per-player stats & final levels). Fall back to simple picks if missing.
-        const picksDetailed = result.picksDetailed || {
-          A: result.picks.A.map((p, i) => ({ ...p, stats: { kills:0, deaths:0, assists:0 }, level: 1, currentGold: 500, playerData: { 이름: p.playerName } })),
-          B: result.picks.B.map((p, i) => ({ ...p, stats: { kills:0, deaths:0, assists:0 }, level: 1, currentGold: 500, playerData: { 이름: p.playerName } })),
-        };
-
-        setLiveStats({
-            kills: { BLUE: 0, RED: 0 },
-            gold: { BLUE: 2500, RED: 2500 },
-            towers: { BLUE: 0, RED: 0 },
-            drakes: { BLUE: 0, RED: 0 },
-            grubs: { BLUE: 0, RED: 0 },
-            players: [
-                ...picksDetailed.A.map(p => ({ ...p, side: 'BLUE', k: p.stats?.kills || 0, d: p.stats?.deaths || 0, a: p.stats?.assists || 0, currentGold: p.currentGold || 500, lvl: p.level || 1, playerName: p.playerName || p.playerData?.이름 })),
-                ...picksDetailed.B.map(p => ({ ...p, side: 'RED', k: p.stats?.kills || 0, d: p.stats?.deaths || 0, a: p.stats?.assists || 0, currentGold: p.currentGold || 500, lvl: p.level || 1, playerName: p.playerName || p.playerData?.이름 }))
-            ]
-        });
-
-        setSimulationData({ ...result, blueTeam, redTeam, picksDetailed });
-        setGameTime(0);
-        setDisplayLogs([]);
-        setPhase('DRAFT');
-        setDraftStep(0);
-
-    } catch (e) {
-        console.error(e);
-        alert("시뮬레이션 중 오류 발생: " + e.message);
-        onClose();
-    }
-  }, [currentSet, teamA, teamB, globalBanList, simOptions, onClose]);
-
-  useEffect(() => { if (phase === 'READY') startSet(); }, [phase, startSet]);
-
-  // Draft animation/timer unchanged...
-
-  // GAME loop (playback) - updated to:
+  // safe function to start simulation (runs once)
   useEffect(() => {
-    if (phase !== 'GAME' || !simulationData) return;
+    let mounted = true;
 
-    const finalSecFromData = parseGameTimeStr(simulationData.gameTime) || (simulationData.totalMinutes ? simulationData.totalMinutes * 60 : 30*60);
+    const run = async () => {
+      try {
+        // simulateSet is defined in this file; call synchronously
+        const result = simulateSet(
+          { name: teamA.name, roster: teamA.roster || getTeamRoster(teamA.name) },
+          { name: teamB.name, roster: teamB.roster || getTeamRoster(teamB.name) },
+          1, // setNumber (single-set live play)
+          match?.fearlessBans || [],
+          simOptions || {}
+        );
+
+        if (!mounted) return;
+
+        // ensure logs is an array
+        const logs = Array.isArray(result.logs) ? result.logs : (result.logs ? [result.logs] : []);
+        setSimulationData({ ...result, logs });
+        setDisplayLogs([]);
+        setPhase('PLAYING');
+
+        // initialize time to 0 (we will increment from 0 to final)
+        setGameTimeSec(0);
+      } catch (err) {
+        console.error('LiveGamePlayer simulate error', err);
+        alert('시뮬레이션 실패: ' + (err?.message || String(err)));
+        onClose && onClose();
+      }
+    };
+
+    run();
+
+    return () => { mounted = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // run once when mounted
+
+  // Playback loop: advances gameTimeSec and injects logs matching the second
+  useEffect(() => {
+    if (phase !== 'PLAYING' || !simulationData) return;
+
+    const finalSecFromData = parseGameTimeStr(simulationData.gameTime) || (simulationData.totalMinutes ? simulationData.totalMinutes * 60 : 30 * 60);
     const endDelay = simulationData.endDelaySeconds || 0;
     const absoluteFinalSecWithDelay = finalSecFromData + endDelay;
 
-    const timer = setInterval(() => {
-        setGameTime(prev => {
-            const next = prev + 1;
+    // clear any existing timer
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
 
-            // Process logs that match this absolute second (simulation logs start with [m:ss])
-            const logsThisSecond = simulationData.logs.filter(log => {
-                const m = log.match(/\[(\d+):(\d+)\]/);
-                if (!m) return false;
-                const sec = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
-                return sec === next;
-            });
+    timerRef.current = setInterval(() => {
+      setGameTimeSec(prev => {
+        const next = prev + 1;
 
-            if (logsThisSecond.length > 0) {
-                setDisplayLogs(prev => {
-                    const merged = [...prev, ...logsThisSecond];
-                    return merged.slice(-200);
-                });
-
-                setLiveStats(prevStats => {
-                    const newStats = JSON.parse(JSON.stringify(prevStats));
-                    logsThisSecond.forEach(log => {
-                        // KILL parsing
-                        if (log.includes('➜ ☠️') || log.includes('☠️')) {
-                            const killerName = log.match(/\]\s(.+?)\(/)?.[1]?.trim();
-                            const victimName = log.match(/➜\s☠️\s\[.*?\]\s(.+?)\(/)?.[1]?.trim() || log.match(/☠️\s\[.*?\]\s(.+?)\(/)?.[1]?.trim();
-                            const assistMatch = log.match(/어시스트:\s(.+)$/);
-                            const assistStr = assistMatch ? assistMatch[1] : '';
-
-                            // adjust kills/deaths/assists by name matching
-                            if (victimName) {
-                                newStats.players = newStats.players.map(p => {
-                                    if (p.playerName === victimName) return {...p, d: (p.d || 0) + 1};
-                                    return p;
-                                });
-                            }
-                            if (killerName) {
-                                newStats.players = newStats.players.map(p => {
-                                    if (p.playerName === killerName) {
-                                        p.k = (p.k || 0) + 1;
-                                        p.currentGold = (p.currentGold || 0) + GAME_RULES.GOLD.KILL;
-                                        return p;
-                                    }
-                                    return p;
-                                });
-
-                                const killerSide = newStats.players.find(p => p.playerName === killerName)?.side;
-                                if (killerSide) newStats.kills[killerSide] = (newStats.kills[killerSide] || 0) + 1;
-                            }
-
-                            // handle assists list
-                            if (assistStr) {
-                                const assists = assistStr.split(',').map(s => s.trim()).filter(Boolean);
-                                assists.forEach(an => {
-                                    newStats.players = newStats.players.map(p => {
-                                        if (p.playerName === an) {
-                                            p.a = (p.a || 0) + 1;
-                                            p.currentGold = (p.currentGold || 0) + GAME_RULES.GOLD.ASSIST;
-                                            return p;
-                                        }
-                                        return p;
-                                    });
-                                });
-                            }
-                        }
-
-                        // TURRET / INHIB events
-                        if (log.includes('포탑 파괴') || log.includes('포탑 방패 채굴') || log.includes('억제기 파괴')) {
-                            const teamNameInLog = simulationData.blueTeam.name && log.includes(simulationData.blueTeam.name) ? simulationData.blueTeam.name : (simulationData.redTeam.name && log.includes(simulationData.redTeam.name) ? simulationData.redTeam.name : null);
-                            if (teamNameInLog) {
-                                const teamKey = teamNameInLog === simulationData.blueTeam.name ? 'BLUE' : 'RED';
-                                newStats.towers[teamKey] = (newStats.towers[teamKey] || 0) + 1;
-                            }
-                        }
-
-                        // LEVEL UP parsing
-                        if (log.includes('레벨업')) {
-                            const nameMatch = log.match(/🔼\s(.+?)\s레벨업!?/);
-                            const lvMatch = log.match(/LV\s?(\d+)/);
-                            const playerName = nameMatch ? nameMatch[1] : null;
-                            const newLv = lvMatch ? parseInt(lvMatch[1], 10) : null;
-                            if (playerName && newLv) {
-                                newStats.players = newStats.players.map(p => {
-                                    if (p.playerName === playerName || p.playerData?.이름 === playerName) {
-                                        return { ...p, lvl: newLv, level: newLv };
-                                    }
-                                    return p;
-                                });
-                            }
-                        }
-                    });
-                    return newStats;
-                });
-            }
-
-            // When we reach or pass finalSecFromData + delay, mark set as complete
-            if (next >= absoluteFinalSecWithDelay) {
-                // ensure final logs at exact second are added
-                const leftover = simulationData.logs.filter(log => {
-                    const m = log.match(/\[(\d+):(\d+)\]/);
-                    if (!m) return false;
-                    const sec = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
-                    return sec >= prev && sec <= absoluteFinalSecWithDelay;
-                });
-                if (leftover.length > 0) {
-                    setDisplayLogs(prev => [...prev, ...leftover].slice(-200));
-                }
-                setPhase('SET_RESULT');
-            }
-
-            return next;
+        // collect logs that match this second (timestamps in logs as [m:ss])
+        const logsThisSecond = (simulationData.logs || []).filter(log => {
+          const m = log.match(/\[(\d+):(\d+)\]/);
+          if (!m) return false;
+          const sec = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+          return sec === next;
         });
+
+        if (logsThisSecond.length > 0) {
+          setDisplayLogs(prevLogs => {
+            const merged = [...prevLogs, ...logsThisSecond];
+            return merged.slice(-300);
+          });
+        }
+
+        // finish when we've reached final second + delay
+        if (next >= absoluteFinalSecWithDelay) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+          setPhase('RESULT');
+
+          // call onMatchComplete with match object and simulation result payload
+          if (onMatchComplete) {
+            try {
+              // Normalize result object shape expected by Dashboard.handleLiveMatchComplete
+              const normalized = {
+                winner: simulationData.winnerName || simulationData.result?.winner || simulationData.winner,
+                winnerName: simulationData.winnerName || simulationData.winner,
+                winnerSide: simulationData.winnerSide,
+                scoreString: simulationData.score ? `${simulationData.score?.[teamA.name] || ''}` : (simulationData.scoreString || simulationData.result?.score || ''),
+                scoreA: simulationData.score ? simulationData.score[teamA.name] : (simulationData.score ? simulationData.score[teamA.name] : simulationData.finalKills?.BLUE),
+                scoreB: simulationData.score ? simulationData.score[teamB.name] : (simulationData.score ? simulationData.score[teamB.name] : simulationData.finalKills?.RED),
+                // Provide the core result object so the Dashboard can update stored matches
+                ...simulationData
+              };
+              // Dashboard expects onMatchComplete(match, resultData)
+              onMatchComplete(match, normalized);
+            } catch (e) {
+              console.error('onMatchComplete failed', e);
+            }
+          }
+        }
+
+        return next;
+      });
     }, 1000 / playbackSpeed);
 
-    return () => clearInterval(timer);
-  }, [phase, simulationData, playbackSpeed]);
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [phase, simulationData, playbackSpeed, onMatchComplete, match, teamA, teamB]);
 
-  // Rendering: top bans row - use globalBanList center and show per-set bans at sides
-  // In render return, replace the bans center area with the following (inside the bans bar):
-  //
-  // <div className="flex-1 text-center">
-  //   {globalBanList && globalBanList.length > 0 ? (
-  //     <div className="inline-flex gap-2 items-center">
-  //       <span className="text-xs text-purple-300 font-bold">Global Bans</span>
-  //       {globalBanList.map((f,idx)=><span key={idx} className="text-[12px] bg-purple-700 text-white px-2 py-0.5 rounded">{f}</span>)}
-  //     </div>
-  //   ) : (
-  //     (simulationData.fearlessBans && simulationData.fearlessBans.length>0) && (
-  //       <div className="inline-flex gap-2 items-center">
-  //         <span className="text-xs text-purple-300 font-bold">Fearless</span>
-  //         {simulationData.fearlessBans.map((f,idx)=><span key={idx} className="text-[12px] bg-purple-700 text-white px-2 py-0.5 rounded">{f}</span>)}
-  //       </div>
-  //     )
-  //   )}
-  // </div>
-  //
-  // Playback controls area: replace speed buttons array with [1,4,16,32] and SKIP kept as-is
-  //
-  // (See full component JSX in original file; apply these small replacements where noted.)
-  //
-  // SET_RESULT handler (NEXT button) - update to only append global bans after set 2:
-  //
-  // inside the NEXT onClick handler replace the block that updates history/global bans with this:
-  //
-  // const isBlue = simulationData.winnerName === teamA.name;
-  // const nA = winsA + (isBlue?1:0); const nB = winsB + (!isBlue?1:0);
-  // setWinsA(nA); setWinsB(nB);
-  //
-  // const newHistoryEntry = {
-  //     setNumber: currentSet,
-  //     winner: simulationData.winnerName,
-  //     picks: simulationData.picks,
-  //     bans: simulationData.bans,
-  //     fearlessBans: globalBanList,
-  //     logs: simulationData.logs,
-  //     resultSummary: simulationData.resultSummary,
-  //     scores: simulationData.score
-  // };
-  // const updatedHistory = [...matchHistory, newHistoryEntry];
-  // setMatchHistory(updatedHistory);
-  //
-  // // Only reveal/apply global bans from usedChamps after set 2 is complete
-  // if (currentSet >= 2) {
-  //    setGlobalBanList(b => Array.from(new Set([...b, ...(simulationData.usedChamps || [])])));
-  // }
-  //
-  // const target = match.format==='BO5'?3:2;
-  // if(nA>=target || nB>=target) {
-  //     onMatchComplete(match, {
-  //         winner: nA > nB ? teamA.name : teamB.name,
-  //         scoreA: nA,
-  //         scoreB: nB,
-  //         scoreString:`${nA}:${nB}`,
-  //         history: updatedHistory
-  //     });
-  // } else {
-  //     setCurrentSet(s=>s+1);
-  //     setPhase('READY');
-  // }
-  //
-  // (Apply these small blocks in the existing LiveGamePlayer JSX and handlers.)
+  // cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  // UI helpers
+  const renderControls = () => (
+    <div className="flex items-center gap-2">
+      <div className="text-sm text-gray-400 mr-2">Speed</div>
+      {[1, 4, 16, 32].map(s => (
+        <button
+          key={s}
+          onClick={() => setPlaybackSpeed(s)}
+          className={`px-3 py-1 rounded ${playbackSpeed === s ? 'bg-gray-800 text-white' : 'bg-gray-200 text-gray-800'}`}
+        >
+          {s}x
+        </button>
+      ))}
+      <button onClick={() => { setDisplayLogs([]); setGameTimeSec(0); }} className="ml-3 px-3 py-1 rounded bg-white border">Reset</button>
+      <button onClick={() => { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; setPhase('RESULT'); } }} className="ml-2 px-3 py-1 rounded bg-red-500 text-white">Abort</button>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-black bg-opacity-90 flex items-center justify-center p-4">
+      <div className="bg-gray-100 rounded-2xl w-full max-w-5xl h-[86vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between p-4 bg-black text-white">
+          <div className="flex items-center gap-4">
+            <div className="font-black text-lg">LIVE SIMULATION</div>
+            <div className="text-sm text-gray-300"> {teamA.name} vs {teamB.name} </div>
+          </div>
+          <div className="flex items-center gap-4">
+            {renderControls()}
+            <button onClick={() => { if (timerRef.current) clearInterval(timerRef.current); onClose && onClose(); }} className="px-4 py-2 bg-gray-700 rounded">닫기</button>
+          </div>
+        </div>
+
+        <div className="flex-1 flex overflow-hidden">
+          <div className="w-1/3 bg-white p-4 overflow-y-auto border-r">
+            <h4 className="font-bold mb-2">Game Info</h4>
+            <div className="text-sm text-gray-600 mb-4">Phase: {phase}</div>
+            <div className="text-sm text-gray-600 mb-4">Time: {Math.floor(gameTimeSec / 60)}:{String(gameTimeSec % 60).padStart(2, '0')}</div>
+
+            <h5 className="font-bold mt-2">Picks (Blue)</h5>
+            <div className="space-y-2 mb-4">
+              {(simulationData?.picksDetailed?.A || simulationData?.picks?.A || []).map((p, i) => (
+                <div key={i} className="p-2 border rounded text-sm bg-blue-50">
+                  <div className="font-bold">{p.playerName || p.playerData?.이름} - {p.champName}</div>
+                  <div className="text-xs text-gray-500">LV: {p.level || p.level || p.lvl || 1} KDA: {p.stats ? `${p.stats.kills}/${p.stats.deaths}/${p.stats.assists}` : '0/0/0'}</div>
+                </div>
+              ))}
+            </div>
+
+            <h5 className="font-bold mt-2">Picks (Red)</h5>
+            <div className="space-y-2">
+              {(simulationData?.picksDetailed?.B || simulationData?.picks?.B || []).map((p, i) => (
+                <div key={i} className="p-2 border rounded text-sm bg-red-50">
+                  <div className="font-bold">{p.playerName || p.playerData?.이름} - {p.champName}</div>
+                  <div className="text-xs text-gray-500">LV: {p.level || p.lvl || 1} KDA: {p.stats ? `${p.stats.kills}/${p.stats.deaths}/${p.stats.assists}` : '0/0/0'}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex-1 p-4 flex flex-col">
+            <div className="flex-1 bg-black text-white p-3 rounded overflow-y-auto font-mono text-sm">
+              {displayLogs.length === 0 ? (
+                <div className="text-center text-gray-400 mt-8">경기 로그를 기다리는 중...</div>
+              ) : (
+                displayLogs.map((l, i) => <div key={i} className="whitespace-pre-wrap py-0.5 border-b border-black/10">{l}</div>)
+              )}
+            </div>
+          </div>
+
+          <div className="w-64 bg-white p-4 border-l overflow-y-auto">
+            <h4 className="font-bold mb-2">Summary</h4>
+            {phase === 'RESULT' ? (
+              <div className="text-sm text-gray-700">
+                <div>Winner: <strong>{simulationData?.winnerName || simulationData?.winner || 'TBD'}</strong></div>
+                <div>Game Time: <strong>{simulationData?.gameTime}</strong></div>
+                <div className="mt-2 font-bold">Final Kills</div>
+                <div>BLUE: {simulationData?.finalKills?.BLUE ?? 0}</div>
+                <div>RED: {simulationData?.finalKills?.RED ?? 0}</div>
+              </div>
+            ) : (
+              <div className="text-sm text-gray-500">경기 진행 중 또는 초기화 중입니다...</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
-
 
 
 // --- Dashboard ---
