@@ -1612,29 +1612,32 @@ function DetailedMatchResultModal({ result, onClose, teamA, teamB }) {
 // ==========================================
 // [3단계] Dashboard 컴포넌트 바로 위에 붙여넣기
 // ==========================================
+// Replace the existing `function LiveGamePlayer(...) { ... }` in src/App.jsx with the code below.
+// Search for "function LiveGamePlayer" and replace that entire function body.
+
 function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onClose }) {
   const [currentSet, setCurrentSet] = useState(1);
-const [winsA, setWinsA] = useState(0);
-const [winsB, setWinsB] = useState(0);
-const [phase, setPhase] = useState('READY');
-const [simulationData, setSimulationData] = useState(null);
-const [displayLogs, setDisplayLogs] = useState([]);
-const [liveStats, setLiveStats] = useState({
-  kills: { BLUE: 0, RED: 0 },
-  gold: { BLUE: 2500, RED: 2500 },
-  towers: { BLUE: 0, RED: 0 },
-  drakes: { BLUE: 0, RED: 0 },
-  grubs: { BLUE: 0, RED: 0 },
-  players: []
-});
-const [gameTime, setGameTime] = useState(0);
-const [playbackSpeed, setPlaybackSpeed] = useState(1);
-const [draftStep, setDraftStep] = useState(0);
-const [globalBanList, setGlobalBanList] = useState([]);
-const [matchHistory, setMatchHistory] = useState([]);
+  const [winsA, setWinsA] = useState(0);
+  const [winsB, setWinsB] = useState(0);
+  const [phase, setPhase] = useState('READY');
+  const [simulationData, setSimulationData] = useState(null);
+  const [displayLogs, setDisplayLogs] = useState([]);
+  const [liveStats, setLiveStats] = useState({
+    kills: { BLUE: 0, RED: 0 },
+    gold: { BLUE: 2500, RED: 2500 },
+    towers: { BLUE: 0, RED: 0 },
+    drakes: { BLUE: 0, RED: 0 },
+    grubs: { BLUE: 0, RED: 0 },
+    players: []
+  });
+  const [gameTime, setGameTime] = useState(0);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [draftStep, setDraftStep] = useState(0);
+  const [globalBanList, setGlobalBanList] = useState([]);
+  const [matchHistory, setMatchHistory] = useState([]);
 
-// NEW: persist bans so picks/bans remain visible during GAME playback
-const [draftBans, setDraftBans] = useState({ A: [], B: [], fearless: [] });
+  // NEW: persist bans so picks/bans remain visible during GAME playback
+  const [draftBans, setDraftBans] = useState({ A: [], B: [], fearless: [] });
 
   // basic safety - don't render if required props missing
   if (!teamA || !teamB || !match) {
@@ -1659,6 +1662,13 @@ const [draftBans, setDraftBans] = useState({ A: [], B: [], fearless: [] });
       const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
 
       if (!result || !result.picks) throw new Error("시뮬레이션 결과가 비어있습니다.");
+
+      // Immediately persist bans so UI shows fearless bans right away
+      setDraftBans({
+        A: result.bans?.A || [],
+        B: result.bans?.B || [],
+        fearless: result.fearlessBans || result.fearless || []
+      });
 
       const players = [
         ...result.picks.A.map(p => ({ ...p, side: 'BLUE', k:0, d:0, a:0, currentGold: 500, lvl: 1 })),
@@ -1691,23 +1701,23 @@ const [draftBans, setDraftBans] = useState({ A: [], B: [], fearless: [] });
   useEffect(() => {
     if (phase === 'READY') startSet();
   }, [phase, startSet]);
+
+  // DRAFT reveal logic (unchanged flow) - ensures draftBans are set
   useEffect(() => {
     if (phase !== 'DRAFT' || !simulationData) return;
-  
+
     const draftLogs = simulationData.draftLogs || [];
     setDisplayLogs([]); // start fresh for draft view
     setDraftStep(0);
-  
+
     // persist bans so they can be shown later during GAME playback
     setDraftBans({
       A: simulationData.bans?.A || [],
       B: simulationData.bans?.B || [],
-      // accept either field name from the engine, fallback to empty array
       fearless: simulationData.fearlessBans || simulationData.fearless || []
     });
-  
+
     let idx = 0;
-    // SLOWER reveal so users can follow picks/bans. Increase if still too fast.
     const intervalMs = 1600;
     const interval = setInterval(() => {
       const nextLog = draftLogs[idx];
@@ -1719,146 +1729,132 @@ const [draftBans, setDraftBans] = useState({ A: [], B: [], fearless: [] });
         idx++;
         setDraftStep(idx);
       }
-  
+
       if (idx >= draftLogs.length) {
         clearInterval(interval);
-        // show final draft state for a short while before the game playback
         const startDelay = 900;
         setTimeout(() => {
-          // keep a small history of draft logs so players can still scroll back,
-          // but switch to GAME phase so the game logs start appending.
           setPhase('GAME');
           setGameTime(0);
         }, startDelay);
       }
     }, intervalMs);
-  
+
     return () => clearInterval(interval);
   }, [phase, simulationData]);
 
-  // main playback / tick loop (fixed: useEffect spelled correctly and robust handling)
+  // main playback / tick loop
   useEffect(() => {
-  if (phase !== 'GAME' || !simulationData) return;
+    if (phase !== 'GAME' || !simulationData) return;
 
-  // finalSec fallback: top-level totalSeconds or minutes*60
-  const finalSec = Number(simulationData.totalSeconds) || (Number(simulationData.totalMinutes) || 30) * 60;
-  // tick speed in ms depends on playbackSpeed (higher speed => smaller interval)
-  const intervalMs = 1000 / Math.max(1, playbackSpeed);
+    const finalSec = Number(simulationData.totalSeconds) || (Number(simulationData.totalMinutes) || 30) * 60;
+    const intervalMs = 1000 / Math.max(1, playbackSpeed);
 
-  const timer = setInterval(() => {
-    setGameTime(prev => {
-      const next = prev + 1;
+    const timer = setInterval(() => {
+      setGameTime(prev => {
+        const next = prev + 1;
 
-      // pick logs for this absolute second by parsing leading [MM:SS]
-      const logsForThisSecond = (simulationData.logs || []).filter(log => {
-        const m = log.match(/^\s*\[(\d+):(\d{1,2})\]/);
-        if (!m) return false;
-        const min = parseInt(m[1], 10);
-        const sec = parseInt(m[2], 10);
-        const abs = (min * 60) + sec;
-        return abs === next;
-      });
-
-      if (logsForThisSecond.length > 0) {
-        setDisplayLogs(prevLogs => {
-          const merged = [...prevLogs, ...logsForThisSecond].slice(-200); // keep more history
-          return merged;
+        // pick logs for this absolute second by parsing leading [MM:SS]
+        const logsForThisSecond = (simulationData.logs || []).filter(log => {
+          const m = log.match(/^\s*\[(\d+):(\d{1,2})\]/);
+          if (!m) return false;
+          const min = parseInt(m[1], 10);
+          const sec = parseInt(m[2], 10);
+          const abs = (min * 60) + sec;
+          return abs === next;
         });
 
-        // Best-effort stats update for kills/towers from logs
-        setLiveStats(prevStats => {
-          const newStats = JSON.parse(JSON.stringify(prevStats));
-
-          logsForThisSecond.forEach(log => {
-            try {
-              // Extract killer and victim names robustly:
-              // Example log: "[12:34] ⚔️ [MID] Faker(LeBlanc) ➜ ☠️ [MID] Rookie(Azir) ..."
-              const killerMatch = log.match(/⚔️[\s\S]*?\]\s*([^()]+?)\s*\(/);
-              const victimMatch = log.match(/☠️[\s\S]*?\]\s*([^()]+?)\s*\(/);
-
-              const killerName = killerMatch?.[1]?.trim();
-              const victimName = victimMatch?.[1]?.trim();
-
-              if (victimName) {
-                newStats.players = newStats.players.map(p => {
-                  if (p.playerName === victimName) {
-                    p.d = (p.d || 0) + 1;
-                    // mark currentGold unchanged here; grantGold will come from KILL handling
-                  }
-                  return p;
-                });
-              }
-
-              if (killerName) {
-                let killerSide = null;
-                newStats.players = newStats.players.map(p => {
-                  if (p.playerName === killerName) {
-                    killerSide = p.side;
-                    p.k = (p.k || 0) + 1;
-                    p.currentGold = (p.currentGold || 500) + GAME_RULES.GOLD.KILL;
-                  }
-                  return p;
-                });
-                if (killerSide) newStats.kills[killerSide] = (newStats.kills[killerSide] || 0) + 1;
-              }
-
-              // Assist heuristic: if the log contains "assist" or similar token, increment assists for nearby players
-              if (/assist|assist\(|도움|어시스트/.test(log)) {
-                // crude: find names within parentheses after the killer and increment assists of first other BLUE/RED player
-                // (The engine may place assists differently; this is best-effort)
-                newStats.players = newStats.players.map(p => {
-                  if (log.includes(p.playerName) && !killerName?.includes(p.playerName) && !victimName?.includes(p.playerName)) {
-                    p.a = (p.a || 0) + 1;
-                    p.currentGold = (p.currentGold || 500) + GAME_RULES.GOLD.ASSIST;
-                  }
-                  return p;
-                });
-              }
-
-              // Turret/plate/inhib messages: increment a simple tower counter
-              if (/포탑|포탑 방패|억제기|1차 포탑|2차 포탑|3차/.test(log)) {
-                if (simulationData.blueTeam && log.includes(simulationData.blueTeam.name)) newStats.towers.BLUE++;
-                else if (simulationData.redTeam && log.includes(simulationData.redTeam.name)) newStats.towers.RED++;
-              }
-
-            } catch (err) {
-              console.warn('log parse error', err, log);
-            }
+        if (logsForThisSecond.length > 0) {
+          setDisplayLogs(prevLogs => {
+            const merged = [...prevLogs, ...logsForThisSecond].slice(-200); // keep more history
+            return merged;
           });
 
-          // level progress interpolation (so levels increase during playback)
-          const progress = finalSec > 0 ? Math.min(1, next / finalSec) : 1;
-          if (simulationData.playersLevelProgress) {
-            newStats.players = newStats.players.map(pl => {
-              const prog = (simulationData.playersLevelProgress || []).find(pp => pp.playerName === pl.playerName);
-              if (!prog) return pl;
-              const startL = Number(prog.startLevel || 1);
-              const endL = Number(prog.endLevel || startL);
-              const delta = endL - startL;
-              const newLevel = startL + Math.floor(delta * progress);
-              pl.lvl = Math.max(1, newLevel);
-              return pl;
+          // Best-effort stats update for kills/towers from logs
+          setLiveStats(prevStats => {
+            const newStats = JSON.parse(JSON.stringify(prevStats));
+
+            logsForThisSecond.forEach(log => {
+              try {
+                const killerMatch = log.match(/⚔️[\s\S]*?\]\s*([^()]+?)\s*\(/);
+                const victimMatch = log.match(/☠️[\s\S]*?\]\s*([^()]+?)\s*\(/);
+
+                const killerName = killerMatch?.[1]?.trim();
+                const victimName = victimMatch?.[1]?.trim();
+
+                if (victimName) {
+                  newStats.players = newStats.players.map(p => {
+                    if (p.playerName === victimName) {
+                      p.d = (p.d || 0) + 1;
+                    }
+                    return p;
+                  });
+                }
+
+                if (killerName) {
+                  let killerSide = null;
+                  newStats.players = newStats.players.map(p => {
+                    if (p.playerName === killerName) {
+                      killerSide = p.side;
+                      p.k = (p.k || 0) + 1;
+                      p.currentGold = (p.currentGold || 500) + GAME_RULES.GOLD.KILL;
+                    }
+                    return p;
+                  });
+                  if (killerSide) newStats.kills[killerSide] = (newStats.kills[killerSide] || 0) + 1;
+                }
+
+                if (/assist|assist\(|도움|어시스트/.test(log)) {
+                  newStats.players = newStats.players.map(p => {
+                    if (log.includes(p.playerName) && !killerName?.includes(p.playerName) && !victimName?.includes(p.playerName)) {
+                      p.a = (p.a || 0) + 1;
+                      p.currentGold = (p.currentGold || 500) + GAME_RULES.GOLD.ASSIST;
+                    }
+                    return p;
+                  });
+                }
+
+                if (/포탑|포탑 방패|억제기|1차 포탑|2차 포탑|3차/.test(log)) {
+                  if (simulationData.blueTeam && log.includes(simulationData.blueTeam.name)) newStats.towers.BLUE++;
+                  else if (simulationData.redTeam && log.includes(simulationData.redTeam.name)) newStats.towers.RED++;
+                }
+
+              } catch (err) {
+                console.warn('log parse error', err, log);
+              }
             });
-          }
 
-          return newStats;
-        });
-      }
+            const progress = finalSec > 0 ? Math.min(1, next / finalSec) : 1;
+            if (simulationData.playersLevelProgress) {
+              newStats.players = newStats.players.map(pl => {
+                const prog = (simulationData.playersLevelProgress || []).find(pp => pp.playerName === pl.playerName);
+                if (!prog) return pl;
+                const startL = Number(prog.startLevel || 1);
+                const endL = Number(prog.endLevel || startL);
+                const delta = endL - startL;
+                const newLevel = startL + Math.floor(delta * progress);
+                pl.lvl = Math.max(1, newLevel);
+                return pl;
+              });
+            }
 
-      // If we reached final second, snap and move to result phase with small delay
-      if (next >= finalSec) {
-        setGameTime(finalSec);
-        const postDelayMs = Math.max(500, 1500 / Math.max(1, playbackSpeed));
-        setTimeout(() => setPhase('SET_RESULT'), postDelayMs);
-        return finalSec;
-      }
+            return newStats;
+          });
+        }
 
-      return next;
-    });
-  }, intervalMs);
+        if (next >= finalSec) {
+          setGameTime(finalSec);
+          const postDelayMs = Math.max(500, 1500 / Math.max(1, playbackSpeed));
+          setTimeout(() => setPhase('SET_RESULT'), postDelayMs);
+          return finalSec;
+        }
 
-  return () => clearInterval(timer);
-}, [phase, simulationData, playbackSpeed]);
+        return next;
+      });
+    }, intervalMs);
+
+    return () => clearInterval(timer);
+  }, [phase, simulationData, playbackSpeed]);
 
   // simple loading guard
   if (!simulationData) return (
@@ -1868,13 +1864,27 @@ const [draftBans, setDraftBans] = useState({ A: [], B: [], fearless: [] });
   const { blueTeam, redTeam, picks, bans } = simulationData;
   const isBlueWin = simulationData.winnerName === blueTeam.name;
 
+  // Helper: format/display log line preserving time and making time white
+  const renderLogLine = (l) => {
+    const m = l.match(/^\s*(\[\d+:\d{2}\])\s*(.*)$/);
+    const timePart = m ? m[1] : '';
+    const msgPart = m ? m[2] : l;
+    return (
+      <div className="flex items-center gap-2">
+        {timePart && <span className="text-white font-mono text-xs">{timePart}</span>}
+        <span className="text-white text-sm">{msgPart}</span>
+      </div>
+    );
+  };
+
+  // compute set score display (teamA vs teamB) - winsA/winsB track teamA/teamB wins
   return (
     <div className="fixed inset-0 bg-black z-[200] flex flex-col font-mono text-white">
       {/* top bar */}
       <div className="h-16 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-6 z-10">
         <div className="w-1/3 flex items-center gap-4">
-          <div className="text-2xl font-black text-blue-500">{blueTeam.name}</div>
-          <div className="bg-blue-600 text-white px-3 py-1 rounded font-bold">{liveStats.kills.BLUE || 0}</div>
+          <div className="text-2xl font-black text-blue-500">{teamA.name}</div>
+          <div className="bg-white text-black px-3 py-1 rounded font-bold">{winsA}</div>
         </div>
 
         <div className="text-yellow-400 font-black text-2xl">
@@ -1882,123 +1892,124 @@ const [draftBans, setDraftBans] = useState({ A: [], B: [], fearless: [] });
         </div>
 
         <div className="w-1/3 flex items-center justify-end gap-4">
-          <div className="bg-red-600 text-white px-3 py-1 rounded font-bold">{liveStats.kills.RED || 0}</div>
-          <div className="text-2xl font-black text-red-500">{redTeam.name}</div>
+          <div className="bg-white text-black px-3 py-1 rounded font-bold">{winsB}</div>
+          <div className="text-2xl font-black text-red-500">{teamB.name}</div>
         </div>
       </div>
 
       <div className="flex-1 bg-black relative flex">
-      {phase === 'DRAFT' && (
-  <div className="w-full flex flex-col p-8 text-white">
-    <div className="flex justify-between items-start gap-6">
-      {/* Blue side: bans + picks */}
-      <div className="w-1/3">
-        <div className="text-sm font-bold text-blue-400 mb-2">Blue Bans</div>
-        <div className="flex gap-2 flex-wrap mb-4">
-          {(simulationData.bans?.A || []).map((b, i) => (
-            <div key={i} className="px-3 py-1 bg-gray-800 text-white text-xs rounded">{b}</div>
-          ))}
-        </div>
+        {phase === 'DRAFT' && (
+          <div className="w-full flex flex-col p-8 text-white">
+            <div className="flex justify-between items-start gap-6">
+              {/* Blue side: bans + picks */}
+              <div className="w-1/3">
+                <div className="text-sm font-bold text-blue-400 mb-2">Blue Bans</div>
+                <div className="flex gap-2 flex-wrap mb-4">
+                  {(simulationData.bans?.A || []).map((b, i) => (
+                    <div key={i} className="px-3 py-1 bg-gray-800 text-white text-xs rounded">{b}</div>
+                  ))}
+                </div>
 
-        <div className="space-y-2">
-          {picks.A.map((p, i) => (
-            <div key={i} className="p-3 bg-blue-900/40 rounded border-l-4 border-blue-500">
-              <div className="font-bold text-sm">{p.champName}</div>
-              <div className="text-xs text-gray-300">{p.playerName}</div>
+                <div className="space-y-2">
+                  {picks.A.map((p, i) => (
+                    <div key={i} className="p-3 bg-blue-900/40 rounded border-l-4 border-blue-500">
+                      <div className="font-bold text-sm">{p.champName}</div>
+                      <div className="text-xs text-gray-300">{p.playerName}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Center: Draft logs */}
+              <div className="flex-1">
+                <div className="text-center text-gray-300 font-bold mb-2">DRAFT PROGRESSION</div>
+                <div className="h-64 bg-black/40 p-3 rounded overflow-y-auto font-mono text-sm">
+                  {(displayLogs && displayLogs.length > 0) ? (
+                    displayLogs.map((l, idx) => <div key={idx} className="py-1 border-b border-gray-800">{l}</div>)
+                  ) : (
+                    <div className="text-gray-500 text-sm">Draft is preparing... (bans and picks will appear)</div>
+                  )}
+                </div>
+                <div className="text-center text-xs text-gray-400 mt-2">Progress: {draftStep} / {(simulationData.draftLogs || []).length}</div>
+              </div>
+
+              {/* Red side: bans + picks */}
+              <div className="w-1/3 text-right">
+                <div className="text-sm font-bold text-red-400 mb-2">Red Bans</div>
+                <div className="flex gap-2 justify-end flex-wrap mb-4">
+                  {(simulationData.bans?.B || []).map((b, i) => (
+                    <div key={i} className="px-3 py-1 bg-gray-800 text-white text-xs rounded">{b}</div>
+                  ))}
+                </div>
+
+                <div className="space-y-2">
+                  {picks.B.map((p, i) => (
+                    <div key={i} className="p-3 bg-red-900/40 rounded border-r-4 border-red-500">
+                      <div className="font-bold text-sm">{p.champName}</div>
+                      <div className="text-xs text-gray-300">{p.playerName}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Center: Draft logs */}
-      <div className="flex-1">
-        <div className="text-center text-gray-300 font-bold mb-2">DRAFT PROGRESSION</div>
-        <div className="h-64 bg-black/40 p-3 rounded overflow-y-auto font-mono text-sm">
-          {(displayLogs && displayLogs.length > 0) ? (
-            displayLogs.map((l, idx) => <div key={idx} className="py-1 border-b border-gray-800">{l}</div>)
-          ) : (
-            <div className="text-gray-500 text-sm">Draft is preparing... (bans and picks will appear)</div>
-          )}
-        </div>
-        <div className="text-center text-xs text-gray-400 mt-2">Progress: {draftStep} / {(simulationData.draftLogs || []).length}</div>
-      </div>
-
-      {/* Red side: bans + picks */}
-      <div className="w-1/3 text-right">
-        <div className="text-sm font-bold text-red-400 mb-2">Red Bans</div>
-        <div className="flex gap-2 justify-end flex-wrap mb-4">
-          {(simulationData.bans?.B || []).map((b, i) => (
-            <div key={i} className="px-3 py-1 bg-gray-800 text-white text-xs rounded">{b}</div>
-          ))}
-        </div>
-
-        <div className="space-y-2">
-          {picks.B.map((p, i) => (
-            <div key={i} className="p-3 bg-red-900/40 rounded border-r-4 border-red-500">
-              <div className="font-bold text-sm">{p.champName}</div>
-              <div className="text-xs text-gray-300">{p.playerName}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  </div>
-)}
+          </div>
+        )}
 
         {phase === 'GAME' && (
           <>
             <div className="w-64 bg-gray-900 p-2 space-y-1">
-            {liveStats.players.filter(p=>p.side==='BLUE').map((p,i) => (
-  <div key={i} className="text-xs bg-black p-2 border-l-2 border-blue-500 flex items-center justify-between">
-    <div>
-      <div className="font-bold text-sm">
-        {p.champName} <span className="text-[11px] text-gray-300 font-medium ml-2">Lv {p.lvl || 1}</span>
-      </div>
-      <div className="text-[11px] text-gray-300">{p.playerName}</div>
-    </div>
-    <div className="text-right">
-      <div className="text-[11px] font-mono">{(p.k||0)}/{(p.d||0)}/{(p.a||0)}</div>
-    </div>
-  </div>
-))}
+              {liveStats.players.filter(p=>p.side==='BLUE').map((p,i) => (
+                <div key={i} className="text-xs bg-black p-2 border-l-2 border-blue-500 flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-sm">
+                      {p.champName} <span className="text-[11px] text-gray-300 font-medium ml-2">Lv {p.lvl || 1}</span>
+                    </div>
+                    <div className="text-[11px] text-gray-300">{p.playerName}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[11px] font-mono">{(p.k||0)}/{(p.d||0)}/{(p.a||0)}</div>
+                  </div>
+                </div>
+              ))}
             </div>
 
             <div className="flex-1 relative flex flex-col justify-end items-center pb-10">
               <div className="absolute inset-0 bg-gray-800 opacity-20"></div>
               <div className="z-10 text-center space-y-2 mb-4 w-full max-w-2xl">
-              <div className="absolute top-6 left-1/2 transform -translate-x-1/2 z-20 w-full max-w-2xl">
-  <div className="flex justify-between items-center gap-4 px-4">
-    <div className="flex items-center gap-2">
-      <div className="text-xs font-bold text-blue-300 uppercase">Blue bans</div>
-      <div className="flex gap-1">
-        {(draftBans.A || simulationData.bans?.A || []).map((b, i) => (
-          <div key={`b-ban-${i}`} className="px-2 py-0.5 bg-gray-800 text-white text-xs rounded">{b}</div>
-        ))}
-      </div>
-    </div>
+                <div className="absolute top-6 left-1/2 transform -translate-x-1/2 z-20 w-full max-w-2xl">
+                  <div className="flex justify-between items-center gap-4 px-4">
+                    <div className="flex items-center gap-2">
+                      <div className="text-xs font-bold text-blue-300 uppercase">Blue bans</div>
+                      <div className="flex gap-1">
+                        {(draftBans.A || simulationData.bans?.A || []).map((b, i) => (
+                          <div key={`b-ban-${i}`} className="px-2 py-0.5 bg-gray-800 text-white text-xs rounded">{b}</div>
+                        ))}
+                      </div>
+                    </div>
 
-    <div className="flex items-center gap-2">
-      <div className="text-xs font-bold text-purple-300 uppercase">Global bans</div>
-      <div className="flex gap-1">
-        {(draftBans.fearless || simulationData.fearlessBans || []).map((b, i) => (
-          <div key={`f-ban-${i}`} className="px-2 py-0.5 bg-purple-700 text-white text-xs rounded">{b}</div>
-        ))}
-      </div>
-    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-xs font-bold text-purple-300 uppercase">Global bans</div>
+                      <div className="flex gap-1">
+                        {(draftBans.fearless || simulationData.fearlessBans || simulationData.fearless || []).map((b, i) => (
+                          <div key={`f-ban-${i}`} className="px-2 py-0.5 bg-purple-700 text-white text-xs rounded">{b}</div>
+                        ))}
+                      </div>
+                    </div>
 
-    <div className="flex items-center gap-2">
-      <div className="text-xs font-bold text-red-300 uppercase">Red bans</div>
-      <div className="flex gap-1">
-        {(draftBans.B || simulationData.bans?.B || []).map((b, i) => (
-          <div key={`r-ban-${i}`} className="px-2 py-0.5 bg-gray-800 text-white text-xs rounded">{b}</div>
-        ))}
-      </div>
-    </div>
-  </div>
-</div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-xs font-bold text-red-300 uppercase">Red bans</div>
+                      <div className="flex gap-1">
+                        {(draftBans.B || simulationData.bans?.B || []).map((b, i) => (
+                          <div key={`r-ban-${i}`} className="px-2 py-0.5 bg-gray-800 text-white text-xs rounded">{b}</div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {displayLogs.slice(-6).map((l, i) => (
                   <div key={i} className="text-sm font-bold text-white bg-black/60 px-3 py-1 rounded whitespace-pre-wrap break-words">
-                    {l.replace(/^\s*\[.*?\]\s?/, '')}
+                    {renderLogLine(l)}
                   </div>
                 ))}
               </div>
@@ -2015,17 +2026,17 @@ const [draftBans, setDraftBans] = useState({ A: [], B: [], fearless: [] });
             </div>
 
             <div className="w-64 bg-gray-900 p-2 space-y-1">
-            {liveStats.players.filter(p=>p.side==='RED').map((p,i) => (
-  <div key={i} className="text-xs bg-black p-2 border-r-2 border-red-500 text-right flex items-center justify-between">
-    <div className="text-left">
-      <div className="font-bold text-sm">{p.champName} <span className="text-[11px] text-gray-300 font-medium ml-2">Lv {p.lvl || 1}</span></div>
-      <div className="text-[11px] text-gray-300">{p.playerName}</div>
-    </div>
-    <div className="pl-2">
-      <div className="text-[11px] font-mono">{(p.k||0)}/{(p.d||0)}/{(p.a||0)}</div>
-    </div>
-  </div>
-))}
+              {liveStats.players.filter(p=>p.side==='RED').map((p,i) => (
+                <div key={i} className="text-xs bg-black p-2 border-r-2 border-red-500 text-right flex items-center justify-between">
+                  <div className="text-left">
+                    <div className="font-bold text-sm">{p.champName} <span className="text-[11px] text-gray-300 font-medium ml-2">Lv {p.lvl || 1}</span></div>
+                    <div className="text-[11px] text-gray-300">{p.playerName}</div>
+                  </div>
+                  <div className="pl-2">
+                    <div className="text-[11px] font-mono">{(p.k||0)}/{(p.d||0)}/{(p.a||0)}</div>
+                  </div>
+                </div>
+              ))}
             </div>
           </>
         )}
@@ -2034,45 +2045,42 @@ const [draftBans, setDraftBans] = useState({ A: [], B: [], fearless: [] });
           <div className="w-full flex flex-col items-center justify-center">
             <h1 className="text-6xl font-black text-white mb-8">{simulationData.winnerName} WIN!</h1>
             <button onClick={() => {
-  // compute whether the simulation winner equals teamA or teamB (teamA is the match prop)
-  const winnerIsTeamA = simulationData.winnerName === teamA.name;
-  const nA = winsA + (winnerIsTeamA ? 1 : 0);
-  const nB = winsB + (!winnerIsTeamA ? 1 : 0);
-  setWinsA(nA); setWinsB(nB);
+              const winnerIsTeamA = simulationData.winnerName === teamA.name;
+              const nA = winsA + (winnerIsTeamA ? 1 : 0);
+              const nB = winsB + (!winnerIsTeamA ? 1 : 0);
+              setWinsA(nA); setWinsB(nB);
 
-  const newHistoryEntry = {
-    setNumber: currentSet,
-    winner: simulationData.winnerName,
-    picks: simulationData.picks,
-    bans: simulationData.bans,
-    fearlessBans: globalBanList,
-    logs: simulationData.logs,
-    resultSummary: simulationData.resultSummary,
-    scores: simulationData.score
-  };
+              const newHistoryEntry = {
+                setNumber: currentSet,
+                winner: simulationData.winnerName,
+                picks: simulationData.picks,
+                bans: simulationData.bans,
+                fearlessBans: globalBanList,
+                logs: simulationData.logs,
+                resultSummary: simulationData.resultSummary,
+                scores: simulationData.score
+              };
 
-  const updatedHistory = [...matchHistory, newHistoryEntry];
-  setMatchHistory(updatedHistory);
-  setGlobalBanList(b => [...b, ...(simulationData.usedChamps || [])]);
+              const updatedHistory = [...matchHistory, newHistoryEntry];
+              setMatchHistory(updatedHistory);
+              setGlobalBanList(b => [...b, ...(simulationData.usedChamps || [])]);
 
-  const target = match.format === 'BO5' ? 3 : 2;
-  if (nA >= target || nB >= target) {
-    // finalise match and report to parent
-    if (onMatchComplete) {
-      onMatchComplete(match, {
-        winner: nA > nB ? teamA.name : teamB.name,
-        scoreA: nA,
-        scoreB: nB,
-        scoreString: `${nA}:${nB}`,
-        history: updatedHistory
-      });
-    }
-  } else {
-    // proceed to next set
-    setCurrentSet(s => s + 1);
-    setPhase('READY');
-  }
-}} className="text-2xl font-bold bg-blue-600 px-8 py-3 rounded hover:bg-blue-500">NEXT</button>
+              const target = match.format === 'BO5' ? 3 : 2;
+              if (nA >= target || nB >= target) {
+                if (onMatchComplete) {
+                  onMatchComplete(match, {
+                    winner: nA > nB ? teamA.name : teamB.name,
+                    scoreA: nA,
+                    scoreB: nB,
+                    scoreString: `${nA}:${nB}`,
+                    history: updatedHistory
+                  });
+                }
+              } else {
+                setCurrentSet(s => s + 1);
+                setPhase('READY');
+              }
+            }} className="text-2xl font-bold bg-blue-600 px-8 py-3 rounded hover:bg-blue-500">NEXT</button>
           </div>
         )}
       </div>
