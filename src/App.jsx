@@ -350,13 +350,7 @@ function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChampionList
     draftLogs: logs
   };
 }
-return {
-  picks: { A: mapPicks('BLUE', blueTeam.roster), B: mapPicks('RED', redTeam.roster) },
-  bans: { A: blueBans, B: redBans },
-  draftLogs: logs,
-  // expose the incoming global/fearless bans so callers (simulateSet / UI) can display them
-  fearlessBans: Array.isArray(fearlessBans) ? [...fearlessBans] : (fearlessBans ? [fearlessBans] : [])
-};
+
 
 function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks, currentAbsSecond) {
   let totalPower = 0;
@@ -1036,7 +1030,13 @@ function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions) {
     fearlessBans: draftResult.fearlessBans || fearlessBans || []
   };
   }
- 
+  return {
+    picks: { A: mapPicks('BLUE', blueTeam.roster), B: mapPicks('RED', redTeam.roster) },
+    bans: { A: blueBans, B: redBans },
+    draftLogs: logs,
+    // expose the incoming global/fearless bans so callers (simulateSet / UI) can display them
+    fearlessBans: Array.isArray(fearlessBans) ? [...fearlessBans] : (fearlessBans ? [fearlessBans] : [])
+  };
 
   const getConditionModifier = (player) => {
       const stability = player.상세?.안정성 || 50;
