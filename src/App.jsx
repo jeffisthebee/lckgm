@@ -1566,298 +1566,319 @@ function DetailedMatchResultModal({ result, onClose, teamA, teamB }) {
 // [3단계] Dashboard 컴포넌트 바로 위에 붙여넣기
 // ==========================================
 function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onClose }) {
-  // Hooks는 조건문 위에 있어야 함 (React 규칙)
   const [currentSet, setCurrentSet] = useState(1);
   const [winsA, setWinsA] = useState(0);
   const [winsB, setWinsB] = useState(0);
-  const [phase, setPhase] = useState('READY'); 
+  const [phase, setPhase] = useState('READY');
   const [simulationData, setSimulationData] = useState(null);
   const [displayLogs, setDisplayLogs] = useState([]);
-  
-  // [FIX] liveStats 초기값을 객체 형태로 변경하여 null 참조 오류 방지
   const [liveStats, setLiveStats] = useState({
-      kills: { BLUE: 0, RED: 0 },
-      gold: { BLUE: 2500, RED: 2500 },
-      towers: { BLUE: 0, RED: 0 },
-      drakes: { BLUE: 0, RED: 0 },
-      grubs: { BLUE: 0, RED: 0 },
-      players: []
+    kills: { BLUE: 0, RED: 0 },
+    gold: { BLUE: 2500, RED: 2500 },
+    towers: { BLUE: 0, RED: 0 },
+    drakes: { BLUE: 0, RED: 0 },
+    grubs: { BLUE: 0, RED: 0 },
+    players: []
   });
-
   const [gameTime, setGameTime] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [draftStep, setDraftStep] = useState(0);
   const [globalBanList, setGlobalBanList] = useState([]);
   const [matchHistory, setMatchHistory] = useState([]);
 
-  // 데이터 유효성 검사 (흰 화면 방지 1차)
+  // basic safety - don't render if required props missing
   if (!teamA || !teamB || !match) {
-      return (
-          <div className="fixed inset-0 bg-black text-red-500 z-[200] flex items-center justify-center">
-              <div>치명적 오류: 매치 데이터가 누락되었습니다.</div>
-              <button onClick={onClose} className="bg-white text-black px-4 py-2 mt-4">닫기</button>
+    return (
+      <div className="fixed inset-0 bg-black text-red-500 z-[200] flex items-center justify-center">
+        <div>
+          치명적 오류: 매치 데이터가 누락되었습니다.
+          <div className="mt-3">
+            <button onClick={onClose} className="bg-white text-black px-4 py-2 mt-2 rounded">닫기</button>
           </div>
-      );
+        </div>
+      </div>
+    );
   }
 
-  // 시뮬레이션 시작 함수
+  // start a set: runs simulateSet synchronously and prepares state for playback
   const startSet = useCallback(() => {
     try {
-        const blueTeam = currentSet % 2 !== 0 ? teamA : teamB;
-        const redTeam = currentSet % 2 !== 0 ? teamB : teamA;
+      const blueTeam = currentSet % 2 !== 0 ? teamA : teamB;
+      const redTeam = currentSet % 2 !== 0 ? teamB : teamA;
 
-        // 시뮬레이터 실행
-        const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
-        
-        if (!result || !result.picks) throw new Error("시뮬레이션 결과가 비어있습니다.");
+      const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
 
-        // 초기 스탯 세팅
-        setLiveStats({
-            kills: { BLUE: 0, RED: 0 },
-            gold: { BLUE: 2500, RED: 2500 },
-            towers: { BLUE: 0, RED: 0 },
-            drakes: { BLUE: 0, RED: 0 },
-            grubs: { BLUE: 0, RED: 0 },
-            players: [
-                ...result.picks.A.map(p => ({ ...p, side: 'BLUE', k:0, d:0, a:0, currentGold: 500, lvl: 1 })),
-                ...result.picks.B.map(p => ({ ...p, side: 'RED', k:0, d:0, a:0, currentGold: 500, lvl: 1 }))
-            ]
-        });
-        
-        setSimulationData({ ...result, blueTeam, redTeam });
-        setGameTime(0);
-        setDisplayLogs([]);
-        setPhase('DRAFT');
-        setDraftStep(0);
+      if (!result || !result.picks) throw new Error("시뮬레이션 결과가 비어있습니다.");
+
+      const players = [
+        ...result.picks.A.map(p => ({ ...p, side: 'BLUE', k:0, d:0, a:0, currentGold: 500, lvl: 1 })),
+        ...result.picks.B.map(p => ({ ...p, side: 'RED', k:0, d:0, a:0, currentGold: 500, lvl: 1 }))
+      ];
+
+      setLiveStats({
+        kills: { BLUE: 0, RED: 0 },
+        gold: { BLUE: 2500, RED: 2500 },
+        towers: { BLUE: 0, RED: 0 },
+        drakes: { BLUE: 0, RED: 0 },
+        grubs: { BLUE: 0, RED: 0 },
+        players
+      });
+
+      setSimulationData({ ...result, blueTeam, redTeam });
+      setGameTime(0);
+      setDisplayLogs([]);
+      setPhase('DRAFT');
+      setDraftStep(0);
 
     } catch (e) {
-        console.error(e);
-        alert("시뮬레이션 중 오류 발생: " + e.message);
-        onClose();
+      console.error(e);
+      alert("시뮬레이션 중 오류 발생: " + (e?.message || e));
+      if (onClose) onClose();
     }
   }, [currentSet, teamA, teamB, globalBanList, simOptions, onClose]);
 
-  // 초기 실행
-  useEffect(() => { if (phase === 'READY') startSet(); }, [phase, startSet]);
+  // when component is READY, start
+  useEffect(() => {
+    if (phase === 'READY') startSet();
+  }, [phase, startSet]);
 
-  // 밴픽 타이머
-  seEffect(() => {
+  // main playback / tick loop (fixed: useEffect spelled correctly and robust handling)
+  useEffect(() => {
     if (phase !== 'GAME' || !simulationData) return;
-  
-    const finalSec = simulationData.totalSeconds || (simulationData.totalMinutes || 30) * 60;
-    const intervalMs = 1000 / playbackSpeed;
-  
+
+    // total seconds fallback: try top-level totalSeconds, else fallback to minutes * 60
+    const finalSec = Number(simulationData.totalSeconds) || (Number(simulationData.totalMinutes) || 30) * 60;
+    const intervalMs = 1000 / Math.max(1, playbackSpeed);
+
     const timer = setInterval(() => {
       setGameTime(prev => {
         const next = prev + 1;
-  
-        // process logs that happen at this absolute second
-        const currentLogs = simulationData.logs.filter(log => {
-          const m = log.match(/\[(\d+):(\d+)\]/);
+
+        // Process logs that have a bracketed time [MM:SS] and match the absolute second
+        const logsForThisSecond = (simulationData.logs || []).filter(log => {
+          const m = log.match(/^\s*\[(\d+):(\d{1,2})\]/);
           if (!m) return false;
-          const abs = (parseInt(m[1], 10) * 60) + parseInt(m[2], 10);
+          const min = parseInt(m[1], 10);
+          const sec = parseInt(m[2], 10);
+          const abs = (min * 60) + sec;
           return abs === next;
         });
-  
-        if (currentLogs.length > 0) {
-          setDisplayLogs(prev => {
-            const merged = [...prev, ...currentLogs].slice(-30); // keep recent 30 logs
+
+        if (logsForThisSecond.length > 0) {
+          setDisplayLogs(prevLogs => {
+            const merged = [...prevLogs, ...logsForThisSecond].slice(-50); // keep last 50
             return merged;
           });
-  
-          // update stats and KDA when a kill log appears
+
+          // Best-effort stats update for kills/towers from logs
           setLiveStats(prevStats => {
             const newStats = JSON.parse(JSON.stringify(prevStats));
-            currentLogs.forEach(log => {
-              // killer/victim detection (robust)
-              if (log.includes('➜') && log.includes('☠️')) {
-                const killerMatch = log.match(/\]\s(.+?)\(/);
-                const victimMatch = log.match(/☠️\s\[.*?\]\s(.+?)\(/);
-                const killerName = killerMatch?.[1]?.trim();
-                const victimName = victimMatch?.[1]?.trim();
-  
-                let killerSide = null;
-                newStats.players = newStats.players.map(p => {
-                  if (p.playerName === victimName) {
-                    p.d = (p.d || 0) + 1;
+
+            logsForThisSecond.forEach(log => {
+              // kill format heuristic: "⚔️ [POS] KillerName(Champ) ➜ ☠️ [POS] VictimName(Champ)"
+              try {
+                if (log.includes('➜') && log.includes('☠️')) {
+                  const killerMatch = log.match(/\]\s(.+?)\(/);
+                  const victimMatch = log.match(/☠️\s\[.*?\]\s(.+?)\(/);
+                  const killerName = killerMatch?.[1]?.trim();
+                  const victimName = victimMatch?.[1]?.trim();
+
+                  if (victimName) {
+                    newStats.players = newStats.players.map(p => {
+                      if (p.playerName === victimName) {
+                        p.d = (p.d || 0) + 1;
+                        p.currentGold = (p.currentGold || 500);
+                      }
+                      return p;
+                    });
                   }
-                  return p;
-                });
-                newStats.players = newStats.players.map(p => {
-                  if (p.playerName === killerName) {
-                    killerSide = p.side;
-                    p.k = (p.k || 0) + 1;
-                    p.currentGold = (p.currentGold || 500) + GAME_RULES.GOLD.KILL;
-                  }
-                  return p;
-                });
-                if (killerSide) newStats.kills[killerSide] = (newStats.kills[killerSide] || 0) + 1;
-              }
-  
-              // tower / plate checks
-              if (log.includes('포탑 파괴') || log.includes('포탑 방패') || log.includes('억제기')) {
-                // quick best-effort parse to increment towers
-                if (log.includes('포탑')) {
-                  if (log.includes(simulationData.blueTeam.name)) newStats.towers.BLUE++;
-                  else if (log.includes(simulationData.redTeam.name)) newStats.towers.RED++;
+
+                  let killerSide = null;
+                  newStats.players = newStats.players.map(p => {
+                    if (p.playerName === killerName) {
+                      killerSide = p.side;
+                      p.k = (p.k || 0) + 1;
+                      p.currentGold = (p.currentGold || 500) + GAME_RULES.GOLD.KILL;
+                    }
+                    return p;
+                  });
+
+                  if (killerSide) newStats.kills[killerSide] = (newStats.kills[killerSide] || 0) + 1;
                 }
+
+                // turret/plate logs: increment simple counters (best-effort)
+                if (/포탑|포탑 방패|억제기/.test(log)) {
+                  if (simulationData.blueTeam && log.includes(simulationData.blueTeam.name)) newStats.towers.BLUE++;
+                  else if (simulationData.redTeam && log.includes(simulationData.redTeam.name)) newStats.towers.RED++;
+                }
+              } catch (err) {
+                // don't let one bad log crash rendering
+                console.warn('log parse error', err, log);
               }
             });
-  
-            // Update levels based on playersLevelProgress proportionally by next / finalSec
+
+            // level progress: interpolate levels if playersLevelProgress available
             const progress = finalSec > 0 ? Math.min(1, next / finalSec) : 1;
             if (simulationData.playersLevelProgress) {
-              newStats.players = newStats.players.map(player => {
-                const prog = simulationData.playersLevelProgress.find(pp => pp.playerName === player.playerName);
-                if (!prog) return player;
+              newStats.players = newStats.players.map(pl => {
+                const prog = simulationData.playersLevelProgress.find(pp => pp.playerName === pl.playerName);
+                if (!prog) return pl;
                 const delta = (prog.endLevel || prog.startLevel) - (prog.startLevel || 1);
                 const newLevel = (prog.startLevel || 1) + Math.floor(delta * progress);
-                player.lvl = Math.max(1, newLevel);
-                return player;
+                pl.lvl = Math.max(1, newLevel);
+                return pl;
               });
             }
-  
+
             return newStats;
           });
         }
-  
-        // If we've reached or exceeded the final second, schedule end-of-game transition
+
+        // If we reached final second, snap and move to result phase with small delay
         if (next >= finalSec) {
-          // snap to final second
           setGameTime(finalSec);
-  
-          // allow a brief pause so the final logs show up (3 seconds real-time scaled by playbackSpeed)
-          const postDelayMs = Math.max(1000, 3000 / Math.max(1, playbackSpeed));
-          setTimeout(() => {
-            setPhase('SET_RESULT');
-          }, postDelayMs);
-  
+          const postDelayMs = Math.max(500, 1500 / Math.max(1, playbackSpeed));
+          setTimeout(() => setPhase('SET_RESULT'), postDelayMs);
           return finalSec;
         }
-  
+
         return next;
       });
     }, intervalMs);
-  
+
     return () => clearInterval(timer);
   }, [phase, simulationData, playbackSpeed]);
-  
-  // [FIX] 로딩 조건 단순화
-  if (!simulationData) return <div className="fixed inset-0 bg-black text-white flex items-center justify-center z-[200]">로딩 중...</div>;
+
+  // simple loading guard
+  if (!simulationData) return (
+    <div className="fixed inset-0 bg-black text-white flex items-center justify-center z-[200]">로딩 중...</div>
+  );
 
   const { blueTeam, redTeam, picks, bans } = simulationData;
   const isBlueWin = simulationData.winnerName === blueTeam.name;
 
   return (
     <div className="fixed inset-0 bg-black z-[200] flex flex-col font-mono text-white">
-        {/* 상단바 */}
-        <div className="h-16 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-6 z-10">
-  <div className="w-1/3 flex items-center gap-4">
-    <div className="text-2xl font-black text-blue-500">{blueTeam.name}</div>
-    <div className="bg-blue-600 text-white px-3 py-1 rounded font-bold">{liveStats.kills.BLUE || 0}</div>
-  </div>
-
-  <div className="text-yellow-400 font-black text-2xl">
-    {phase === 'DRAFT' ? phase : `${Math.floor(gameTime/60)}:${String(gameTime%60).padStart(2,'0')}`}
-  </div>
-
-  <div className="w-1/3 flex items-center justify-end gap-4">
-    <div className="bg-red-600 text-white px-3 py-1 rounded font-bold">{liveStats.kills.RED || 0}</div>
-    <div className="text-2xl font-black text-red-500">{redTeam.name}</div>
-  </div>
-</div>
-
-        {/* 메인 화면 */}
-        <div className="flex-1 bg-black relative flex">
-            {phase === 'DRAFT' && (
-                <div className="w-full flex justify-between p-10">
-                    <div className="space-y-2">{picks.A.map((p,i) => <div key={i} className={`p-4 border-l-4 ${i < (draftStep-7)/2 ? 'border-blue-500 bg-gray-800' : 'border-gray-800'}`}>{p.champName}</div>)}</div>
-                    <div className="text-6xl font-black self-center text-gray-800">VS</div>
-                    <div className="space-y-2 text-right">{picks.B.map((p,i) => <div key={i} className={`p-4 border-r-4 ${i < (draftStep-7)/2 ? 'border-red-500 bg-gray-800' : 'border-gray-800'}`}>{p.champName}</div>)}</div>
-                </div>
-            )}
-
-            {phase === 'GAME' && (
-                <div className="w-full flex relative">
-                    {/* 선수 목록 */}
-                    <div className="w-64 bg-gray-900 p-2 space-y-1">
-                    {liveStats.players.filter(p=>p.side==='BLUE').map((p,i) => (
-  <div key={i} className="text-xs bg-black p-2 border-l-2 border-blue-500">
-    <div className="font-bold">{p.champName} <span className="text-xs text-gray-400">- {p.playerName}</span></div>
-    <div className="text-[11px] text-gray-300">{p.k}/{p.d}/{p.a}</div>
-  </div>
-))}
-                    </div>
-                    {/* 로그 화면 */}
-                    <div className="flex-1 relative flex flex-col justify-end items-center pb-10">
-                        <div className="absolute inset-0 bg-gray-800 opacity-20"></div> {/* 배경 */}
-                        <div className="z-10 text-center space-y-2 mb-4 w-full max-w-2xl">
-                            {displayLogs.slice(-6).map((l, i) => (
-                               <div key={i} className="text-sm font-bold text-white bg-black/60 px-3 py-1 rounded whitespace-pre-wrap break-words">
-                                       {l.replace(/^\s*\[.*?\]\s?/, '') /* show full text without the bracket-cut if you want */ }
-                                  </div>
-                                         ))}
-                                    </div>
-                        <div className="z-10 flex gap-2">
-                             {[1,4,16].map(s=><button key={s} onClick={()=>setPlaybackSpeed(s)} className={`px-3 py-1 rounded text-xs ${playbackSpeed === s ? 'bg-yellow-500 text-black' : 'bg-gray-700'}`}>x{s}</button>)}
-                             <button onClick={()=>{
-                                 const finalTime = parseInt(simulationData.gameTime.split('분')[0])*60 + parseInt(simulationData.gameTime.split('분')[1] || '0');
-                                 setGameTime(finalTime);
-                             }} className="bg-red-600 px-3 py-1 rounded text-xs">SKIP</button>
-                        </div>
-                    </div>
-                    <div className="w-64 bg-gray-900 p-2 space-y-1">
-                    {liveStats.players.filter(p=>p.side==='RED').map((p,i) => (
-  <div key={i} className="text-xs bg-black p-2 border-r-2 border-red-500 text-right">
-    <div className="font-bold">{p.champName} <span className="text-xs text-gray-400">- {p.playerName}</span></div>
-    <div className="text-[11px] text-gray-300">{p.k}/{p.d}/{p.a}</div>
-  </div>
-))}
-                    </div>
-                </div>
-            )}
-
-            {phase === 'SET_RESULT' && (
-                <div className="w-full flex flex-col items-center justify-center">
-                    <h1 className="text-6xl font-black text-white mb-8">{simulationData.winnerName} WIN!</h1>
-                    <button onClick={() => {
-                         const nA = winsA + (isBlueWin?1:0); const nB = winsB + (!isBlueWin?1:0);
-                         setWinsA(nA); setWinsB(nB);
-                         
-                         const newHistoryEntry = {
-                             setNumber: currentSet,
-                             winner: simulationData.winnerName,
-                             picks: simulationData.picks,
-                             bans: simulationData.bans,
-                             fearlessBans: globalBanList,
-                             logs: simulationData.logs,
-                             resultSummary: simulationData.resultSummary,
-                             scores: simulationData.score
-                         };
-                         const updatedHistory = [...matchHistory, newHistoryEntry];
-                         setMatchHistory(updatedHistory);
-                         setGlobalBanList(b => [...b, ...simulationData.usedChamps]);
-
-                         const target = match.format==='BO5'?3:2;
-                         if(nA>=target || nB>=target) {
-                             onMatchComplete(match, {
-                                 winner: nA > nB ? teamA.name : teamB.name, 
-                                 scoreA: nA,
-                                 scoreB: nB,
-                                 scoreString:`${nA}:${nB}`, 
-                                 history: updatedHistory
-                             });
-                         } else {
-                             setCurrentSet(s=>s+1); setPhase('READY');
-                         }
-                    }} className="text-2xl font-bold bg-blue-600 px-8 py-3 rounded hover:bg-blue-500">NEXT</button>
-                </div>
-            )}
+      {/* top bar */}
+      <div className="h-16 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-6 z-10">
+        <div className="w-1/3 flex items-center gap-4">
+          <div className="text-2xl font-black text-blue-500">{blueTeam.name}</div>
+          <div className="bg-blue-600 text-white px-3 py-1 rounded font-bold">{liveStats.kills.BLUE || 0}</div>
         </div>
+
+        <div className="text-yellow-400 font-black text-2xl">
+          {phase === 'DRAFT' ? phase : `${Math.floor(gameTime/60)}:${String(gameTime%60).padStart(2,'0')}`}
+        </div>
+
+        <div className="w-1/3 flex items-center justify-end gap-4">
+          <div className="bg-red-600 text-white px-3 py-1 rounded font-bold">{liveStats.kills.RED || 0}</div>
+          <div className="text-2xl font-black text-red-500">{redTeam.name}</div>
+        </div>
+      </div>
+
+      <div className="flex-1 bg-black relative flex">
+        {phase === 'DRAFT' && (
+          <div className="w-full flex justify-between p-10 text-white">
+            <div className="space-y-2 w-1/3">
+              {picks.A.map((p,i) => <div key={i} className="p-4 border-l-4 border-blue-500">{p.champName} — {p.playerName}</div>)}
+            </div>
+            <div className="text-6xl font-black self-center text-gray-300">VS</div>
+            <div className="space-y-2 text-right w-1/3">
+              {picks.B.map((p,i) => <div key={i} className="p-4 border-r-4 border-red-500">{p.champName} — {p.playerName}</div>)}
+            </div>
+          </div>
+        )}
+
+        {phase === 'GAME' && (
+          <>
+            <div className="w-64 bg-gray-900 p-2 space-y-1">
+              {liveStats.players.filter(p=>p.side==='BLUE').map((p,i) => (
+                <div key={i} className="text-xs bg-black p-2 border-l-2 border-blue-500">
+                  <div className="font-bold">{p.champName} <span className="text-xs text-gray-400">- {p.playerName}</span></div>
+                  <div className="text-[11px] text-gray-300">{p.k}/{p.d}/{p.a}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex-1 relative flex flex-col justify-end items-center pb-10">
+              <div className="absolute inset-0 bg-gray-800 opacity-20"></div>
+              <div className="z-10 text-center space-y-2 mb-4 w-full max-w-2xl">
+                {displayLogs.slice(-6).map((l, i) => (
+                  <div key={i} className="text-sm font-bold text-white bg-black/60 px-3 py-1 rounded whitespace-pre-wrap break-words">
+                    {l.replace(/^\s*\[.*?\]\s?/, '')}
+                  </div>
+                ))}
+              </div>
+
+              <div className="z-10 flex gap-2">
+                {[1,4,16].map(s => (
+                  <button key={s} onClick={()=>setPlaybackSpeed(s)} className={`px-3 py-1 rounded text-xs ${playbackSpeed === s ? 'bg-yellow-500 text-black' : 'bg-gray-700'}`}>{s}x</button>
+                ))}
+                <button onClick={()=>{
+                  const gm = parseInt((simulationData.totalMinutes || 30), 10) * 60;
+                  setGameTime(gm);
+                }} className="bg-red-600 px-3 py-1 rounded text-xs">SKIP</button>
+              </div>
+            </div>
+
+            <div className="w-64 bg-gray-900 p-2 space-y-1">
+              {liveStats.players.filter(p=>p.side==='RED').map((p,i) => (
+                <div key={i} className="text-xs bg-black p-2 border-r-2 border-red-500 text-right">
+                  <div className="font-bold">{p.champName} <span className="text-xs text-gray-400">- {p.playerName}</span></div>
+                  <div className="text-[11px] text-gray-300">{p.k}/{p.d}/{p.a}</div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {phase === 'SET_RESULT' && (
+          <div className="w-full flex flex-col items-center justify-center">
+            <h1 className="text-6xl font-black text-white mb-8">{simulationData.winnerName} WIN!</h1>
+            <button onClick={() => {
+              const nA = winsA + (isBlueWin ? 1 : 0);
+              const nB = winsB + (!isBlueWin ? 1 : 0);
+              setWinsA(nA); setWinsB(nB);
+
+              const newHistoryEntry = {
+                setNumber: currentSet,
+                winner: simulationData.winnerName,
+                picks: simulationData.picks,
+                bans: simulationData.bans,
+                fearlessBans: globalBanList,
+                logs: simulationData.logs,
+                resultSummary: simulationData.resultSummary,
+                scores: simulationData.score
+              };
+
+              const updatedHistory = [...matchHistory, newHistoryEntry];
+              setMatchHistory(updatedHistory);
+              setGlobalBanList(b => [...b, ...(simulationData.usedChamps || [])]);
+
+              const target = match.format === 'BO5' ? 3 : 2;
+              const nAWins = nA, nBWins = nB;
+
+              if (nAWins >= target || nBWins >= target) {
+                if (onMatchComplete) {
+                  onMatchComplete(match, {
+                    winner: nAWins > nBWins ? teamA.name : teamB.name,
+                    scoreA: nAWins,
+                    scoreB: nBWins,
+                    scoreString: `${nAWins}:${nBWins}`,
+                    history: updatedHistory
+                  });
+                }
+              } else {
+                setCurrentSet(s => s + 1);
+                setPhase('READY');
+              }
+            }} className="text-2xl font-bold bg-blue-600 px-8 py-3 rounded hover:bg-blue-500">NEXT</button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
-
 
 
 // --- Dashboard ---
