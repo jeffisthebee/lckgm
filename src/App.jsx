@@ -1567,24 +1567,27 @@ function DetailedMatchResultModal({ result, onClose, teamA, teamB }) {
 // ==========================================
 function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onClose }) {
   const [currentSet, setCurrentSet] = useState(1);
-  const [winsA, setWinsA] = useState(0);
-  const [winsB, setWinsB] = useState(0);
-  const [phase, setPhase] = useState('READY');
-  const [simulationData, setSimulationData] = useState(null);
-  const [displayLogs, setDisplayLogs] = useState([]);
-  const [liveStats, setLiveStats] = useState({
-    kills: { BLUE: 0, RED: 0 },
-    gold: { BLUE: 2500, RED: 2500 },
-    towers: { BLUE: 0, RED: 0 },
-    drakes: { BLUE: 0, RED: 0 },
-    grubs: { BLUE: 0, RED: 0 },
-    players: []
-  });
-  const [gameTime, setGameTime] = useState(0);
-  const [playbackSpeed, setPlaybackSpeed] = useState(1);
-  const [draftStep, setDraftStep] = useState(0);
-  const [globalBanList, setGlobalBanList] = useState([]);
-  const [matchHistory, setMatchHistory] = useState([]);
+const [winsA, setWinsA] = useState(0);
+const [winsB, setWinsB] = useState(0);
+const [phase, setPhase] = useState('READY');
+const [simulationData, setSimulationData] = useState(null);
+const [displayLogs, setDisplayLogs] = useState([]);
+const [liveStats, setLiveStats] = useState({
+  kills: { BLUE: 0, RED: 0 },
+  gold: { BLUE: 2500, RED: 2500 },
+  towers: { BLUE: 0, RED: 0 },
+  drakes: { BLUE: 0, RED: 0 },
+  grubs: { BLUE: 0, RED: 0 },
+  players: []
+});
+const [gameTime, setGameTime] = useState(0);
+const [playbackSpeed, setPlaybackSpeed] = useState(1);
+const [draftStep, setDraftStep] = useState(0);
+const [globalBanList, setGlobalBanList] = useState([]);
+const [matchHistory, setMatchHistory] = useState([]);
+
+// NEW: persist bans so picks/bans remain visible during GAME playback
+const [draftBans, setDraftBans] = useState({ A: [], B: [], fearless: [] });
 
   // basic safety - don't render if required props missing
   if (!teamA || !teamB || !match) {
@@ -1648,8 +1651,16 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
     setDisplayLogs([]); // start fresh for draft view
     setDraftStep(0);
   
+    // persist bans so they can be shown later during GAME playback
+    setDraftBans({
+      A: (simulationData.bans && simulationData.bans.A) || [],
+      B: (simulationData.bans && simulationData.bans.B) || [],
+      fearless: simulationData.fearlessBans || (simulationData.fearlessBans === undefined ? (simulationData.fearless || []) : [])
+    });
+  
     let idx = 0;
-    const intervalMs = 450; // speed of revealing draft logs (adjustable)
+    // SLOWER reveal so users can follow picks/bans. Increase if still too fast.
+    const intervalMs = 800;
     const interval = setInterval(() => {
       const nextLog = draftLogs[idx];
       if (nextLog) {
@@ -1663,10 +1674,11 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
   
       if (idx >= draftLogs.length) {
         clearInterval(interval);
-        // small pause so the user can see final bans/picks, then start the game
-        const startDelay = 700;
+        // show final draft state for a short while before the game playback
+        const startDelay = 900;
         setTimeout(() => {
-          setDisplayLogs([]); // clear draft logs so game logs display cleanly
+          // keep a small history of draft logs so players can still scroll back,
+          // but switch to GAME phase so the game logs start appending.
           setPhase('GAME');
           setGameTime(0);
         }, startDelay);
@@ -1678,110 +1690,127 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
 
   // main playback / tick loop (fixed: useEffect spelled correctly and robust handling)
   useEffect(() => {
-    if (phase !== 'GAME' || !simulationData) return;
+  if (phase !== 'GAME' || !simulationData) return;
 
-    // total seconds fallback: try top-level totalSeconds, else fallback to minutes * 60
-    const finalSec = Number(simulationData.totalSeconds) || (Number(simulationData.totalMinutes) || 30) * 60;
-    const intervalMs = 1000 / Math.max(1, playbackSpeed);
+  // finalSec fallback: top-level totalSeconds or minutes*60
+  const finalSec = Number(simulationData.totalSeconds) || (Number(simulationData.totalMinutes) || 30) * 60;
+  // tick speed in ms depends on playbackSpeed (higher speed => smaller interval)
+  const intervalMs = 1000 / Math.max(1, playbackSpeed);
 
-    const timer = setInterval(() => {
-      setGameTime(prev => {
-        const next = prev + 1;
+  const timer = setInterval(() => {
+    setGameTime(prev => {
+      const next = prev + 1;
 
-        // Process logs that have a bracketed time [MM:SS] and match the absolute second
-        const logsForThisSecond = (simulationData.logs || []).filter(log => {
-          const m = log.match(/^\s*\[(\d+):(\d{1,2})\]/);
-          if (!m) return false;
-          const min = parseInt(m[1], 10);
-          const sec = parseInt(m[2], 10);
-          const abs = (min * 60) + sec;
-          return abs === next;
+      // pick logs for this absolute second by parsing leading [MM:SS]
+      const logsForThisSecond = (simulationData.logs || []).filter(log => {
+        const m = log.match(/^\s*\[(\d+):(\d{1,2})\]/);
+        if (!m) return false;
+        const min = parseInt(m[1], 10);
+        const sec = parseInt(m[2], 10);
+        const abs = (min * 60) + sec;
+        return abs === next;
+      });
+
+      if (logsForThisSecond.length > 0) {
+        setDisplayLogs(prevLogs => {
+          const merged = [...prevLogs, ...logsForThisSecond].slice(-200); // keep more history
+          return merged;
         });
 
-        if (logsForThisSecond.length > 0) {
-          setDisplayLogs(prevLogs => {
-            const merged = [...prevLogs, ...logsForThisSecond].slice(-50); // keep last 50
-            return merged;
-          });
+        // Best-effort stats update for kills/towers from logs
+        setLiveStats(prevStats => {
+          const newStats = JSON.parse(JSON.stringify(prevStats));
 
-          // Best-effort stats update for kills/towers from logs
-          setLiveStats(prevStats => {
-            const newStats = JSON.parse(JSON.stringify(prevStats));
+          logsForThisSecond.forEach(log => {
+            try {
+              // Extract killer and victim names robustly:
+              // Example log: "[12:34] ⚔️ [MID] Faker(LeBlanc) ➜ ☠️ [MID] Rookie(Azir) ..."
+              const killerMatch = log.match(/⚔️[\s\S]*?\]\s*([^()]+?)\s*\(/);
+              const victimMatch = log.match(/☠️[\s\S]*?\]\s*([^()]+?)\s*\(/);
 
-            logsForThisSecond.forEach(log => {
-              // kill format heuristic: "⚔️ [POS] KillerName(Champ) ➜ ☠️ [POS] VictimName(Champ)"
-              try {
-                if (log.includes('➜') && log.includes('☠️')) {
-                  const killerMatch = log.match(/\]\s(.+?)\(/);
-                  const victimMatch = log.match(/☠️\s\[.*?\]\s(.+?)\(/);
-                  const killerName = killerMatch?.[1]?.trim();
-                  const victimName = victimMatch?.[1]?.trim();
+              const killerName = killerMatch?.[1]?.trim();
+              const victimName = victimMatch?.[1]?.trim();
 
-                  if (victimName) {
-                    newStats.players = newStats.players.map(p => {
-                      if (p.playerName === victimName) {
-                        p.d = (p.d || 0) + 1;
-                        p.currentGold = (p.currentGold || 500);
-                      }
-                      return p;
-                    });
+              if (victimName) {
+                newStats.players = newStats.players.map(p => {
+                  if (p.playerName === victimName) {
+                    p.d = (p.d || 0) + 1;
+                    // mark currentGold unchanged here; grantGold will come from KILL handling
                   }
-
-                  let killerSide = null;
-                  newStats.players = newStats.players.map(p => {
-                    if (p.playerName === killerName) {
-                      killerSide = p.side;
-                      p.k = (p.k || 0) + 1;
-                      p.currentGold = (p.currentGold || 500) + GAME_RULES.GOLD.KILL;
-                    }
-                    return p;
-                  });
-
-                  if (killerSide) newStats.kills[killerSide] = (newStats.kills[killerSide] || 0) + 1;
-                }
-
-                // turret/plate logs: increment simple counters (best-effort)
-                if (/포탑|포탑 방패|억제기/.test(log)) {
-                  if (simulationData.blueTeam && log.includes(simulationData.blueTeam.name)) newStats.towers.BLUE++;
-                  else if (simulationData.redTeam && log.includes(simulationData.redTeam.name)) newStats.towers.RED++;
-                }
-              } catch (err) {
-                // don't let one bad log crash rendering
-                console.warn('log parse error', err, log);
+                  return p;
+                });
               }
-            });
 
-            // level progress: interpolate levels if playersLevelProgress available
-            const progress = finalSec > 0 ? Math.min(1, next / finalSec) : 1;
-            if (simulationData.playersLevelProgress) {
-              newStats.players = newStats.players.map(pl => {
-                const prog = simulationData.playersLevelProgress.find(pp => pp.playerName === pl.playerName);
-                if (!prog) return pl;
-                const delta = (prog.endLevel || prog.startLevel) - (prog.startLevel || 1);
-                const newLevel = (prog.startLevel || 1) + Math.floor(delta * progress);
-                pl.lvl = Math.max(1, newLevel);
-                return pl;
-              });
+              if (killerName) {
+                let killerSide = null;
+                newStats.players = newStats.players.map(p => {
+                  if (p.playerName === killerName) {
+                    killerSide = p.side;
+                    p.k = (p.k || 0) + 1;
+                    p.currentGold = (p.currentGold || 500) + GAME_RULES.GOLD.KILL;
+                  }
+                  return p;
+                });
+                if (killerSide) newStats.kills[killerSide] = (newStats.kills[killerSide] || 0) + 1;
+              }
+
+              // Assist heuristic: if the log contains "assist" or similar token, increment assists for nearby players
+              if (/assist|assist\(|도움|어시스트/.test(log)) {
+                // crude: find names within parentheses after the killer and increment assists of first other BLUE/RED player
+                // (The engine may place assists differently; this is best-effort)
+                newStats.players = newStats.players.map(p => {
+                  if (log.includes(p.playerName) && !killerName?.includes(p.playerName) && !victimName?.includes(p.playerName)) {
+                    p.a = (p.a || 0) + 1;
+                    p.currentGold = (p.currentGold || 500) + GAME_RULES.GOLD.ASSIST;
+                  }
+                  return p;
+                });
+              }
+
+              // Turret/plate/inhib messages: increment a simple tower counter
+              if (/포탑|포탑 방패|억제기|1차 포탑|2차 포탑|3차/.test(log)) {
+                if (simulationData.blueTeam && log.includes(simulationData.blueTeam.name)) newStats.towers.BLUE++;
+                else if (simulationData.redTeam && log.includes(simulationData.redTeam.name)) newStats.towers.RED++;
+              }
+
+            } catch (err) {
+              console.warn('log parse error', err, log);
             }
-
-            return newStats;
           });
-        }
 
-        // If we reached final second, snap and move to result phase with small delay
-        if (next >= finalSec) {
-          setGameTime(finalSec);
-          const postDelayMs = Math.max(500, 1500 / Math.max(1, playbackSpeed));
-          setTimeout(() => setPhase('SET_RESULT'), postDelayMs);
-          return finalSec;
-        }
+          // level progress interpolation (so levels increase during playback)
+          const progress = finalSec > 0 ? Math.min(1, next / finalSec) : 1;
+          if (simulationData.playersLevelProgress) {
+            newStats.players = newStats.players.map(pl => {
+              const prog = (simulationData.playersLevelProgress || []).find(pp => pp.playerName === pl.playerName);
+              if (!prog) return pl;
+              const startL = Number(prog.startLevel || 1);
+              const endL = Number(prog.endLevel || startL);
+              const delta = endL - startL;
+              const newLevel = startL + Math.floor(delta * progress);
+              pl.lvl = Math.max(1, newLevel);
+              return pl;
+            });
+          }
 
-        return next;
-      });
-    }, intervalMs);
+          return newStats;
+        });
+      }
 
-    return () => clearInterval(timer);
-  }, [phase, simulationData, playbackSpeed]);
+      // If we reached final second, snap and move to result phase with small delay
+      if (next >= finalSec) {
+        setGameTime(finalSec);
+        const postDelayMs = Math.max(500, 1500 / Math.max(1, playbackSpeed));
+        setTimeout(() => setPhase('SET_RESULT'), postDelayMs);
+        return finalSec;
+      }
+
+      return next;
+    });
+  }, intervalMs);
+
+  return () => clearInterval(timer);
+}, [phase, simulationData, playbackSpeed]);
 
   // simple loading guard
   if (!simulationData) return (
@@ -1871,17 +1900,54 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
         {phase === 'GAME' && (
           <>
             <div className="w-64 bg-gray-900 p-2 space-y-1">
-              {liveStats.players.filter(p=>p.side==='BLUE').map((p,i) => (
-                <div key={i} className="text-xs bg-black p-2 border-l-2 border-blue-500">
-                  <div className="font-bold">{p.champName} <span className="text-xs text-gray-400">- {p.playerName}</span></div>
-                  <div className="text-[11px] text-gray-300">{p.k}/{p.d}/{p.a}</div>
-                </div>
-              ))}
+            {liveStats.players.filter(p=>p.side==='BLUE').map((p,i) => (
+  <div key={i} className="text-xs bg-black p-2 border-l-2 border-blue-500 flex items-center justify-between">
+    <div>
+      <div className="font-bold text-sm">
+        {p.champName} <span className="text-[11px] text-gray-300 font-medium ml-2">Lv {p.lvl || 1}</span>
+      </div>
+      <div className="text-[11px] text-gray-300">{p.playerName}</div>
+    </div>
+    <div className="text-right">
+      <div className="text-[11px] font-mono">{(p.k||0)}/{(p.d||0)}/{(p.a||0)}</div>
+    </div>
+  </div>
+))}
             </div>
 
             <div className="flex-1 relative flex flex-col justify-end items-center pb-10">
               <div className="absolute inset-0 bg-gray-800 opacity-20"></div>
               <div className="z-10 text-center space-y-2 mb-4 w-full max-w-2xl">
+              <div className="absolute top-6 left-1/2 transform -translate-x-1/2 z-20 w-full max-w-2xl">
+  <div className="flex justify-between items-center gap-4 px-4">
+    <div className="flex items-center gap-2">
+      <div className="text-xs font-bold text-blue-300 uppercase">Blue bans</div>
+      <div className="flex gap-1">
+        {(draftBans.A || simulationData.bans?.A || []).map((b, i) => (
+          <div key={`b-ban-${i}`} className="px-2 py-0.5 bg-gray-800 text-white text-xs rounded">{b}</div>
+        ))}
+      </div>
+    </div>
+
+    <div className="flex items-center gap-2">
+      <div className="text-xs font-bold text-purple-300 uppercase">Global bans</div>
+      <div className="flex gap-1">
+        {(draftBans.fearless || simulationData.fearlessBans || []).map((b, i) => (
+          <div key={`f-ban-${i}`} className="px-2 py-0.5 bg-purple-700 text-white text-xs rounded">{b}</div>
+        ))}
+      </div>
+    </div>
+
+    <div className="flex items-center gap-2">
+      <div className="text-xs font-bold text-red-300 uppercase">Red bans</div>
+      <div className="flex gap-1">
+        {(draftBans.B || simulationData.bans?.B || []).map((b, i) => (
+          <div key={`r-ban-${i}`} className="px-2 py-0.5 bg-gray-800 text-white text-xs rounded">{b}</div>
+        ))}
+      </div>
+    </div>
+  </div>
+</div>
                 {displayLogs.slice(-6).map((l, i) => (
                   <div key={i} className="text-sm font-bold text-white bg-black/60 px-3 py-1 rounded whitespace-pre-wrap break-words">
                     {l.replace(/^\s*\[.*?\]\s?/, '')}
@@ -1901,12 +1967,17 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
             </div>
 
             <div className="w-64 bg-gray-900 p-2 space-y-1">
-              {liveStats.players.filter(p=>p.side==='RED').map((p,i) => (
-                <div key={i} className="text-xs bg-black p-2 border-r-2 border-red-500 text-right">
-                  <div className="font-bold">{p.champName} <span className="text-xs text-gray-400">- {p.playerName}</span></div>
-                  <div className="text-[11px] text-gray-300">{p.k}/{p.d}/{p.a}</div>
-                </div>
-              ))}
+            {liveStats.players.filter(p=>p.side==='RED').map((p,i) => (
+  <div key={i} className="text-xs bg-black p-2 border-r-2 border-red-500 text-right flex items-center justify-between">
+    <div className="text-left">
+      <div className="font-bold text-sm">{p.champName} <span className="text-[11px] text-gray-300 font-medium ml-2">Lv {p.lvl || 1}</span></div>
+      <div className="text-[11px] text-gray-300">{p.playerName}</div>
+    </div>
+    <div className="pl-2">
+      <div className="text-[11px] font-mono">{(p.k||0)}/{(p.d||0)}/{(p.a||0)}</div>
+    </div>
+  </div>
+))}
             </div>
           </>
         )}
@@ -1915,43 +1986,45 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
           <div className="w-full flex flex-col items-center justify-center">
             <h1 className="text-6xl font-black text-white mb-8">{simulationData.winnerName} WIN!</h1>
             <button onClick={() => {
-              const nA = winsA + (isBlueWin ? 1 : 0);
-              const nB = winsB + (!isBlueWin ? 1 : 0);
-              setWinsA(nA); setWinsB(nB);
+  // compute whether the simulation winner equals teamA or teamB (teamA is the match prop)
+  const winnerIsTeamA = simulationData.winnerName === teamA.name;
+  const nA = winsA + (winnerIsTeamA ? 1 : 0);
+  const nB = winsB + (!winnerIsTeamA ? 1 : 0);
+  setWinsA(nA); setWinsB(nB);
 
-              const newHistoryEntry = {
-                setNumber: currentSet,
-                winner: simulationData.winnerName,
-                picks: simulationData.picks,
-                bans: simulationData.bans,
-                fearlessBans: globalBanList,
-                logs: simulationData.logs,
-                resultSummary: simulationData.resultSummary,
-                scores: simulationData.score
-              };
+  const newHistoryEntry = {
+    setNumber: currentSet,
+    winner: simulationData.winnerName,
+    picks: simulationData.picks,
+    bans: simulationData.bans,
+    fearlessBans: globalBanList,
+    logs: simulationData.logs,
+    resultSummary: simulationData.resultSummary,
+    scores: simulationData.score
+  };
 
-              const updatedHistory = [...matchHistory, newHistoryEntry];
-              setMatchHistory(updatedHistory);
-              setGlobalBanList(b => [...b, ...(simulationData.usedChamps || [])]);
+  const updatedHistory = [...matchHistory, newHistoryEntry];
+  setMatchHistory(updatedHistory);
+  setGlobalBanList(b => [...b, ...(simulationData.usedChamps || [])]);
 
-              const target = match.format === 'BO5' ? 3 : 2;
-              const nAWins = nA, nBWins = nB;
-
-              if (nAWins >= target || nBWins >= target) {
-                if (onMatchComplete) {
-                  onMatchComplete(match, {
-                    winner: nAWins > nBWins ? teamA.name : teamB.name,
-                    scoreA: nAWins,
-                    scoreB: nBWins,
-                    scoreString: `${nAWins}:${nBWins}`,
-                    history: updatedHistory
-                  });
-                }
-              } else {
-                setCurrentSet(s => s + 1);
-                setPhase('READY');
-              }
-            }} className="text-2xl font-bold bg-blue-600 px-8 py-3 rounded hover:bg-blue-500">NEXT</button>
+  const target = match.format === 'BO5' ? 3 : 2;
+  if (nA >= target || nB >= target) {
+    // finalise match and report to parent
+    if (onMatchComplete) {
+      onMatchComplete(match, {
+        winner: nA > nB ? teamA.name : teamB.name,
+        scoreA: nA,
+        scoreB: nB,
+        scoreString: `${nA}:${nB}`,
+        history: updatedHistory
+      });
+    }
+  } else {
+    // proceed to next set
+    setCurrentSet(s => s + 1);
+    setPhase('READY');
+  }
+}} className="text-2xl font-bold bg-blue-600 px-8 py-3 rounded hover:bg-blue-500">NEXT</button>
           </div>
         )}
       </div>
