@@ -1875,19 +1875,14 @@ const [draftBans, setDraftBans] = useState({ A: [], B: [], fearless: [] });
   return (
     <div className="fixed inset-0 bg-black z-[200] flex flex-col font-mono text-white">
       {/* top bar */}
-      // Top bar in LiveGamePlayer: show set score (winsA : winsB) in addition to kills and timer
       <div className="h-16 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-6 z-10">
         <div className="w-1/3 flex items-center gap-4">
           <div className="text-2xl font-black text-blue-500">{blueTeam.name}</div>
           <div className="bg-blue-600 text-white px-3 py-1 rounded font-bold">{liveStats.kills.BLUE || 0}</div>
         </div>
 
-        <div className="text-yellow-400 font-black text-2xl flex items-center gap-4">
-          {/* show match set score */}
-          <div className="text-sm text-gray-400">SET</div>
-          <div className="text-white font-black bg-black/40 px-3 py-1 rounded">{winsA} : {winsB}</div>
-          <div className="mx-2">|</div>
-          <div>{phase === 'DRAFT' ? phase : `${Math.floor(gameTime/60)}:${String(gameTime%60).padStart(2,'0')}`}</div>
+        <div className="text-yellow-400 font-black text-2xl">
+          {phase === 'DRAFT' ? phase : `${Math.floor(gameTime/60)}:${String(gameTime%60).padStart(2,'0')}`}
         </div>
 
         <div className="w-1/3 flex items-center justify-end gap-4">
