@@ -876,28 +876,13 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
                     victim.flashEndTime = time + 5; 
                 }
 
-                // --- REPLACE THE BROKEN KILL / COUNTER-KILL MESSAGE CONSTRUCTION ---
-// Find the section inside runGameTickEngine's combat handling loop where kill messages are built.
-// Replace the broken `killMsg` / `counterMsg` template code with the following:
-
-// build assist text (already computed earlier as assistNames)
-const assistText = (assistNames && assistNames.length > 0) ? ` | assists: ${assistNames.join(', ')}` : '';
-
-const killerChamp = killer.champName || killer.playerData?.선호챔프 || 'Unknown';
-const victimChamp = victim.champName || victim.playerData?.선호챔프 || 'Unknown';
-
-// Consistent kill message format:
-// ⚔️ [POS] KillerName (Champ) ➜ ☠️ [POS] VictimName (Champ) | assists: A, B
-const killMsg = `⚔️ [${killer.playerData?.포지션 || 'UNK'}] ${killer.playerName} (${killerChamp}) ➜ ☠️ [${victim.playerData?.포지션 || 'UNK'}] ${victim.playerName} (${victimChamp})${assistText}`;
-addEvent(minuteStartAbs === undefined ? combatSec + k : combatSec + k, killMsg); // preserve original time offset usage
-
-// ... later when producing the counter-kill message (if present) replace with:
-const ckillerChamp = counterKiller.champName || counterKiller.playerData?.선호챔프 || 'Unknown';
-const cvictimChamp = counterVictim.champName || counterVictim.playerData?.선호챔프 || 'Unknown';
-const counterMsg = `🛡️ [${counterKiller.playerData?.포지션 || 'UNK'}] ${counterKiller.playerName} (${ckillerChamp}) ➜ ☠️ [${counterVictim.playerData?.포지션 || 'UNK'}] ${counterVictim.playerName} (${cvictimChamp})`;
-addEvent(minuteStartAbs === undefined ? combatSec + 2 : combatSec + 2, counterMsg);
-
-// --- END REPLACEMENT ---
+                // Consistent kill message format:
+                // ⚔️ [POS] KillerName (Champ) ➜ ☠️ [POS] VictimName (Champ) [Assists: A,B]
+                const killerChamp = killer.champName || killer.playerData?.선호챔프 || 'Unknown';
+                const victimChamp = victim.champName || victim.playerData?.선호챔프 || 'Unknown';
+                const assistText = assistNames.length > 0 ? ` | assists: ${assistNames.join(', ')}` : '';
+                const killMsg = `⚔️ [${killer.playerData.포지션}] ${killer.playerName} (${killerChamp}) ➜ ☠️ [${victim.playerData.포지션}] ${victim.playerName} (${victimChamp})${assistText}${flashMsg}`;
+                addEvent(combatSec + k, killMsg);
             }
             
             // possible counter-kill (counter-attack)
