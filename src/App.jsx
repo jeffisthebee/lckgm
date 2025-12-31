@@ -310,11 +310,13 @@ function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChampionList
 
       let roleCandidates = [];
       remainingRoles[mySide].forEach(role => {
+          // Safety Check: Ensure player exists
           const player = actingTeam.roster.find(p => p.포지션 === role);
-          const candidateChamp = selectPickFromTop3(player, availableChamps);
-          
-          if (candidateChamp) {
-             roleCandidates.push({ role, champ: candidateChamp, score: candidateChamp.score });
+          if (player) {
+            const candidateChamp = selectPickFromTop3(player, availableChamps);
+            if (candidateChamp) {
+               roleCandidates.push({ role, champ: candidateChamp, score: candidateChamp.score });
+            }
           }
       });
 
@@ -329,7 +331,10 @@ function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChampionList
         picks[mySide][bestPickRole] = bestPick;
         remainingRoles[mySide] = remainingRoles[mySide].filter(r => r !== bestPickRole);
 
-        const pName = actingTeam.roster.find(p => p.포지션 === bestPickRole).이름;
+        // CRITICAL FIX: Safe access to player name to prevent crash
+        const playerObj = actingTeam.roster.find(p => p.포지션 === bestPickRole);
+        const pName = playerObj ? playerObj.이름 : 'Unknown';
+        
         logs.push(`[${step.order}] ${step.label}: ✅ ${bestPick.name} (${pName})`);
       } else {
         logs.push(`[${step.order}] ${step.label}: (랜덤 픽)`);
@@ -342,12 +347,13 @@ function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChampionList
       const c = picks[side][pos];
       if (!c) return null;
       const p = teamRoster.find(pl => pl.포지션 === pos);
+      // CRITICAL FIX: Fallback for missing player data
       return { 
         champName: c.name, 
         tier: c.tier, 
         mastery: c.mastery, 
-        playerName: p.이름, 
-        playerOvr: p.종합
+        playerName: p ? p.이름 : 'Unknown Player', 
+        playerOvr: p ? p.종합 : 70
       };
     }).filter(Boolean);
   };
@@ -356,7 +362,6 @@ function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChampionList
     picks: { A: mapPicks('BLUE', blueTeam.roster), B: mapPicks('RED', redTeam.roster) },
     bans: { A: blueBans, B: redBans },
     draftLogs: logs,
-    // expose the incoming global/fearless bans so callers (simulateSet / UI) can display them
     fearlessBans: Array.isArray(fearlessBans) ? [...fearlessBans] : (fearlessBans ? [fearlessBans] : [])
   };
 }
