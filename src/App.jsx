@@ -1042,33 +1042,30 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
 function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions) {
   const { currentChampionList } = simOptions;
 
-  const draftResult = runDraftSimulation(teamBlue, teamRed, fearlessBans, currentChampionList);
-  if (draftResult.picks.A.length < 5 || draftResult.picks.B.length < 5) {
-    // Replace the final return in function simulateSet(...) with this block
-  // In simulateSet(...) — include fearlessBans in the returned object
+ // Replace this block (inside function simulateSet(...) right after runDraftSimulation(...))
+if (draftResult.picks.A.length < 5 || draftResult.picks.B.length < 5) {
+  console.warn('simulateSet: incomplete draftResult.picks — aborting set and returning safe fallback', { draftResult, teamBlue: teamBlue?.name, teamRed: teamRed?.name });
   return {
-    winnerName: gameResult.winnerName,
-    resultSummary: resultSummary + ' ' + pogText,
-    picks: draftResult.picks,
-    bans: draftResult.bans,
-    logs: finalLogs,
-    usedChamps: usedChamps,
-    score: { 
-        [teamBlue.name]: String(scoreBlue), 
-        [teamRed.name]: String(scoreRed) 
-    },
-    // expose engine-level metadata for playback control & animations:
-    gameResult,                   // full engine object
-    totalMinutes: gameResult.totalMinutes,
-    totalSeconds: gameResult.totalSeconds,
-    endSecond: gameResult.endSecond,
-    gameOver: gameResult.gameOver,
-    finalTimeStr: gameResult.finalTimeStr,
-    playersLevelProgress,
-    // <--- add fearlessBans so the live UI can show the global bans
+    // Minimal, safe fallback result when draft failed — avoids referencing undefined vars
+    winnerName: null,
+    resultSummary: 'Draft incomplete — set aborted',
+    picks: draftResult.picks || { A: [], B: [] },
+    bans: draftResult.bans || { A: [], B: [] },
+    logs: draftResult.draftLogs || [],
+    usedChamps: draftResult.usedChamps || [],
+    score: { [teamBlue.name]: '0', [teamRed.name]: '0' },
+    // engine metadata (safe defaults)
+    gameResult: null,
+    totalMinutes: 0,
+    totalSeconds: 0,
+    endSecond: 0,
+    gameOver: true,
+    finalTimeStr: '0:00',
+    playersLevelProgress: [],
+    // include fearlessBans so callers / UI can still display them
     fearlessBans: draftResult.fearlessBans || fearlessBans || []
   };
-  }
+}
   
 
   const getConditionModifier = (player) => {
