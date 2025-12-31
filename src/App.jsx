@@ -1727,61 +1727,72 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
   // In LiveGamePlayer: replace the existing `const startSet = useCallback(() => { ... }, [...]);`
 // REPLACE the existing `const startSet = useCallback(() => { ... }, [...]);` inside LiveGamePlayer
 // REPLACE the existing `const startSet = useCallback(() => { ... }, [...]);` inside LiveGamePlayer
+// REPLACE the existing "const startSet = useCallback(() => { ... }, [...]);" inside LiveGamePlayer with this block:
 const startSet = useCallback(() => {
   // immediately show loading state so modal has a chance to render
   try {
     setPhase('LOADING');
 
-    // Give React & browser a couple animation frames to paint the modal/loader before doing heavy work.
-    // Then schedule a small timeout to further yield to the event loop.
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        setTimeout(() => {
-          try {
-            const blueTeam = currentSet % 2 !== 0 ? teamA : teamB;
-            const redTeam = currentSet % 2 !== 0 ? teamB : teamA;
+    // Allow the browser to paint the LOADING UI before doing heavy work.
+    // Use requestIdleCallback if available (nice for heavy work), otherwise fallback to setTimeout.
+    const scheduleHeavyWork = (fn) => {
+      if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+        try {
+          requestIdleCallback(fn, { timeout: 500 });
+        } catch (e) {
+          // in case of strict environments, fallback
+          setTimeout(fn, 180);
+        }
+      } else {
+        // give the browser slightly more time to paint
+        setTimeout(fn, 180);
+      }
+    };
 
-            // Run simulation (this is heavy). Keep it wrapped in try/catch.
-            const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
+    // schedule heavy simulation so the modal/loader can paint first
+    scheduleHeavyWork(() => {
+      try {
+        const blueTeam = currentSet % 2 !== 0 ? teamA : teamB;
+        const redTeam = currentSet % 2 !== 0 ? teamB : teamA;
 
-            if (!result || !result.picks) {
-              throw new Error("시뮬레이션 결과가 비어있거나 불완전합니다.");
-            }
+        // Run simulation (this is heavy). Keep it wrapped in try/catch.
+        const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
 
-            setDraftBans({
-              A: result.bans?.A || [],
-              B: result.bans?.B || [],
-              fearless: Array.from(new Set([...(externalGlobalBans || []), ...(result.fearlessBans || result.fearless || [])]))
-            });
+        if (!result || !result.picks) {
+          throw new Error("시뮬레이션 결과가 비어있거나 불완전합니다.");
+        }
 
-            const players = [
-              ...result.picks.A.map(p => ({ ...p, side: 'BLUE', k:0, d:0, a:0, currentGold: 500, lvl: 1 })),
-              ...result.picks.B.map(p => ({ ...p, side: 'RED', k:0, d:0, a:0, currentGold: 500, lvl: 1 }))
-            ];
+        setDraftBans({
+          A: result.bans?.A || [],
+          B: result.bans?.B || [],
+          fearless: Array.from(new Set([...(externalGlobalBans || []), ...(result.fearlessBans || result.fearless || [])]))
+        });
 
-            setLiveStats({
-              kills: { BLUE: 0, RED: 0 },
-              gold: { BLUE: 2500, RED: 2500 },
-              towers: { BLUE: 0, RED: 0 },
-              drakes: { BLUE: 0, RED: 0 },
-              grubs: { BLUE: 0, RED: 0 },
-              players
-            });
+        const players = [
+          ...result.picks.A.map(p => ({ ...p, side: 'BLUE', k:0, d:0, a:0, currentGold: 500, lvl: 1 })),
+          ...result.picks.B.map(p => ({ ...p, side: 'RED', k:0, d:0, a:0, currentGold: 500, lvl: 1 }))
+        ];
 
-            setSimulationData({ ...result, blueTeam, redTeam });
-            setGameTime(0);
-            setDisplayLogs([]);
-            // move from LOADING -> DRAFT
-            setPhase('DRAFT');
-            setDraftStep(0);
-          } catch (errInner) {
-            console.error("simulateSet error:", errInner);
-            // show user and close modal instead of letting app crash / blank
-            alert("시뮬레이션 중 오류 발생: " + (errInner?.message || errInner));
-            if (onClose) onClose();
-          }
-        }, 60); // small delay to increase the chance browser paints LOADING UI
-      });
+        setLiveStats({
+          kills: { BLUE: 0, RED: 0 },
+          gold: { BLUE: 2500, RED: 2500 },
+          towers: { BLUE: 0, RED: 0 },
+          drakes: { BLUE: 0, RED: 0 },
+          grubs: { BLUE: 0, RED: 0 },
+          players
+        });
+
+        setSimulationData({ ...result, blueTeam, redTeam });
+        setGameTime(0);
+        setDisplayLogs([]);
+        // move from LOADING -> DRAFT
+        setPhase('DRAFT');
+        setDraftStep(0);
+      } catch (errInner) {
+        console.error("simulateSet error:", errInner);
+        alert("시뮬레이션 중 오류 발생: " + (errInner?.message || errInner));
+        if (onClose) onClose();
+      }
     });
   } catch (e) {
     console.error("startSet outer error:", e);
