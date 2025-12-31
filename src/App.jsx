@@ -3202,8 +3202,9 @@ if (!rosterIsValid(t2Roster)) {
           difficulty: league.difficulty,
           playerTeamName: myTeam.name
       }}
-      // pass the Dashboard-level global bans so the live UI can display them
-      externalGlobalBans={globalBanList}
+      // [FIX] Removed undefined 'globalBanList'. 
+      // LiveGamePlayer manages its own global bans internally for the BO3/BO5 series.
+      externalGlobalBans={[]} 
       onMatchComplete={handleLiveMatchComplete}
       onClose={() => setIsLiveGameMode(false)}
   />
