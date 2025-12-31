@@ -1716,48 +1716,63 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
     );
   }
 
-  const startSet = useCallback(() => {
-    try {
-      const blueTeam = currentSet % 2 !== 0 ? teamA : teamB;
-      const redTeam = currentSet % 2 !== 0 ? teamB : teamA;
+  // In LiveGamePlayer: replace the existing `const startSet = useCallback(() => { ... }, [...]);`
+const startSet = useCallback(() => {
+  // Immediately set a loading phase so the modal can paint before heavy work runs.
+  try {
+    setPhase('LOADING');
+    // Defer the heavy simulation so React can paint the modal / loader.
+    // Small timeout yields to the browser; consider requestIdleCallback / Web Worker for stronger solution.
+    setTimeout(() => {
+      try {
+        const blueTeam = currentSet % 2 !== 0 ? teamA : teamB;
+        const redTeam = currentSet % 2 !== 0 ? teamB : teamA;
 
-      const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
+        // Run simulation (this is heavy). Keep it wrapped in try/catch.
+        const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
 
-      if (!result || !result.picks) throw new Error("시뮬레이션 결과가 비어있습니다.");
+        if (!result || !result.picks) {
+          throw new Error("시뮬레이션 결과가 비어있거나 불완전합니다.");
+        }
 
-            setDraftBans({
-        A: result.bans?.A || [],
-        B: result.bans?.B || [],
-        // prefer result's fearless for this set, but always include external/global bans (dedupe)
-        fearless: Array.from(new Set([...(externalGlobalBans || []), ...(result.fearlessBans || result.fearless || [])]))
-      });
+        setDraftBans({
+          A: result.bans?.A || [],
+          B: result.bans?.B || [],
+          fearless: Array.from(new Set([...(externalGlobalBans || []), ...(result.fearlessBans || result.fearless || [])]))
+        });
 
-      const players = [
-        ...result.picks.A.map(p => ({ ...p, side: 'BLUE', k:0, d:0, a:0, currentGold: 500, lvl: 1 })),
-        ...result.picks.B.map(p => ({ ...p, side: 'RED', k:0, d:0, a:0, currentGold: 500, lvl: 1 }))
-      ];
+        const players = [
+          ...result.picks.A.map(p => ({ ...p, side: 'BLUE', k:0, d:0, a:0, currentGold: 500, lvl: 1 })),
+          ...result.picks.B.map(p => ({ ...p, side: 'RED', k:0, d:0, a:0, currentGold: 500, lvl: 1 }))
+        ];
 
-      setLiveStats({
-        kills: { BLUE: 0, RED: 0 },
-        gold: { BLUE: 2500, RED: 2500 },
-        towers: { BLUE: 0, RED: 0 },
-        drakes: { BLUE: 0, RED: 0 },
-        grubs: { BLUE: 0, RED: 0 },
-        players
-      });
+        setLiveStats({
+          kills: { BLUE: 0, RED: 0 },
+          gold: { BLUE: 2500, RED: 2500 },
+          towers: { BLUE: 0, RED: 0 },
+          drakes: { BLUE: 0, RED: 0 },
+          grubs: { BLUE: 0, RED: 0 },
+          players
+        });
 
-      setSimulationData({ ...result, blueTeam, redTeam });
-      setGameTime(0);
-      setDisplayLogs([]);
-      setPhase('DRAFT');
-      setDraftStep(0);
-
-    } catch (e) {
-      console.error(e);
-      alert("시뮬레이션 중 오류 발생: " + (e?.message || e));
-      if (onClose) onClose();
-    }
-  }, [currentSet, teamA, teamB, globalBanList, simOptions, onClose]);
+        setSimulationData({ ...result, blueTeam, redTeam });
+        setGameTime(0);
+        setDisplayLogs([]);
+        // move from LOADING -> DRAFT
+        setPhase('DRAFT');
+        setDraftStep(0);
+      } catch (errInner) {
+        console.error("simulateSet error:", errInner);
+        alert("시뮬레이션 중 오류 발생: " + (errInner?.message || errInner));
+        if (onClose) onClose();
+      }
+    }, 50); // 50ms gives the browser a chance to paint the modal and the loader
+  } catch (e) {
+    console.error("startSet outer error:", e);
+    alert("시뮬레이션 시작 실패: " + (e?.message || e));
+    if (onClose) onClose();
+  }
+}, [currentSet, teamA, teamB, globalBanList, simOptions, onClose, externalGlobalBans]);
 
   useEffect(() => {
     if (phase === 'READY') startSet();
