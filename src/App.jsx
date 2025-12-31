@@ -1049,70 +1049,63 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
 
 function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions) {
   const { currentChampionList } = simOptions;
-  // --- Insert / replace this block right after: const { currentChampionList } = simOptions;
-const draftResult = runDraftSimulation(teamBlue, teamRed, fearlessBans || [], currentChampionList || championList);
-
-// Validate draftResult safely before using it everywhere else
-if (!draftResult || !draftResult.picks || !Array.isArray(draftResult.picks.A) || !Array.isArray(draftResult.picks.B) ||
-    draftResult.picks.A.length < 5 || draftResult.picks.B.length < 5) {
-  console.warn('simulateSet: incomplete or invalid draftResult — returning safe fallback', { draftResult, teamBlue: teamBlue?.name, teamRed: teamRed?.name });
-  return {
-    // Minimal safe fallback so callers (Live UI / simulateMatch) won't crash
-    winnerName: null,
-    resultSummary: 'Draft incomplete — set aborted',
-    picks: { A: draftResult?.picks?.A || [], B: draftResult?.picks?.B || [] },
-    bans: draftResult?.bans || { A: [], B: [] },
-    logs: draftResult?.draftLogs || [],
-    usedChamps: draftResult?.usedChamps || [],
-    score: { [teamBlue?.name || 'A']: '0', [teamRed?.name || 'B']: '0' },
-    gameResult: null,
-    totalMinutes: 0,
-    totalSeconds: 0,
-    endSecond: 0,
-    gameOver: true,
-    finalTimeStr: '0:00',
-    playersLevelProgress: [],
-    fearlessBans: draftResult?.fearlessBans || (Array.isArray(fearlessBans) ? [...fearlessBans] : (fearlessBans ? [fearlessBans] : []))
-  };
-}
-
- // Replace this block (inside function simulateSet(...) right after runDraftSimulation(...))
-if (draftResult.picks.A.length < 5 || draftResult.picks.B.length < 5) {
-  console.warn('simulateSet: incomplete draftResult.picks — aborting set and returning safe fallback', { draftResult, teamBlue: teamBlue?.name, teamRed: teamRed?.name });
-  return {
-    // Minimal, safe fallback result when draft failed — avoids referencing undefined vars
-    winnerName: null,
-    resultSummary: 'Draft incomplete — set aborted',
-    picks: draftResult.picks || { A: [], B: [] },
-    bans: draftResult.bans || { A: [], B: [] },
-    logs: draftResult.draftLogs || [],
-    usedChamps: draftResult.usedChamps || [],
-    score: { [teamBlue.name]: '0', [teamRed.name]: '0' },
-    // engine metadata (safe defaults)
-    gameResult: null,
-    totalMinutes: 0,
-    totalSeconds: 0,
-    endSecond: 0,
-    gameOver: true,
-    finalTimeStr: '0:00',
-    playersLevelProgress: [],
-    // include fearlessBans so callers / UI can still display them
-    fearlessBans: draftResult.fearlessBans || fearlessBans || []
-  };
-}
   
+  // 1. Run Draft
+  const draftResult = runDraftSimulation(teamBlue, teamRed, fearlessBans || [], currentChampionList || championList);
+
+  // 2. Validate Draft Result (Safety Check)
+  if (!draftResult || !draftResult.picks || !Array.isArray(draftResult.picks.A) || !Array.isArray(draftResult.picks.B) ||
+      draftResult.picks.A.length < 5 || draftResult.picks.B.length < 5) {
+    console.warn('simulateSet: incomplete or invalid draftResult — returning safe fallback', { draftResult });
+    return {
+      winnerName: null,
+      resultSummary: 'Draft incomplete — set aborted',
+      picks: { A: draftResult?.picks?.A || [], B: draftResult?.picks?.B || [] },
+      bans: draftResult?.bans || { A: [], B: [] },
+      logs: draftResult?.draftLogs || [],
+      usedChamps: draftResult?.usedChamps || [],
+      score: { [teamBlue?.name || 'A']: '0', [teamRed?.name || 'B']: '0' },
+      gameResult: null,
+      totalMinutes: 0,
+      totalSeconds: 0,
+      endSecond: 0,
+      gameOver: true,
+      finalTimeStr: '0:00',
+      playersLevelProgress: [],
+      fearlessBans: draftResult?.fearlessBans || (Array.isArray(fearlessBans) ? [...fearlessBans] : (fearlessBans ? [fearlessBans] : []))
+    };
+  }
 
   const getConditionModifier = (player) => {
+      if (!player) return 1.0;
       const stability = player.상세?.안정성 || 50;
       const variancePercent = ((100 - stability) / stability) * 10; 
       const fluctuation = (Math.random() * variancePercent * 2) - variancePercent;
       return 1 + (fluctuation / 100);
   };
 
+  // 3. Enrich Picks with Data (CRITICAL FIX: Safety Checks Added)
   const addPlayerData = (picks, roster) => {
       return picks.map(p => {
-          const playerData = roster.find(player => player.이름 === p.playerName);
-          const champData = currentChampionList.find(c => c.name === p.champName);
+          // Safe lookup
+          const playerData = roster.find(player => player && player.이름 === p.playerName);
+          const champData = (currentChampionList || championList).find(c => c.name === p.champName);
+
+          // Fallback if data is missing (Prevents White Screen Crash)
+          if (!playerData || !champData) {
+            console.warn(`Missing data for player/champ: ${p.playerName} / ${p.champName}`);
+            return {
+              ...p,
+              dmgType: 'AD',
+              classType: '전사',
+              playerData: playerData || { 이름: p.playerName, 포지션: 'TOP', 상세: { 안정성: 50 }, 종합: 70 },
+              conditionModifier: 1.0,
+              stats: { kills: 0, deaths: 0, assists: 0, damage: 0, takenDamage: 0 },
+              currentGold: 500,
+              level: 1
+            };
+          }
+
           return {
               ...p,
               ...champData,
@@ -1127,6 +1120,7 @@ if (draftResult.picks.A.length < 5 || draftResult.picks.B.length < 5) {
   const picksBlue_detailed = addPlayerData(draftResult.picks.A, teamBlue.roster);
   const picksRed_detailed = addPlayerData(draftResult.picks.B, teamRed.roster);
 
+  // 4. Run Game Engine
   const gameResult = runGameTickEngine(teamBlue, teamRed, picksBlue_detailed, picksRed_detailed, simOptions);
 
   const usedChamps = [...draftResult.picks.A.map(p => p.champName), ...draftResult.picks.B.map(p => p.champName)];
@@ -1135,6 +1129,7 @@ if (draftResult.picks.A.length < 5 || draftResult.picks.B.length < 5) {
    
   const winningPicks = gameResult.winnerSide === SIDES.BLUE ? picksBlue_detailed : picksRed_detailed;
    
+  // Calculate POG
   const candidates = winningPicks.map(p => {
       const k = p.stats.kills;
       const d = p.stats.deaths === 0 ? 1 : p.stats.deaths;
@@ -1144,7 +1139,7 @@ if (draftResult.picks.A.length < 5 || draftResult.picks.B.length < 5) {
       const gold = p.currentGold;
       const role = p.playerData.포지션;
       
-      const dpm = p.stats.damage / gameResult.totalMinutes;
+      const dpm = p.stats.damage / (gameResult.totalMinutes || 1); // Avoid division by zero
 
       let pogScore = (kda * 3) + (dpm / 100) + (gold / 1000) + (a * 1);
       
@@ -1158,7 +1153,7 @@ if (draftResult.picks.A.length < 5 || draftResult.picks.B.length < 5) {
   const pogPlayer = candidates[0];
 
   const resultSummary = `⏱️ ${gameResult.gameTime} | ⚔️ ${teamBlue.name} ${scoreBlue} : ${scoreRed} ${teamRed.name} | 🏆 승리: ${gameResult.winnerName}`;
-  const pogText = `🏅 POG: [${pogPlayer.playerData.포지션}] ${pogPlayer.playerName} (${pogPlayer.champName}) - Score: ${pogPlayer.pogScore.toFixed(1)}`;
+  const pogText = pogPlayer ? `🏅 POG: [${pogPlayer.playerData.포지션}] ${pogPlayer.playerName} (${pogPlayer.champName}) - Score: ${pogPlayer.pogScore.toFixed(1)}` : 'POG 선정 실패';
 
   const finalLogs = [
     `========== [ 밴픽 단계 ] ==========`,
@@ -1166,7 +1161,7 @@ if (draftResult.picks.A.length < 5 || draftResult.picks.B.length < 5) {
     `========== [ 경기 결과 ] ==========`,
     resultSummary,
     pogText,
-    `KDA: ${pogPlayer.stats.kills}/${pogPlayer.stats.deaths}/${pogPlayer.stats.assists} | DPM: ${Math.floor(pogPlayer.dpm)} | LV: ${pogPlayer.level}`,
+    pogPlayer ? `KDA: ${pogPlayer.stats.kills}/${pogPlayer.stats.deaths}/${pogPlayer.stats.assists} | DPM: ${Math.floor(pogPlayer.dpm)} | LV: ${pogPlayer.level}` : '',
     `===================================`,
     ...gameResult.logs
   ];
@@ -1177,7 +1172,6 @@ if (draftResult.picks.A.length < 5 || draftResult.picks.B.length < 5) {
     endLevel: p.level || 1
   }));
 
-  // include the runGameTickEngine data into the result so Live UI can stop exactly
   return {
     winnerName: gameResult.winnerName,
     resultSummary: resultSummary + ' ' + pogText,
@@ -1189,14 +1183,14 @@ if (draftResult.picks.A.length < 5 || draftResult.picks.B.length < 5) {
         [teamBlue.name]: String(scoreBlue), 
         [teamRed.name]: String(scoreRed) 
     },
-    // expose engine-level metadata for playback control & animations:
-    gameResult,                   // full game result object from engine
+    gameResult,
     totalMinutes: gameResult.totalMinutes,
     totalSeconds: gameResult.totalSeconds,
     endSecond: gameResult.endSecond,
     gameOver: gameResult.gameOver,
     finalTimeStr: gameResult.finalTimeStr,
-    playersLevelProgress          // to animate leveling on the frontend
+    playersLevelProgress,
+    fearlessBans: draftResult.fearlessBans || (Array.isArray(fearlessBans) ? [...fearlessBans] : (fearlessBans ? [fearlessBans] : []))
   };
 }
 
