@@ -664,18 +664,21 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
           state.gold[teamSide] += income.gold;
           
           if (p.level < 18) {
-              // Add XP from this minute
-              p.xp += income.xp;
-  
-              // Required XP for next level is exactly: 180 + (현재 레벨 * 100)
-              // Enforce at most one level-up per minute (1분에 1레벨)
-              const requiredXP = 180 + (p.level * 100);
-              if (p.xp >= requiredXP && p.level < 18) {
-                  p.xp -= requiredXP;
-                  p.level++;
-                  // do NOT loop; only one level allowed per minute
-              }
-          }
+            // Add XP from this minute
+            p.xp += income.xp;
+
+            // Required XP for next level is exactly: 180 + (현재 레벨 * 100)
+            // Allow multiple level-ups in the same minute if xp allows
+            while (p.level < 18) {
+                const requiredXP = 180 + (p.level * 100);
+                if (p.xp >= requiredXP) {
+                    p.xp -= requiredXP;
+                    p.level++;
+                } else {
+                    break;
+                }
+            }
+        }
       });
   };
   
@@ -728,8 +731,9 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
     if (time === GAME_RULES.OBJECTIVES.HERALD.time) {
       const winner = resolveCombat(powerBlue, powerRed);
       grantTeamGold(winner, GAME_RULES.OBJECTIVES.HERALD.gold / 5);
-      simulateDamage(winner, powerBlue, powerRed, minuteStartAbs + 10);
-      addEvent(10, `👁️ ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 전령 획득`);
+      // event at exact minute start (14:00)
+      simulateDamage(winner, powerBlue, powerRed, minuteStartAbs + 0);
+      addEvent(0, `👁️ ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 전령 획득`);
     }
 
     // DRAGONS
@@ -1653,7 +1657,7 @@ function DetailedMatchResultModal({ result, onClose, teamA, teamB }) {
 //  - shows global (fearless) bans alongside blue/red bans in GAME view player lists
 //  - improved log regex to detect both regular kills (⚔️) and counter-kills (🛡️) and parse killer/victim reliably
 //  - when parsing counter-kill logs, K/D/A are updated properly
-function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onClose }) {
+function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onClose, externalGlobalBans = [] }) {
   const [currentSet, setCurrentSet] = useState(1);
   const [winsA, setWinsA] = useState(0);
   const [winsB, setWinsB] = useState(0);
@@ -1701,7 +1705,8 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
       setDraftBans({
         A: result.bans?.A || [],
         B: result.bans?.B || [],
-        fearless: result.fearlessBans || result.fearless || []
+        // prefer result's fearless for this set, but always include external/global bans (dedupe)
+        fearless: Array.from(new Set([...(externalGlobalBans || []), ...(result.fearlessBans || result.fearless || [])]))
       });
 
       const players = [
@@ -1952,9 +1957,63 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
       </div>
 
       <div className="flex-1 bg-black relative flex">
-        {phase === 'DRAFT' && (
-          <div className="w-full flex flex-col p-8 text-white"> ... (unchanged draft UI) ... </div>
-        )}
+      {phase === 'DRAFT' && (
+  <div className="w-full flex flex-col p-6 text-white">
+    <div className="mb-4 flex justify-between items-center">
+      <div className="text-lg font-black">DRAFT / BAN PHASE</div>
+      <div className="flex items-center gap-3">
+        <div className="text-xs text-purple-300 font-bold">Global fearless bans</div>
+        <div className="flex gap-1">
+          {(draftBans.fearless || externalGlobalBans || simulationData?.fearlessBans || []).map((b, i) => (
+            <span key={i} className="px-2 py-0.5 bg-purple-700 text-white text-xs rounded">{b}</span>
+          ))}
+        </div>
+      </div>
+    </div>
+
+    <div className="grid grid-cols-3 gap-4">
+      <div className="col-span-1 bg-gray-800 p-3 rounded">
+        <div className="text-sm font-bold text-blue-300 mb-2">Blue Bans</div>
+        <div className="flex flex-col gap-2">
+          {(draftBans.A || simulationData?.bans?.A || []).map((b, i) => (
+            <div key={i} className="px-2 py-1 bg-gray-700 rounded text-xs">{b}</div>
+          ))}
+        </div>
+      </div>
+
+      <div className="col-span-1 bg-gray-900 p-3 rounded flex flex-col">
+        <div className="text-sm font-bold text-white mb-2">Ban / Pick Order</div>
+        <div className="flex-1 overflow-y-auto max-h-64 font-mono text-sm">
+          {(simulationData?.draftLogs || []).map((log, idx) => (
+            <div
+              key={idx}
+              className={`py-1 px-2 rounded mb-1 ${idx === (draftStep - 1) ? 'bg-yellow-500 text-black font-bold' : 'bg-gray-800 text-gray-300'}`}
+            >
+              {log}
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 flex justify-between">
+          <button onClick={skipDraftToGame} className="px-3 py-1 bg-red-600 rounded text-xs font-bold">Skip Draft → Game</button>
+          <div className="text-xs text-gray-400">Step: {Math.max(0, draftStep)} / {(simulationData?.draftLogs || []).length}</div>
+        </div>
+      </div>
+
+      <div className="col-span-1 bg-gray-800 p-3 rounded">
+        <div className="text-sm font-bold text-red-300 mb-2">Red Bans</div>
+        <div className="flex flex-col gap-2">
+          {(draftBans.B || simulationData?.bans?.B || []).map((b, i) => (
+            <div key={i} className="px-2 py-1 bg-gray-700 rounded text-xs text-right">{b}</div>
+          ))}
+        </div>
+      </div>
+    </div>
+
+    <div className="mt-4 text-xs text-gray-300">
+      Draft logs play automatically. You can click "Skip Draft → Game" to progress immediately.
+    </div>
+  </div>
+)}
 
         {phase === 'GAME' && (
           <>
@@ -3057,21 +3116,22 @@ function Dashboard() {
         </div>
       )}
 
-      {isLiveGameMode && liveMatchData && (
-        <LiveGamePlayer 
-            match={liveMatchData.match}
-            teamA={liveMatchData.teamA}
-            teamB={liveMatchData.teamB}
-            simOptions={{
-                currentChampionList: league.currentChampionList,
-                difficulty: league.difficulty,
-                playerTeamName: myTeam.name
-            }}
-            onMatchComplete={handleLiveMatchComplete}
-            onClose={() => setIsLiveGameMode(false)}
-        />
-      )}
-      {/* [끝] 여기까지 추가 */}
+{isLiveGameMode && liveMatchData && (
+  <LiveGamePlayer 
+      match={liveMatchData.match}
+      teamA={liveMatchData.teamA}
+      teamB={liveMatchData.teamB}
+      simOptions={{
+          currentChampionList: league.currentChampionList,
+          difficulty: league.difficulty,
+          playerTeamName: myTeam.name
+      }}
+      // pass the Dashboard-level global bans so the live UI can display them
+      externalGlobalBans={globalBanList}
+      onMatchComplete={handleLiveMatchComplete}
+      onClose={() => setIsLiveGameMode(false)}
+  />
+)}
 
       {isDrafting && (
         <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
