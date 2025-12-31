@@ -1741,11 +1741,11 @@ const startSet = useCallback(() => {
           requestIdleCallback(fn, { timeout: 500 });
         } catch (e) {
           // in case of strict environments, fallback
-          setTimeout(fn, 180);
+          setTimeout(fn, 500);
         }
       } else {
         // give the browser slightly more time to paint
-        setTimeout(fn, 180);
+        setTimeout(fn, 500);
       }
     };
 
