@@ -13,24 +13,32 @@ import rawChampionList from './data/champions.json';
 // [1단계] 파일 맨 위쪽 (import 밑, 상수들 근처)에 두세요.
 // ==========================================
 const getTeamRoster = (teamName) => {
-  // playerList가 없으면 빈 배열 반환하여 에러 방지
-  if (!playerList) {
-      console.error("playerList 데이터가 없습니다.");
-      return [];
-  }
   const positions = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
-  const players = playerList.filter(p => p.팀 === teamName);
-  
-  if (players.length === 0) {
-      console.warn(`[주의] ${teamName} 팀의 선수를 찾을 수 없습니다.`);
-      // 선수가 없으면 가짜 데이터라도 만들어서 반환 (흰 화면 방지)
-      return positions.map(pos => ({ 
-          이름: 'Unknown', 포지션: pos, 종합: 70, 
-          상세: { 라인전: 70, 무력: 70, 한타: 70, 성장: 70, 안정성: 70, 운영: 70 } 
-      }));
+
+  // Defensive: ensure playerList exists
+  if (!Array.isArray(playerList) || playerList.length === 0) {
+    return positions.map(pos => ({
+      이름: 'Unknown',
+      포지션: pos,
+      종합: 70,
+      상세: { 라인전: 70, 무력: 70, 한타: 70, 성장: 70, 안정성: 70, 운영: 70 }
+    }));
   }
-  // 포지션별 선수가 없으면 첫 번째 선수로 채움
-  return positions.map(pos => players.find(p => p.포지션 === pos) || players[0]); 
+
+  const players = playerList.filter(p => p.팀 === teamName);
+
+  // If no players for this team, return safe placeholders (prevents undefined entries)
+  if (!players || players.length === 0) {
+    return positions.map(pos => ({
+      이름: 'Unknown',
+      포지션: pos,
+      종합: 70,
+      상세: { 라인전: 70, 무력: 70, 한타: 70, 성장: 70, 안정성: 70, 운영: 70 }
+    }));
+  }
+
+  // Normal case: prefer correct-positioned player, fall back to first player (guaranteed defined)
+  return positions.map(pos => players.find(p => p.포지션 === pos) || players[0]);
 };
 
 const SIDES = { BLUE: 'BLUE', RED: 'RED' };
@@ -2636,6 +2644,18 @@ function Dashboard() {
       alert(`${t2Obj.name} 로스터가 부족합니다. (현재: ${t2Roster?.length || 0}명)`);
       return;
     }
+    const rosterIsValid = (roster) => Array.isArray(roster) &&
+  roster.length === 5 &&
+  roster.every(p => p && typeof p.이름 === 'string' && p.포지션);
+
+if (!rosterIsValid(t1Roster)) {
+  alert(`${t1Obj.name} 로스터 데이터가 불완전합니다. 관리자에게 문의하세요.`);
+  return;
+}
+if (!rosterIsValid(t2Roster)) {
+  alert(`${t2Obj.name} 로스터 데이터가 불완전합니다. 관리자에게 문의하세요.`);
+  return;
+}
 
     // 5. 라이브 매치 데이터 설정
     console.log("경기 시작:", {
