@@ -1041,6 +1041,32 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
 
 function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions) {
   const { currentChampionList } = simOptions;
+  // --- Insert / replace this block right after: const { currentChampionList } = simOptions;
+const draftResult = runDraftSimulation(teamBlue, teamRed, fearlessBans || [], currentChampionList || championList);
+
+// Validate draftResult safely before using it everywhere else
+if (!draftResult || !draftResult.picks || !Array.isArray(draftResult.picks.A) || !Array.isArray(draftResult.picks.B) ||
+    draftResult.picks.A.length < 5 || draftResult.picks.B.length < 5) {
+  console.warn('simulateSet: incomplete or invalid draftResult — returning safe fallback', { draftResult, teamBlue: teamBlue?.name, teamRed: teamRed?.name });
+  return {
+    // Minimal safe fallback so callers (Live UI / simulateMatch) won't crash
+    winnerName: null,
+    resultSummary: 'Draft incomplete — set aborted',
+    picks: { A: draftResult?.picks?.A || [], B: draftResult?.picks?.B || [] },
+    bans: draftResult?.bans || { A: [], B: [] },
+    logs: draftResult?.draftLogs || [],
+    usedChamps: draftResult?.usedChamps || [],
+    score: { [teamBlue?.name || 'A']: '0', [teamRed?.name || 'B']: '0' },
+    gameResult: null,
+    totalMinutes: 0,
+    totalSeconds: 0,
+    endSecond: 0,
+    gameOver: true,
+    finalTimeStr: '0:00',
+    playersLevelProgress: [],
+    fearlessBans: draftResult?.fearlessBans || (Array.isArray(fearlessBans) ? [...fearlessBans] : (fearlessBans ? [fearlessBans] : []))
+  };
+}
 
  // Replace this block (inside function simulateSet(...) right after runDraftSimulation(...))
 if (draftResult.picks.A.length < 5 || draftResult.picks.B.length < 5) {
