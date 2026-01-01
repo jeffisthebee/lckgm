@@ -133,7 +133,7 @@ const GAME_RULES = {
   },
   OBJECTIVES: {
     GRUBS: { time: 6, count: 3, gold: 300 }, 
-    HERALD: { time: 14, gold: 300 },
+    HERALD: { time: 15, gold: 300 },
     BARON: { spawn: 20, duration: 3, gold: 1500, combat_bonus: 1.3 }, 
     ELDER: { spawn_after_soul: 6, duration: 3, combat_bonus: 1.6 },
     DRAGON: { initial_spawn: 5, respawn: 5, gold: 100 },
@@ -388,8 +388,9 @@ function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChampionList
 function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks, currentAbsSecond) {
   let totalPower = 0;
    
-  const phaseKey = time >= 30 ? 'LATE' : (time >= 15 ? 'MID' : 'EARLY');
-  const weights = GAME_RULES.WEIGHTS.PHASE[phaseKey];
+  // Define Phase for Position Weights (Reuse existing constants logic)
+  const phaseKey = time >= 26 ? 'LATE' : (time >= 15 ? 'MID' : 'EARLY');
+  const weights = GAME_RULES.WEIGHTS.PHASE[phaseKey] || GAME_RULES.WEIGHTS.PHASE.EARLY;
   const positionWeights = SIM_CONSTANTS.POSITION_WEIGHTS[phaseKey]; 
 
   let adCount = 0;
@@ -398,7 +399,7 @@ function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks, 
   teamPicks.forEach((pick, idx) => {
     if (!pick || !pick.playerData) return;
     
-    // [KEEP] 사망자는 전투력에서 제외
+    // [KEEP] Dead players contribute 0 power
     if (pick.deadUntil > currentAbsSecond) return;
 
     const laneKeys = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
@@ -411,15 +412,16 @@ function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks, 
     const player = pick.playerData;
     const condition = pick.conditionModifier || 1.0;
 
+    // Stability Penalty if Flash is down
     let stabilityPenalty = 1.0;
     if (pick.flashEndTime > time) {
         stabilityPenalty = (roleKey === 'ADC' || roleKey === '원거리') ? 0.75 : 0.8;
     }
 
     const stats = player.상세 || { 라인전: 80, 무력: 80, 운영: 80, 성장: 80, 한타: 80, 안정성: 80 };
-    
     let effectiveStability = (stats.안정성 || 50) * stabilityPenalty;
 
+    // Base Stat Calculation
     let rawStat = 
       ((stats.라인전 || 50) * weights.laning + 
        (stats.무력 || 50) * weights.mechanics +
@@ -433,11 +435,26 @@ function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks, 
     
     let combatPower = (rawStat * SIM_CONSTANTS.WEIGHTS.STATS) + (metaScore * SIM_CONSTANTS.WEIGHTS.META) + (masteryScore * SIM_CONSTANTS.WEIGHTS.MASTERY);
 
-    combatPower *= (1 + (pick.level * 0.05));
+    // [REQ] Level Scaling Logic
+    // 1-5: 0.15%, 6: 0.30%, 7-10: 0.15%, 11: 0.225%, 12-15: 0.15%, 16: 0.30%, 17-18: 0.15%
+    let levelBonus = 0;
+    for (let i = 1; i <= pick.level; i++) {
+        if (i <= 5) levelBonus += 0.0015;        // 0.15%
+        else if (i === 6) levelBonus += 0.0030;  // 0.30%
+        else if (i <= 10) levelBonus += 0.0015;  // 0.15%
+        else if (i === 11) levelBonus += 0.00225; // 0.225%
+        else if (i <= 15) levelBonus += 0.0015;  // 0.15%
+        else if (i === 16) levelBonus += 0.0030; // 0.30%
+        else levelBonus += 0.0015;               // 0.15% (17,18)
+    }
+    combatPower *= (1 + levelBonus);
 
+    // [REQ] Gold Scaling Logic
+    // 0.025% per 100 Gold => 0.00025 per 100 => 0.0000025 per 1
     const currentGold = pick.currentGold || 500;
     let goldMultiplier = 1 + (currentGold * 0.0000025); 
     
+    // Item Spikes (Optional: Keep existing spike logic or remove if pure gold scaling is preferred. Keeping for now as bonus)
     let spikeBonus = 0;
     if (currentGold >= 3500) spikeBonus += 0.03;  
     if (currentGold >= 6500) spikeBonus += 0.06;  
@@ -447,6 +464,7 @@ function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks, 
 
     combatPower *= goldMultiplier;
 
+    // Counter Logic
     const enemyLaner = enemyPicks[idx];
     if (enemyLaner) {
         const myClass = pick.classType;
@@ -454,6 +472,7 @@ function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks, 
         if (GAME_RULES.COUNTERS[myClass]?.includes(enemyClass)) combatPower *= 1.05;
     }
 
+    // Dragon & Objective Buffs
     Object.entries(activeBuffs.dragonStacks).forEach(([dType, count]) => {
       const buffTable = GAME_RULES.DRAGON_BUFFS[dType];
       if (buffTable && buffTable[pick.classType]) combatPower *= (1 + (buffTable[pick.classType] * count));
@@ -472,6 +491,7 @@ function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks, 
     totalPower += (combatPower * posWeight * 5);
   });
 
+  // Damage Type Balance Penalty
   const isUnbalanced = adCount >= 4 || apCount >= 4;
   let balanceMultiplier = 1.0;
 
@@ -497,7 +517,6 @@ function resolveCombat(powerA, powerB) {
 // [REQ 1] New Income Calculation Logic
 function calculateIndividualIncome(pick, time, aliveRatio = 1.0) {
   let roleKey = pick.playerData.포지션 || 'TOP';
-  // Map Korean roles to keys
   if (['원거리', 'BOT', 'ADC'].includes(roleKey)) roleKey = 'ADC';
   else if (['서포터', 'SPT', 'SUP'].includes(roleKey)) roleKey = 'SUP';
   else if (['정글', 'JGL'].includes(roleKey)) roleKey = 'JGL';
@@ -519,25 +538,28 @@ function calculateIndividualIncome(pick, time, aliveRatio = 1.0) {
 
   let abilityScore = 0;
 
-  // [REQ 1] Apply specific Ability Formulas
+  // [REQ] Updated Time Phases
+  // 초반 (0-14분)
   if (time < 15) {
-      // Early: (Line*0.5 + Mechanics*0.3 + Stability*0.2)
+      // Early: Line(50%) + Mechanics(30%) + Stability(20%)
       abilityScore = (stats.라인전 * 0.5) + (stats.무력 * 0.3) + (stats.안정성 * 0.2);
-  } else if (time < 30) {
-      // Mid: (Growth*0.4 + Macro*0.4 + Mechanics*0.2)
+  } 
+  // 중반 (15-25분)
+  else if (time <= 25) {
+      // Mid: Growth(40%) + Macro(40%) + Mechanics(20%)
       abilityScore = (stats.성장 * 0.4) + (stats.운영 * 0.4) + (stats.무력 * 0.2);
-  } else {
-      // Late: (Teamfight*0.3 + Macro*0.3 + Stability*0.3)
+  } 
+  // 후반 (26분+)
+  else {
+      // Late: Teamfight(30%) + Macro(30%) + Stability(30%)
       abilityScore = (stats.한타 * 0.3) + (stats.운영 * 0.3) + (stats.안정성 * 0.3);
   }
 
-  // To make the stats impactful, we use them as a multiplier factor to the base.
-  // Formula: Base * (0.5 + (AbilityScore / 90))
-  // Example: If AbilityScore is 90 (S tier), Factor is 1.5x. If 45, Factor is 1.0x.
-  const factor = 0.5 + (abilityScore / 90);
+  // Performance Multiplier: Base * (Score / 90)
+  const performanceFactor = abilityScore / 90;
 
-  const finalXP = Math.floor(baseXP * factor * aliveRatio);
-  const finalGold = Math.floor(baseGold * factor * aliveRatio);
+  const finalXP = Math.floor(baseXP * performanceFactor * aliveRatio);
+  const finalGold = Math.floor(baseGold * performanceFactor * aliveRatio);
 
   return { gold: finalGold, xp: finalXP };
 }
@@ -1716,6 +1738,7 @@ function DetailedMatchResultModal({ result, onClose, teamA, teamB }) {
 //  - shows global (fearless) bans alongside blue/red bans in GAME view player lists
 //  - improved log regex to detect both regular kills (⚔️) and counter-kills (🛡️) and parse killer/victim reliably
 //  - when parsing counter-kill logs, K/D/A are updated properly
+// [REPLACE FUNCTION LiveGamePlayer]
 function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onClose, externalGlobalBans = [] }) {
   const [currentSet, setCurrentSet] = useState(1);
   const [winsA, setWinsA] = useState(0);
@@ -1724,327 +1747,371 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
   const [simulationData, setSimulationData] = useState(null);
   const [displayLogs, setDisplayLogs] = useState([]);
   const [resultProcessed, setResultProcessed] = useState(false);
-
-  // Visual Draft State
-  const [visualDraft, setVisualDraft] = useState({
-      bluePicks: Array(5).fill(null), redPicks: Array(5).fill(null), 
-      blueBans: [], redBans: []
-  });
-
-  const [liveStats, setLiveStats] = useState({
-    kills: { BLUE: 0, RED: 0 },
-    gold: { BLUE: 2500, RED: 2500 },
-    towers: { BLUE: 0, RED: 0 },
-    players: []
-  });
+  
+  // Real-time stats for UI
   const [gameTime, setGameTime] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
-  const [globalBanList, setGlobalBanList] = useState([]);
-  const [matchHistory, setMatchHistory] = useState([]);
-  
-  // FIX: Ensure safeSimOptions always has a champion list
-  // If simOptions.currentChampionList is missing, use the global 'championList'
-  const safeSimOptions = {
-      ...simOptions,
-      currentChampionList: simOptions.currentChampionList || championList
-  };
+  const [liveStats, setLiveStats] = useState({
+    kills: { BLUE: 0, RED: 0 },
+    gold: { BLUE: 2500, RED: 2500 }, // Starting gold for team
+    towers: { BLUE: 0, RED: 0 },
+    players: [] 
+  });
 
+  const [globalBanList, setGlobalBanList] = useState(externalGlobalBans || []);
+  const [matchHistory, setMatchHistory] = useState([]);
+  const targetWins = match.format === 'BO5' ? 3 : 2;
+
+  // 1. Initialize Set Simulation
   const startSet = useCallback(() => {
     setPhase('LOADING');
     setResultProcessed(false);
     
     setTimeout(() => {
         try {
+            // Determine sides (Odd sets: TeamA is Blue, Even: TeamB is Blue)
             const blueTeam = currentSet % 2 !== 0 ? teamA : teamB;
             const redTeam = currentSet % 2 !== 0 ? teamB : teamA;
             
-            // Safety check for roster
-            if (!blueTeam.roster || !redTeam.roster) {
-               console.error("Roster missing:", { blueTeam, redTeam });
-               throw new Error("Team Roster is missing. Please check team data.");
-            }
+            // Run Simulation
+            const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
 
-            // Run Logic with SAFE Options
-            const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, safeSimOptions);
+            if (!result || !result.picks) throw new Error("Draft failed");
 
-            if (!result || !result.picks) {
-               throw new Error("Simulation returned invalid data (Draft failed)");
-            }
+            // Initialize Players with 500g start
+            const initPlayers = [
+                ...result.picks.A.map(p => ({ ...p, side: 'BLUE', k:0, d:0, a:0, currentGold: 500, lvl: 1, xp: 0 })),
+                ...result.picks.B.map(p => ({ ...p, side: 'RED', k:0, d:0, a:0, currentGold: 500, lvl: 1, xp: 0 }))
+            ];
 
             setSimulationData({ ...result, blueTeam, redTeam });
-            
             setLiveStats({
-              kills: { BLUE: 0, RED: 0 },
-              gold: { BLUE: 2500, RED: 2500 },
-              towers: { BLUE: 0, RED: 0 },
-              players: [
-                  ...result.picks.A.map(p => ({ ...p, side: 'BLUE', k:0, d:0, a:0, currentGold: 500, lvl: 1 })),
-                  ...result.picks.B.map(p => ({ ...p, side: 'RED', k:0, d:0, a:0, currentGold: 500, lvl: 1 }))
-              ]
+                kills: { BLUE: 0, RED: 0 },
+                gold: { BLUE: 2500, RED: 2500 },
+                towers: { BLUE: 0, RED: 0 },
+                players: initPlayers
             });
-            setVisualDraft({ bluePicks: Array(5).fill(null), redPicks: Array(5).fill(null), blueBans: [], redBans: [] });
             
             setGameTime(0);
             setDisplayLogs([]);
-            setPhase('DRAFT');
+            setPhase('GAME'); // Skip visual draft for smoother flow, or add back if desired
 
         } catch (e) {
-            console.error("Critical Simulation Error:", e);
-            alert(`시뮬레이션 생성 실패: ${e.message}`);
+            console.error("Simulation Error:", e);
             onClose(); 
         }
     }, 500);
-}, [currentSet, teamA, teamB, globalBanList, safeSimOptions, onClose]);
+  }, [currentSet, teamA, teamB, globalBanList, simOptions, onClose]);
 
   useEffect(() => {
     if (phase === 'READY') startSet();
   }, [phase, startSet]);
 
-  // Visual Draft Animation
-  useEffect(() => {
-    if (phase !== 'DRAFT' || !simulationData) return;
-    const draftLogs = simulationData.draftLogs || [];
-    let idx = 0;
-    
-    let bPickIdx = 0;
-    let rPickIdx = 0;
-
-    const interval = setInterval(() => {
-      if (idx >= draftLogs.length) {
-        clearInterval(interval);
-        setTimeout(() => setPhase('GAME'), 1500);
-        return;
-      }
-
-      const log = draftLogs[idx];
-      setDisplayLogs(prev => [...prev, log].slice(-8)); 
-      
-      if (log.includes('밴:')) {
-         const parts = log.split('🚫');
-         const champ = parts[1]?.trim();
-         if (champ) {
-             if (log.includes('블루')) setVisualDraft(prev => ({ ...prev, blueBans: [...prev.blueBans, champ] }));
-             else setVisualDraft(prev => ({ ...prev, redBans: [...prev.redBans, champ] }));
-         }
-      } else if (log.includes('픽:')) {
-         const parts = log.split('✅');
-         const content = parts[1]?.trim(); 
-         const champ = content?.split('(')[0]?.trim();
-         if (champ) {
-             if (log.includes('블루')) {
-                 setVisualDraft(prev => {
-                     const newPicks = [...prev.bluePicks];
-                     newPicks[bPickIdx] = champ;
-                     return { ...prev, bluePicks: newPicks };
-                 });
-                 bPickIdx++;
-             } else {
-                 setVisualDraft(prev => {
-                     const newPicks = [...prev.redPicks];
-                     newPicks[rPickIdx] = champ;
-                     return { ...prev, redPicks: newPicks };
-                 });
-                 rPickIdx++;
-             }
-         }
-      }
-
-      idx++;
-    }, 500); // Speed up draft slightly for UX
-    return () => clearInterval(interval);
-  }, [phase, simulationData]);
-
-  // Game Loop
+  // 2. Game Tick Loop (Visualizer)
   useEffect(() => {
     if (phase !== 'GAME' || !simulationData || playbackSpeed === 0) return;
+    
     const finalSec = Number(simulationData.totalSeconds);
     const intervalMs = 1000 / Math.max(0.1, playbackSpeed);
 
     const timer = setInterval(() => {
-      setGameTime(prev => {
-        const next = prev + 1;
-        
+      setGameTime(prevTime => {
+        const nextTime = prevTime + 1;
+        const currentMinute = Math.floor(nextTime / 60);
+
+        // A. Process Logs
         const currentLogs = simulationData.logs.filter(l => {
              const m = l.match(/^\s*\[(\d+):(\d{1,2})\]/);
-             return m && ((parseInt(m[1])*60 + parseInt(m[2])) === next);
+             return m && ((parseInt(m[1])*60 + parseInt(m[2])) === nextTime);
         });
 
-        if (currentLogs.length > 0) {
-            setDisplayLogs(prevLogs => [...prevLogs, ...currentLogs].slice(-12));
-            
-            setLiveStats(st => {
-                const nSt = { 
-                    ...st, 
-                    kills: { ...st.kills },
-                    towers: { ...st.towers },
-                    players: st.players.map(p => ({...p})) 
-                };
+        // B. Update Stats
+        setLiveStats(prevStats => {
+            const nextStats = { 
+                ...prevStats, 
+                kills: { ...prevStats.kills },
+                towers: { ...prevStats.towers },
+                // Deep copy players
+                players: prevStats.players.map(p => ({...p})) 
+            };
+
+            // Process Log Events (Kills/Towers)
+            if (currentLogs.length > 0) {
+                setDisplayLogs(prevLogs => [...prevLogs, ...currentLogs].slice(-15));
                 
                 currentLogs.forEach(l => {
                     if (l.includes('⚔️') || l.includes('🛡️')) {
                         const killerMatch = l.match(/(?:⚔️|🛡️)\s*\[.*?\]\s*(.*?)\s*\(/);
                         const victimMatch = l.match(/➜\s*☠️\s*\[.*?\]\s*(.*?)\s*\(/);
                         
-                        const killerName = killerMatch ? killerMatch[1].trim() : null;
-                        const victimName = victimMatch ? victimMatch[1].trim() : null;
-
-                        if (killerName) {
-                            const p = nSt.players.find(x => x.playerName === killerName);
-                            if (p) { 
-                                p.k++; 
-                                nSt.kills[p.side]++; 
+                        if (killerMatch && victimMatch) {
+                            const killerName = killerMatch[1].trim();
+                            const victimName = victimMatch[1].trim();
+                            
+                            const killer = nextStats.players.find(p => p.playerName === killerName);
+                            const victim = nextStats.players.find(p => p.playerName === victimName);
+                            
+                            if (killer) { killer.k++; nextStats.kills[killer.side]++; killer.currentGold += 300; }
+                            if (victim) { victim.d++; }
+                            
+                            if (l.includes('assists:')) {
+                                const assistPart = l.split('assists:')[1];
+                                const assisters = assistPart.split(',').map(s => s.trim());
+                                assisters.forEach(aName => {
+                                    const ast = nextStats.players.find(p => p.playerName === aName);
+                                    if (ast) { ast.a++; ast.currentGold += 150; }
+                                });
                             }
                         }
-                        if (victimName) {
-                            const p = nSt.players.find(x => x.playerName === victimName);
-                            if (p) p.d++;
-                        }
-                        
-                        if (l.includes('assists:')) {
-                            const assistPart = l.split('assists:')[1];
-                            const assisters = assistPart.split(',').map(s => s.trim());
-                            assisters.forEach(aName => {
-                                const p = nSt.players.find(x => x.playerName === aName);
-                                if (p) p.a++;
-                            });
-                        }
                     }
-
                     if (l.includes('포탑') || l.includes('억제기')) {
-                        if (l.includes(simulationData.blueTeam.name)) nSt.towers.BLUE++; 
-                        else if (l.includes(simulationData.redTeam.name)) nSt.towers.RED++;
+                        if (l.includes(simulationData.blueTeam.name)) {
+                            nextStats.towers.BLUE++; 
+                            nextStats.players.filter(p => p.side === 'BLUE').forEach(p => p.currentGold += 100);
+                        } else {
+                            nextStats.towers.RED++;
+                            nextStats.players.filter(p => p.side === 'RED').forEach(p => p.currentGold += 100);
+                        }
                     }
                 });
+            }
 
-                if (simulationData.playersLevelProgress) {
-                    const progress = next / finalSec;
-                    nSt.players.forEach(p => {
-                        const prog = simulationData.playersLevelProgress.find(x => x.playerName === p.playerName);
-                        if(prog) p.lvl = Math.floor(prog.startLevel + (prog.endLevel - prog.startLevel) * progress);
-                        p.currentGold += (15 + (p.lvl * 3)); 
-                    });
+            // [REQ 4] Apply Gold/XP Formula Every Second (Approximation of per-minute logic)
+            // We divide the minute-based income by 60 to add it smoothly per second
+            nextStats.players.forEach(p => {
+                // Calculate Income based on stats and phase
+                // Pass currentMinute + 1 to avoid divide by zero or index errors
+                const income = calculateIndividualIncome(p, currentMinute + 1, 1.0); 
+                
+                // Add 1/60th of the minute's income
+                p.currentGold += (income.gold / 60);
+                p.xp += (income.xp / 60);
+
+                // Level Up Logic: 180 + (Level * 100)
+                const reqXp = 180 + (p.lvl * 100);
+                if (p.xp >= reqXp && p.lvl < 18) {
+                    p.xp -= reqXp;
+                    p.lvl++;
                 }
-                return nSt;
             });
-        }
 
-        if (next >= finalSec) {
+            // Sum Team Gold
+            nextStats.gold.BLUE = Math.floor(nextStats.players.filter(p=>p.side==='BLUE').reduce((a,b)=>a+b.currentGold,0));
+            nextStats.gold.RED = Math.floor(nextStats.players.filter(p=>p.side==='RED').reduce((a,b)=>a+b.currentGold,0));
+
+            return nextStats;
+        });
+
+        // C. Check End
+        if (nextTime >= finalSec) {
             setGameTime(finalSec);
-            setLiveStats(st => {
-                 const finalKills = simulationData.gameResult.finalKills;
-                 return { ...st, kills: finalKills };
-            });
+            // Sync final kills to be exact
+            setLiveStats(st => ({ ...st, kills: simulationData.gameResult.finalKills }));
             setTimeout(() => setPhase('SET_RESULT'), 1000);
             return finalSec;
         }
-        return next;
+        return nextTime;
       });
     }, intervalMs);
     return () => clearInterval(timer);
   }, [phase, simulationData, playbackSpeed]);
 
-  if (!simulationData) return <div className="fixed inset-0 bg-black text-white flex items-center justify-center z-[200] font-bold text-2xl">경기 로딩 중...</div>;
 
-  const { blueTeam, redTeam } = simulationData;
+  if (!simulationData && phase !== 'SET_RESULT') return <div className="fixed inset-0 bg-black text-white flex items-center justify-center z-[200] font-bold text-3xl">경기 로딩 중...</div>;
 
-  const renderVisualDraft = () => (
-    <div className="flex-1 flex flex-col items-center justify-center p-4 bg-gray-900 overflow-y-auto">
-        <h2 className="text-3xl font-black text-yellow-500 mb-6 animate-pulse">DRAFT PHASE</h2>
-        <div className="flex justify-between w-full max-w-6xl mb-8 px-10">
-            <div className="flex gap-2">{visualDraft.blueBans.map((b,i)=>(<div key={i} className="w-14 h-14 bg-gray-800 border border-blue-900 rounded flex items-center justify-center relative grayscale opacity-80"><span className="text-[10px] text-white font-bold">{b}</span><span className="absolute text-red-600 text-2xl font-bold">🚫</span></div>))}</div>
-            <div className="flex gap-2">{visualDraft.redBans.map((b,i)=>(<div key={i} className="w-14 h-14 bg-gray-800 border border-red-900 rounded flex items-center justify-center relative grayscale opacity-80"><span className="text-[10px] text-white font-bold">{b}</span><span className="absolute text-red-600 text-2xl font-bold">🚫</span></div>))}</div>
-        </div>
-        <div className="flex w-full max-w-7xl gap-10 items-stretch h-[500px]">
-            <div className="flex-1 bg-blue-900/10 border-2 border-blue-600/50 rounded-xl p-4 flex flex-col gap-3">
-                <h3 className="text-blue-400 font-bold text-2xl text-center mb-2">{blueTeam.name}</h3>
-                {visualDraft.bluePicks.map((champ, i) => (<div key={i} className={`flex-1 flex items-center px-4 rounded transition-all duration-500 ${champ ? 'bg-gradient-to-r from-blue-900 to-transparent border-l-4 border-blue-400 scale-100 opacity-100' : 'bg-gray-800/50 opacity-50'}`}>{champ ? (<><div className="w-16 h-16 bg-gray-800 rounded-full border-2 border-blue-400 flex items-center justify-center mr-4 shadow-lg overflow-hidden"><span className="text-xs font-bold">{champ.substring(0,2)}</span></div><div><div className="text-xl font-bold text-white">{champ}</div><div className="text-sm text-blue-300 font-bold">{['TOP','JGL','MID','ADC','SUP'][i]}</div></div></>) : <span className="text-gray-600 font-bold text-lg animate-pulse">PICKING...</span>}</div>))}
-            </div>
-            <div className="w-80 bg-black/80 rounded-xl border border-gray-700 p-4 overflow-hidden flex flex-col">
-                <div className="text-gray-400 text-xs font-bold mb-2 border-b border-gray-700 pb-2">DRAFT LOG</div>
-                <div className="flex-1 overflow-y-auto space-y-2">{displayLogs.map((l,i)=><div key={i} className="text-xs text-gray-300 font-mono leading-tight">{l}</div>)}</div>
-                <button onClick={()=>setPhase('GAME')} className="mt-4 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded text-xs font-bold w-full">SKIP DRAFT ⏩</button>
-            </div>
-            <div className="flex-1 bg-red-900/10 border-2 border-red-600/50 rounded-xl p-4 flex flex-col gap-3">
-                <h3 className="text-red-400 font-bold text-2xl text-center mb-2">{redTeam.name}</h3>
-                {visualDraft.redPicks.map((champ, i) => (<div key={i} className={`flex-1 flex flex-row-reverse items-center px-4 rounded transition-all duration-500 ${champ ? 'bg-gradient-to-l from-red-900 to-transparent border-r-4 border-red-400 scale-100 opacity-100' : 'bg-gray-800/50 opacity-50'}`}>{champ ? (<><div className="w-16 h-16 bg-gray-800 rounded-full border-2 border-red-400 flex items-center justify-center ml-4 shadow-lg overflow-hidden"><span className="text-xs font-bold">{champ.substring(0,2)}</span></div><div className="text-right"><div className="text-xl font-bold text-white">{champ}</div><div className="text-sm text-red-300 font-bold">{['TOP','JGL','MID','ADC','SUP'][i]}</div></div></>) : <span className="text-gray-600 font-bold text-lg animate-pulse">PICKING...</span>}</div>))}
-            </div>
-        </div>
-    </div>
-  );
+  const { blueTeam, redTeam } = simulationData || {};
 
   return (
-    <div className="fixed inset-0 bg-gray-900 z-[200] flex flex-col font-mono text-white">
-      <div className="bg-black border-b border-gray-800 p-4 shadow-lg z-10 shrink-0">
-          <div className="flex justify-between items-center max-w-7xl mx-auto">
-             <div className="flex items-center gap-6">
-                <div className="text-right"><div className="text-2xl font-black text-blue-500">{blueTeam.name}</div><div className="text-xs text-gray-500 font-bold">SET {currentSet}</div></div>
-                <div className="flex items-center bg-gray-800 rounded px-6 py-2 gap-4"><span className="text-4xl font-black text-blue-400">{liveStats.kills.BLUE}</span><div className="flex flex-col items-center"><span className="text-xl font-bold text-white">{Math.floor(gameTime/60)}:{String(gameTime%60).padStart(2,'0')}</span></div><span className="text-4xl font-black text-red-400">{liveStats.kills.RED}</span></div>
-                <div className="text-left"><div className="text-2xl font-black text-red-500">{redTeam.name}</div><div className="text-xs text-gray-500 font-bold">{winsA} - {winsB}</div></div>
+    <div className="fixed inset-0 bg-gray-900 z-[200] flex flex-col text-white font-sans">
+      
+      {/* 1. Header: Score & Team Names */}
+      <div className="h-20 bg-black border-b border-gray-800 flex items-center justify-between px-8 shrink-0">
+        {/* Blue Team */}
+        <div className="flex items-center gap-4 w-1/3">
+             <div className="text-4xl font-black text-blue-500">{blueTeam?.name}</div>
+             <div className="text-sm font-bold text-gray-400">{winsA} WIN</div>
+             <div className="flex gap-2">
+                 {Array(match.format === 'BO5' ? 3 : 2).fill(0).map((_,i) => (
+                     <div key={i} className={`w-3 h-3 rounded-full ${i < winsA ? 'bg-blue-500' : 'bg-gray-700'}`}></div>
+                 ))}
              </div>
-             <div className="flex gap-4 text-xs">
-                 <div className="text-center"><span className="text-gray-400 block">GOLD</span><span className="text-blue-400 font-bold">{(liveStats.gold.BLUE/1000).toFixed(1)}k</span> vs <span className="text-red-400 font-bold">{(liveStats.gold.RED/1000).toFixed(1)}k</span></div>
-                 <div className="text-center"><span className="text-gray-400 block">TOWER</span><span className="text-blue-400 font-bold">{liveStats.towers.BLUE}</span> vs <span className="text-red-400 font-bold">{liveStats.towers.RED}</span></div>
-             </div>
-          </div>
-      </div>
-      <div className="flex-1 flex overflow-hidden">
-        {phase === 'DRAFT' ? renderVisualDraft() : (
-            <div className="flex-1 flex relative">
-                <div className="w-80 bg-gray-900 border-r border-gray-800 flex flex-col">
-                    {liveStats.players.filter(p=>p.side==='BLUE').map((p,i)=>(<div key={i} className="flex-1 border-b border-gray-800 p-4 flex flex-col justify-center relative overflow-hidden group"><div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600 transition-all group-hover:w-2"></div><div className="flex justify-between items-start mb-1"><div><div className="font-black text-lg leading-none">{p.champName}</div><div className="text-xs text-gray-400">{p.playerName}</div></div><div className="text-right"><div className="text-blue-400 font-bold text-lg">{p.k}/{p.d}/{p.a}</div></div></div><div className="mt-2 flex justify-between items-end"><span className="bg-gray-800 px-2 py-0.5 rounded text-xs font-bold text-gray-300">Lv.{p.lvl}</span><span className="text-yellow-500 font-mono text-sm">{(p.currentGold).toLocaleString()} G</span></div></div>))}
-                </div>
-                <div className="flex-1 bg-black/95 relative flex flex-col">
-                     <div className="flex-1 p-6 flex flex-col justify-end space-y-2 overflow-hidden pb-24">{displayLogs.map((l,i) => (<div key={i} className={`p-2 rounded border-l-4 text-sm animate-fade-in-up ${l.includes('⚔️') ? 'bg-red-900/30 border-red-500' : 'bg-gray-800/50 border-gray-600'}`}>{l}</div>))}</div>
-                     <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-2">
-                         <button onClick={()=>setPlaybackSpeed(0)} className="bg-red-600 hover:bg-red-700 w-12 h-10 rounded font-bold text-sm">❚❚</button>
-                         <button onClick={()=>setPlaybackSpeed(1)} className={`w-12 h-10 rounded font-bold text-sm ${playbackSpeed===1?'bg-blue-600 ring-2 ring-white':'bg-gray-700 hover:bg-gray-600'}`}>x1</button>
-                         <button onClick={()=>setPlaybackSpeed(4)} className={`w-12 h-10 rounded font-bold text-sm ${playbackSpeed===4?'bg-blue-600 ring-2 ring-white':'bg-gray-700 hover:bg-gray-600'}`}>x4</button>
-                         <button onClick={()=>setPlaybackSpeed(16)} className={`w-12 h-10 rounded font-bold text-sm ${playbackSpeed===16?'bg-blue-600 ring-2 ring-white':'bg-gray-700 hover:bg-gray-600'}`}>x16</button>
-                         <button onClick={()=>setPlaybackSpeed(100)} className="bg-gray-700 hover:bg-gray-600 px-4 h-10 rounded font-bold text-sm">SKIP ⏩</button>
-                     </div>
-                </div>
-                <div className="w-80 bg-gray-900 border-l border-gray-800 flex flex-col text-right">
-                    {liveStats.players.filter(p=>p.side==='RED').map((p,i)=>(<div key={i} className="flex-1 border-b border-gray-800 p-4 flex flex-col justify-center relative overflow-hidden group"><div className="absolute right-0 top-0 bottom-0 w-1 bg-red-600 transition-all group-hover:w-2"></div><div className="flex justify-between items-start mb-1"><div className="text-left"><div className="text-red-400 font-bold text-lg">{p.k}/{p.d}/{p.a}</div></div><div><div className="font-black text-lg leading-none">{p.champName}</div><div className="text-xs text-gray-400">{p.playerName}</div></div></div><div className="mt-2 flex justify-between items-end"><span className="text-yellow-500 font-mono text-sm">{(p.currentGold).toLocaleString()} G</span><span className="bg-gray-800 px-2 py-0.5 rounded text-xs font-bold text-gray-300">Lv.{p.lvl}</span></div></div>))}
-                </div>
-            </div>
-        )}
-        {phase === 'SET_RESULT' && (
-             <div className="absolute inset-0 bg-black/90 z-50 flex flex-col items-center justify-center">
-                 <h1 className="text-6xl font-black mb-4 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-red-400">{simulationData.winnerName} WIN!</h1>
-                 <div className="text-2xl text-gray-400 font-bold mb-8">KILLS: {liveStats.kills.BLUE} vs {liveStats.kills.RED}</div>
-                 <button 
-                    disabled={resultProcessed}
-                    onClick={() => {
-                      if (resultProcessed) return;
-                      setResultProcessed(true);
+        </div>
 
-                      const winnerIsA = simulationData.winnerName === teamA.name;
-                      const newA = winsA + (winnerIsA ? 1 : 0);
-                      const newB = winsB + (!winnerIsA ? 1 : 0);
-                      setWinsA(newA); setWinsB(newB);
-                      
-                      const histItem = { set: currentSet, winner: simulationData.winnerName, picks: simulationData.picks, bans: simulationData.bans, fearless: globalBanList, logs: simulationData.logs };
-                      const newHist = [...matchHistory, histItem];
-                      setMatchHistory(newHist);
-                      setGlobalBanList(prev => [...prev, ...(simulationData.usedChamps||[])]);
-                      
-                      const targetWins = match.format === 'BO5' ? 3 : 2;
-                      if(newA >= targetWins || newB >= targetWins) {
-                          onMatchComplete(match, { winner: newA>newB?teamA.name:teamB.name, scoreString: `${newA}:${newB}`, history: newHist });
-                      } else {
-                          setCurrentSet(s => s+1);
-                          setPhase('READY');
-                      }
-                 }} className={`px-12 py-5 rounded-full font-black text-2xl shadow-xl transition ${resultProcessed ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-white text-black hover:scale-105'}`}>
-                     {resultProcessed ? '처리 중...' : (winsA+winsB+1 >= (match.format==='BO5'?5:3) ? '경기 종료 / 결과 확정' : '다음 세트 진행')}
-                 </button>
+        {/* Center Scoreboard */}
+        <div className="flex flex-col items-center justify-center w-1/3">
+            <div className="flex items-center gap-6">
+                <span className="text-5xl font-black text-blue-400">{liveStats.kills.BLUE}</span>
+                <div className="bg-gray-800 px-4 py-1 rounded text-xl font-mono font-bold text-white">
+                    {Math.floor(gameTime/60)}:{String(gameTime%60).padStart(2,'0')}
+                </div>
+                <span className="text-5xl font-black text-red-400">{liveStats.kills.RED}</span>
+            </div>
+            <div className="flex gap-8 text-xs font-bold text-gray-500 mt-1">
+                <span>💰 {(liveStats.gold.BLUE/1000).toFixed(1)}k</span>
+                <span>🔥 {liveStats.towers.BLUE}</span>
+                <span>VS</span>
+                <span>🔥 {liveStats.towers.RED}</span>
+                <span>💰 {(liveStats.gold.RED/1000).toFixed(1)}k</span>
+            </div>
+        </div>
+
+        {/* Red Team */}
+        <div className="flex items-center justify-end gap-4 w-1/3">
+             <div className="flex gap-2">
+                 {Array(match.format === 'BO5' ? 3 : 2).fill(0).map((_,i) => (
+                     <div key={i} className={`w-3 h-3 rounded-full ${i < winsB ? 'bg-red-500' : 'bg-gray-700'}`}></div>
+                 ))}
              </div>
-        )}
+             <div className="text-sm font-bold text-gray-400">{winsB} WIN</div>
+             <div className="text-4xl font-black text-red-500">{redTeam?.name}</div>
+        </div>
       </div>
+
+      {/* 2. Main Game View */}
+      <div className="flex-1 flex overflow-hidden">
+         
+         {/* Left: Blue Team Players */}
+         <div className="w-80 bg-gray-900 border-r border-gray-800 flex flex-col">
+            {liveStats.players.filter(p => p.side === 'BLUE').map((p, i) => (
+                <div key={i} className="flex-1 border-b border-gray-800 relative p-2 flex items-center gap-3">
+                    <div className="w-12 h-12 bg-gray-800 rounded border border-blue-600 relative overflow-hidden">
+                        {/* Placeholder for Champ Image */}
+                        <div className="absolute inset-0 flex items-center justify-center font-bold text-xs text-blue-200">{p.champName.substring(0,3)}</div>
+                        <div className="absolute bottom-0 right-0 bg-black text-white text-[10px] px-1 font-bold">{p.lvl}</div>
+                    </div>
+                    <div className="flex-1">
+                        <div className="flex justify-between items-center">
+                            <span className="font-bold text-sm text-blue-100">{p.playerName}</span>
+                            <span className="text-yellow-400 font-mono text-xs">{Math.floor(p.currentGold)}g</span>
+                        </div>
+                        <div className="flex justify-between items-center mt-1">
+                            <span className="text-xs text-gray-400">{p.champName}</span>
+                            <span className="font-bold text-white text-sm">{p.k}/{p.d}/{p.a}</span>
+                        </div>
+                        {/* XP Bar */}
+                        <div className="w-full bg-gray-800 h-1 mt-2 rounded-full overflow-hidden">
+                            <div className="bg-blue-500 h-full" style={{width: `${(p.xp / (180 + p.lvl * 100))*100}%`}}></div>
+                        </div>
+                    </div>
+                </div>
+            ))}
+            {/* Bans Blue */}
+            <div className="h-16 bg-black p-2 flex items-center gap-1 overflow-x-auto">
+                <span className="text-blue-600 font-bold text-xs mr-1">BAN</span>
+                {simulationData?.bans?.A?.map((b,i) => (
+                    <div key={i} className="w-8 h-8 bg-gray-800 border border-gray-600 flex items-center justify-center text-[8px] text-gray-400">{b.substring(0,2)}</div>
+                ))}
+            </div>
+         </div>
+
+         {/* Center: Logs & Controls */}
+         <div className="flex-1 flex flex-col bg-black/95 relative">
+            {/* Logs */}
+            <div className="flex-1 p-4 space-y-2 overflow-y-auto font-mono text-sm pb-20">
+                {displayLogs.map((log, i) => (
+                    <div key={i} className={`py-1 px-2 rounded ${log.includes('⚔️') ? 'bg-red-900/20 text-red-200 border-l-2 border-red-500' : (log.includes('🐛') || log.includes('🐉') ? 'bg-purple-900/20 text-purple-200' : 'text-gray-400')}`}>
+                        {log}
+                    </div>
+                ))}
+            </div>
+            
+            {/* Playback Controls */}
+            <div className="h-16 bg-gray-900 border-t border-gray-800 flex items-center justify-center gap-4">
+                <button onClick={() => setPlaybackSpeed(0)} className="w-10 h-10 rounded bg-gray-700 hover:bg-gray-600 flex items-center justify-center">⏸</button>
+                <button onClick={() => setPlaybackSpeed(1)} className={`w-10 h-10 rounded font-bold ${playbackSpeed===1 ? 'bg-blue-600' : 'bg-gray-700'}`}>1x</button>
+                <button onClick={() => setPlaybackSpeed(8)} className={`w-10 h-10 rounded font-bold ${playbackSpeed===8 ? 'bg-blue-600' : 'bg-gray-700'}`}>8x</button>
+                <button onClick={() => setPlaybackSpeed(50)} className={`w-10 h-10 rounded font-bold ${playbackSpeed===50 ? 'bg-blue-600' : 'bg-gray-700'}`}>Skip</button>
+            </div>
+            
+            {/* [REQ 3] Fearless Global Bans Display (Bottom Overlay) */}
+            <div className="absolute top-2 left-2 right-2 flex justify-center flex-wrap gap-1 pointer-events-none opacity-50">
+                 {globalBanList.length > 0 && <span className="bg-purple-900 px-2 rounded text-[10px] font-bold self-center mr-2">FEARLESS</span>}
+                 {globalBanList.map((champ, i) => (
+                     <span key={i} className="text-[9px] bg-gray-800 text-gray-500 px-1 rounded border border-gray-700">{champ}</span>
+                 ))}
+            </div>
+         </div>
+
+         {/* Right: Red Team Players */}
+         <div className="w-80 bg-gray-900 border-l border-gray-800 flex flex-col">
+            {liveStats.players.filter(p => p.side === 'RED').map((p, i) => (
+                <div key={i} className="flex-1 border-b border-gray-800 relative p-2 flex flex-row-reverse items-center gap-3 text-right">
+                    <div className="w-12 h-12 bg-gray-800 rounded border border-red-600 relative overflow-hidden">
+                        <div className="absolute inset-0 flex items-center justify-center font-bold text-xs text-red-200">{p.champName.substring(0,3)}</div>
+                        <div className="absolute bottom-0 left-0 bg-black text-white text-[10px] px-1 font-bold">{p.lvl}</div>
+                    </div>
+                    <div className="flex-1">
+                        <div className="flex justify-between items-center flex-row-reverse">
+                            <span className="font-bold text-sm text-red-100">{p.playerName}</span>
+                            <span className="text-yellow-400 font-mono text-xs">{Math.floor(p.currentGold)}g</span>
+                        </div>
+                        <div className="flex justify-between items-center mt-1 flex-row-reverse">
+                            <span className="text-xs text-gray-400">{p.champName}</span>
+                            <span className="font-bold text-white text-sm">{p.k}/{p.d}/{p.a}</span>
+                        </div>
+                         {/* XP Bar */}
+                         <div className="w-full bg-gray-800 h-1 mt-2 rounded-full overflow-hidden flex justify-end">
+                            <div className="bg-red-500 h-full" style={{width: `${(p.xp / (180 + p.lvl * 100))*100}%`}}></div>
+                        </div>
+                    </div>
+                </div>
+            ))}
+             {/* Bans Red */}
+            <div className="h-16 bg-black p-2 flex items-center justify-end gap-1 overflow-x-auto">
+                {simulationData?.bans?.B?.map((b,i) => (
+                    <div key={i} className="w-8 h-8 bg-gray-800 border border-gray-600 flex items-center justify-center text-[8px] text-gray-400">{b.substring(0,2)}</div>
+                ))}
+                <span className="text-red-600 font-bold text-xs ml-1">BAN</span>
+            </div>
+         </div>
+
+      </div>
+
+      {/* 3. Result Overlay */}
+      {phase === 'SET_RESULT' && (
+         <div className="absolute inset-0 bg-black/90 z-50 flex flex-col items-center justify-center animate-fade-in">
+             <h1 className="text-6xl font-black mb-4 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-red-400">
+                 {simulationData.winnerName} WIN!
+             </h1>
+             <div className="flex gap-10 text-2xl font-bold text-gray-400 mb-10">
+                 <div className="text-blue-400">BLUE: {liveStats.kills.BLUE} Kills</div>
+                 <div className="text-red-400">RED: {liveStats.kills.RED} Kills</div>
+             </div>
+             
+             <button 
+                onClick={() => {
+                  if (resultProcessed) return;
+                  setResultProcessed(true);
+
+                  const winnerIsA = simulationData.winnerName === teamA.name;
+                  const newA = winsA + (winnerIsA ? 1 : 0);
+                  const newB = winsB + (!winnerIsA ? 1 : 0);
+                  setWinsA(newA); setWinsB(newB);
+                  
+                  // Update history & global bans
+                  const histItem = { set: currentSet, winner: simulationData.winnerName, picks: simulationData.picks, bans: simulationData.bans, logs: simulationData.logs };
+                  const newHist = [...matchHistory, histItem];
+                  setMatchHistory(newHist);
+                  setGlobalBanList(prev => [...prev, ...(simulationData.usedChamps||[])]);
+                  
+                  if(newA >= targetWins || newB >= targetWins) {
+                      onMatchComplete(match, { winner: newA>newB?teamA.name:teamB.name, scoreString: `${newA}:${newB}`, history: newHist });
+                  } else {
+                      setCurrentSet(s => s+1);
+                      setPhase('READY'); // Start next set
+                  }
+             }} 
+             className="px-12 py-5 bg-white text-black rounded-full font-black text-2xl hover:scale-105 transition shadow-xl"
+             >
+                 {winsA+winsB+1 >= targetWins && ((simulationData.winnerName===teamA.name && winsA+1>=targetWins) || (simulationData.winnerName===teamB.name && winsB+1>=targetWins))
+                    ? '매치 종료 (Finish Match)' 
+                    : '다음 세트 (Next Set)'}
+             </button>
+         </div>
+      )}
     </div>
   );
 }
-
 
 // --- Dashboard ---
 function Dashboard() {
@@ -2457,12 +2524,10 @@ function Dashboard() {
   // [수정됨] Dashboard 내부 로직 통합 (여기서부터 복사하세요)
   // ==========================================
 // [FIX] 1. Missing Function for Blue Button
+// [REPLACE FUNCTION handleProceedNextMatch]
 const handleProceedNextMatch = () => {
   try {
-    if (!nextGlobalMatch) {
-      console.error("Next match not found");
-      return;
-    }
+    if (!nextGlobalMatch) return;
 
     const isPlayerMatch =
       nextGlobalMatch.t1 === myTeam.id ||
@@ -2472,30 +2537,29 @@ const handleProceedNextMatch = () => {
     if (!isPlayerMatch) {
       const result = runSimulationForMatch(nextGlobalMatch, false);
 
-      if (!result) {
-        throw new Error("Simulation returned null");
-      }
+      if (!result) throw new Error("Simulation returned null");
 
       const updatedMatches = league.matches.map(m =>
         m.id === nextGlobalMatch.id
           ? { ...m, status: 'finished', result }
           : m
       );
-
-      updateLeague(league.id, { matches: updatedMatches });
-      setLeague(prev => ({
-        ...prev,
-        matches: updatedMatches
-      }));
+      
+      // [REQ 2] FIX: Recalculate Standings immediately
+      const updatedLeague = { ...league, matches: updatedMatches };
+      
+      updateLeague(league.id, updatedLeague);
+      setLeague(updatedLeague);
+      recalculateStandings(updatedLeague); // <--- ADD THIS LINE
 
       return;
     }
 
-    // Player match → move to draft/simulation screen
+    // Player match → move to draft
     navigate(`/match/${nextGlobalMatch.id}`);
   } catch (err) {
     console.error("Next Match Error:", err);
-    alert("다음 경기 진행 중 오류가 발생했습니다. 콘솔을 확인해주세요.");
+    alert("경기 진행 중 오류 발생");
   }
 };
 
