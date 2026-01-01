@@ -515,8 +515,17 @@ function resolveCombat(powerA, powerB) {
 // Replace the existing calculateIndividualIncome(...) implementation with this.
 // Implements the XP rules you requested and keeps gold calculation unchanged.
 // [REQ 1] New Income Calculation Logic
+// [REPLACE] Function: calculateIndividualIncome
+// Location: Global scope, usually around line 330-360
 function calculateIndividualIncome(pick, time, aliveRatio = 1.0) {
+  // CRITICAL FIX: Safety Check to prevent White Screen Crash
+  if (!pick || !pick.playerData) {
+      return { gold: 0, xp: 0 };
+  }
+
   let roleKey = pick.playerData.포지션 || 'TOP';
+  
+  // Normalize Role Keys
   if (['원거리', 'BOT', 'ADC'].includes(roleKey)) roleKey = 'ADC';
   else if (['서포터', 'SPT', 'SUP'].includes(roleKey)) roleKey = 'SUP';
   else if (['정글', 'JGL'].includes(roleKey)) roleKey = 'JGL';
@@ -538,26 +547,18 @@ function calculateIndividualIncome(pick, time, aliveRatio = 1.0) {
 
   let abilityScore = 0;
 
-  // [REQ] Updated Time Phases
-  // 초반 (0-14분)
+  // Time Phases
   if (time < 15) {
-      // Early: Line(50%) + Mechanics(30%) + Stability(20%)
       abilityScore = (stats.라인전 * 0.5) + (stats.무력 * 0.3) + (stats.안정성 * 0.2);
   } 
-  // 중반 (15-25분)
   else if (time <= 25) {
-      // Mid: Growth(40%) + Macro(40%) + Mechanics(20%)
       abilityScore = (stats.성장 * 0.4) + (stats.운영 * 0.4) + (stats.무력 * 0.2);
   } 
-  // 후반 (26분+)
   else {
-      // Late: Teamfight(30%) + Macro(30%) + Stability(30%)
       abilityScore = (stats.한타 * 0.3) + (stats.운영 * 0.3) + (stats.안정성 * 0.3);
   }
 
-  // Performance Multiplier: Base * (Score / 90)
   const performanceFactor = abilityScore / 90;
-
   const finalXP = Math.floor(baseXP * performanceFactor * aliveRatio);
   const finalGold = Math.floor(baseGold * performanceFactor * aliveRatio);
 
@@ -2469,25 +2470,31 @@ function Dashboard() {
     }
   };
 
+  // [REPLACE] Function: runSimulationForMatch
+  // Location: Inside Dashboard component, before handleProceedNextMatch
   const runSimulationForMatch = (match, isPlayerMatch) => {
     try {
-      // 1. Resolve Team IDs safely
-      const t1Id = typeof match.t1 === 'object' ? match.t1.id : Number(match.t1);
-      const t2Id = typeof match.t2 === 'object' ? match.t2.id : Number(match.t2);
+      // 1. Resolve Team IDs safely (Handle Objects vs Strings vs Numbers)
+      const getID = (val) => {
+          if (typeof val === 'object' && val !== null) return val.id;
+          return val;
+      };
+
+      const t1Id = Number(getID(match.t1));
+      const t2Id = Number(getID(match.t2));
   
       const t1Obj = teams.find(t => Number(t.id) === t1Id);
       const t2Obj = teams.find(t => Number(t.id) === t2Id);
   
       if (!t1Obj || !t2Obj) {
-        throw new Error(`Teams not found for Match ID: ${match.id}`);
+        throw new Error(`Teams not found for Match ID: ${match.id} (T1: ${t1Id}, T2: ${t2Id})`);
       }
   
       // 2. Fetch Rosters explicitly
       const t1Roster = getTeamRoster(t1Obj.name);
       const t2Roster = getTeamRoster(t2Obj.name);
   
-      // 3. Prepare Simulation Options with Safe Fallback
-      // Use league.currentChampionList if available, otherwise use global championList
+      // 3. Prepare Simulation Options
       const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0) 
           ? league.currentChampionList 
           : championList;
@@ -2503,7 +2510,7 @@ function Dashboard() {
         { ...t1Obj, roster: t1Roster },
         { ...t2Obj, roster: t2Roster },
         1,
-        [], // No bans for auto-sim
+        [], 
         simOptions
       );
   
@@ -2515,7 +2522,6 @@ function Dashboard() {
 
     } catch (err) {
       console.error("Simulation Error:", err);
-      // Re-throw so the caller knows it failed
       throw err; 
     }
   };
