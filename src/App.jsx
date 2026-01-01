@@ -12,44 +12,43 @@ import rawChampionList from './data/champions.json';
 // ==========================================
 // [1단계] 파일 맨 위쪽 (import 밑, 상수들 근처)에 두세요.
 // ==========================================
+// [FIX] Improved Roster Fetcher (Prevents crashes if names don't match exactly)
 const getTeamRoster = (teamName) => {
   const positions = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
 
-  // Defensive: ensure playerList exists
   if (!Array.isArray(playerList) || playerList.length === 0) {
-    return positions.map(pos => ({
-      이름: 'Unknown',
-      포지션: pos,
-      종합: 70,
-      상세: { 라인전: 70, 무력: 70, 한타: 70, 성장: 70, 안정성: 70, 운영: 70 }
-    }));
+    return positions.map(pos => ({ 이름: 'Unknown', 포지션: pos, 종합: 70 }));
   }
 
-  const players = playerList.filter(p => p.팀 === teamName);
+  // Find team by Short Name ('GEN') OR Full Name ('젠지 (Gen.G)')
+  // You can add more aliases here if needed
+  let players = playerList.filter(p => p.팀 === teamName);
+  
+  // Fallback: If no players found, try finding by matching parts of the name
+  if (players.length === 0) {
+      const teamObj = teams.find(t => t.name === teamName);
+      if (teamObj) {
+         // Try matching '젠지' from '젠지 (Gen.G)' or just 'Gen.G'
+         players = playerList.filter(p => teamObj.fullName.includes(p.팀) || p.팀.includes(teamName));
+      }
+  }
 
-  // If no players for this team, return safe placeholders (prevents undefined entries)
+  // If STILL no players, return Placeholders (Prevents the Black Screen Crash)
   if (!players || players.length === 0) {
+    console.warn(`Warning: No players found for team ${teamName}. Using placeholders.`);
     return positions.map(pos => ({
-      이름: 'Unknown',
+      이름: `${teamName} ${pos}`,
       포지션: pos,
-      종합: 70,
+      종합: 70, // Default OVR
       상세: { 라인전: 70, 무력: 70, 한타: 70, 성장: 70, 안정성: 70, 운영: 70 }
     }));
   }
 
-  // Normal case: prefer correct-positioned player, fall back to first player (guaranteed defined)
-  return positions.map(pos => players.find(p => p.포지션 === pos) || players[0]);
-};
-
-const SIDES = { BLUE: 'BLUE', RED: 'RED' };
-const LANES = ['TOP', 'JGL', 'MID', 'ADC', 'SUP']; 
-const MAP_LANES = ['TOP', 'MID', 'BOT']; 
-
-// 1. 게임 상수 및 규칙
-const GAME_CONSTANTS = {
-  DRAGONS: {
-    TYPES: ['화학공학', '바람', '대지', '화염', '바다', '마법공학'],
-  }
+  // Map players to positions
+  return positions.map(pos => {
+      const found = players.find(p => p.포지션 === pos || p.포지션 === (pos === 'SUP' ? 'SPT' : pos));
+      return found || players[0]; // Fallback to any player if specific role missing
+  });
 };
 
 const SIM_CONSTANTS = {
@@ -2572,48 +2571,60 @@ function Dashboard() {
 // ==========================================
   // [수정됨] Dashboard 내부 로직 통합 (여기서부터 복사하세요)
   // ==========================================
+// [FIX] 1. Missing Function for Blue Button
+const handleProceedNextMatch = () => {
+  if (!nextGlobalMatch) return;
 
+  // Normalize IDs (Handle both String/Number cases)
+  const t1Id = typeof nextGlobalMatch.t1 === 'object' ? nextGlobalMatch.t1.id : Number(nextGlobalMatch.t1);
+  const t2Id = typeof nextGlobalMatch.t2 === 'object' ? nextGlobalMatch.t2.id : Number(nextGlobalMatch.t2);
+
+  // Find Team Objects
+  const t1Obj = teams.find(t => Number(t.id) === t1Id);
+  const t2Obj = teams.find(t => Number(t.id) === t2Id);
+
+  if (!t1Obj || !t2Obj) {
+    alert("팀 정보를 찾을 수 없습니다.");
+    return;
+  }
+
+  // Determine if this is a player's match
+  const isPlayerMatch = (t1Obj.id === myTeam.id || t2Obj.id === myTeam.id);
+
+  // Run Simulation
+  runSimulationForMatch(nextGlobalMatch, isPlayerMatch);
+  
+  // Alert user
+  alert(`${t1Obj.name} vs ${t2Obj.name} 경기 결과가 처리되었습니다.`);
+};
   // [1] 내 경기 시작하기 (안전장치 추가됨)
   // [1] 내 경기 시작하기 (안전장치 추가됨)
+  // [FIX] 2. Robust Start Match Handler (Green Button)
   const handleStartMyMatch = () => {
     try {
-      // 1. 경기 데이터 확인
       if (!nextGlobalMatch) {
         alert("진행할 경기가 없습니다.");
         return;
       }
   
-      // 2. 팀 ID 정규화 (숫자로 변환)
+      // 1. Normalize IDs
       const t1Id = typeof nextGlobalMatch.t1 === 'object' ? nextGlobalMatch.t1.id : Number(nextGlobalMatch.t1);
       const t2Id = typeof nextGlobalMatch.t2 === 'object' ? nextGlobalMatch.t2.id : Number(nextGlobalMatch.t2);
   
-      // 3. 팀 객체 찾기
+      // 2. Find Team Objects
       const t1Obj = teams.find(t => Number(t.id) === t1Id);
       const t2Obj = teams.find(t => Number(t.id) === t2Id);
   
       if (!t1Obj || !t2Obj) {
-        console.error("팀 찾기 실패:", { t1Id, t2Id, nextGlobalMatch });
         alert(`팀 데이터 오류! T1 ID: ${t1Id}, T2 ID: ${t2Id}`);
         return;
       }
   
-      // 4. 로스터 가져오기 (필수)
-      // 이 부분이 없으면 시뮬레이션 엔진이 선수 데이터를 찾지 못해 멈춥니다.
+      // 3. Fetch Rosters (Using the new safe function)
       const t1Roster = getTeamRoster(t1Obj.name);
       const t2Roster = getTeamRoster(t2Obj.name);
   
-      // 로스터 검증
-      if (!t1Roster || t1Roster.length === 0) {
-        alert(`${t1Obj.name}의 로스터 데이터를 불러올 수 없습니다.`);
-        return;
-      }
-      if (!t2Roster || t2Roster.length === 0) {
-        alert(`${t2Obj.name}의 로스터 데이터를 불러올 수 없습니다.`);
-        return;
-      }
-  
-      // 5. 라이브 매치 데이터 설정
-      // [CRITICAL FIX] roster를 반드시 포함해서 전달해야 합니다.
+      // 4. Set Live Data WITH Rosters attached
       setLiveMatchData({
         match: nextGlobalMatch,
         teamA: { ...t1Obj, roster: t1Roster },
