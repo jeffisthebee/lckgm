@@ -13,6 +13,7 @@ import rawChampionList from './data/champions.json';
 // [1단계] 파일 맨 위쪽 (import 밑, 상수들 근처)에 두세요.
 // ==========================================
 // [FIX] Improved Roster Fetcher (Prevents crashes if names don't match exactly)
+// [FIX] Improved Roster Fetcher (Fixed Scope Issue & Added Aliases)
 const getTeamRoster = (teamName) => {
   const positions = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
 
@@ -20,34 +21,40 @@ const getTeamRoster = (teamName) => {
     return positions.map(pos => ({ 이름: 'Unknown', 포지션: pos, 종합: 70 }));
   }
 
-  // Find team by Short Name ('GEN') OR Full Name ('젠지 (Gen.G)')
-  // You can add more aliases here if needed
+  // 1. Try Exact Match
   let players = playerList.filter(p => p.팀 === teamName);
-  
-  // Fallback: If no players found, try finding by matching parts of the name
+
+  // 2. Fallback: Local Alias Map (Prevents crash by avoiding 'teams' variable access)
   if (players.length === 0) {
-      const teamObj = teams.find(t => t.name === teamName);
-      if (teamObj) {
-         // Try matching '젠지' from '젠지 (Gen.G)' or just 'Gen.G'
-         players = playerList.filter(p => teamObj.fullName.includes(p.팀) || p.팀.includes(teamName));
+      const aliases = {
+          'GEN': '젠지', 'HLE': '한화', 'T1': '티원', 'KT': '케이티', 
+          'DK': '디플러스', 'BNK': '피어엑스', 'NS': '농심', 
+          'DRX': '디알엑스', 'BRO': '브리온', 'DNS': '수퍼스'
+      };
+      
+      const krName = aliases[teamName];
+      if (krName) {
+         players = playerList.filter(p => p.팀.includes(krName) || (p.팀 === teamName));
       }
   }
 
-  // If STILL no players, return Placeholders (Prevents the Black Screen Crash)
+  // 3. Last Resort: Placeholder (Prevents White Screen)
   if (!players || players.length === 0) {
     console.warn(`Warning: No players found for team ${teamName}. Using placeholders.`);
     return positions.map(pos => ({
       이름: `${teamName} ${pos}`,
       포지션: pos,
-      종합: 70, // Default OVR
-      상세: { 라인전: 70, 무력: 70, 한타: 70, 성장: 70, 안정성: 70, 운영: 70 }
+      종합: 75, 
+      상세: { 라인전: 75, 무력: 75, 한타: 75, 성장: 75, 안정성: 75, 운영: 75 }
     }));
   }
 
-  // Map players to positions
+  // 4. Map to Positions
   return positions.map(pos => {
+      // Handle Support variations (SUP/SPT)
       const found = players.find(p => p.포지션 === pos || p.포지션 === (pos === 'SUP' ? 'SPT' : pos));
-      return found || players[0]; // Fallback to any player if specific role missing
+      // If a specific position is missing, grab a random player from that team to fill the slot temporarily
+      return found || players[0] || { 이름: 'Unknown', 포지션: pos, 종합: 70 }; 
   });
 };
 
@@ -2566,26 +2573,23 @@ function Dashboard() {
 const handleProceedNextMatch = () => {
   if (!nextGlobalMatch) return;
 
-  // Normalize IDs (Handle both String/Number cases)
+  // Force IDs to Numbers to ensure 'teams.find' works
   const t1Id = typeof nextGlobalMatch.t1 === 'object' ? nextGlobalMatch.t1.id : Number(nextGlobalMatch.t1);
   const t2Id = typeof nextGlobalMatch.t2 === 'object' ? nextGlobalMatch.t2.id : Number(nextGlobalMatch.t2);
 
-  // Find Team Objects
   const t1Obj = teams.find(t => Number(t.id) === t1Id);
   const t2Obj = teams.find(t => Number(t.id) === t2Id);
 
   if (!t1Obj || !t2Obj) {
-    alert("팀 정보를 찾을 수 없습니다.");
+    alert(`팀 정보를 찾을 수 없습니다. (ID: ${t1Id} vs ${t2Id})`);
     return;
   }
 
-  // Determine if this is a player's match
   const isPlayerMatch = (t1Obj.id === myTeam.id || t2Obj.id === myTeam.id);
 
-  // Run Simulation
+  // This calls the global function we fixed in Step 1
   runSimulationForMatch(nextGlobalMatch, isPlayerMatch);
   
-  // Alert user
   alert(`${t1Obj.name} vs ${t2Obj.name} 경기 결과가 처리되었습니다.`);
 };
   // [1] 내 경기 시작하기 (안전장치 추가됨)
@@ -2598,6 +2602,7 @@ const handleProceedNextMatch = () => {
         return;
       }
   
+      // Force IDs to Numbers
       const t1Id = typeof nextGlobalMatch.t1 === 'object' ? nextGlobalMatch.t1.id : Number(nextGlobalMatch.t1);
       const t2Id = typeof nextGlobalMatch.t2 === 'object' ? nextGlobalMatch.t2.id : Number(nextGlobalMatch.t2);
   
@@ -2609,8 +2614,7 @@ const handleProceedNextMatch = () => {
         return;
       }
   
-      // USE GLOBAL getTeamRoster (Defined at top of file)
-      // Pass the raw team name (e.g., 'GEN') - the global function handles aliases like '젠지 (Gen.G)'
+      // Fetch Rosters using the fixed global function
       const t1Roster = getTeamRoster(t1Obj.name);
       const t2Roster = getTeamRoster(t2Obj.name);
   
