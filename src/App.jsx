@@ -2528,70 +2528,95 @@ function Dashboard() {
   };
 
   const runSimulationForMatch = (match, isPlayerMatch) => {
-    const t1Id = typeof match.t1 === 'object' ? match.t1.id : Number(match.t1);
-    const t2Id = typeof match.t2 === 'object' ? match.t2.id : Number(match.t2);
-
-    const t1Obj = teams.find(t => Number(t.id) === t1Id);
-    const t2Obj = teams.find(t => Number(t.id) === t2Id);
-
-    if (!t1Obj || !t2Obj) {
-        console.error("Simulation Error: Teams not found.", { t1Id, t2Id });
-        return;
-    }
-
-    // Use Global getTeamRoster
-    const t1Roster = getTeamRoster(t1Obj.name);
-    const t2Roster = getTeamRoster(t2Obj.name);
-
-    const simOptions = {
-        currentChampionList: league.currentChampionList || championList,
+    try {
+      const t1Id = typeof match.t1 === 'object' ? match.t1.id : Number(match.t1);
+      const t2Id = typeof match.t2 === 'object' ? match.t2.id : Number(match.t2);
+  
+      const t1Obj = teams.find(t => Number(t.id) === t1Id);
+      const t2Obj = teams.find(t => Number(t.id) === t2Id);
+  
+      if (!t1Obj || !t2Obj) {
+        throw new Error("Teams not found");
+      }
+  
+      const t1Roster = getTeamRoster(t1Obj.name);
+      const t2Roster = getTeamRoster(t2Obj.name);
+  
+      const simOptions = {
+        // ✅ FIX: championList DOES NOT EXIST
+        currentChampionList:
+          league.currentChampionList ||
+          rawChampionList, // ← this one IS imported
+  
         difficulty: isPlayerMatch ? league.difficulty : undefined,
-        playerTeamName: isPlayerMatch ? myTeam.name : undefined,
-    };
-
-    const result = simulateMatch(
-      { ...t1Obj, roster: t1Roster }, 
-      { ...t2Obj, roster: t2Roster },
-      match.format,
-      simOptions
-    );
-
-    if (isPlayerMatch) {
-        setMyMatchResult({
-            resultData: result,
-            teamA: t1Obj,
-            teamB: t2Obj
-        });
+        playerTeamName: isPlayerMatch ? myTeam.name : undefined
+      };
+  
+      const result = simulateSet(
+        { ...t1Obj, roster: t1Roster },
+        { ...t2Obj, roster: t2Roster },
+        1,
+        [],
+        simOptions
+      );
+  
+      if (!result) {
+        throw new Error("Simulation failed to return result");
+      }
+  
+      return result;
+    } catch (err) {
+      console.error("Simulation Error:", err);
+      throw err; // important so UI can react
     }
-    
-    applyMatchResult(match, result);
-};
+  };
+  
 // ==========================================
   // [수정됨] Dashboard 내부 로직 통합 (여기서부터 복사하세요)
   // ==========================================
 // [FIX] 1. Missing Function for Blue Button
 const handleProceedNextMatch = () => {
-  if (!nextGlobalMatch) return;
+  try {
+    if (!nextGlobalMatch) {
+      console.error("Next match not found");
+      return;
+    }
 
-  // Force IDs to Numbers to ensure 'teams.find' works
-  const t1Id = typeof nextGlobalMatch.t1 === 'object' ? nextGlobalMatch.t1.id : Number(nextGlobalMatch.t1);
-  const t2Id = typeof nextGlobalMatch.t2 === 'object' ? nextGlobalMatch.t2.id : Number(nextGlobalMatch.t2);
+    const isPlayerMatch =
+      nextGlobalMatch.t1 === myTeam.id ||
+      nextGlobalMatch.t2 === myTeam.id;
 
-  const t1Obj = teams.find(t => Number(t.id) === t1Id);
-  const t2Obj = teams.find(t => Number(t.id) === t2Id);
+    // AI match → auto simulate
+    if (!isPlayerMatch) {
+      const result = runSimulationForMatch(nextGlobalMatch, false);
 
-  if (!t1Obj || !t2Obj) {
-    alert(`팀 정보를 찾을 수 없습니다. (ID: ${t1Id} vs ${t2Id})`);
-    return;
+      if (!result) {
+        throw new Error("Simulation returned null");
+      }
+
+      const updatedMatches = league.matches.map(m =>
+        m.id === nextGlobalMatch.id
+          ? { ...m, status: 'finished', result }
+          : m
+      );
+
+      updateLeague(league.id, { matches: updatedMatches });
+      setLeague(prev => ({
+        ...prev,
+        matches: updatedMatches
+      }));
+
+      return;
+    }
+
+    // Player match → move to draft/simulation screen
+    navigate(`/match/${nextGlobalMatch.id}`);
+  } catch (err) {
+    console.error("Next Match Error:", err);
+    alert("다음 경기 진행 중 오류가 발생했습니다. 콘솔을 확인해주세요.");
   }
-
-  const isPlayerMatch = (t1Obj.id === myTeam.id || t2Obj.id === myTeam.id);
-
-  // This calls the global function we fixed in Step 1
-  runSimulationForMatch(nextGlobalMatch, isPlayerMatch);
-  
-  alert(`${t1Obj.name} vs ${t2Obj.name} 경기 결과가 처리되었습니다.`);
 };
+
   // [1] 내 경기 시작하기 (안전장치 추가됨)
   // [1] 내 경기 시작하기 (안전장치 추가됨)
   // [FIX] 2. Robust Start Match Handler (Green Button)
