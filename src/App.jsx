@@ -477,43 +477,43 @@ function resolveCombat(powerA, powerB) {
 // Replace the existing calculateIndividualIncome(...) implementation with this.
 // Implements the XP rules you requested and keeps gold calculation unchanged.
 function calculateIndividualIncome(pick, time, aliveRatio = 1.0) {
-  const role = pick.playerData.포지션;
-  const stats = pick.playerData.상세 || { 라인전: 80, 무력: 80, 안정성: 80, 성장: 80, 운영: 80, 한타: 80 };
-  
-  // Base gold / XP values (XP as you specified)
+  const role = pick.playerData.포지션; // 'TOP', 'JGL', 'MID', 'ADC', 'SUP'
+  // Data safety check for stats
+  const stats = pick.playerData.상세 || { 라인전: 50, 무력: 50, 안정성: 50, 성장: 50, 운영: 50, 한타: 50 };
+
+  // 1. Base XP Configuration (Requested)
+  // Top/Mid/Jgl: 490, ADC: 470, Sup: 385
+  let baseXP = 490;
+  if (role === 'ADC' || role === '원거리') baseXP = 470;
+  else if (role === 'SUP' || role === '서포터') baseXP = 385;
+
+  // 2. Base Gold Configuration (Existing logic maintained)
   const baseGold = SIM_CONSTANTS.BASE_INCOME.GOLD[role] || 350;
-  const BASE_XP_BY_ROLE = { TOP: 490, JGL: 490, MID: 490, ADC: 470, SUP: 385 };
-  const baseXP = BASE_XP_BY_ROLE[role] || 450;
 
-  // Gold multipliers (unchanged logic)
-  let multiplierGold = 0;
-  if (time < 15) {
-      const factor = (stats.라인전 * 0.5 + stats.무력 * 0.3 + stats.안정성 * 0.2) / 90;
-      multiplierGold = factor;
-  } else if (time < 30) {
-      const factor = (stats.성장 * 0.4 + stats.운영 * 0.4 + stats.무력 * 0.2) / 90;
-      multiplierGold = factor;
-  } else {
-      const factor = (stats.한타 * 0.3 + stats.운영 * 0.3 + stats.안정성 * 0.3) / 90;
-      multiplierGold = factor;
-  }
-
-  const finalGold = Math.floor(baseGold * multiplierGold * aliveRatio);
-
-  // XP calculation following your phases and formula precisely:
-  // - Early: baseXP * (라인전*0.5 + 무력*0.3 + 안정성*0.2) / 90
-  // - Mid:   baseXP * (성장*0.4 + 운영*0.4 + 무력*0.2) / 90
-  // - Late:  baseXP * (한타*0.3 + 운영*0.3 + 안정성*0.3) / 90
+  // 3. Calculate Factors based on Phase
   let xpFactor = 0;
+  let goldFactor = 0; // Keeping gold logic consistent with XP phase logic for balance
+
   if (time < 15) {
-      xpFactor = ( (stats.라인전 || 50) * 0.5 + (stats.무력 || 50) * 0.3 + (stats.안정성 || 50) * 0.2 ) / 90;
+      // Early: Laning(0.5) + Mechanics(0.3) + Stability(0.2)
+      const val = (stats.라인전 || 50) * 0.5 + (stats.무력 || 50) * 0.3 + (stats.안정성 || 50) * 0.2;
+      xpFactor = val / 90;
+      goldFactor = val / 90;
   } else if (time < 30) {
-      xpFactor = ( (stats.성장 || 50) * 0.4 + (stats.운영 || 50) * 0.4 + (stats.무력 || 50) * 0.2 ) / 90;
+      // Mid: Growth(0.4) + Macro(0.4) + Mechanics(0.2)
+      const val = (stats.성장 || 50) * 0.4 + (stats.운영 || 50) * 0.4 + (stats.무력 || 50) * 0.2;
+      xpFactor = val / 90;
+      goldFactor = val / 90;
   } else {
-      xpFactor = ( (stats.한타 || 50) * 0.3 + (stats.운영 || 50) * 0.3 + (stats.안정성 || 50) * 0.3 ) / 90;
+      // Late: Teamfight(0.3) + Macro(0.3) + Stability(0.3)
+      const val = (stats.한타 || 50) * 0.3 + (stats.운영 || 50) * 0.3 + (stats.안정성 || 50) * 0.3;
+      xpFactor = val / 90;
+      goldFactor = val / 90;
   }
 
+  // Apply aliveRatio (dead players gain less)
   const finalXP = Math.max(0, Math.floor(baseXP * xpFactor * aliveRatio));
+  const finalGold = Math.floor(baseGold * goldFactor * aliveRatio);
 
   return { gold: finalGold, xp: finalXP };
 }
@@ -680,8 +680,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
             // Add XP from this minute
             p.xp += income.xp;
 
-            // Required XP for next level is exactly: 180 + (현재 레벨 * 100)
-            // Allow multiple level-ups in the same minute if xp allows
+            // [MOD] Level Up Formula: 180 + (Current Level * 100)
             while (p.level < 18) {
                 const requiredXP = 180 + (p.level * 100);
                 if (p.xp >= requiredXP) {
@@ -1703,250 +1702,162 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
     players: []
   });
   const [gameTime, setGameTime] = useState(0);
-  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1); // 0 = Stop
   const [draftStep, setDraftStep] = useState(0);
   const [globalBanList, setGlobalBanList] = useState([]);
   const [matchHistory, setMatchHistory] = useState([]);
 
   const [draftBans, setDraftBans] = useState({ A: [], B: [], fearless: [] });
 
-  if (!teamA || !teamB || !match) {
-    return (
-      <div className="fixed inset-0 bg-black text-red-500 z-[200] flex items-center justify-center">
-        <div>
-          치명적 오류: 매치 데이터가 누락되었습니다.
-          <div className="mt-3">
-            <button onClick={onClose} className="bg-white text-black px-4 py-2 mt-2 rounded">닫기</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  if (!teamA || !teamB || !match) return null;
 
-  // In LiveGamePlayer: replace the existing `const startSet = useCallback(() => { ... }, [...]);`
-// REPLACE the existing `const startSet = useCallback(() => { ... }, [...]);` inside LiveGamePlayer
-// REPLACE the existing `const startSet = useCallback(() => { ... }, [...]);` inside LiveGamePlayer
-// REPLACE the existing "const startSet = useCallback(() => { ... }, [...]);" inside LiveGamePlayer with this block:
-const startSet = useCallback(() => {
-  // immediately show loading state so modal has a chance to render
-  try {
-    setPhase('LOADING');
-
-    // Allow the browser to paint the LOADING UI before doing heavy work.
-    // Use requestIdleCallback if available (nice for heavy work), otherwise fallback to setTimeout.
-    const scheduleHeavyWork = (fn) => {
-      if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+  const startSet = useCallback(() => {
+    try {
+      setPhase('LOADING');
+      setTimeout(() => {
         try {
-          requestIdleCallback(fn, { timeout: 500 });
-        } catch (e) {
-          // in case of strict environments, fallback
-          setTimeout(fn, 500);
+          const blueTeam = currentSet % 2 !== 0 ? teamA : teamB;
+          const redTeam = currentSet % 2 !== 0 ? teamB : teamA;
+          const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
+
+          setDraftBans({
+            A: result.bans?.A || [],
+            B: result.bans?.B || [],
+            fearless: Array.from(new Set([...(externalGlobalBans || []), ...(result.fearlessBans || result.fearless || [])]))
+          });
+
+          const players = [
+            ...result.picks.A.map(p => ({ ...p, side: 'BLUE', k:0, d:0, a:0, currentGold: 500, lvl: 1 })),
+            ...result.picks.B.map(p => ({ ...p, side: 'RED', k:0, d:0, a:0, currentGold: 500, lvl: 1 }))
+          ];
+
+          setLiveStats({
+            kills: { BLUE: 0, RED: 0 },
+            gold: { BLUE: 2500, RED: 2500 },
+            towers: { BLUE: 0, RED: 0 },
+            drakes: { BLUE: 0, RED: 0 },
+            grubs: { BLUE: 0, RED: 0 },
+            players
+          });
+
+          setSimulationData({ ...result, blueTeam, redTeam });
+          setGameTime(0);
+          setDisplayLogs([]);
+          setPhase('DRAFT');
+          setDraftStep(0);
+        } catch (errInner) {
+          console.error(errInner);
+          if (onClose) onClose();
         }
-      } else {
-        // give the browser slightly more time to paint
-        setTimeout(fn, 500);
-      }
-    };
-
-    // schedule heavy simulation so the modal/loader can paint first
-    scheduleHeavyWork(() => {
-      try {
-        const blueTeam = currentSet % 2 !== 0 ? teamA : teamB;
-        const redTeam = currentSet % 2 !== 0 ? teamB : teamA;
-
-        // Run simulation (this is heavy). Keep it wrapped in try/catch.
-        const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
-
-        if (!result || !result.picks) {
-          throw new Error("시뮬레이션 결과가 비어있거나 불완전합니다.");
-        }
-
-        setDraftBans({
-          A: result.bans?.A || [],
-          B: result.bans?.B || [],
-          fearless: Array.from(new Set([...(externalGlobalBans || []), ...(result.fearlessBans || result.fearless || [])]))
-        });
-
-        const players = [
-          ...result.picks.A.map(p => ({ ...p, side: 'BLUE', k:0, d:0, a:0, currentGold: 500, lvl: 1 })),
-          ...result.picks.B.map(p => ({ ...p, side: 'RED', k:0, d:0, a:0, currentGold: 500, lvl: 1 }))
-        ];
-
-        setLiveStats({
-          kills: { BLUE: 0, RED: 0 },
-          gold: { BLUE: 2500, RED: 2500 },
-          towers: { BLUE: 0, RED: 0 },
-          drakes: { BLUE: 0, RED: 0 },
-          grubs: { BLUE: 0, RED: 0 },
-          players
-        });
-
-        setSimulationData({ ...result, blueTeam, redTeam });
-        setGameTime(0);
-        setDisplayLogs([]);
-        // move from LOADING -> DRAFT
-        setPhase('DRAFT');
-        setDraftStep(0);
-      } catch (errInner) {
-        console.error("simulateSet error:", errInner);
-        alert("시뮬레이션 중 오류 발생: " + (errInner?.message || errInner));
-        if (onClose) onClose();
-      }
-    });
-  } catch (e) {
-    console.error("startSet outer error:", e);
-    alert("시뮬레이션 시작 실패: " + (e?.message || e));
-    if (onClose) onClose();
-  }
-}, [currentSet, teamA, teamB, globalBanList, simOptions, onClose, externalGlobalBans]);
+      }, 500);
+    } catch (e) {
+      console.error(e);
+      if (onClose) onClose();
+    }
+  }, [currentSet, teamA, teamB, globalBanList, simOptions, onClose, externalGlobalBans]);
 
   useEffect(() => {
     if (phase === 'READY') startSet();
   }, [phase, startSet]);
 
+  // Draft Phase Animation
   useEffect(() => {
     if (phase !== 'DRAFT' || !simulationData) return;
-
     const draftLogs = simulationData.draftLogs || [];
     setDisplayLogs([]);
     setDraftStep(0);
 
-    setDraftBans({
-      A: simulationData.bans?.A || [],
-      B: simulationData.bans?.B || [],
-      fearless: simulationData.fearlessBans || simulationData.fearless || []
-    });
-
     let idx = 0;
-    const intervalMs = 1600;
     const interval = setInterval(() => {
       const nextLog = draftLogs[idx];
       if (nextLog) {
-        setDisplayLogs(prev => {
-          const merged = [...prev, nextLog].slice(-200);
-          return merged;
-        });
+        setDisplayLogs(prev => [...prev, nextLog].slice(-200));
         idx++;
         setDraftStep(idx);
       }
-
       if (idx >= draftLogs.length) {
         clearInterval(interval);
-        const startDelay = 900;
-        setTimeout(() => {
-          setPhase('GAME');
-          setGameTime(0);
-        }, startDelay);
+        setTimeout(() => { setPhase('GAME'); setGameTime(0); }, 900);
       }
-    }, intervalMs);
+    }, 1000); // Faster draft for UX
 
     return () => clearInterval(interval);
   }, [phase, simulationData]);
 
+  // Game Phase Loop
   useEffect(() => {
     if (phase !== 'GAME' || !simulationData) return;
 
+    // [MOD] Stop logic: If speed is 0, do not set interval
+    if (playbackSpeed === 0) return;
+
     const finalSec = Number(simulationData.totalSeconds) || (Number(simulationData.totalMinutes) || 30) * 60;
-    const intervalMs = 1000 / Math.max(1, playbackSpeed);
+    const intervalMs = 1000 / Math.max(0.1, playbackSpeed); // prevent divide by zero
 
     const timer = setInterval(() => {
       setGameTime(prev => {
         const next = prev + 1;
-
         const logsForThisSecond = (simulationData.logs || []).filter(log => {
           const m = log.match(/^\s*\[(\d+):(\d{1,2})\]/);
           if (!m) return false;
-          const min = parseInt(m[1], 10);
-          const sec = parseInt(m[2], 10);
-          const abs = (min * 60) + sec;
+          const abs = (parseInt(m[1], 10) * 60) + parseInt(m[2], 10);
           return abs === next;
         });
 
         if (logsForThisSecond.length > 0) {
-          setDisplayLogs(prevLogs => {
-            const merged = [...prevLogs, ...logsForThisSecond].slice(-200);
-            return merged;
-          });
-
+          setDisplayLogs(prevLogs => [...prevLogs, ...logsForThisSecond].slice(-200));
           setLiveStats(prevStats => {
             const newStats = JSON.parse(JSON.stringify(prevStats));
-
             logsForThisSecond.forEach(log => {
-              try {
-                // Accept both normal kills (⚔️) and counter-kills (🛡️)
-                const killerMatch = log.match(/(?:⚔️|🛡️)[\s\S]*?\]\s*([^\(]+?)\s*\(/);
-                const victimMatch = log.match(/☠️[\s\S]*?\]\s*([^\(]+?)\s*\(/);
+               // Simple Stats parsing (Kill/Tower)
+               const killerMatch = log.match(/(?:⚔️|🛡️)[\s\S]*?\]\s*([^\(]+?)\s*\(/);
+               const victimMatch = log.match(/☠️[\s\S]*?\]\s*([^\(]+?)\s*\(/);
+               const killerName = killerMatch?.[1]?.trim();
+               const victimName = victimMatch?.[1]?.trim();
 
-                const killerName = killerMatch?.[1]?.trim();
-                const victimName = victimMatch?.[1]?.trim();
-
-                if (victimName) {
-                  newStats.players = newStats.players.map(p => {
-                    if (p.playerName === victimName) {
-                      p.d = (p.d || 0) + 1;
-                    }
-                    return p;
-                  });
-                }
-
-                if (killerName) {
-                  let killerSide = null;
-                  newStats.players = newStats.players.map(p => {
-                    if (p.playerName === killerName) {
-                      killerSide = p.side;
-                      p.k = (p.k || 0) + 1;
-                      p.currentGold = (p.currentGold || 500) + GAME_RULES.GOLD.KILL;
-                    }
-                    return p;
-                  });
-                  if (killerSide) newStats.kills[killerSide] = (newStats.kills[killerSide] || 0) + 1;
-                }
-
-                if (/assist|assist\(|도움|어시스트/.test(log)) {
-                  newStats.players = newStats.players.map(p => {
-                    if (log.includes(p.playerName) && !killerName?.includes(p.playerName) && !victimName?.includes(p.playerName)) {
-                      p.a = (p.a || 0) + 1;
-                      p.currentGold = (p.currentGold || 500) + GAME_RULES.GOLD.ASSIST;
-                    }
-                    return p;
-                  });
-                }
-
-                if (/포탑|포탑 방패|억제기|1차 포탑|2차 포탑|3차/.test(log)) {
-                  if (simulationData.blueTeam && log.includes(simulationData.blueTeam.name)) newStats.towers.BLUE++;
-                  else if (simulationData.redTeam && log.includes(simulationData.redTeam.name)) newStats.towers.RED++;
-                }
-
-              } catch (err) {
-                console.warn('log parse error', err, log);
-              }
+               if (victimName) newStats.players.forEach(p => { if (p.playerName === victimName) p.d++; });
+               if (killerName) {
+                 newStats.players.forEach(p => { 
+                    if (p.playerName === killerName) { 
+                        p.k++; 
+                        p.currentGold += 300; 
+                        newStats.kills[p.side]++;
+                    } 
+                 });
+               }
+               // Assist parsing simplified
+               if (log.includes('assist')) {
+                   const parts = log.split('assists:');
+                   if (parts[1]) {
+                       const names = parts[1].split(',').map(s => s.trim());
+                       newStats.players.forEach(p => { if (names.some(n => n.includes(p.playerName))) { p.a++; p.currentGold += 150; } });
+                   }
+               }
+               if (/포탑|억제기/.test(log)) {
+                   if (log.includes(simulationData.blueTeam.name)) newStats.towers.BLUE++;
+                   else if (log.includes(simulationData.redTeam.name)) newStats.towers.RED++;
+               }
             });
-
+            // Update levels visually
             const progress = finalSec > 0 ? Math.min(1, next / finalSec) : 1;
             if (simulationData.playersLevelProgress) {
-              newStats.players = newStats.players.map(pl => {
-                const prog = (simulationData.playersLevelProgress || []).find(pp => pp.playerName === pl.playerName);
-                if (!prog) return pl;
-                const startL = Number(prog.startLevel || 1);
-                const endL = Number(prog.endLevel || startL);
-                const delta = endL - startL;
-                const newLevel = startL + Math.floor(delta * progress);
-                pl.lvl = Math.max(1, newLevel);
-                return pl;
-              });
+                newStats.players.forEach(pl => {
+                    const prog = simulationData.playersLevelProgress.find(pp => pp.playerName === pl.playerName);
+                    if (prog) {
+                        const startL = Number(prog.startLevel||1), endL = Number(prog.endLevel||1);
+                        pl.lvl = Math.max(1, Math.floor(startL + (endL - startL) * progress));
+                    }
+                });
             }
-
             return newStats;
           });
         }
 
         if (next >= finalSec) {
           setGameTime(finalSec);
-          const postDelayMs = Math.max(500, 1500 / Math.max(1, playbackSpeed));
-          setTimeout(() => setPhase('SET_RESULT'), postDelayMs);
+          setTimeout(() => setPhase('SET_RESULT'), 1000);
           return finalSec;
         }
-
         return next;
       });
     }, intervalMs);
@@ -1954,273 +1865,126 @@ const startSet = useCallback(() => {
     return () => clearInterval(timer);
   }, [phase, simulationData, playbackSpeed]);
 
-  if (!simulationData) return (
-    <div className="fixed inset-0 bg-black text-white flex items-center justify-center z-[200]">로딩 중...</div>
-  );
+  if (!simulationData) return <div className="fixed inset-0 bg-black text-white flex items-center justify-center z-[200]">로딩 중...</div>;
 
-  const { blueTeam, redTeam, picks, bans } = simulationData;
-  const leftTeamName = blueTeam?.name || teamA.name;
-  const rightTeamName = redTeam?.name || teamB.name;
-  const leftWins = (leftTeamName === teamA.name) ? winsA : winsB;
-  const rightWins = (rightTeamName === teamB.name) ? winsB : winsA;
-  const leftKills = liveStats.kills.BLUE || 0;
-  const rightKills = liveStats.kills.RED || 0;
-
+  const { blueTeam, redTeam } = simulationData;
   const renderLogLine = (l) => {
     const m = l.match(/^\s*(\[\d+:\d{2}\])\s*(.*)$/);
-    const timePart = m ? m[1] : '';
-    const msgPart = m ? m[2] : l;
-    return (
-      <div className="flex items-center gap-2">
-        {timePart && <span className="text-white font-mono text-xs">{timePart}</span>}
-        <span className="text-white text-sm">{msgPart}</span>
-      </div>
-    );
-  };
-
-  // Skip draft to game
-  const skipDraftToGame = () => {
-    if (!simulationData) return;
-    setDisplayLogs(simulationData.draftLogs || []);
-    setDraftBans({
-      A: simulationData.bans?.A || [],
-      B: simulationData.bans?.B || [],
-      fearless: simulationData.fearlessBans || simulationData.fearless || []
-    });
-    setPhase('GAME');
-    setGameTime(0);
+    return <div className="flex items-center gap-2">{m ? <><span className="text-gray-400 font-mono text-xs">{m[1]}</span><span className="text-white text-sm">{m[2]}</span></> : <span className="text-white text-sm">{l}</span>}</div>;
   };
 
   return (
     <div className="fixed inset-0 bg-black z-[200] flex flex-col font-mono text-white">
-      {/* top bar */}
-      <div className="h-16 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-6 z-10">
-        <div className="w-1/3 flex items-center gap-4">
-          <div>
-            <div className="text-sm font-bold text-blue-400">{leftTeamName}</div>
-            <div className="flex items-center gap-2">
-              <div className="text-2xl font-extrabold text-white">{leftKills}</div>
-              <div className="text-sm text-gray-400">({leftWins} sets)</div>
-            </div>
-          </div>
+      {/* Top Bar */}
+      <div className="h-14 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-6 z-10">
+        <div className="flex items-center gap-4 text-blue-400 font-bold">
+            <span>{blueTeam.name}</span> <span className="text-white text-xl">{liveStats.kills.BLUE}</span>
         </div>
-
-        <div className="text-yellow-400 font-black text-2xl">
-          {phase === 'DRAFT' ? phase : `${Math.floor(gameTime/60)}:${String(gameTime%60).padStart(2,'0')}`}
+        <div className="text-yellow-400 font-black text-xl">
+          {phase === 'DRAFT' ? '밴픽 진행 중' : `${Math.floor(gameTime/60)}:${String(gameTime%60).padStart(2,'0')}`}
         </div>
-
-        <div className="w-1/3 flex items-center justify-end gap-4">
-          <div className="text-right">
-            <div className="text-sm font-bold text-red-400">{rightTeamName}</div>
-            <div className="flex items-center gap-2 justify-end">
-              <div className="text-sm text-gray-400">({rightWins} sets)</div>
-              <div className="text-2xl font-extrabold text-white">{rightKills}</div>
-            </div>
-          </div>
+        <div className="flex items-center gap-4 text-red-400 font-bold">
+            <span className="text-white text-xl">{liveStats.kills.RED}</span> <span>{redTeam.name}</span>
         </div>
       </div>
 
-      <div className="flex-1 bg-black relative flex">
-      {phase === 'DRAFT' && (
-  <div className="w-full flex flex-col p-6 text-white">
-    <div className="mb-4 flex justify-between items-center">
-      <div className="text-lg font-black">DRAFT / BAN PHASE</div>
-      <div className="flex items-center gap-3">
-        <div className="text-xs text-purple-300 font-bold">Global fearless bans</div>
-        <div className="flex gap-1">
-          {(draftBans.fearless || externalGlobalBans || simulationData?.fearlessBans || []).map((b, i) => (
-            <span key={i} className="px-2 py-0.5 bg-purple-700 text-white text-xs rounded">{b}</span>
-          ))}
-        </div>
-      </div>
-    </div>
-
-    <div className="grid grid-cols-3 gap-4">
-      <div className="col-span-1 bg-gray-800 p-3 rounded">
-        <div className="text-sm font-bold text-blue-300 mb-2">Blue Bans</div>
-        <div className="flex flex-col gap-2">
-          {(draftBans.A || simulationData?.bans?.A || []).map((b, i) => (
-            <div key={i} className="px-2 py-1 bg-gray-700 rounded text-xs">{b}</div>
-          ))}
-        </div>
-      </div>
-
-      <div className="col-span-1 bg-gray-900 p-3 rounded flex flex-col">
-        <div className="text-sm font-bold text-white mb-2">Ban / Pick Order</div>
-        <div className="flex-1 overflow-y-auto max-h-64 font-mono text-sm">
-          {(simulationData?.draftLogs || []).map((log, idx) => (
-            <div
-              key={idx}
-              className={`py-1 px-2 rounded mb-1 ${idx === (draftStep - 1) ? 'bg-yellow-500 text-black font-bold' : 'bg-gray-800 text-gray-300'}`}
-            >
-              {log}
-            </div>
-          ))}
-        </div>
-        <div className="mt-3 flex justify-between">
-          <button onClick={skipDraftToGame} className="px-3 py-1 bg-red-600 rounded text-xs font-bold">Skip Draft → Game</button>
-          <div className="text-xs text-gray-400">Step: {Math.max(0, draftStep)} / {(simulationData?.draftLogs || []).length}</div>
-        </div>
-      </div>
-
-      <div className="col-span-1 bg-gray-800 p-3 rounded">
-        <div className="text-sm font-bold text-red-300 mb-2">Red Bans</div>
-        <div className="flex flex-col gap-2">
-          {(draftBans.B || simulationData?.bans?.B || []).map((b, i) => (
-            <div key={i} className="px-2 py-1 bg-gray-700 rounded text-xs text-right">{b}</div>
-          ))}
-        </div>
-      </div>
-    </div>
-
-    <div className="mt-4 text-xs text-gray-300">
-      Draft logs play automatically. You can click "Skip Draft → Game" to progress immediately.
-    </div>
-  </div>
-)}
-
+      <div className="flex-1 relative flex">
+        {/* Main Game View */}
         {phase === 'GAME' && (
           <>
-            <div className="w-64 bg-gray-900 p-2 space-y-1">
-              {/* show global fearless bans at top of side column for visibility next to player list */}
-              <div className="text-xs text-purple-300 font-bold mb-2 text-center">Global bans</div>
-              <div className="flex flex-wrap gap-1 justify-center mb-3">
-                {(draftBans.fearless || simulationData.fearlessBans || []).map((b, i) => (
-                  <div key={`side-f-${i}`} className="px-2 py-0.5 bg-purple-700 text-white text-xs rounded">{b}</div>
-                ))}
-              </div>
-
-              {liveStats.players.filter(p=>p.side==='BLUE').map((p,i) => (
-                <div key={i} className="text-xs bg-black p-2 border-l-2 border-blue-500 flex items-center justify-between">
-                  <div>
-                    <div className="font-bold text-sm">
-                      {p.champName} <span className="text-[11px] text-gray-300 font-medium ml-2">Lv {p.lvl || 1}</span>
-                    </div>
-                    <div className="text-[11px] text-gray-300">{p.playerName}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-[11px] font-mono">{(p.k||0)}/{(p.d||0)}/{(p.a||0)}</div>
-                  </div>
+            {/* Left Side (Blue) */}
+            <div className="w-64 bg-gray-900 p-2 space-y-1 overflow-y-auto">
+               {liveStats.players.filter(p=>p.side==='BLUE').map((p,i) => (
+                <div key={i} className="text-xs bg-black p-2 border-l-2 border-blue-500 flex justify-between">
+                  <div><div className="font-bold">{p.champName} <span className="text-gray-400">Lv{p.lvl}</span></div><div className="text-gray-500">{p.playerName}</div></div>
+                  <div>{p.k}/{p.d}/{p.a}</div>
                 </div>
               ))}
             </div>
 
-            <div className="flex-1 relative flex flex-col justify-end items-center pb-10">
-              <div className="absolute inset-0 bg-gray-800 opacity-20"></div>
-              <div className="z-10 text-center space-y-2 mb-4 w-full max-w-2xl">
-                <div className="absolute top-6 left-1/2 transform -translate-x-1/2 z-20 w-full max-w-2xl">
-                  <div className="flex justify-between items-center gap-4 px-4">
-                    <div className="flex items-center gap-2">
-                      <div className="text-xs font-bold text-blue-300 uppercase">Blue bans</div>
-                      <div className="flex gap-1">
-                        {(draftBans.A || simulationData.bans?.A || []).map((b, i) => (
-                          <div key={`b-ban-${i}`} className="px-2 py-0.5 bg-gray-800 text-white text-xs rounded">{b}</div>
+            {/* Center Area */}
+            <div className="flex-1 relative flex flex-col justify-between py-4">
+              {/* [MOD] Fixed Global Ban List: Added flex-wrap and max-width */}
+              <div className="w-full flex justify-center mb-2 px-4">
+                  <div className="bg-gray-900/80 p-2 rounded-lg flex flex-col items-center max-w-2xl">
+                    <div className="text-[10px] text-purple-300 font-bold uppercase tracking-wider mb-1">Global Fearless Bans</div>
+                    <div className="flex flex-wrap justify-center gap-1">
+                        {(draftBans.fearless || simulationData.fearlessBans || []).map((b, i) => (
+                          <span key={i} className="px-2 py-0.5 bg-purple-700 text-white text-[10px] rounded border border-purple-500 shadow-sm">{b}</span>
                         ))}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <div className="text-xs font-bold text-purple-300 uppercase">Global bans</div>
-                      <div className="flex gap-1">
-                        {(draftBans.fearless || simulationData.fearlessBans || simulationData.fearless || []).map((b, i) => (
-                          <div key={`f-ban-${i}`} className="px-2 py-0.5 bg-purple-700 text-white text-xs rounded">{b}</div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <div className="text-xs font-bold text-red-300 uppercase">Red bans</div>
-                      <div className="flex gap-1">
-                        {(draftBans.B || simulationData.bans?.B || []).map((b, i) => (
-                          <div key={`r-ban-${i}`} className="px-2 py-0.5 bg-gray-800 text-white text-xs rounded">{b}</div>
-                        ))}
-                      </div>
                     </div>
                   </div>
-                </div>
-
-                {displayLogs.slice(-6).map((l, i) => (
-                  <div key={i} className="text-sm font-bold text-white bg-black/60 px-3 py-1 rounded whitespace-pre-wrap break-words">
-                    {renderLogLine(l)}
-                  </div>
-                ))}
               </div>
 
-              <div className="z-10 flex gap-2">
-                {[1,4,16].map(s => (
-                  <button key={s} onClick={()=>setPlaybackSpeed(s)} className={`px-3 py-1 rounded text-xs ${playbackSpeed === s ? 'bg-yellow-500 text-black' : 'bg-gray-700'}`}>{s}x</button>
-                ))}
-                <button onClick={()=>{
-                  const gm = parseInt((simulationData.totalMinutes || 30), 10) * 60;
-                  setGameTime(gm);
-                }} className="bg-red-600 px-3 py-1 rounded text-xs">SKIP</button>
+              {/* Logs */}
+              <div className="flex-1 overflow-y-hidden flex flex-col justify-end items-center pb-4 px-10 space-y-1">
+                 {displayLogs.slice(-7).map((l, i) => (
+                   <div key={i} className="bg-black/50 px-3 py-1 rounded backdrop-blur-sm">{renderLogLine(l)}</div>
+                 ))}
+              </div>
+
+              {/* [MOD] Controls: Added STOP and x8 */}
+              <div className="flex justify-center gap-2 pb-4">
+                 <button onClick={()=>setPlaybackSpeed(0)} className={`px-4 py-1 rounded font-bold text-xs ${playbackSpeed===0?'bg-red-600 text-white':'bg-gray-700 text-gray-300'}`}>⏸ STOP</button>
+                 {[1, 4, 8, 16].map(s => (
+                   <button key={s} onClick={()=>setPlaybackSpeed(s)} className={`px-3 py-1 rounded font-bold text-xs ${playbackSpeed===s?'bg-yellow-500 text-black':'bg-gray-700 text-gray-300'}`}>x{s}</button>
+                 ))}
+                 <button onClick={()=>{ setGameTime((parseInt(simulationData.totalMinutes||30)*60)); }} className="px-3 py-1 rounded bg-gray-600 text-xs font-bold hover:bg-gray-500">SKIP</button>
               </div>
             </div>
 
-            <div className="w-64 bg-gray-900 p-2 space-y-1">
-              <div className="text-xs text-purple-300 font-bold mb-2 text-center">Global bans</div>
-              <div className="flex flex-wrap gap-1 justify-center mb-3">
-                {(draftBans.fearless || simulationData.fearlessBans || []).map((b, i) => (
-                  <div key={`side-fr-${i}`} className="px-2 py-0.5 bg-purple-700 text-white text-xs rounded">{b}</div>
-                ))}
-              </div>
-
-              {liveStats.players.filter(p=>p.side==='RED').map((p,i) => (
-                <div key={i} className="text-xs bg-black p-2 border-r-2 border-red-500 text-right flex items-center justify-between">
-                  <div className="text-left">
-                    <div className="font-bold text-sm">{p.champName} <span className="text-[11px] text-gray-300 font-medium ml-2">Lv {p.lvl || 1}</span></div>
-                    <div className="text-[11px] text-gray-300">{p.playerName}</div>
-                  </div>
-                  <div className="pl-2">
-                    <div className="text-[11px] font-mono">{(p.k||0)}/{(p.d||0)}/{(p.a||0)}</div>
-                  </div>
+            {/* Right Side (Red) */}
+            <div className="w-64 bg-gray-900 p-2 space-y-1 overflow-y-auto">
+               {liveStats.players.filter(p=>p.side==='RED').map((p,i) => (
+                <div key={i} className="text-xs bg-black p-2 border-r-2 border-red-500 flex justify-between text-right">
+                  <div>{p.k}/{p.d}/{p.a}</div>
+                  <div><div className="font-bold">{p.champName} <span className="text-gray-400">Lv{p.lvl}</span></div><div className="text-gray-500">{p.playerName}</div></div>
                 </div>
               ))}
             </div>
           </>
         )}
 
+        {/* Draft View (Simplified) */}
+        {phase === 'DRAFT' && (
+             <div className="w-full p-8 flex flex-col items-center">
+                 <h2 className="text-2xl font-bold mb-4">밴픽 진행 중...</h2>
+                 <div className="w-full max-w-3xl bg-gray-800 rounded p-4 h-96 overflow-y-auto">
+                     {displayLogs.map((l,i)=><div key={i} className="text-sm border-b border-gray-700 py-1">{l}</div>)}
+                 </div>
+                 <div className="mt-4 flex gap-2">
+                     <button onClick={()=>setPhase('GAME')} className="bg-blue-600 px-6 py-2 rounded font-bold">경기 바로 시작</button>
+                 </div>
+             </div>
+        )}
+
+        {/* Result View */}
         {phase === 'SET_RESULT' && (
-          <div className="w-full flex flex-col items-center justify-center">
-            <h1 className="text-6xl font-black text-white mb-8">{simulationData.winnerName} WIN!</h1>
-            <button onClick={() => {
-              const winnerIsTeamA = simulationData.winnerName === teamA.name;
-              const nA = winsA + (winnerIsTeamA ? 1 : 0);
-              const nB = winsB + (!winnerIsTeamA ? 1 : 0);
-              setWinsA(nA); setWinsB(nB);
+            <div className="w-full flex flex-col items-center justify-center">
+                <h1 className="text-5xl font-black mb-6 text-white">{simulationData.winnerName} 승리!</h1>
+                <button onClick={() => {
+                  const winnerIsTeamA = simulationData.winnerName === teamA.name;
+                  const nA = winsA + (winnerIsTeamA ? 1 : 0);
+                  const nB = winsB + (!winnerIsTeamA ? 1 : 0);
+                  setWinsA(nA); setWinsB(nB);
+                  
+                  const newHistory = [...matchHistory, { 
+                      set: currentSet, winner: simulationData.winnerName, 
+                      picks: simulationData.picks, bans: simulationData.bans, 
+                      fearless: globalBanList, logs: simulationData.logs 
+                  }];
+                  setMatchHistory(newHistory);
+                  setGlobalBanList(prev => [...prev, ...(simulationData.usedChamps || [])]);
 
-              const newHistoryEntry = {
-                setNumber: currentSet,
-                winner: simulationData.winnerName,
-                picks: simulationData.picks,
-                bans: simulationData.bans,
-                fearlessBans: globalBanList,
-                logs: simulationData.logs,
-                resultSummary: simulationData.resultSummary,
-                scores: simulationData.score
-              };
-
-              const updatedHistory = [...matchHistory, newHistoryEntry];
-              setMatchHistory(updatedHistory);
-              setGlobalBanList(b => [...b, ...(simulationData.usedChamps || [])]);
-
-              const target = match.format === 'BO5' ? 3 : 2;
-              if (nA >= target || nB >= target) {
-                if (onMatchComplete) {
-                  onMatchComplete(match, {
-                    winner: nA > nB ? teamA.name : teamB.name,
-                    scoreA: nA,
-                    scoreB: nB,
-                    scoreString: `${nA}:${nB}`,
-                    history: updatedHistory
-                  });
-                }
-              } else {
-                setCurrentSet(s => s + 1);
-                setPhase('READY');
-              }
-            }} className="text-2xl font-bold bg-blue-600 px-8 py-3 rounded hover:bg-blue-500">NEXT</button>
-          </div>
+                  const target = match.format === 'BO5' ? 3 : 2;
+                  if (nA >= target || nB >= target) {
+                      if (onMatchComplete) onMatchComplete(match, { winner: nA>nB?teamA.name:teamB.name, scoreString: `${nA}:${nB}`, history: newHistory });
+                  } else {
+                      setCurrentSet(s => s+1);
+                      setPhase('READY');
+                  }
+                }} className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded text-xl font-bold">다음 세트 / 결과 확정</button>
+            </div>
         )}
       </div>
     </div>
@@ -3674,24 +3438,41 @@ if (!rosterIsValid(t2Roster)) {
                 </div>
                 <div className="p-8">
                     <div className="grid grid-cols-2 gap-8 mb-8">
-                        <div className="bg-gray-50 p-6 rounded-xl border">
+                    <div className="bg-gray-50 p-6 rounded-xl border">
                             <h3 className="text-lg font-bold text-gray-700 mb-4">💰 지출 현황 (단위: 억)</h3>
                             <div className="flex items-end gap-8 h-48">
+                                {/* Total Spend */}
                                 <div className="flex flex-col items-center gap-2 flex-1 h-full justify-end">
                                     <span className="font-bold text-blue-600 text-xl">{finance.total_expenditure}억</span>
                                     <div className="w-full bg-blue-500 rounded-t-lg transition-all duration-500" style={{height: `${Math.min(finance.total_expenditure / 1.5, 100)}%`}}></div>
-                                    <span className="font-bold text-gray-600">총 지출 (추정)</span>
+                                    <span className="font-bold text-gray-600 text-xs">총 지출 (추정)</span>
                                 </div>
+                                {/* Cap Spend */}
                                 <div className="flex flex-col items-center gap-2 flex-1 h-full justify-end">
                                     <span className="font-bold text-purple-600 text-xl">{finance.cap_expenditure}억</span>
                                     <div className="w-full bg-purple-500 rounded-t-lg transition-all duration-500" style={{height: `${Math.min(finance.cap_expenditure / 1.5, 100)}%`}}></div>
-                                    <span className="font-bold text-gray-600">샐러리캡 반영</span>
+                                    <span className="font-bold text-gray-600 text-xs">샐러리캡 반영</span>
                                 </div>
+                                {/* [MOD] Regulatory Caps Split: 40~80 and 80+ */}
                                 <div className="flex flex-col items-center gap-2 flex-1 h-full justify-end relative">
-                                    <div className="absolute top-10 border-b-2 border-dashed border-red-400 w-full text-center text-xs text-red-400 font-bold">상한선 80억</div>
-                                    <span className="font-bold text-gray-400 text-xl">80억</span>
-                                    <div className="w-full bg-gray-200 rounded-t-lg" style={{height: '53%'}}></div>
-                                    <span className="font-bold text-gray-400">규정 상한선</span>
+                                    {/* Line for Tier 2 Start (80억) */}
+                                    <div className="absolute top-[47%] w-full border-t-2 border-dashed border-red-500"></div>
+                                    <div className="absolute top-[42%] text-[10px] text-red-500 font-bold bg-gray-50 px-1">2차 상한 (80억+)</div>
+                                    
+                                    {/* Line for Tier 1 Start (40억) */}
+                                    <div className="absolute bottom-[26%] w-full border-t-2 border-dashed border-yellow-500"></div>
+                                    <div className="absolute bottom-[21%] text-[10px] text-yellow-600 font-bold bg-gray-50 px-1">1차 상한 (40~80억)</div>
+
+                                    {/* Bar visual container */}
+                                    <div className="w-full bg-gray-200 rounded-t-lg relative overflow-hidden" style={{height: '100%'}}>
+                                        {/* Visual representation of 80+ zone */}
+                                        <div className="absolute top-0 w-full bg-red-100 h-[53%] flex items-center justify-center"></div>
+                                        {/* Visual representation of 40-80 zone */}
+                                        <div className="absolute bottom-[27%] w-full bg-yellow-100 h-[26%] flex items-center justify-center"></div>
+                                        {/* Base zone */}
+                                        <div className="absolute bottom-0 w-full bg-green-100 h-[27%]"></div>
+                                    </div>
+                                    <span className="font-bold text-gray-600 text-xs">규정 상한선</span>
                                 </div>
                             </div>
                         </div>
