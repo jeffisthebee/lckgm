@@ -14,7 +14,17 @@ import rawChampionList from './data/champions.json';
 // ==========================================
 // [FIX] Improved Roster Fetcher (Prevents crashes if names don't match exactly)
 // [FIX] Improved Roster Fetcher (Fixed Scope Issue & Added Aliases)
+// ==========================================
+// [1단계] 파일 맨 위쪽 (import 밑, 상수들 근처)에 두세요.
+// ==========================================
+
+// [FIX] Define Missing Constants needed for Simulation Engine
+const SIDES = { BLUE: 'BLUE', RED: 'RED' };
+const MAP_LANES = ['TOP', 'MID', 'BOT'];
+
+// [FIX] Improved Roster Fetcher (Prevents crashes if names don't match exactly)
 const getTeamRoster = (teamName) => {
+  // ... (keep your existing getTeamRoster code here)
   const positions = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
 
   if (!Array.isArray(playerList) || playerList.length === 0) {
@@ -57,6 +67,7 @@ const getTeamRoster = (teamName) => {
       return found || players[0] || { 이름: 'Unknown', 포지션: pos, 종합: 70 }; 
   });
 };
+
 
 const SIM_CONSTANTS = {
   WEIGHTS: { STATS: 0.55, META: 0.25, MASTERY: 0.20 },
