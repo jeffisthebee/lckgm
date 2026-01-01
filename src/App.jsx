@@ -945,35 +945,40 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
     if (isElderActive) combatChance = 1.0; 
     if (isDragonSpawning) combatChance = 0.40;
 
+    // [SEARCH FOR THIS BLOCK INSIDE runGameTickEngine]
     if (Math.random() < combatChance) {
-        const combatSec = Math.floor(Math.random() * 45);
-        const combatAbsTime = minuteStartAbs + combatSec;
+      const combatSec = Math.floor(Math.random() * 45);
+      const combatAbsTime = minuteStartAbs + combatSec;
 
-        const pBlueCombat = calculateTeamPower(picksBlue, time, getActiveBuffs(SIDES.BLUE), 0, picksRed, combatAbsTime);
-        const pRedCombat = calculateTeamPower(picksRed, time, getActiveBuffs(SIDES.RED), 0, picksBlue, combatAbsTime);
-        
-        const winner = resolveCombat(pBlueCombat, pRedCombat);
-        const loser = winner === SIDES.BLUE ? SIDES.RED : SIDES.BLUE;
-        const winnerName = winner === SIDES.BLUE ? teamBlue.name : teamRed.name;
-        
-        let combatOccurred = true;
-        simulateDamage(winner, pBlueCombat, pRedCombat, combatAbsTime);
-        
-        const winningTeamPicks = winner === SIDES.BLUE ? picksBlue : picksRed;
-        const losingTeamPicks = loser === SIDES.BLUE ? picksBlue : picksRed;
-        
-        // [REQ 3] Multi-Kill Logic (Up to 5)
-        const powerDiff = Math.abs(pBlueCombat - pRedCombat) / Math.max(pBlueCombat, pRedCombat);
-        let maxKills = 1;
-        // Logic: Low power diff = less kills, High power diff = wipe
-        const roll = Math.random() + (powerDiff * 0.5); 
-        if (roll > 0.9) maxKills = 5;
-        else if (roll > 0.7) maxKills = 4;
-        else if (roll > 0.5) maxKills = 3;
-        else if (roll > 0.3) maxKills = 2;
-        
-        const getAlivePlayers = (picks) => picks.filter(p => p.deadUntil <= combatAbsTime);
-        let killCount = 0;
+      const pBlueCombat = calculateTeamPower(picksBlue, time, getActiveBuffs(SIDES.BLUE), 0, picksRed, combatAbsTime);
+      const pRedCombat = calculateTeamPower(picksRed, time, getActiveBuffs(SIDES.RED), 0, picksBlue, combatAbsTime);
+      
+      const winner = resolveCombat(pBlueCombat, pRedCombat);
+      const loser = winner === SIDES.BLUE ? SIDES.RED : SIDES.BLUE;
+      const winnerName = winner === SIDES.BLUE ? teamBlue.name : teamRed.name;
+      
+      let combatOccurred = true;
+      simulateDamage(winner, pBlueCombat, pRedCombat, combatAbsTime);
+      
+      const winningTeamPicks = winner === SIDES.BLUE ? picksBlue : picksRed;
+      const losingTeamPicks = loser === SIDES.BLUE ? picksRed : picksBlue;
+      
+      // [MODIFIED] 1. Realistic Multi-Kill Probabilities
+      // 1 Kill: Default
+      // 2 Kills: 20% | 3 Kills: 5% | 4 Kills: 3% | 5 Kills: 1%
+      let maxKills = 1;
+      const roll = Math.random(); // 0.0 to 1.0
+
+      if (roll > 0.99) maxKills = 5;      // Top 1%
+      else if (roll > 0.96) maxKills = 4; // Next 3% (Total 4%)
+      else if (roll > 0.91) maxKills = 3; // Next 5% (Total 9%)
+      else if (roll > 0.71) maxKills = 2; // Next 20% (Total 29%)
+      else maxKills = 1;
+      
+      const getAlivePlayers = (picks) => picks.filter(p => p.deadUntil <= combatAbsTime);
+      let killCount = 0;
+      
+      // ... (Rest of the combat logic regarding picking killer/victim remains the same)
         
         // Pick ONE main killer for the sequence (usually)
         let aliveWinners = getAlivePlayers(winningTeamPicks);
@@ -1805,14 +1810,8 @@ function DetailedMatchResultModal({ result, onClose, teamA, teamB }) {
 // ==========================================
 // [3단계] Dashboard 컴포넌트 바로 위에 붙여넣기
 // ==========================================
-// Replace the existing `function LiveGamePlayer(...) { ... }` in src/App.jsx with the code below.
-// Search for "function LiveGamePlayer" and replace that entire function body.
 
-// Replaces: function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onClose }) { ... }
-// NOTE: changes:
-//  - shows global (fearless) bans alongside blue/red bans in GAME view player lists
-//  - improved log regex to detect both regular kills (⚔️) and counter-kills (🛡️) and parse killer/victim reliably
-//  - when parsing counter-kill logs, K/D/A are updated properly
+// [REPLACE FUNCTION LiveGamePlayer]
 // [REPLACE FUNCTION LiveGamePlayer]
 function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onClose, externalGlobalBans = [] }) {
   const [currentSet, setCurrentSet] = useState(1);
@@ -1851,10 +1850,18 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
 
             if (!result || !result.picks) throw new Error("Draft failed");
 
-            // [FIX] Ensure playerData exists for income calculation
+            // Initialize Player Stats for Live View
             const initPlayers = [
-                ...result.picks.A.map(p => ({ ...p, side: 'BLUE', k:0, d:0, a:0, currentGold: 500, lvl: 1, xp: 0, playerData: p.playerData || { 포지션: 'TOP', 상세: { 성장: 50 } } })),
-                ...result.picks.B.map(p => ({ ...p, side: 'RED', k:0, d:0, a:0, currentGold: 500, lvl: 1, xp: 0, playerData: p.playerData || { 포지션: 'TOP', 상세: { 성장: 50 } } }))
+                ...result.picks.A.map(p => ({ 
+                    ...p, side: 'BLUE', k: 0, d: 0, a: 0, 
+                    currentGold: 500, lvl: 1, xp: 0, 
+                    playerData: p.playerData || { 포지션: 'TOP', 상세: { 성장: 50 } } 
+                })),
+                ...result.picks.B.map(p => ({ 
+                    ...p, side: 'RED', k: 0, d: 0, a: 0, 
+                    currentGold: 500, lvl: 1, xp: 0, 
+                    playerData: p.playerData || { 포지션: 'TOP', 상세: { 성장: 50 } } 
+                }))
             ];
 
             setSimulationData({ ...result, blueTeam, redTeam });
@@ -1890,8 +1897,6 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
     const timer = setInterval(() => {
       setGameTime(prevTime => {
         const nextTime = prevTime + 1;
-        
-        // [FIX Issues 2 & 3] Calculate current minute for scaling
         const currentMinute = Math.floor(nextTime / 60) + 1; 
 
         // A. Process Logs
@@ -1909,10 +1914,12 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                 players: prevStats.players.map(p => ({...p})) 
             };
 
-            // Process Log Events
             if (currentLogs.length > 0) {
                 setDisplayLogs(prevLogs => [...prevLogs, ...currentLogs].slice(-15));
                 currentLogs.forEach(l => {
+                    // [MODIFIED] Robust Regex for Stats Parsing
+                    // Matches format: ⚔️ [POS] Name (Champ) ➜ ☠️ [POS] Name (Champ)
+                    // Captures Name inside the text between ] and (
                     if (l.includes('⚔️') || l.includes('🛡️')) {
                         const killerMatch = l.match(/(?:⚔️|🛡️)\s*\[.*?\]\s*(.*?)\s*\(/);
                         const victimMatch = l.match(/➜\s*☠️\s*\[.*?\]\s*(.*?)\s*\(/);
@@ -1920,18 +1927,29 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                         if (killerMatch && victimMatch) {
                             const killerName = killerMatch[1].trim();
                             const victimName = victimMatch[1].trim();
+                            
                             const killer = nextStats.players.find(p => p.playerName === killerName);
                             const victim = nextStats.players.find(p => p.playerName === victimName);
                             
-                            if (killer) { killer.k++; nextStats.kills[killer.side]++; killer.currentGold += 300; }
-                            if (victim) { victim.d++; }
+                            if (killer) { 
+                                killer.k++; 
+                                nextStats.kills[killer.side]++; 
+                                killer.currentGold += 300; 
+                            }
+                            if (victim) { 
+                                victim.d++; 
+                            }
                             
                             if (l.includes('assists:')) {
                                 const assistPart = l.split('assists:')[1];
+                                // Assumes assists are comma separated names
                                 const assisters = assistPart.split(',').map(s => s.trim());
                                 assisters.forEach(aName => {
                                     const ast = nextStats.players.find(p => p.playerName === aName);
-                                    if (ast) { ast.a++; ast.currentGold += 150; }
+                                    if (ast) { 
+                                        ast.a++; 
+                                        ast.currentGold += 150; 
+                                    }
                                 });
                             }
                         }
@@ -1939,33 +1957,27 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                     if (l.includes('포탑') || l.includes('억제기')) {
                         if (l.includes(simulationData.blueTeam.name)) {
                             nextStats.towers.BLUE++; 
-                            nextStats.players.filter(p => p.side === 'BLUE').forEach(p => p.currentGold += 100);
+                            nextStats.players.filter(p => p.side === 'BLUE').forEach(p => p.currentGold += 150);
                         } else {
                             nextStats.towers.RED++;
-                            nextStats.players.filter(p => p.side === 'RED').forEach(p => p.currentGold += 100);
+                            nextStats.players.filter(p => p.side === 'RED').forEach(p => p.currentGold += 150);
                         }
                     }
                 });
             }
 
-            // [FIX Issues 2 & 3] Apply Gold/XP Formula Correctly
+            // Passive Gold & XP Logic (Per Second)
             nextStats.players.forEach(p => {
-                // Check if player is dead
-                const isDead = p.deadUntil && p.deadUntil > nextTime;
+                // Check if dead (simplified for UI: if they died recently, pause income slightly or ignore for smoothness)
+                // For accurate simulation match, we just apply income.
                 
-                // Calculate raw minute income
-                const income = calculateIndividualIncome(p, currentMinute, isDead ? 0 : 1.0); 
+                const income = calculateIndividualIncome(p, currentMinute, 1.0); 
                 
-                // Apply 1/60th of the income per second
-                const goldPerSec = income.gold / 60;
-                const xpPerSec = income.xp / 60;
-                
-                p.currentGold += goldPerSec;
-                p.xp += xpPerSec;
+                // Add 1/60th of minute income per second
+                p.currentGold += (income.gold / 60);
+                p.xp += (income.xp / 60);
 
-                // Level Up Logic
-                // 1->2: 280, 2->3: 380... Formula: 180 + (Level * 100)
-                // Cap at 18
+                // Level Up Cap
                 if (p.lvl < 18) {
                     const reqXp = 180 + (p.lvl * 100);
                     if (p.xp >= reqXp) {
@@ -1975,7 +1987,7 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                 }
             });
 
-            // Sum Team Gold
+            // Recalculate Team Totals
             nextStats.gold.BLUE = Math.floor(nextStats.players.filter(p=>p.side==='BLUE').reduce((a,b)=>a+b.currentGold,0));
             nextStats.gold.RED = Math.floor(nextStats.players.filter(p=>p.side==='RED').reduce((a,b)=>a+b.currentGold,0));
 
@@ -1985,7 +1997,11 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
         // C. Check End
         if (nextTime >= finalSec) {
             setGameTime(finalSec);
-            setLiveStats(st => ({ ...st, kills: simulationData.gameResult.finalKills }));
+            // Sync final stats exactly to ensure result screen is correct
+            setLiveStats(st => ({ 
+                ...st, 
+                kills: simulationData.gameResult.finalKills 
+            }));
             setTimeout(() => setPhase('SET_RESULT'), 1000);
             return finalSec;
         }
@@ -1995,18 +2011,21 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
     return () => clearInterval(timer);
   }, [phase, simulationData, playbackSpeed]);
 
-
   if (!simulationData && phase !== 'SET_RESULT') return <div className="fixed inset-0 bg-black text-white flex items-center justify-center z-[200] font-bold text-3xl">경기 로딩 중...</div>;
 
   const { blueTeam, redTeam } = simulationData || {};
 
+  // [MODIFIED] Determine which score belongs to which side
+  const isBlueTeamA = blueTeam?.name === teamA.name;
+  const blueTeamWins = isBlueTeamA ? winsA : winsB;
+  const redTeamWins = isBlueTeamA ? winsB : winsA;
+
   return (
     <div className="fixed inset-0 bg-gray-900 z-[200] flex flex-col text-white font-sans">
       
-      {/* 1. Header: Score & Team Names & Bans (Redesigned for Issue 4) */}
+      {/* 1. Header */}
       <div className="bg-black border-b border-gray-800 flex flex-col shrink-0">
           
-          {/* [FIX Issue 4] Global Bans at very top */}
           {globalBanList.length > 0 && (
             <div className="bg-purple-900/50 text-purple-200 text-[10px] text-center py-1 font-bold border-b border-purple-900 flex justify-center gap-4">
                 <span className="opacity-70">FEARLESS BANS:</span>
@@ -2015,17 +2034,17 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
           )}
 
           <div className="h-24 flex items-center justify-between px-8">
-            {/* Blue Team */}
+            {/* Blue Team (Left) */}
             <div className="flex flex-col w-1/3">
                  <div className="flex items-center gap-4 mb-2">
                     <div className="text-4xl font-black text-blue-500">{blueTeam?.name}</div>
                     <div className="flex gap-2">
+                        {/* [MODIFIED] Display wins for whoever is on Blue side */}
                         {Array(match.format === 'BO5' ? 3 : 2).fill(0).map((_,i) => (
-                            <div key={i} className={`w-3 h-3 rounded-full ${i < winsA ? 'bg-blue-500' : 'bg-gray-700'}`}></div>
+                            <div key={i} className={`w-3 h-3 rounded-full ${i < blueTeamWins ? 'bg-blue-500' : 'bg-gray-700'}`}></div>
                         ))}
                     </div>
                  </div>
-                 {/* [FIX Issue 4] Blue Bans Here */}
                  <div className="flex gap-2">
                     <span className="text-blue-500 font-bold text-xs self-center">BAN:</span>
                     {simulationData?.bans?.A?.map((b,i) => (
@@ -2052,17 +2071,17 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                 </div>
             </div>
 
-            {/* Red Team */}
+            {/* Red Team (Right) */}
             <div className="flex flex-col items-end w-1/3">
                  <div className="flex items-center gap-4 mb-2">
                     <div className="flex gap-2">
+                        {/* [MODIFIED] Display wins for whoever is on Red side */}
                         {Array(match.format === 'BO5' ? 3 : 2).fill(0).map((_,i) => (
-                            <div key={i} className={`w-3 h-3 rounded-full ${i < winsB ? 'bg-red-500' : 'bg-gray-700'}`}></div>
+                            <div key={i} className={`w-3 h-3 rounded-full ${i < redTeamWins ? 'bg-red-500' : 'bg-gray-700'}`}></div>
                         ))}
                     </div>
                     <div className="text-4xl font-black text-red-500">{redTeam?.name}</div>
                  </div>
-                 {/* [FIX Issue 4] Red Bans Here */}
                  <div className="flex gap-2 justify-end">
                     {simulationData?.bans?.B?.map((b,i) => (
                         <span key={i} className="text-xs text-gray-300 font-medium bg-gray-800 px-1 rounded">{b}</span>
@@ -2110,7 +2129,6 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                 ))}
             </div>
             
-            {/* [FIX Issue 6] Added x4, x16, x32 buttons */}
             <div className="h-20 bg-gray-900 border-t border-gray-800 flex items-center justify-center gap-2">
                 <button onClick={() => setPlaybackSpeed(0)} className="w-12 h-10 rounded bg-gray-700 hover:bg-gray-600 flex items-center justify-center text-xl">⏸</button>
                 {[1, 4, 8, 16, 32].map(speed => (
@@ -2168,7 +2186,6 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                   if (resultProcessed) return;
                   setResultProcessed(true);
 
-                  // [FIX Issue 5] Calculate new wins locally to determine match end properly
                   const winnerIsA = simulationData.winnerName === teamA.name;
                   const newA = winsA + (winnerIsA ? 1 : 0);
                   const newB = winsB + (!winnerIsA ? 1 : 0);
@@ -2181,7 +2198,6 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                   setMatchHistory(newHist);
                   setGlobalBanList(prev => [...prev, ...(simulationData.usedChamps||[])]);
                   
-                  // Check Match End Condition
                   if(newA >= targetWins || newB >= targetWins) {
                       const winnerName = newA > newB ? teamA.name : teamB.name;
                       onMatchComplete(match, { winner: winnerName, scoreString: `${newA}:${newB}`, history: newHist });
@@ -2192,7 +2208,6 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
              }} 
              className="px-12 py-5 bg-white text-black rounded-full font-black text-2xl hover:scale-105 transition shadow-xl"
              >
-                 {/* [FIX Issue 5] Logic for button label */}
                  {(winsA + (simulationData.winnerName === teamA.name ? 1 : 0) >= targetWins) || 
                   (winsB + (simulationData.winnerName === teamB.name ? 1 : 0) >= targetWins)
                     ? '매치 종료 (Finish Match)' 
