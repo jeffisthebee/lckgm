@@ -1720,36 +1720,52 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
   const [currentBans, setCurrentBans] = useState({ A: [], B: [] });
 
   const startSet = useCallback(() => {
-      setPhase('LOADING');
-      // Reset processing flag for new set
-      setResultProcessed(false);
-      
-      setTimeout(() => {
-          const blueTeam = currentSet % 2 !== 0 ? teamA : teamB;
-          const redTeam = currentSet % 2 !== 0 ? teamB : teamA;
-          
-          const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
+    setPhase('LOADING');
+    setResultProcessed(false);
+    
+    setTimeout(() => {
+        try {
+            const blueTeam = currentSet % 2 !== 0 ? teamA : teamB;
+            const redTeam = currentSet % 2 !== 0 ? teamB : teamA;
+            
+            // [FIX] Safety check for roster existence
+            if (!blueTeam.roster || !redTeam.roster) {
+               throw new Error("Team Roster is missing in LiveGamePlayer");
+            }
 
-          setSimulationData({ ...result, blueTeam, redTeam });
-          
-          // Reset for new game
-          setLiveStats({
-            kills: { BLUE: 0, RED: 0 },
-            gold: { BLUE: 2500, RED: 2500 },
-            towers: { BLUE: 0, RED: 0 },
-            players: [
-                ...result.picks.A.map(p => ({ ...p, side: 'BLUE', k:0, d:0, a:0, currentGold: 500, lvl: 1 })),
-                ...result.picks.B.map(p => ({ ...p, side: 'RED', k:0, d:0, a:0, currentGold: 500, lvl: 1 }))
-            ]
-          });
-          setVisualDraft({ bluePicks: Array(5).fill(null), redPicks: Array(5).fill(null), blueBans: [], redBans: [] });
-          setCurrentBans({ A: result.bans?.A || [], B: result.bans?.B || [] });
-          
-          setGameTime(0);
-          setDisplayLogs([]);
-          setPhase('DRAFT');
-      }, 500);
-  }, [currentSet, teamA, teamB, globalBanList, simOptions]);
+            // Run Logic
+            const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
+
+            // [FIX] Check if result is valid
+            if (!result || !result.picks) {
+               throw new Error("Simulation returned invalid data");
+            }
+
+            setSimulationData({ ...result, blueTeam, redTeam });
+            
+            setLiveStats({
+              kills: { BLUE: 0, RED: 0 },
+              gold: { BLUE: 2500, RED: 2500 },
+              towers: { BLUE: 0, RED: 0 },
+              players: [
+                  ...result.picks.A.map(p => ({ ...p, side: 'BLUE', k:0, d:0, a:0, currentGold: 500, lvl: 1 })),
+                  ...result.picks.B.map(p => ({ ...p, side: 'RED', k:0, d:0, a:0, currentGold: 500, lvl: 1 }))
+              ]
+            });
+            setVisualDraft({ bluePicks: Array(5).fill(null), redPicks: Array(5).fill(null), blueBans: [], redBans: [] });
+            setCurrentBans({ A: result.bans?.A || [], B: result.bans?.B || [] });
+            
+            setGameTime(0);
+            setDisplayLogs([]);
+            setPhase('DRAFT');
+
+        } catch (e) {
+            console.error("Critical Simulation Error:", e);
+            alert("시뮬레이션 생성 중 오류가 발생했습니다. 콘솔을 확인해주세요.");
+            onClose(); // Close the modal to prevent getting stuck
+        }
+    }, 500);
+}, [currentSet, teamA, teamB, globalBanList, simOptions, onClose]);
 
   useEffect(() => {
     if (phase === 'READY') startSet();
@@ -2510,30 +2526,35 @@ function Dashboard() {
   };
 
   const runSimulationForMatch = (match, isPlayerMatch) => {
-    // [FIX] 1. Normalize Team IDs (Handle Strings, Numbers, or Objects safely)
+    // [FIX] 1. Normalize Team IDs to Numbers to ensure .find() works
     const t1Id = typeof match.t1 === 'object' ? match.t1.id : Number(match.t1);
     const t2Id = typeof match.t2 === 'object' ? match.t2.id : Number(match.t2);
 
     // [FIX] 2. Find teams using the normalized IDs
-    const t1Obj = teams.find(t => t.id === t1Id);
-    const t2Obj = teams.find(t => t.id === t2Id);
+    const t1Obj = teams.find(t => Number(t.id) === t1Id);
+    const t2Obj = teams.find(t => Number(t.id) === t2Id);
 
-    // [FIX] 3. Safety check to prevent crash
+    // [FIX] 3. Safety check with explicit error alert
     if (!t1Obj || !t2Obj) {
-        console.error("Simulation Error: Teams not found.", { t1Id, t2Id });
-        alert("팀 데이터를 찾을 수 없어 경기를 진행할 수 없습니다.");
+        console.error("Simulation Error: Teams not found.", { t1Id, t2Id, teams });
+        alert(`팀 데이터를 찾을 수 없습니다. (ID: ${t1Id} vs ${t2Id})`);
         return;
     }
 
+    // [FIX] 4. Ensure Roster Exists (Critical for Engine)
+    const t1Roster = getTeamRoster(t1Obj.name);
+    const t2Roster = getTeamRoster(t2Obj.name);
+
     const simOptions = {
-        currentChampionList: league.currentChampionList,
+        currentChampionList: league.currentChampionList || championList, // Fallback to global list if missing
         difficulty: isPlayerMatch ? league.difficulty : undefined,
         playerTeamName: isPlayerMatch ? myTeam.name : undefined,
     };
 
+    // Run Simulation
     const result = simulateMatch(
-      { name: t1Obj.name, roster: getTeamRoster(t1Obj.name) },
-      { name: t2Obj.name, roster: getTeamRoster(t2Obj.name) },
+      { ...t1Obj, roster: t1Roster }, 
+      { ...t2Obj, roster: t2Roster },
       match.format,
       simOptions
     );
@@ -2548,86 +2569,64 @@ function Dashboard() {
     
     applyMatchResult(match, result);
   };
-
-  const handleProceedNextMatch = () => {
-    if (!nextGlobalMatch || isMyNextMatch) return;
-    runSimulationForMatch(nextGlobalMatch, false);
-  };
-
 // ==========================================
   // [수정됨] Dashboard 내부 로직 통합 (여기서부터 복사하세요)
   // ==========================================
 
   // [1] 내 경기 시작하기 (안전장치 추가됨)
+  // [1] 내 경기 시작하기 (안전장치 추가됨)
   const handleStartMyMatch = () => {
-  try {
-    // 1. 경기 데이터 확인
-    if (!nextGlobalMatch) {
-      alert("진행할 경기가 없습니다.");
-      return;
+    try {
+      // 1. 경기 데이터 확인
+      if (!nextGlobalMatch) {
+        alert("진행할 경기가 없습니다.");
+        return;
+      }
+  
+      // 2. 팀 ID 정규화 (숫자로 변환)
+      const t1Id = typeof nextGlobalMatch.t1 === 'object' ? nextGlobalMatch.t1.id : Number(nextGlobalMatch.t1);
+      const t2Id = typeof nextGlobalMatch.t2 === 'object' ? nextGlobalMatch.t2.id : Number(nextGlobalMatch.t2);
+  
+      // 3. 팀 객체 찾기
+      const t1Obj = teams.find(t => Number(t.id) === t1Id);
+      const t2Obj = teams.find(t => Number(t.id) === t2Id);
+  
+      if (!t1Obj || !t2Obj) {
+        console.error("팀 찾기 실패:", { t1Id, t2Id, nextGlobalMatch });
+        alert(`팀 데이터 오류! T1 ID: ${t1Id}, T2 ID: ${t2Id}`);
+        return;
+      }
+  
+      // 4. 로스터 가져오기 (필수)
+      // 이 부분이 없으면 시뮬레이션 엔진이 선수 데이터를 찾지 못해 멈춥니다.
+      const t1Roster = getTeamRoster(t1Obj.name);
+      const t2Roster = getTeamRoster(t2Obj.name);
+  
+      // 로스터 검증
+      if (!t1Roster || t1Roster.length === 0) {
+        alert(`${t1Obj.name}의 로스터 데이터를 불러올 수 없습니다.`);
+        return;
+      }
+      if (!t2Roster || t2Roster.length === 0) {
+        alert(`${t2Obj.name}의 로스터 데이터를 불러올 수 없습니다.`);
+        return;
+      }
+  
+      // 5. 라이브 매치 데이터 설정
+      // [CRITICAL FIX] roster를 반드시 포함해서 전달해야 합니다.
+      setLiveMatchData({
+        match: nextGlobalMatch,
+        teamA: { ...t1Obj, roster: t1Roster },
+        teamB: { ...t2Obj, roster: t2Roster }
+      });
+      
+      setIsLiveGameMode(true);
+  
+    } catch (error) {
+      console.error("경기 시작 오류:", error);
+      alert(`경기 시작 실패: ${error.message}`);
     }
-
-    // 2. 팀 ID 정규화 (숫자로 변환)
-    const t1Id = typeof nextGlobalMatch.t1 === 'object' ? nextGlobalMatch.t1.id : parseInt(nextGlobalMatch.t1);
-    const t2Id = typeof nextGlobalMatch.t2 === 'object' ? nextGlobalMatch.t2.id : parseInt(nextGlobalMatch.t2);
-
-    // 3. 팀 객체 찾기
-    const t1Obj = teams.find(t => t.id === t1Id);
-    const t2Obj = teams.find(t => t.id === t2Id);
-
-    if (!t1Obj || !t2Obj) {
-      console.error("팀 찾기 실패:", { t1Id, t2Id, nextGlobalMatch });
-      alert(`팀 데이터 오류! T1 ID: ${t1Id}, T2 ID: ${t2Id}`);
-      return;
-    }
-
-    // 4. 로스터 가져오기 (안전 장치 추가)
-    const t1Roster = getTeamRoster(t1Obj.name);
-    const t2Roster = getTeamRoster(t2Obj.name);
-
-    if (!t1Roster || t1Roster.length < 5) {
-      alert(`${t1Obj.name} 로스터가 부족합니다. (현재: ${t1Roster?.length || 0}명)`);
-      return;
-    }
-    if (!t2Roster || t2Roster.length < 5) {
-      alert(`${t2Obj.name} 로스터가 부족합니다. (현재: ${t2Roster?.length || 0}명)`);
-      return;
-    }
-    const rosterIsValid = (roster) => Array.isArray(roster) &&
-  roster.length === 5 &&
-  roster.every(p => p && typeof p.이름 === 'string' && p.포지션);
-
-if (!rosterIsValid(t1Roster)) {
-  alert(`${t1Obj.name} 로스터 데이터가 불완전합니다. 관리자에게 문의하세요.`);
-  return;
-}
-if (!rosterIsValid(t2Roster)) {
-  alert(`${t2Obj.name} 로스터 데이터가 불완전합니다. 관리자에게 문의하세요.`);
-  return;
-}
-
-    // 5. 라이브 매치 데이터 설정
-    console.log("경기 시작:", {
-      match: nextGlobalMatch,
-      teamA: t1Obj.name,
-      teamB: t2Obj.name,
-      rosterA: t1Roster.length,
-      rosterB: t2Roster.length
-    });
-
-    setLiveMatchData({
-      match: nextGlobalMatch,
-      teamA: { ...t1Obj, roster: t1Roster },
-      teamB: { ...t2Obj, roster: t2Roster }
-    });
-    
-    setIsLiveGameMode(true);
-
-  } catch (error) {
-    console.error("경기 시작 오류:", error);
-    alert(`경기 시작 실패: ${error.message}`);
-  }
-};
+  };
 
   // [2] 경기 종료 처리 (이 함수가 없으면 흰 화면 뜸)
   const handleLiveMatchComplete = (match, resultData) => {
