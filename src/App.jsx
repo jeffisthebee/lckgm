@@ -2275,11 +2275,7 @@ function Dashboard() {
   const t1 = nextGlobalMatch ? teams.find(t => t.id === safeId(nextGlobalMatch.t1)) : null;
   const t2 = nextGlobalMatch ? teams.find(t => t.id === safeId(nextGlobalMatch.t2)) : null;
 
-  const getTeamRoster = (teamName) => {
-    const positions = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
-    const players = playerList.filter(p => p.팀 === teamName);
-    return positions.map(pos => players.find(p => p.포지션 === pos) || players[0]); 
-  };
+  
 
   const applyMatchResult = (targetMatch, result) => {
     const updatedMatches = league.matches.map(m => {
@@ -2525,32 +2521,27 @@ function Dashboard() {
   };
 
   const runSimulationForMatch = (match, isPlayerMatch) => {
-    // [FIX] 1. Normalize Team IDs to Numbers to ensure .find() works
     const t1Id = typeof match.t1 === 'object' ? match.t1.id : Number(match.t1);
     const t2Id = typeof match.t2 === 'object' ? match.t2.id : Number(match.t2);
 
-    // [FIX] 2. Find teams using the normalized IDs
     const t1Obj = teams.find(t => Number(t.id) === t1Id);
     const t2Obj = teams.find(t => Number(t.id) === t2Id);
 
-    // [FIX] 3. Safety check with explicit error alert
     if (!t1Obj || !t2Obj) {
-        console.error("Simulation Error: Teams not found.", { t1Id, t2Id, teams });
-        alert(`팀 데이터를 찾을 수 없습니다. (ID: ${t1Id} vs ${t2Id})`);
+        console.error("Simulation Error: Teams not found.", { t1Id, t2Id });
         return;
     }
 
-    // [FIX] 4. Ensure Roster Exists (Critical for Engine)
+    // Use Global getTeamRoster
     const t1Roster = getTeamRoster(t1Obj.name);
     const t2Roster = getTeamRoster(t2Obj.name);
 
     const simOptions = {
-        currentChampionList: league.currentChampionList || championList, // Fallback to global list if missing
+        currentChampionList: league.currentChampionList || championList,
         difficulty: isPlayerMatch ? league.difficulty : undefined,
         playerTeamName: isPlayerMatch ? myTeam.name : undefined,
     };
 
-    // Run Simulation
     const result = simulateMatch(
       { ...t1Obj, roster: t1Roster }, 
       { ...t2Obj, roster: t2Roster },
@@ -2567,7 +2558,7 @@ function Dashboard() {
     }
     
     applyMatchResult(match, result);
-  };
+};
 // ==========================================
   // [수정됨] Dashboard 내부 로직 통합 (여기서부터 복사하세요)
   // ==========================================
@@ -2607,11 +2598,9 @@ const handleProceedNextMatch = () => {
         return;
       }
   
-      // 1. Normalize IDs
       const t1Id = typeof nextGlobalMatch.t1 === 'object' ? nextGlobalMatch.t1.id : Number(nextGlobalMatch.t1);
       const t2Id = typeof nextGlobalMatch.t2 === 'object' ? nextGlobalMatch.t2.id : Number(nextGlobalMatch.t2);
   
-      // 2. Find Team Objects
       const t1Obj = teams.find(t => Number(t.id) === t1Id);
       const t2Obj = teams.find(t => Number(t.id) === t2Id);
   
@@ -2620,11 +2609,11 @@ const handleProceedNextMatch = () => {
         return;
       }
   
-      // 3. Fetch Rosters (Using the new safe function)
+      // USE GLOBAL getTeamRoster (Defined at top of file)
+      // Pass the raw team name (e.g., 'GEN') - the global function handles aliases like '젠지 (Gen.G)'
       const t1Roster = getTeamRoster(t1Obj.name);
       const t2Roster = getTeamRoster(t2Obj.name);
   
-      // 4. Set Live Data WITH Rosters attached
       setLiveMatchData({
         match: nextGlobalMatch,
         teamA: { ...t1Obj, roster: t1Roster },
