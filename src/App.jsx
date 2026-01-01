@@ -686,10 +686,17 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
     // ... inside runGameTickEngine ...
 
     // ... inside runGameTickEngine ...
+    // ... inside runGameTickEngine ... (around line 890)
+
+    // [FIX] Corrected processIncome with aliveRatio definition
     const processIncome = (picks, teamSide) => {
       picks.forEach(p => {
-          // ... (existing aliveRatio calculation) ...
+          // 1. Calculate aliveRatio (FIX: This was missing)
+          // If deadUntil is greater than current minute start, player is dead.
+          const currentAbs = (time - 1) * 60;
+          const aliveRatio = p.deadUntil > currentAbs ? 0 : 1.0;
           
+          // 2. Calculate Income
           const income = calculateIndividualIncome(p, time, aliveRatio);
           
           if (time > 0) {
@@ -700,7 +707,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
           if (p.level < 18) {
             p.xp += income.xp;
 
-            // [REQ 1] Updated Level Up Formula: 180 + (Current Level * 100)
+            // Updated Level Up Formula
             while (p.level < 18) {
                 const requiredXP = 180 + (p.level * 100);
                 if (p.xp >= requiredXP) {
@@ -712,7 +719,9 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
             }
         }
       });
-  };
+    };
+
+    // ... continue with processIncome(picksBlue, SIDES.BLUE); ...
 
 
     processIncome(picksBlue, SIDES.BLUE);
