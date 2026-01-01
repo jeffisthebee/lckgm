@@ -2543,24 +2543,6 @@ function Dashboard() {
     applyMatchResult(match, result);
   };
 
-    const result = simulateMatch(
-      { name: t1Obj.name, roster: getTeamRoster(t1Obj.name) },
-      { name: t2Obj.name, roster: getTeamRoster(t2Obj.name) },
-      match.format,
-      simOptions
-    );
-
-    if (isPlayerMatch) {
-        setMyMatchResult({
-            resultData: result,
-            teamA: t1Obj,
-            teamB: t2Obj
-        });
-    }
-    
-    applyMatchResult(match, result);
-  };
-
   const handleProceedNextMatch = () => {
     if (!nextGlobalMatch || isMyNextMatch) return;
     runSimulationForMatch(nextGlobalMatch, false);
@@ -3858,7 +3840,7 @@ if (!rosterIsValid(t2Roster)) {
       </div>
     </div>
   );
-
+}
 
 export default function App() {
   return (
