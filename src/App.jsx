@@ -2504,14 +2504,44 @@ function Dashboard() {
   };
 
   const runSimulationForMatch = (match, isPlayerMatch) => {
-    const t1Obj = teams.find(t => t.id === match.t1);
-    const t2Obj = teams.find(t => t.id === match.t2);
+    // [FIX] 1. Normalize Team IDs (Handle Strings, Numbers, or Objects safely)
+    const t1Id = typeof match.t1 === 'object' ? match.t1.id : Number(match.t1);
+    const t2Id = typeof match.t2 === 'object' ? match.t2.id : Number(match.t2);
+
+    // [FIX] 2. Find teams using the normalized IDs
+    const t1Obj = teams.find(t => t.id === t1Id);
+    const t2Obj = teams.find(t => t.id === t2Id);
+
+    // [FIX] 3. Safety check to prevent crash
+    if (!t1Obj || !t2Obj) {
+        console.error("Simulation Error: Teams not found.", { t1Id, t2Id });
+        alert("팀 데이터를 찾을 수 없어 경기를 진행할 수 없습니다.");
+        return;
+    }
 
     const simOptions = {
         currentChampionList: league.currentChampionList,
         difficulty: isPlayerMatch ? league.difficulty : undefined,
         playerTeamName: isPlayerMatch ? myTeam.name : undefined,
     };
+
+    const result = simulateMatch(
+      { name: t1Obj.name, roster: getTeamRoster(t1Obj.name) },
+      { name: t2Obj.name, roster: getTeamRoster(t2Obj.name) },
+      match.format,
+      simOptions
+    );
+
+    if (isPlayerMatch) {
+        setMyMatchResult({
+            resultData: result,
+            teamA: t1Obj,
+            teamB: t2Obj
+        });
+    }
+    
+    applyMatchResult(match, result);
+  };
 
     const result = simulateMatch(
       { name: t1Obj.name, roster: getTeamRoster(t1Obj.name) },
@@ -3828,7 +3858,7 @@ if (!rosterIsValid(t2Roster)) {
       </div>
     </div>
   );
-}
+
 
 export default function App() {
   return (
