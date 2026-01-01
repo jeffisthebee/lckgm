@@ -477,16 +477,16 @@ function resolveCombat(powerA, powerB) {
 
 // Replace the existing calculateIndividualIncome(...) implementation with this.
 // Implements the XP rules you requested and keeps gold calculation unchanged.
+// [REQ 1] New Income Calculation Logic
 function calculateIndividualIncome(pick, time, aliveRatio = 1.0) {
-  // Map positions to keys in SIM_CONSTANTS
   let roleKey = pick.playerData.포지션 || 'TOP';
-  if (['원거리', 'BOT'].includes(roleKey)) roleKey = 'ADC';
-  if (['서포터', 'SPT'].includes(roleKey)) roleKey = 'SUP';
-  if (['정글'].includes(roleKey)) roleKey = 'JGL';
-  if (['미드'].includes(roleKey)) roleKey = 'MID';
-  if (['탑'].includes(roleKey)) roleKey = 'TOP';
+  // Map Korean roles to keys
+  if (['원거리', 'BOT', 'ADC'].includes(roleKey)) roleKey = 'ADC';
+  else if (['서포터', 'SPT', 'SUP'].includes(roleKey)) roleKey = 'SUP';
+  else if (['정글', 'JGL'].includes(roleKey)) roleKey = 'JGL';
+  else if (['미드', 'MID'].includes(roleKey)) roleKey = 'MID';
+  else roleKey = 'TOP';
 
-  // Stats fallback
   const rawStats = pick.playerData.상세 || {};
   const stats = {
       라인전: rawStats.라인전 || 50,
@@ -500,24 +500,25 @@ function calculateIndividualIncome(pick, time, aliveRatio = 1.0) {
   const baseXP = SIM_CONSTANTS.BASE_INCOME.XP[roleKey] || 490;
   const baseGold = SIM_CONSTANTS.BASE_INCOME.GOLD[roleKey] || 375;
 
-  let factor = 0;
+  let abilityScore = 0;
 
-  // [REQ 5] Formula Implementation
+  // [REQ 1] Apply specific Ability Formulas
   if (time < 15) {
-      // Early: (Laning*0.5 + Mechanics*0.3 + Stability*0.2) / 90
-      factor = ((stats.라인전 * 0.5) + (stats.무력 * 0.3) + (stats.안정성 * 0.2)) / 90;
+      // Early: (Line*0.5 + Mechanics*0.3 + Stability*0.2)
+      abilityScore = (stats.라인전 * 0.5) + (stats.무력 * 0.3) + (stats.안정성 * 0.2);
   } else if (time < 30) {
-      // Mid: (Growth*0.4 + Macro*0.4 + Mechanics*0.2) / 90
-      factor = ((stats.성장 * 0.4) + (stats.운영 * 0.4) + (stats.무력 * 0.2)) / 90;
+      // Mid: (Growth*0.4 + Macro*0.4 + Mechanics*0.2)
+      abilityScore = (stats.성장 * 0.4) + (stats.운영 * 0.4) + (stats.무력 * 0.2);
   } else {
-      // Late: (Teamfight*0.3 + Macro*0.3 + Stability*0.3) / 90
-      factor = ((stats.한타 * 0.3) + (stats.운영 * 0.3) + (stats.안정성 * 0.3)) / 90;
+      // Late: (Teamfight*0.3 + Macro*0.3 + Stability*0.3)
+      abilityScore = (stats.한타 * 0.3) + (stats.운영 * 0.3) + (stats.안정성 * 0.3);
   }
 
-  // Cap factor to prevent broken economy (0.5 ~ 1.2 range)
-  factor = Math.max(0.5, Math.min(1.2, factor));
+  // To make the stats impactful, we use them as a multiplier factor to the base.
+  // Formula: Base * (0.5 + (AbilityScore / 90))
+  // Example: If AbilityScore is 90 (S tier), Factor is 1.5x. If 45, Factor is 1.0x.
+  const factor = 0.5 + (abilityScore / 90);
 
-  // Calculate final values (Applying death penalty via aliveRatio)
   const finalXP = Math.floor(baseXP * factor * aliveRatio);
   const finalGold = Math.floor(baseGold * factor * aliveRatio);
 
@@ -667,22 +668,13 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
     
     // ... inside runGameTickEngine ...
 
+    // ... inside runGameTickEngine ...
     const processIncome = (picks, teamSide) => {
       picks.forEach(p => {
-          const startMinAbs = minuteStartAbs;
-          const endMinAbs = minuteStartAbs + 60;
-          let deadDuration = 0;
+          // ... (existing aliveRatio calculation) ...
           
-          if (p.deadUntil > startMinAbs) {
-              const endOfDeath = Math.min(endMinAbs, p.deadUntil);
-              deadDuration = Math.max(0, endOfDeath - startMinAbs);
-          }
-          const aliveRatio = (60 - deadDuration) / 60;
-  
-          // Use the new formula from Step 2
           const income = calculateIndividualIncome(p, time, aliveRatio);
           
-          // Add passive gold (500 start gold is handled at initialization)
           if (time > 0) {
              p.currentGold += income.gold;
              state.gold[teamSide] += income.gold;
@@ -691,7 +683,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
           if (p.level < 18) {
             p.xp += income.xp;
 
-            // [REQ 5] Level Up Formula: 180 + (Current Level * 100)
+            // [REQ 1] Updated Level Up Formula: 180 + (Current Level * 100)
             while (p.level < 18) {
                 const requiredXP = 180 + (p.level * 100);
                 if (p.xp >= requiredXP) {
@@ -1706,6 +1698,9 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
   const [simulationData, setSimulationData] = useState(null);
   const [displayLogs, setDisplayLogs] = useState([]);
   
+  // [Fix 4] Prevent double processing of results
+  const [resultProcessed, setResultProcessed] = useState(false);
+
   // Visual Draft State
   const [visualDraft, setVisualDraft] = useState({
       bluePicks: Array(5).fill(null), redPicks: Array(5).fill(null), 
@@ -1726,6 +1721,9 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
 
   const startSet = useCallback(() => {
       setPhase('LOADING');
+      // Reset processing flag for new set
+      setResultProcessed(false);
+      
       setTimeout(() => {
           const blueTeam = currentSet % 2 !== 0 ? teamA : teamB;
           const redTeam = currentSet % 2 !== 0 ? teamB : teamA;
@@ -1757,15 +1755,15 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
     if (phase === 'READY') startSet();
   }, [phase, startSet]);
 
-  // [REQ 4] Visual Draft Animation
+  // [Fix 3] Visual Draft Animation - Slowed down to 10 seconds (10000ms)
   useEffect(() => {
     if (phase !== 'DRAFT' || !simulationData) return;
     const draftLogs = simulationData.draftLogs || [];
     let idx = 0;
     
     // Pick/Ban Sequence mapping for visual slots
-    const BLUE_PICK_ORDER = [0, 3, 4, 7, 8]; // Index in the picks array
-    const RED_PICK_ORDER = [0, 1, 2, 5, 6];  // Index in the picks array
+    const BLUE_PICK_ORDER = [0, 3, 4, 7, 8]; 
+    const RED_PICK_ORDER = [0, 1, 2, 5, 6]; 
     let bPickIdx = 0;
     let rPickIdx = 0;
 
@@ -1779,8 +1777,6 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
       const log = draftLogs[idx];
       setDisplayLogs(prev => [...prev, log].slice(-8)); 
       
-      // Parse Logic matching DRAFT_SEQUENCE
-      // Log format example: "[1] 블루 1밴: 🚫 Ahri" or "[7] 블루 1픽: ✅ Sylas (Chovy)"
       if (log.includes('밴:')) {
          const parts = log.split('🚫');
          const champ = parts[1]?.trim();
@@ -1790,7 +1786,7 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
          }
       } else if (log.includes('픽:')) {
          const parts = log.split('✅');
-         const content = parts[1]?.trim(); // "Sylas (Chovy)"
+         const content = parts[1]?.trim(); 
          const champ = content?.split('(')[0]?.trim();
          if (champ) {
              if (log.includes('블루')) {
@@ -1812,7 +1808,7 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
       }
 
       idx++;
-    }, 800); // 0.8s per draft action
+    }, 10000); // Changed to 10 seconds per step
     return () => clearInterval(interval);
   }, [phase, simulationData]);
 
@@ -1826,7 +1822,6 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
       setGameTime(prev => {
         const next = prev + 1;
         
-        // Find logs for this specific second
         const currentLogs = simulationData.logs.filter(l => {
              const m = l.match(/^\s*\[(\d+):(\d{1,2})\]/);
              return m && ((parseInt(m[1])*60 + parseInt(m[2])) === next);
@@ -1835,17 +1830,23 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
         if (currentLogs.length > 0) {
             setDisplayLogs(prevLogs => [...prevLogs, ...currentLogs].slice(-12));
             
-            // [REQ 1 & 2] Robust Stats Parsing
+            // [Fix 2] Robust Stats Parsing for Kill Score
             setLiveStats(st => {
-                const nSt = { ...st, players: [...st.players] };
+                const nSt = { 
+                    ...st, 
+                    kills: { ...st.kills },
+                    towers: { ...st.towers },
+                    players: st.players.map(p => ({...p})) 
+                };
                 
                 currentLogs.forEach(l => {
-                    // Detect Kills (Regular & Counter)
-                    // Log Format: "⚔️ [POS] KillerName (Champ) ➜ ☠️ [POS] VictimName (Champ)"
+                    // Regex handles both "⚔️" (kill) and "🛡️" (counter-kill)
+                    // Pattern: Icon [POS] Name (Champ) ... ☠️ [POS] Name (Champ)
                     if (l.includes('⚔️') || l.includes('🛡️')) {
-                        // Extract Name between ']' and '('
-                        const killerMatch = l.match(/\]\s*(.*?)\s*\(/);
-                        const victimMatch = l.match(/☠️.*?\]\s*(.*?)\s*\(/);
+                        // Extract Killer Name (between bracket ] and paren ()
+                        const killerMatch = l.match(/(?:⚔️|🛡️)\s*\[.*?\]\s*(.*?)\s*\(/);
+                        // Extract Victim Name (after skull, between bracket ] and paren ()
+                        const victimMatch = l.match(/➜\s*☠️\s*\[.*?\]\s*(.*?)\s*\(/);
                         
                         const killerName = killerMatch ? killerMatch[1].trim() : null;
                         const victimName = victimMatch ? victimMatch[1].trim() : null;
@@ -1854,7 +1855,7 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                             const p = nSt.players.find(x => x.playerName === killerName);
                             if (p) { 
                                 p.k++; 
-                                nSt.kills[p.side]++; // Update Global Score
+                                nSt.kills[p.side]++; // Update Team Score
                             }
                         }
                         if (victimName) {
@@ -1862,7 +1863,6 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                             if (p) p.d++;
                         }
                         
-                        // Parse Assists if present " | assists: A, B"
                         if (l.includes('assists:')) {
                             const assistPart = l.split('assists:')[1];
                             const assisters = assistPart.split(',').map(s => s.trim());
@@ -1873,29 +1873,21 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                         }
                     }
 
-                    // Towers
                     if (l.includes('포탑') || l.includes('억제기')) {
-                        // If log says "Blue Team destroyed...", Blue gets the point? 
-                        // Usually logs say "Team Name destroyed...".
                         if (l.includes(simulationData.blueTeam.name)) nSt.towers.BLUE++; 
                         else if (l.includes(simulationData.redTeam.name)) nSt.towers.RED++;
                     }
                 });
 
-                // Sync Gold/Levels from pre-calculated data (Interpolation)
-                // We estimate progress based on game time vs total time
-                // Or better: In a real tick engine, we'd have frame data. 
-                // Here we approximate growth linear-ish or check level progress
+                // Sync Visual Gold/Levels
                 if (simulationData.playersLevelProgress) {
                     const progress = next / finalSec;
                     nSt.players.forEach(p => {
                         const prog = simulationData.playersLevelProgress.find(x => x.playerName === p.playerName);
-                        // Simple interpolation for visuals
                         if(prog) p.lvl = Math.floor(prog.startLevel + (prog.endLevel - prog.startLevel) * progress);
                         
-                        // Approximate Gold for visuals (Base + Kills)
-                        // This is purely visual. The engine calculated real gold internally.
-                        p.currentGold += (10 + (p.lvl * 2)); 
+                        // Visual gold estimation (updated slightly for faster gold pace)
+                        p.currentGold += (15 + (p.lvl * 3)); 
                     });
                 }
                 return nSt;
@@ -1904,7 +1896,7 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
 
         if (next >= finalSec) {
             setGameTime(finalSec);
-            // Apply final stats from engine to ensure accuracy at end
+            // Sync final stats from engine results to ensure 100% accuracy at end
             setLiveStats(st => {
                  const finalKills = simulationData.gameResult.finalKills;
                  return { ...st, kills: finalKills };
@@ -2011,7 +2003,7 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                     <div className="text-2xl font-black text-blue-500">{blueTeam.name}</div>
                     <div className="text-xs text-gray-500 font-bold">SET {currentSet}</div>
                 </div>
-                {/* [REQ 2] Team Scores Visible */}
+                
                 <div className="flex items-center bg-gray-800 rounded px-6 py-2 gap-4">
                     <span className="text-4xl font-black text-blue-400">{liveStats.kills.BLUE}</span>
                     <div className="flex flex-col items-center">
@@ -2074,7 +2066,7 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                          ))}
                      </div>
                      
-                     {/* [REQ 3] Controls: x1, x4, x16, Skip */}
+                     {/* Controls */}
                      <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-2">
                          <button onClick={()=>setPlaybackSpeed(0)} className="bg-red-600 hover:bg-red-700 w-12 h-10 rounded font-bold text-sm">❚❚</button>
                          <button onClick={()=>setPlaybackSpeed(1)} className={`w-12 h-10 rounded font-bold text-sm ${playbackSpeed===1?'bg-blue-600 ring-2 ring-white':'bg-gray-700 hover:bg-gray-600'}`}>x1</button>
@@ -2117,7 +2109,14 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                  <div className="text-2xl text-gray-400 font-bold mb-8">
                      KILLS: {liveStats.kills.BLUE} vs {liveStats.kills.RED}
                  </div>
-                 <button onClick={() => {
+                 
+                 {/* [Fix 4] Prevent Double Win Submission */}
+                 <button 
+                    disabled={resultProcessed}
+                    onClick={() => {
+                      if (resultProcessed) return;
+                      setResultProcessed(true);
+
                       const winnerIsA = simulationData.winnerName === teamA.name;
                       const newA = winsA + (winnerIsA ? 1 : 0);
                       const newB = winsB + (!winnerIsA ? 1 : 0);
@@ -2139,8 +2138,8 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                           setCurrentSet(s => s+1);
                           setPhase('READY');
                       }
-                 }} className="bg-white text-black px-12 py-5 rounded-full font-black text-2xl hover:scale-105 transition shadow-xl">
-                     {winsA+winsB+1 >= (match.format==='BO5'?5:3) ? '경기 종료 / 결과 확정' : '다음 세트 진행'}
+                 }} className={`px-12 py-5 rounded-full font-black text-2xl shadow-xl transition ${resultProcessed ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-white text-black hover:scale-105'}`}>
+                     {resultProcessed ? '처리 중...' : (winsA+winsB+1 >= (match.format==='BO5'?5:3) ? '경기 종료 / 결과 확정' : '다음 세트 진행')}
                  </button>
              </div>
         )}
@@ -3587,23 +3586,18 @@ if (!rosterIsValid(t2Roster)) {
             {/* 재정 탭 */}
             {activeTab === 'finance' && (
               <div className="bg-white rounded-lg border shadow-sm flex flex-col">
-                <div className="p-6 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
-                  <div className="flex items-center gap-4">
-                    <button onClick={handlePrevTeam} className="p-2 bg-white rounded-full border hover:bg-gray-100 shadow-sm transition">◀</button>
-                    <div className="flex items-center gap-4"><div className="w-16 h-16 rounded-full flex items-center justify-center font-bold text-white shadow-lg text-xl" style={{backgroundColor: viewingTeam.colors.primary}}>{viewingTeam.name}</div><div><h2 className="text-3xl font-black text-gray-900">{viewingTeam.fullName}</h2><p className="text-sm font-bold text-gray-500 mt-1">2026 시즌 재정 현황</p></div></div>
-                    <button onClick={handleNextTeam} className="p-2 bg-white rounded-full border hover:bg-gray-100 shadow-sm transition">▶</button>
-                  </div>
-                </div>
+                {/* ... Header ... */}
                 <div className="p-8">
                     <div className="grid grid-cols-2 gap-8 mb-8">
-                    <div className="bg-gray-50 p-6 rounded-xl border">
+                        <div className="bg-gray-50 p-6 rounded-xl border">
                             <h3 className="text-lg font-bold text-gray-700 mb-4">💰 지출 현황 (단위: 억)</h3>
-                            <div className="flex items-end gap-8 h-48">
+                            <div className="flex items-end gap-8 h-64"> {/* Increased height slightly */}
                                 {/* Total Spend */}
                                 <div className="flex flex-col items-center gap-2 flex-1 h-full justify-end">
                                     <span className="font-bold text-blue-600 text-xl">{finance.total_expenditure}억</span>
+                                    {/* Scale relative to 150억 max */}
                                     <div className="w-full bg-blue-500 rounded-t-lg transition-all duration-500" style={{height: `${Math.min(finance.total_expenditure / 1.5, 100)}%`}}></div>
-                                    <span className="font-bold text-gray-600 text-xs">총 지출 (추정)</span>
+                                    <span className="font-bold text-gray-600 text-xs">총 지출</span>
                                 </div>
                                 {/* Cap Spend */}
                                 <div className="flex flex-col items-center gap-2 flex-1 h-full justify-end">
@@ -3611,21 +3605,27 @@ if (!rosterIsValid(t2Roster)) {
                                     <div className="w-full bg-purple-500 rounded-t-lg transition-all duration-500" style={{height: `${Math.min(finance.cap_expenditure / 1.5, 100)}%`}}></div>
                                     <span className="font-bold text-gray-600 text-xs">샐러리캡 반영</span>
                                 </div>
-                                {/* [Fix 4] Regulatory Caps Visuals */}
-                                <div className="flex flex-col items-center gap-2 flex-1 h-full justify-end relative">
-                                    {/* 80억 Marker (approx 53.3% of 150) */}
-                                    <div className="absolute w-full border-t-2 border-dashed border-red-500 z-10" style={{bottom: '53.3%'}}></div>
-                                    <div className="absolute right-0 text-[10px] text-red-600 font-bold bg-white px-1 border border-red-200 rounded" style={{bottom: '55%'}}>80억 (2차)</div>
+                                
+                                {/* [REQ 5] Updated Regulatory Caps Visuals */}
+                                <div className="flex flex-col items-center gap-2 flex-1 h-full justify-end relative group">
+                                    {/* 100억 Marker (66.6%) */}
+                                    <div className="absolute w-full border-t-2 border-dashed border-red-600 z-10" style={{bottom: '66.6%'}}></div>
+                                    <div className="absolute right-0 text-[10px] text-red-700 font-bold bg-white px-1 border border-red-200 rounded -mb-3 z-20" style={{bottom: '66.6%'}}>100억 (3차)</div>
+
+                                    {/* 80억 Marker (53.3%) */}
+                                    <div className="absolute w-full border-t-2 border-dashed border-orange-500 z-10" style={{bottom: '53.3%'}}></div>
+                                    <div className="absolute right-0 text-[10px] text-orange-600 font-bold bg-white px-1 border border-orange-200 rounded -mb-3 z-20" style={{bottom: '53.3%'}}>80억 (2차)</div>
                                     
-                                    {/* 40억 Marker (approx 26.6% of 150) */}
-                                    <div className="absolute w-full border-t-2 border-dashed border-yellow-500 z-10" style={{bottom: '26.6%'}}></div>
-                                    <div className="absolute right-0 text-[10px] text-yellow-600 font-bold bg-white px-1 border border-yellow-200 rounded" style={{bottom: '28%'}}>40억 (1차)</div>
+                                    {/* 40억 Marker (26.6%) */}
+                                    <div className="absolute w-full border-t-2 border-dashed border-green-600 z-10" style={{bottom: '26.6%'}}></div>
+                                    <div className="absolute right-0 text-[10px] text-green-700 font-bold bg-white px-1 border border-green-200 rounded -mb-3 z-20" style={{bottom: '26.6%'}}>40억 (1차)</div>
 
                                     {/* Background Zones */}
-                                    <div className="w-full bg-gray-200 rounded-t-lg relative overflow-hidden h-full">
+                                    <div className="w-full bg-gray-200 rounded-t-lg relative overflow-hidden h-full opacity-50">
                                         <div className="absolute bottom-0 w-full bg-green-100 h-[26.6%]"></div>
-                                        <div className="absolute bottom-[26.6%] w-full bg-yellow-50 h-[26.7%]"></div>
-                                        <div className="absolute bottom-[53.3%] w-full bg-red-50 h-[46.7%]"></div>
+                                        <div className="absolute bottom-[26.6%] w-full bg-orange-50 h-[26.7%]"></div>
+                                        <div className="absolute bottom-[53.3%] w-full bg-red-50 h-[13.3%]"></div>
+                                        <div className="absolute bottom-[66.6%] w-full bg-red-200 h-[33.4%]"></div>
                                     </div>
                                     <span className="font-bold text-gray-600 text-xs">규정 상한선</span>
                                 </div>
