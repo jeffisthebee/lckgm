@@ -2249,10 +2249,16 @@ function Dashboard() {
   
   const nextGlobalMatch = league.matches ? league.matches.find(m => m.status === 'pending') : null;
 
-  const isMyNextMatch = nextGlobalMatch ? (nextGlobalMatch.t1 === myTeam.id || nextGlobalMatch.t2 === myTeam.id) : false;
+  // [FIX] ID Normalization Helper to safely compare IDs (String vs Number)
+  const safeId = (id) => (typeof id === 'object' ? id.id : Number(id));
 
-  const t1 = nextGlobalMatch ? teams.find(t => t.id === nextGlobalMatch.t1) : null;
-  const t2 = nextGlobalMatch ? teams.find(t => t.id === nextGlobalMatch.t2) : null;
+  // [FIX] Updated logic using safeId to prevent type mismatch errors
+  const isMyNextMatch = nextGlobalMatch 
+    ? (safeId(nextGlobalMatch.t1) === safeId(myTeam.id) || safeId(nextGlobalMatch.t2) === safeId(myTeam.id)) 
+    : false;
+
+  const t1 = nextGlobalMatch ? teams.find(t => t.id === safeId(nextGlobalMatch.t1)) : null;
+  const t2 = nextGlobalMatch ? teams.find(t => t.id === safeId(nextGlobalMatch.t2)) : null;
 
   const getTeamRoster = (teamName) => {
     const positions = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
