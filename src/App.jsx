@@ -505,11 +505,30 @@ function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks, 
   return totalPower;
 }
 
+// [REPLACE] Function: resolveCombat
+// [REQ 2] Updated Combat Formula: Base Ratio + (Diff * 3%)
 function resolveCombat(powerA, powerB) {
-    const totalPower = powerA + powerB;
-    if (totalPower === 0) return Math.random() < 0.5 ? SIDES.BLUE : SIDES.RED;
-    const winChanceA = powerA / totalPower;
-    return Math.random() < winChanceA ? SIDES.BLUE : SIDES.RED;
+  const totalPower = powerA + powerB;
+  if (totalPower === 0) return Math.random() < 0.5 ? SIDES.BLUE : SIDES.RED;
+  
+  // 1. Calculate Base Ratio (A / Total)
+  let winChanceA = powerA / totalPower;
+
+  // 2. Calculate Difference
+  const diff = powerA - powerB;
+
+  // 3. Apply Modifier: 3% per 1 point difference
+  // If A > B, diff is positive, Chance increases.
+  // If A < B, diff is negative, Chance decreases.
+  const modifier = diff * 0.03; 
+  
+  winChanceA += modifier;
+
+  // 4. Clamp probability between 0% and 100% to prevent errors
+  if (winChanceA < 0) winChanceA = 0;
+  if (winChanceA > 1) winChanceA = 1;
+
+  return Math.random() < winChanceA ? SIDES.BLUE : SIDES.RED;
 }
 
 // Replace the existing calculateIndividualIncome(...) implementation with this.
@@ -1813,6 +1832,7 @@ function DetailedMatchResultModal({ result, onClose, teamA, teamB }) {
 
 // [REPLACE FUNCTION LiveGamePlayer]
 // [REPLACE FUNCTION LiveGamePlayer]
+// [REPLACE FUNCTION LiveGamePlayer]
 function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onClose, externalGlobalBans = [] }) {
   const [currentSet, setCurrentSet] = useState(1);
   const [winsA, setWinsA] = useState(0);
@@ -1850,18 +1870,28 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
 
             if (!result || !result.picks) throw new Error("Draft failed");
 
-            // Initialize Player Stats for Live View
+            // [FIX] Correctly attach playerData from roster so Income Calculator works
+            const enrichPlayer = (p, teamRoster, side) => {
+                // Find the full player object from the roster using the name
+                const rosterData = teamRoster.find(r => r.이름 === p.playerName);
+                // Fallback data if not found (prevents crash)
+                const safeData = rosterData || { 이름: p.playerName, 포지션: 'TOP', 상세: { 성장: 50, 라인전: 50, 무력: 50, 안정성: 50, 운영: 50, 한타: 50 } };
+                
+                return { 
+                    ...p, 
+                    side: side, 
+                    k: 0, d: 0, a: 0, 
+                    currentGold: 500, 
+                    lvl: 1, 
+                    xp: 0, 
+                    // CRITICAL: Assign the found roster data to playerData
+                    playerData: safeData 
+                };
+            };
+
             const initPlayers = [
-                ...result.picks.A.map(p => ({ 
-                    ...p, side: 'BLUE', k: 0, d: 0, a: 0, 
-                    currentGold: 500, lvl: 1, xp: 0, 
-                    playerData: p.playerData || { 포지션: 'TOP', 상세: { 성장: 50 } } 
-                })),
-                ...result.picks.B.map(p => ({ 
-                    ...p, side: 'RED', k: 0, d: 0, a: 0, 
-                    currentGold: 500, lvl: 1, xp: 0, 
-                    playerData: p.playerData || { 포지션: 'TOP', 상세: { 성장: 50 } } 
-                }))
+                ...result.picks.A.map(p => enrichPlayer(p, blueTeam.roster, 'BLUE')),
+                ...result.picks.B.map(p => enrichPlayer(p, redTeam.roster, 'RED'))
             ];
 
             setSimulationData({ ...result, blueTeam, redTeam });
@@ -1917,10 +1947,15 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
             if (currentLogs.length > 0) {
                 setDisplayLogs(prevLogs => [...prevLogs, ...currentLogs].slice(-15));
                 currentLogs.forEach(l => {
-                    // [MODIFIED] Robust Regex for Stats Parsing
-                    // Matches format: ⚔️ [POS] Name (Champ) ➜ ☠️ [POS] Name (Champ)
-                    // Captures Name inside the text between ] and (
+                    // [FIX] Improved Regex to correctly capture names for Kill/Death updates
+                    // Matches: "⚔️ [POS] Name (Champ)" or "🛡️ [POS] Name (Champ)"
                     if (l.includes('⚔️') || l.includes('🛡️')) {
+                        // Regex Explanation:
+                        // 1. (?:⚔️|🛡️) : Match sword or shield icon
+                        // 2. \s*\[.*?\] : Match position tag like [MID]
+                        // 3. \s* : Optional space
+                        // 4. (.*?) : CAPTURE GROUP 1 (The Player Name)
+                        // 5. \s*\( : Match space and opening parenthesis for champ name
                         const killerMatch = l.match(/(?:⚔️|🛡️)\s*\[.*?\]\s*(.*?)\s*\(/);
                         const victimMatch = l.match(/➜\s*☠️\s*\[.*?\]\s*(.*?)\s*\(/);
                         
@@ -1968,14 +2003,13 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
 
             // Passive Gold & XP Logic (Per Second)
             nextStats.players.forEach(p => {
-                // Check if dead (simplified for UI: if they died recently, pause income slightly or ignore for smoothness)
-                // For accurate simulation match, we just apply income.
-                
+                // Calculate income based on player stats
+                // p.playerData is now guaranteed to exist due to startSet fix
                 const income = calculateIndividualIncome(p, currentMinute, 1.0); 
                 
                 // Add 1/60th of minute income per second
-                p.currentGold += (income.gold / 60);
-                p.xp += (income.xp / 60);
+                if (income.gold > 0) p.currentGold += (income.gold / 60);
+                if (income.xp > 0) p.xp += (income.xp / 60);
 
                 // Level Up Cap
                 if (p.lvl < 18) {
