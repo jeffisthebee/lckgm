@@ -319,8 +319,12 @@ export function resolveCombat(powerA, powerB) {
   return Math.random() < winChanceA ? SIDES.BLUE : SIDES.RED;
 }
 
+// [REPLACE] src/engine/simEngine.js -> calculateIndividualIncome
+
 export function calculateIndividualIncome(pick, time, aliveRatio = 1.0) {
   if (!pick || !pick.playerData) return { gold: 0, xp: 0 };
+  
+  // 1. Identify Role
   let role = pick.playerData.포지션 || 'TOP';
   if (['원거리', 'BOT', 'ADC'].includes(role)) role = 'ADC';
   else if (['서포터', 'SPT', 'SUP'].includes(role)) role = 'SUP';
@@ -329,25 +333,48 @@ export function calculateIndividualIncome(pick, time, aliveRatio = 1.0) {
   else role = 'TOP';
 
   const stats = pick.playerData.상세 || { 라인전: 50, 무력: 50, 안정성: 50, 성장: 50, 운영: 50, 한타: 50 };
-  const BASE_GOLD = SIM_CONSTANTS.BASE_INCOME.GOLD;
-  const BASE_XP = SIM_CONSTANTS.BASE_INCOME.XP;
-  let goldIncome = 0, xpIncome = 0;
 
+  // 2. Your Exact Base Income Settings
+  // Note: SUP XP (240) is much lower than Top/Mid (400), so supports WILL fall behind naturally now.
+  const BASE_XPM = { TOP: 400, JGL: 360, MID: 400, ADC: 360, SUP: 240 };
+  const BASE_GPM = { TOP: 340, JGL: 300, MID: 350, ADC: 380, SUP: 220 };
+
+  // 3. Calculate "Effective Skill" for the current phase
+  let weightedStat = 50;
+  
   if (time < 14) {
-      const gBonus = (stats.라인전 * 0.5 + stats.무력 * 0.3 + stats.안정성 * 0.2) / 5;
-      goldIncome = BASE_GOLD[role] + gBonus;
-      xpIncome = BASE_XP[role] + gBonus;
+      // Early Game: Laning (50%), Mechanics (30%), Stability (20%)
+      weightedStat = (stats.라인전 * 0.5) + (stats.무력 * 0.3) + (stats.안정성 * 0.2);
   } else if (time <= 25) {
-      const gBonus = (stats.성장 * 0.4 + stats.운영 * 0.4 + stats.무력 * 0.2) / 5; 
-      goldIncome = BASE_GOLD[role] + gBonus;
-      xpIncome = BASE_XP[role] + gBonus;
+      // Mid Game: Growth (40%), Macro (40%), Mechanics (20%)
+      weightedStat = (stats.성장 * 0.4) + (stats.운영 * 0.4) + (stats.무력 * 0.2);
   } else {
-      const gBonus = (stats.한타 * 0.3 + stats.운영 * 0.3 + stats.안정성 * 0.3) / 5;
-      goldIncome = BASE_GOLD[role] + gBonus;
-      xpIncome = BASE_XP[role] + gBonus;
+      // Late Game: Teamfight (30%), Macro (30%), Stability (30%) - normalized approx
+      weightedStat = (stats.한타 * 0.35) + (stats.운영 * 0.35) + (stats.안정성 * 0.3);
   }
-  const variance = 0.95 + (Math.random() * 0.1); 
-  return { gold: Math.floor(goldIncome * variance * aliveRatio), xp: Math.floor(xpIncome * variance * aliveRatio) };
+
+  // 4. The "Skill Gap" Multiplier (Exponential)
+  // Instead of adding +18 gold, we multiply by 1.25x
+  // 90 Stat -> (90/80)^2 = 1.26x Multiplier
+  // 70 Stat -> (70/80)^2 = 0.76x Multiplier
+  // Result: 90 Stat player gets ~65% MORE income than 70 Stat player.
+  let skillMultiplier = Math.pow(weightedStat / 80, 1.75);
+
+  // Clamp the multiplier to prevent game-breaking values (0.6x to 1.35x)
+  skillMultiplier = Math.max(0.6, Math.min(1.35, skillMultiplier));
+
+  // 5. Apply Multiplier to Base
+  const goldIncome = BASE_GPM[role] * skillMultiplier;
+  const xpIncome = BASE_XPM[role] * skillMultiplier;
+
+  // 6. Variance (Randomness)
+  // Wide variance (0.85 ~ 1.15) to simulate missing cannon minions or recalling
+  const variance = 0.85 + (Math.random() * 0.30); 
+  
+  return { 
+      gold: Math.floor(goldIncome * variance * aliveRatio), 
+      xp: Math.floor(xpIncome * variance * aliveRatio) 
+  };
 }
 
 function calculateDeathTimer(level, time) {

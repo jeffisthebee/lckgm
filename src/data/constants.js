@@ -24,7 +24,7 @@ export const SIM_CONSTANTS = {
       LATE:  { TOP: 0.15, JGL: 0.20, MID: 0.25, ADC: 0.30, SUP: 0.10 }
   },
   BASE_INCOME: {
-      XP:   { TOP: 420, JGL: 380, MID: 420, ADC: 380, SUP: 280 },
+      XP:   { TOP: 400, JGL: 360, MID: 400, ADC: 360, SUP: 240 },
       GOLD: { TOP: 340, JGL: 300, MID: 350, ADC: 380, SUP: 220 }
   }
 };
