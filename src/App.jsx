@@ -1926,6 +1926,7 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
 
   // 2. Game Tick Loop
   // 2. Game Tick Loop
+  // 2. Game Tick Loop
   useEffect(() => {
     if (phase !== 'GAME' || !simulationData || playbackSpeed === 0) return;
     
@@ -1956,20 +1957,29 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
               setDisplayLogs(prevLogs => [...prevLogs, ...currentLogs].slice(-15));
               
               currentLogs.forEach(l => {
-                  // [FIX] Improved Log Parsing & Team Kill Prevention
+                  // [FIX] Improved Log Parsing: Robust Regex & Name Trimming
                   if (l.includes('⚔️') || l.includes('🛡️')) {
-                      // Regex to extract player names from the log format: 
-                      // ⚔️ [POS] Name (Champ) ➜ ☠️ [POS] Name (Champ)
+                      // Regex breakdown:
+                      // 1. (?:⚔️|🛡️) : Match kill or counter-kill icon
+                      // 2. \s*\[.*?\]\s* : Match position tag [TOP] and surrounding spaces
+                      // 3. (.*?) : Capture Killer Name (Non-greedy)
+                      // 4. \s*\( : Stop capturing at the opening parenthesis of Champion Name
                       const killerMatch = l.match(/(?:⚔️|🛡️)\s*\[.*?\]\s*(.*?)\s*\(/);
+                      
+                      // 1. ➜ : Arrow
+                      // 2. \s*☠️\s* : Skull and spaces
+                      // 3. \[.*?\] : Position tag
+                      // 4. (.*?) : Capture Victim Name
+                      // 5. \s*\( : Stop at parenthesis
                       const victimMatch = l.match(/➜\s*☠️\s*\[.*?\]\s*(.*?)\s*\(/);
                       
                       if (killerMatch && victimMatch) {
                           const killerName = killerMatch[1].trim();
                           const victimName = victimMatch[1].trim();
                           
-                          // Find all matching players for killer and victim
-                          const killerCandidates = nextStats.players.filter(p => p.playerName === killerName);
-                          const victimCandidates = nextStats.players.filter(p => p.playerName === victimName);
+                          // [FIX] Robust Candidate Lookup: Trim both sides of comparison to prevent mismatches
+                          const killerCandidates = nextStats.players.filter(p => p.playerName.trim() === killerName);
+                          const victimCandidates = nextStats.players.filter(p => p.playerName.trim() === victimName);
   
                           let killer = null;
                           let victim = null;
@@ -1995,10 +2005,12 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                           
                               if (l.includes('assists:')) {
                                   const assistPart = l.split('assists:')[1];
+                                  // Clean split and trim
                                   const assisters = assistPart.split(',').map(s => s.trim());
+                                  
                                   assisters.forEach(aName => {
-                                      // Assisters must be on Killer's side
-                                      const ast = nextStats.players.find(p => p.playerName === aName && p.side === killer?.side);
+                                      // [FIX] Robust Assist Lookup
+                                      const ast = nextStats.players.find(p => p.playerName.trim() === aName && p.side === killer?.side);
                                       if (ast) { 
                                           ast.a++; 
                                           ast.currentGold += 150; 
