@@ -637,6 +637,7 @@ function calculateDeathTimer(level, time) {
 // Location: Global scope (approx line 580)
 // [FIX] Corrected target selection to strictly prevent team kills
 // [FIX] Updated runGameTickEngine to strictly prevent friendly fire
+// [FIX] Updated runGameTickEngine to strictly prevent friendly fire
 function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
   let time = 0; 
   let logs = [];
@@ -644,9 +645,9 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
   let gameOver = false;
   let endAbsSecond = 0;
 
-  // 1. Initialize Players with Explicit SIDE property
+  // 1. Initialize Players with Explicit SIDE property (Using String Literals for Safety)
   picksBlue.forEach(p => {
-      p.side = SIDES.BLUE; // Explicitly tag side
+      p.side = 'BLUE'; 
       p.currentGold = GAME_RULES.GOLD.START;
       p.level = 1;
       p.xp = 0;
@@ -656,7 +657,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
   });
 
   picksRed.forEach(p => {
-      p.side = SIDES.RED; // Explicitly tag side
+      p.side = 'RED'; 
       p.currentGold = GAME_RULES.GOLD.START;
       p.level = 1;
       p.xp = 0;
@@ -666,8 +667,8 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
   });
 
   const simulateDamage = (winnerSide, powerA, powerB, currentAbsTime) => {
-      const winningPicks = winnerSide === SIDES.BLUE ? picksBlue : picksRed;
-      const losingPicks = winnerSide === SIDES.BLUE ? picksRed : picksBlue;
+      const winningPicks = winnerSide === 'BLUE' ? picksBlue : picksRed;
+      const losingPicks = winnerSide === 'BLUE' ? picksRed : picksBlue;
       
       winningPicks.forEach(p => {
          if (p.deadUntil > currentAbsTime) return;
@@ -749,15 +750,15 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
   });
 
   let state = {
-    gold: { [SIDES.BLUE]: GAME_RULES.GOLD.START * 5, [SIDES.RED]: GAME_RULES.GOLD.START * 5 },
-    kills: { [SIDES.BLUE]: 0, [SIDES.RED]: 0 },
+    gold: { 'BLUE': GAME_RULES.GOLD.START * 5, 'RED': GAME_RULES.GOLD.START * 5 },
+    kills: { 'BLUE': 0, 'RED': 0 },
     structures: {
-        [SIDES.BLUE]: { TOP: initLane(), MID: initLane(), BOT: initLane() },
-        [SIDES.RED]: { TOP: initLane(), MID: initLane(), BOT: initLane() }
+        'BLUE': { TOP: initLane(), MID: initLane(), BOT: initLane() },
+        'RED': { TOP: initLane(), MID: initLane(), BOT: initLane() }
     },
-    nexusHealth: { [SIDES.BLUE]: 100, [SIDES.RED]: 100 },
-    dragons: { [SIDES.BLUE]: [], [SIDES.RED]: [] }, 
-    grubs: { [SIDES.BLUE]: 0, [SIDES.RED]: 0 },
+    nexusHealth: { 'BLUE': 100, 'RED': 100 },
+    dragons: { 'BLUE': [], 'RED': [] }, 
+    grubs: { 'BLUE': 0, 'RED': 0 },
     soul: null,
     baronBuff: { side: null, endTime: 0 },
     elderBuff: { side: null, endTime: 0 },
@@ -771,13 +772,13 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
   const grantGoldToPlayer = (teamSide, playerIdx, amount) => {
       let finalAmount = amount;
       const myTeamGold = state.gold[teamSide];
-      const enemyTeamGold = state.gold[teamSide === SIDES.BLUE ? SIDES.RED : SIDES.BLUE];
+      const enemyTeamGold = state.gold[teamSide === 'BLUE' ? 'RED' : 'BLUE'];
 
       if (enemyTeamGold - myTeamGold >= 5000) {
         finalAmount = Math.floor(amount * 1.15);
       }
 
-      const picks = teamSide === SIDES.BLUE ? picksBlue : picksRed;
+      const picks = teamSide === 'BLUE' ? picksBlue : picksRed;
       picks[playerIdx].currentGold += finalAmount;
       state.gold[teamSide] += finalAmount;
   };
@@ -785,18 +786,18 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
   const grantTeamGold = (teamSide, amountPerPlayer) => {
       let finalAmount = amountPerPlayer;
       const myTeamGold = state.gold[teamSide];
-      const enemyTeamGold = state.gold[teamSide === SIDES.BLUE ? SIDES.RED : SIDES.BLUE];
+      const enemyTeamGold = state.gold[teamSide === 'BLUE' ? 'RED' : 'BLUE'];
 
       if (enemyTeamGold - myTeamGold >= 5000) {
         finalAmount = Math.floor(amountPerPlayer * 1.15);
       }
 
-      const targetPicks = teamSide === SIDES.BLUE ? picksBlue : picksRed;
+      const targetPicks = teamSide === 'BLUE' ? picksBlue : picksRed;
       targetPicks.forEach(p => p.currentGold += finalAmount);
       state.gold[teamSide] += (finalAmount * 5);
   };
 
-  while (state.nexusHealth[SIDES.BLUE] > 0 && state.nexusHealth[SIDES.RED] > 0 && time < 70) {
+  while (state.nexusHealth['BLUE'] > 0 && state.nexusHealth['RED'] > 0 && time < 70) {
     time++;
     const minuteStartAbs = (time - 1) * 60;
     let minuteEvents = [];
@@ -827,16 +828,16 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
       });
     };
 
-    processIncome(picksBlue, SIDES.BLUE);
-    processIncome(picksRed, SIDES.RED);
+    processIncome(picksBlue, 'BLUE');
+    processIncome(picksRed, 'RED');
 
     // Inhibitor Respawn
-    [SIDES.BLUE, SIDES.RED].forEach(side => {
+    ['BLUE', 'RED'].forEach(side => {
         MAP_LANES.forEach(lane => {
             const inhib = state.structures[side][lane].inhib;
             if (inhib.destroyed && inhib.respawnTime <= time) {
                 inhib.destroyed = false;
-                addEvent(0, `${side === SIDES.BLUE ? teamBlue.name : teamRed.name}의 ${lane} 억제기가 재생되었습니다.`);
+                addEvent(0, `${side === 'BLUE' ? teamBlue.name : teamRed.name}의 ${lane} 억제기가 재생되었습니다.`);
             }
         });
     });
@@ -849,8 +850,8 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
       grubs: state.grubs[side]
     });
 
-    let powerBlue = calculateTeamPower(picksBlue, time, getActiveBuffs(SIDES.BLUE), 0, picksRed, minuteStartAbs);
-    let powerRed = calculateTeamPower(picksRed, time, getActiveBuffs(SIDES.RED), 0, picksBlue, minuteStartAbs);
+    let powerBlue = calculateTeamPower(picksBlue, time, getActiveBuffs('BLUE'), 0, picksRed, minuteStartAbs);
+    let powerRed = calculateTeamPower(picksRed, time, getActiveBuffs('RED'), 0, picksBlue, minuteStartAbs);
     
     // Penalties & Bonuses
     const applyDeadPenalty = (picks) => {
@@ -879,14 +880,14 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
       state.grubs[winner] += GAME_RULES.OBJECTIVES.GRUBS.count;
       grantTeamGold(winner, GAME_RULES.OBJECTIVES.GRUBS.gold / 5); 
       simulateDamage(winner, powerBlue, powerRed, minuteStartAbs + 5);
-      addEvent(5, `🐛 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 공허 유충 처치`);
+      addEvent(5, `🐛 ${winner === 'BLUE' ? teamBlue.name : teamRed.name} 공허 유충 처치`);
     }
 
     if (time === GAME_RULES.OBJECTIVES.HERALD.time) {
       const winner = resolveCombat(powerBlue, powerRed);
       grantTeamGold(winner, GAME_RULES.OBJECTIVES.HERALD.gold / 5);
       simulateDamage(winner, powerBlue, powerRed, minuteStartAbs + 0);
-      addEvent(0, `👁️ ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 전령 획득`);
+      addEvent(0, `👁️ ${winner === 'BLUE' ? teamBlue.name : teamRed.name} 전령 획득`);
     }
 
     // Dragon Spawn Logic
@@ -895,8 +896,8 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
         const eventSec = Math.floor(Math.random() * (60 - minValidSec)) + minValidSec;
         const eventAbsTime = minuteStartAbs + eventSec;
 
-        const pBlueObj = calculateTeamPower(picksBlue, time, getActiveBuffs(SIDES.BLUE), 0, picksRed, eventAbsTime);
-        const pRedObj = calculateTeamPower(picksRed, time, getActiveBuffs(SIDES.RED), 0, picksBlue, eventAbsTime);
+        const pBlueObj = calculateTeamPower(picksBlue, time, getActiveBuffs('BLUE'), 0, picksRed, eventAbsTime);
+        const pRedObj = calculateTeamPower(picksRed, time, getActiveBuffs('RED'), 0, picksBlue, eventAbsTime);
 
         const winner = resolveCombat(pBlueObj, pRedObj);
         simulateDamage(winner, pBlueObj, pRedObj, eventAbsTime);
@@ -910,7 +911,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
         grantTeamGold(winner, GAME_RULES.OBJECTIVES.DRAGON.gold / 5);
         dragonSpawnCount++;
 
-        let msg = `🐉 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name}, ${currentDragonName} 용 처치`;
+        let msg = `🐉 ${winner === 'BLUE' ? teamBlue.name : teamRed.name}, ${currentDragonName} 용 처치`;
         if (state.dragons[winner].length === 4) {
             state.soul = { side: winner, type: mapElementType };
             state.nextDragonTimeAbs = Infinity;
@@ -928,15 +929,15 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
         const minValidSec = (minuteStartAbs < state.nextBaronTimeAbs) ? (state.nextBaronTimeAbs - minuteStartAbs) : 0;
         const eventSec = Math.floor(Math.random() * (60 - minValidSec)) + minValidSec;
         const eventAbsTime = minuteStartAbs + eventSec;
-        const pBlueObj = calculateTeamPower(picksBlue, time, getActiveBuffs(SIDES.BLUE), 0, picksRed, eventAbsTime);
-        const pRedObj = calculateTeamPower(picksRed, time, getActiveBuffs(SIDES.RED), 0, picksBlue, eventAbsTime);
+        const pBlueObj = calculateTeamPower(picksBlue, time, getActiveBuffs('BLUE'), 0, picksRed, eventAbsTime);
+        const pRedObj = calculateTeamPower(picksRed, time, getActiveBuffs('RED'), 0, picksBlue, eventAbsTime);
 
         const winner = resolveCombat(pBlueObj * 0.9, pRedObj * 0.9);
         simulateDamage(winner, pBlueObj, pRedObj, eventAbsTime);
         state.baronBuff = { side: winner, endTime: time + GAME_RULES.OBJECTIVES.BARON.duration };
         grantTeamGold(winner, GAME_RULES.OBJECTIVES.BARON.gold / 5);
         state.nextBaronTimeAbs = eventAbsTime + (GAME_RULES.OBJECTIVES.DRAGON.respawn * 60); 
-        addEvent(eventSec, `🟣 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 내셔 남작 처치!`);
+        addEvent(eventSec, `🟣 ${winner === 'BLUE' ? teamBlue.name : teamRed.name} 내셔 남작 처치!`);
       }
     }
 
@@ -945,17 +946,17 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
         const minValidSec = (minuteStartAbs < state.nextElderTimeAbs) ? (state.nextElderTimeAbs - minuteStartAbs) : 0;
         const eventSec = Math.floor(Math.random() * (60 - minValidSec)) + minValidSec;
         const eventAbsTime = minuteStartAbs + eventSec;
-        const pBlueObj = calculateTeamPower(picksBlue, time, getActiveBuffs(SIDES.BLUE), 0, picksRed, eventAbsTime);
-        const pRedObj = calculateTeamPower(picksRed, time, getActiveBuffs(SIDES.RED), 0, picksBlue, eventAbsTime);
+        const pBlueObj = calculateTeamPower(picksBlue, time, getActiveBuffs('BLUE'), 0, picksRed, eventAbsTime);
+        const pRedObj = calculateTeamPower(picksRed, time, getActiveBuffs('RED'), 0, picksBlue, eventAbsTime);
 
         const winner = resolveCombat(pBlueObj, pRedObj);
         simulateDamage(winner, pBlueObj, pRedObj, eventAbsTime);
         state.elderBuff = { side: winner, endTime: time + GAME_RULES.OBJECTIVES.ELDER.duration };
         state.nextElderTimeAbs = eventAbsTime + (GAME_RULES.OBJECTIVES.ELDER.spawn_after_soul * 60); 
-        addEvent(eventSec, `🐲 ${winner === SIDES.BLUE ? teamBlue.name : teamRed.name} 장로 드래곤 처치!`);
+        addEvent(eventSec, `🐲 ${winner === 'BLUE' ? teamBlue.name : teamRed.name} 장로 드래곤 처치!`);
     }
 
-    // --- Combat Logic (Main Fix for Friendly Fire) ---
+    // --- Combat Logic ---
     const powerDiffRatio = Math.abs(powerBlue - powerRed) / ((powerBlue + powerRed) / 2);
     let combatChance = 0;
     if (time <= 4) combatChance = 0.05;
@@ -965,8 +966,8 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
     else if (time <= 19) combatChance = 0.30;
     else combatChance = 0.25; 
 
-    const isBaronActive = (state.baronBuff.side === SIDES.BLUE || state.baronBuff.side === SIDES.RED) && state.baronBuff.endTime >= time;
-    const isElderActive = (state.elderBuff.side === SIDES.BLUE || state.elderBuff.side === SIDES.RED) && state.elderBuff.endTime >= time;
+    const isBaronActive = (state.baronBuff.side === 'BLUE' || state.baronBuff.side === 'RED') && state.baronBuff.endTime >= time;
+    const isElderActive = (state.elderBuff.side === 'BLUE' || state.elderBuff.side === 'RED') && state.elderBuff.endTime >= time;
     const isDragonSpawning = (minuteStartAbs + 59) >= state.nextDragonTimeAbs;
 
     if (isBaronActive) combatChance = 0.70;
@@ -978,18 +979,18 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
       const combatSec = Math.floor(Math.random() * 45);
       const combatAbsTime = minuteStartAbs + combatSec;
 
-      const pBlueCombat = calculateTeamPower(picksBlue, time, getActiveBuffs(SIDES.BLUE), 0, picksRed, combatAbsTime);
-      const pRedCombat = calculateTeamPower(picksRed, time, getActiveBuffs(SIDES.RED), 0, picksBlue, combatAbsTime);
+      const pBlueCombat = calculateTeamPower(picksBlue, time, getActiveBuffs('BLUE'), 0, picksRed, combatAbsTime);
+      const pRedCombat = calculateTeamPower(picksRed, time, getActiveBuffs('RED'), 0, picksBlue, combatAbsTime);
       
       const winner = resolveCombat(pBlueCombat, pRedCombat);
-      const loser = winner === SIDES.BLUE ? SIDES.RED : SIDES.BLUE;
-      const winnerName = winner === SIDES.BLUE ? teamBlue.name : teamRed.name;
+      const loser = winner === 'BLUE' ? 'RED' : 'BLUE';
+      const winnerName = winner === 'BLUE' ? teamBlue.name : teamRed.name;
       
       let combatOccurred = true;
       simulateDamage(winner, pBlueCombat, pRedCombat, combatAbsTime);
       
-      const winningTeamPicks = winner === SIDES.BLUE ? picksBlue : picksRed;
-      const losingTeamPicks = loser === SIDES.BLUE ? picksRed : picksBlue;
+      const winningTeamPicks = winner === 'BLUE' ? picksBlue : picksRed;
+      const losingTeamPicks = loser === 'BLUE' ? picksRed : picksBlue;
       
       let maxKills = 1;
       const roll = Math.random(); 
@@ -1009,8 +1010,8 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
       for(let k=0; k<maxKills; k++) {
           const aliveLosers = getAlivePlayers(losingTeamPicks);
           
-          // [CRITICAL FIX] Ensure strict side filtering for victim
-          const validVictims = aliveLosers.filter(v => v.side !== killer.side);
+          // [CRITICAL FIX] Ensure strict side filtering for victim using String literals
+          const validVictims = aliveLosers.filter(v => v.side && killer && v.side !== killer.side);
           
           if (!killer || validVictims.length === 0) break;
 
@@ -1070,7 +1071,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
               const counterKiller = getWeightedPlayer(aliveLosers, 'KILL');
               
               // [CRITICAL FIX] Counter victim must be from winning team & OPPOSITE side
-              const validCounterVictims = aliveWinners.filter(v => v.side !== counterKiller.side);
+              const validCounterVictims = aliveWinners.filter(v => v.side && counterKiller && v.side !== counterKiller.side);
               const counterVictim = validCounterVictims[Math.floor(Math.random() * validCounterVictims.length)];
               
               if (counterKiller && counterVictim) {
@@ -1188,8 +1189,8 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
     minuteEvents.forEach(evt => logs.push(evt));
   }
 
-  const winnerSide = state.nexusHealth[SIDES.BLUE] > state.nexusHealth[SIDES.RED] ? SIDES.BLUE : SIDES.RED;
-  const winnerName = winnerSide === SIDES.BLUE ? teamBlue.name : teamRed.name;
+  const winnerSide = state.nexusHealth['BLUE'] > state.nexusHealth['RED'] ? 'BLUE' : 'RED';
+  const winnerName = winnerSide === 'BLUE' ? teamBlue.name : teamRed.name;
 
   const totalSeconds = gameOver ? endAbsSecond : (time * 60);
   const totalMinutes = Math.floor(totalSeconds / 60);
@@ -1924,6 +1925,7 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
   }, [phase, startSet]);
 
   // 2. Game Tick Loop
+  // 2. Game Tick Loop
   useEffect(() => {
     if (phase !== 'GAME' || !simulationData || playbackSpeed === 0) return;
     
@@ -1956,6 +1958,8 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
               currentLogs.forEach(l => {
                   // [FIX] Improved Log Parsing & Team Kill Prevention
                   if (l.includes('⚔️') || l.includes('🛡️')) {
+                      // Regex to extract player names from the log format: 
+                      // ⚔️ [POS] Name (Champ) ➜ ☠️ [POS] Name (Champ)
                       const killerMatch = l.match(/(?:⚔️|🛡️)\s*\[.*?\]\s*(.*?)\s*\(/);
                       const victimMatch = l.match(/➜\s*☠️\s*\[.*?\]\s*(.*?)\s*\(/);
                       
@@ -2006,10 +2010,11 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                   }
                   
                   if (l.includes('포탑') || l.includes('억제기')) {
+                      // Use includes check for team name to assign tower kills
                       if (l.includes(simulationData.blueTeam.name)) {
                           nextStats.towers.BLUE++; 
                           nextStats.players.filter(p => p.side === 'BLUE').forEach(p => p.currentGold += 150);
-                      } else {
+                      } else if (l.includes(simulationData.redTeam.name)) {
                           nextStats.towers.RED++;
                           nextStats.players.filter(p => p.side === 'RED').forEach(p => p.currentGold += 150);
                       }
