@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { teams } from './data/teams';
+import { teams } from '../data/teams';
 
 // Paste getLeagues, deleteLeague helpers here too or make a utils file.
 const getLeagues = () => { const s = localStorage.getItem('lckgm_leagues'); return s ? JSON.parse(s) : []; };
