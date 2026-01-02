@@ -1947,6 +1947,7 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
         });
 
         // B. Update Stats
+        // B. Update Stats
         setLiveStats(prevStats => {
           const nextStats = { 
               ...prevStats, 
@@ -1959,72 +1960,69 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
               setDisplayLogs(prevLogs => [...prevLogs, ...currentLogs].slice(-15));
               
               currentLogs.forEach(l => {
-                  // [FIX] Improved Log Parsing: Robust Regex & Name Trimming
+                  // [FIX 1] Robust Log Parsing for Stats
+                  // Check for Kill (⚔️) or Counter-Kill (🛡️)
                   if (l.includes('⚔️') || l.includes('🛡️')) {
-                      // Regex breakdown:
-                      // 1. (?:⚔️|🛡️) : Match kill or counter-kill icon
-                      // 2. \s*\[.*?\]\s* : Match position tag [TOP] and surrounding spaces
-                      // 3. (.*?) : Capture Killer Name (Non-greedy)
-                      // 4. \s*\( : Stop capturing at the opening parenthesis of Champion Name
-                      const killerMatch = l.match(/(?:⚔️|🛡️)\s*\[.*?\]\s*(.*?)\s*\(/);
-                      
-                      // 1. ➜ : Arrow
-                      // 2. \s*☠️\s* : Skull and spaces
-                      // 3. \[.*?\] : Position tag
-                      // 4. (.*?) : Capture Victim Name
-                      // 5. \s*\( : Stop at parenthesis
-                      const victimMatch = l.match(/➜\s*☠️\s*\[.*?\]\s*(.*?)\s*\(/);
-                      
-                      if (killerMatch && victimMatch) {
-                          const killerName = killerMatch[1].trim();
-                          const victimName = victimMatch[1].trim();
-                          
-                          // [FIX] Robust Candidate Lookup: Trim both sides of comparison to prevent mismatches
-                          const killerCandidates = nextStats.players.filter(p => p.playerName.trim() === killerName);
-                          const victimCandidates = nextStats.players.filter(p => p.playerName.trim() === victimName);
-  
-                          let killer = null;
-                          let victim = null;
-  
-                          // Logic to pair them ensuring they are on OPPOSITE sides
-                          for (const k of killerCandidates) {
-                              for (const v of victimCandidates) {
-                                  if (k.side !== v.side) {
-                                      killer = k;
-                                      victim = v;
-                                      break;
+                      try {
+                          // Log format: "⚔️ [POS] KillerName (Champ) ➜ ☠️ [POS] VictimName (Champ) | assists: A, B"
+                          // 1. Extract Killer Name
+                          // Split by '➜' to separate killer and victim parts
+                          const parts = l.split('➜');
+                          if (parts.length < 2) return;
+
+                          const killerPart = parts[0]; // "⚔️ [POS] KillerName (Champ) "
+                          const victimPart = parts[1]; // " ☠️ [POS] VictimName (Champ) | assists: ..."
+
+                          // Helper to extract name between "]" and "("
+                          const extractName = (str) => {
+                              const afterBracket = str.split(']')[1];
+                              if (!afterBracket) return null;
+                              const name = afterBracket.split('(')[0];
+                              return name ? name.trim() : null;
+                          };
+
+                          const killerName = extractName(killerPart);
+                          const victimName = extractName(victimPart);
+
+                          if (killerName && victimName) {
+                              const killer = nextStats.players.find(p => p.playerName === killerName);
+                              const victim = nextStats.players.find(p => p.playerName === victimName);
+
+                              if (killer && victim && killer.side !== victim.side) {
+                                  // Update Kill/Death
+                                  killer.k++;
+                                  nextStats.kills[killer.side]++;
+                                  killer.currentGold += 300;
+                                  victim.d++;
+
+                                  // Update Assists
+                                  if (l.includes('assists:')) {
+                                      const assistStr = l.split('assists:')[1].trim();
+                                      // Remove any trailing suffixes like flashing or multikills
+                                      // Assists usually end at the end of string or before special chars
+                                      // Simple split by comma
+                                      const rawAssisters = assistStr.split(',').map(s => {
+                                          // Clean up formatting (remove " [Double Kill!]" etc if attached)
+                                          return s.split('[')[0].split('(')[0].trim();
+                                      });
+
+                                      rawAssisters.forEach(aName => {
+                                          const assister = nextStats.players.find(p => p.playerName === aName && p.side === killer.side);
+                                          if (assister) {
+                                              assister.a++;
+                                              assister.currentGold += 150;
+                                          }
+                                      });
                                   }
                               }
-                              if (killer && victim) break;
                           }
-  
-                          // Only process if we found a valid Enemy pair
-                          if (killer && victim) { 
-                              killer.k++; 
-                              nextStats.kills[killer.side]++; 
-                              killer.currentGold += 300; 
-                              victim.d++; 
-                          
-                              if (l.includes('assists:')) {
-                                  const assistPart = l.split('assists:')[1];
-                                  // Clean split and trim
-                                  const assisters = assistPart.split(',').map(s => s.trim());
-                                  
-                                  assisters.forEach(aName => {
-                                      // [FIX] Robust Assist Lookup
-                                      const ast = nextStats.players.find(p => p.playerName.trim() === aName && p.side === killer?.side);
-                                      if (ast) { 
-                                          ast.a++; 
-                                          ast.currentGold += 150; 
-                                      }
-                                  });
-                              }
-                          }
+                      } catch (err) {
+                          console.warn("Log parse error:", err);
                       }
                   }
                   
+                  // Structure Parsing
                   if (l.includes('포탑') || l.includes('억제기')) {
-                      // Use includes check for team name to assign tower kills
                       if (l.includes(simulationData.blueTeam.name)) {
                           nextStats.towers.BLUE++; 
                           nextStats.players.filter(p => p.side === 'BLUE').forEach(p => p.currentGold += 150);
@@ -2643,9 +2641,9 @@ const checkAndGenerateNextPlayoffRound = (currentMatches) => {
 
   // [REPLACE] Function: runSimulationForMatch
   // Location: Inside Dashboard component, before handleProceedNextMatch
+  // [FIX 2] Use simulateMatch for BO3/BO5 results (Set Score) instead of single set (Kill Score)
   const runSimulationForMatch = (match, isPlayerMatch) => {
     try {
-      // [FIX] Robust ID Handling
       const getID = (val) => {
           if (val && typeof val === 'object' && val.id) return Number(val.id);
           return Number(val);
@@ -2658,7 +2656,6 @@ const checkAndGenerateNextPlayoffRound = (currentMatches) => {
       const t2Obj = teams.find(t => Number(t.id) === t2Id);
   
       if (!t1Obj || !t2Obj) {
-        console.error("Match IDs:", t1Id, t2Id);
         throw new Error(`Teams not found for Match ID: ${match.id}`);
       }
   
@@ -2674,18 +2671,23 @@ const checkAndGenerateNextPlayoffRound = (currentMatches) => {
         difficulty: isPlayerMatch ? league.difficulty : undefined,
         playerTeamName: isPlayerMatch ? myTeam.name : undefined
       };
-  
-      const result = simulateSet(
+      
+      // Changed from simulateSet to simulateMatch to get Set Scores (2:0, 2:1)
+      const format = match.format || 'BO3';
+      const result = simulateMatch(
         { ...t1Obj, roster: t1Roster },
         { ...t2Obj, roster: t2Roster },
-        1,
-        [], 
+        format, 
         simOptions
       );
   
       if (!result) throw new Error("Simulation returned null result");
   
-      return result;
+      // Result from simulateMatch already contains { scoreString: "2:0", winner: "Name" }
+      return {
+          winnerName: result.winner,
+          scoreString: result.scoreString
+      };
 
     } catch (err) {
       console.error("Simulation Error:", err);
@@ -3782,16 +3784,31 @@ const handleProceedNextMatch = () => {
             {/* 재정 탭 */}
             {activeTab === 'finance' && (
               <div className="bg-white rounded-lg border shadow-sm flex flex-col">
-                {/* ... Header ... */}
+                {/* [FIX 3] Added Navigation Header for Finance Tab */}
+                <div className="p-6 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
+                  <div className="flex items-center gap-4">
+                    <button onClick={handlePrevTeam} className="p-2 bg-white rounded-full border hover:bg-gray-100 shadow-sm transition">◀</button>
+                    <div className="flex items-center gap-4">
+                        <div className="w-14 h-14 rounded-full flex items-center justify-center font-bold text-white shadow-lg text-lg" style={{backgroundColor: viewingTeam.colors.primary}}>
+                            {viewingTeam.name}
+                        </div>
+                        <div>
+                            <h2 className="text-2xl font-black text-gray-900">{viewingTeam.fullName}</h2>
+                            <p className="text-sm font-bold text-gray-500">재정 및 샐러리캡 현황</p>
+                        </div>
+                    </div>
+                    <button onClick={handleNextTeam} className="p-2 bg-white rounded-full border hover:bg-gray-100 shadow-sm transition">▶</button>
+                  </div>
+                </div>
+
                 <div className="p-8">
                     <div className="grid grid-cols-2 gap-8 mb-8">
                         <div className="bg-gray-50 p-6 rounded-xl border">
                             <h3 className="text-lg font-bold text-gray-700 mb-4">💰 지출 현황 (단위: 억)</h3>
-                            <div className="flex items-end gap-8 h-64"> {/* Increased height slightly */}
+                            <div className="flex items-end gap-8 h-64">
                                 {/* Total Spend */}
                                 <div className="flex flex-col items-center gap-2 flex-1 h-full justify-end">
                                     <span className="font-bold text-blue-600 text-xl">{finance.total_expenditure}억</span>
-                                    {/* Scale relative to 150억 max */}
                                     <div className="w-full bg-blue-500 rounded-t-lg transition-all duration-500" style={{height: `${Math.min(finance.total_expenditure / 1.5, 100)}%`}}></div>
                                     <span className="font-bold text-gray-600 text-xs">총 지출</span>
                                 </div>
@@ -3802,21 +3819,17 @@ const handleProceedNextMatch = () => {
                                     <span className="font-bold text-gray-600 text-xs">샐러리캡 반영</span>
                                 </div>
                                 
-                                {/* [REQ 5] Updated Regulatory Caps Visuals */}
                                 <div className="flex flex-col items-center gap-2 flex-1 h-full justify-end relative group">
-                                    {/* 100억 Marker (66.6%) */}
+                                    {/* Markers */}
                                     <div className="absolute w-full border-t-2 border-dashed border-red-600 z-10" style={{bottom: '66.6%'}}></div>
                                     <div className="absolute right-0 text-[10px] text-red-700 font-bold bg-white px-1 border border-red-200 rounded -mb-3 z-20" style={{bottom: '66.6%'}}>100억 (3차)</div>
 
-                                    {/* 80억 Marker (53.3%) */}
                                     <div className="absolute w-full border-t-2 border-dashed border-orange-500 z-10" style={{bottom: '53.3%'}}></div>
                                     <div className="absolute right-0 text-[10px] text-orange-600 font-bold bg-white px-1 border border-orange-200 rounded -mb-3 z-20" style={{bottom: '53.3%'}}>80억 (2차)</div>
                                     
-                                    {/* 40억 Marker (26.6%) */}
                                     <div className="absolute w-full border-t-2 border-dashed border-green-600 z-10" style={{bottom: '26.6%'}}></div>
                                     <div className="absolute right-0 text-[10px] text-green-700 font-bold bg-white px-1 border border-green-200 rounded -mb-3 z-20" style={{bottom: '26.6%'}}>40억 (1차)</div>
 
-                                    {/* Background Zones */}
                                     <div className="w-full bg-gray-200 rounded-t-lg relative overflow-hidden h-full opacity-50">
                                         <div className="absolute bottom-0 w-full bg-green-100 h-[26.6%]"></div>
                                         <div className="absolute bottom-[26.6%] w-full bg-orange-50 h-[26.7%]"></div>
