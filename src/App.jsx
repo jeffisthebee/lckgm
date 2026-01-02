@@ -990,7 +990,9 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
       simulateDamage(winner, pBlueCombat, pRedCombat, combatAbsTime);
       
       const winningTeamPicks = winner === 'BLUE' ? picksBlue : picksRed;
-      const losingTeamPicks = loser === 'BLUE' ? picksRed : picksBlue;
+      
+      // [FIX] Correctly select the Losing Team's picks (Previously selected the same team as winner)
+      const losingTeamPicks = winner === 'BLUE' ? picksRed : picksBlue;
       
       let maxKills = 1;
       const roll = Math.random(); 
