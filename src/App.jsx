@@ -1949,6 +1949,7 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
         // B. Update Stats
         // B. Update Stats
         // B. Update Stats
+        // B. Update Stats
         setLiveStats(prevStats => {
           const nextStats = { 
               ...prevStats, 
@@ -1961,29 +1962,31 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
               setDisplayLogs(prevLogs => [...prevLogs, ...currentLogs].slice(-15));
               
               currentLogs.forEach(l => {
-                  // [FIX 1] Robust Log Parsing for Stats
-                  // Check for Kill (⚔️) or Counter-Kill (🛡️)
+                  // [FIX] Robust Log Parsing for Stats (Handles Multi-Kill Tags correctly)
                   if (l.includes('⚔️') || l.includes('🛡️')) {
                       try {
-                          // Log format example: "[12:30] ⚔️ [TOP] Zeus (Jayce) ➜ ☠️ [MID] Faker (Ahri) | assists: ..."
+                          // Log format: "[12:30] ⚔️ [TOP] Killer (Champ) ➜ ☠️ [MID] Victim (Champ) [Double Kill!]"
                           const parts = l.split('➜');
                           if (parts.length < 2) return;
 
                           const killerPart = parts[0]; 
                           const victimPart = parts[1]; 
 
-                          // [FIXED] Updated Helper to correctly handle timestamps like [12:30]
-                          // It now grabs the text after the LAST ']' to ensure we get the name after [POS]
+                          // [FIXED] Updated Helper to ignore [Double Kill!] or [Timestamp] brackets
                           const extractName = (str) => {
-                              const segments = str.split(']'); 
-                              // segments ex: ["[12:30", " ⚔️ [TOP", " Zeus (Jayce) "]
-                              // We want the last segment that holds the name
-                              if (segments.length < 2) return null;
+                              // 1. Cut off everything after the champion name starts '(' 
+                              // This removes trailing tags like [Double Kill!] automatically
+                              const openParenIndex = str.indexOf('(');
+                              if (openParenIndex === -1) return null;
                               
-                              const nameSegment = segments[segments.length - 1];
-                              if (!nameSegment.includes('(')) return null;
-                              
-                              return nameSegment.split('(')[0].trim();
+                              const preParen = str.substring(0, openParenIndex); // Ex: " ☠️ [MID] Faker "
+
+                              // 2. Find the position bracket ']' immediately before the name
+                              const lastBracketIndex = preParen.lastIndexOf(']');
+                              if (lastBracketIndex === -1) return null;
+
+                              // 3. The name is everything between that bracket and the paren
+                              return preParen.substring(lastBracketIndex + 1).trim();
                           };
 
                           const killerName = extractName(killerPart);
@@ -2003,12 +2006,13 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                                   // Update Assists
                                   if (l.includes('assists:')) {
                                       const assistStr = l.split('assists:')[1].trim();
+                                      // assistStr Ex: "PlayerA, PlayerB [Double Kill!]"
                                       const rawAssisters = assistStr.split(',').map(s => {
+                                          // split('[') removes the [Double Kill!] suffix if it's attached to the last name
                                           return s.split('[')[0].split('(')[0].trim();
                                       });
 
                                       rawAssisters.forEach(aName => {
-                                          // Ensure assister is on killer's side
                                           const assister = nextStats.players.find(p => p.playerName === aName && p.side === killer.side);
                                           if (assister) {
                                               assister.a++;
@@ -2027,7 +2031,6 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                   if (l.includes('포탑') || l.includes('억제기')) {
                       if (l.includes(simulationData.blueTeam.name)) {
                           nextStats.towers.BLUE++; 
-                          // Global gold for structures
                           nextStats.players.filter(p => p.side === 'BLUE').forEach(p => p.currentGold += 100);
                       } else if (l.includes(simulationData.redTeam.name)) {
                           nextStats.towers.RED++;
