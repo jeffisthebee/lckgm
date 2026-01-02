@@ -6,6 +6,7 @@ import { championList, difficulties } from '../data/constants';
 import { getTeamRoster, simulateMatch } from '../engine/simEngine';
 import LiveGamePlayer from '../components/LiveGamePlayer';
 import DetailedMatchResultModal from '../components/DetailedMatchResultModal';
+import playerList from '../data/players.json';
 
 // Helper functions (Paste getLeagues, updateLeague, etc here if they aren't used elsewhere)
 const getLeagues = () => { const s = localStorage.getItem('lckgm_leagues'); return s ? JSON.parse(s) : []; };
