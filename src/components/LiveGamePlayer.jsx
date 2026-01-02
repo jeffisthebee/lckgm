@@ -158,21 +158,26 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                     nextStats.kills[killer.side]++;
                                     killer.currentGold += 300;
                                     victim.d++;
-  
+                                
+                                    // [NEW] Add XP for the Kill (Snowball Effect!)
+                                    // Formula: Base 100 + (Victim Level * 25)
+                                    // This makes the killer jump ahead in the level bar
+                                    killer.xp += 100 + (victim.lvl * 25); 
+                                
                                     // Update Assists
                                     if (l.includes('assists:')) {
                                         const assistStr = l.split('assists:')[1].trim();
-                                        // assistStr Ex: "PlayerA, PlayerB [Double Kill!]"
                                         const rawAssisters = assistStr.split(',').map(s => {
-                                            // split('[') removes the [Double Kill!] suffix if it's attached to the last name
                                             return s.split('[')[0].split('(')[0].trim();
                                         });
-  
+                                
                                         rawAssisters.forEach(aName => {
                                             const assister = nextStats.players.find(p => p.playerName === aName && p.side === killer.side);
                                             if (assister) {
                                                 assister.a++;
                                                 assister.currentGold += 150;
+                                                // [NEW] Add XP for Assist (Shared XP)
+                                                assister.xp += 50 + (victim.lvl * 10);
                                             }
                                         });
                                     }

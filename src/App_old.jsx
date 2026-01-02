@@ -603,7 +603,8 @@ function calculateIndividualIncome(pick, time, aliveRatio = 1.0) {
   }
 
   // Apply Variance (±5%) so everyone doesn't level up at the exact same second
-  const variance = 0.95 + (Math.random() * 0.1); 
+  // [FIX] Wider variance (0.85 to 1.15)
+const variance = 0.85 + (Math.random() * 0.30);
   
   return { 
       gold: Math.floor(goldIncome * variance * aliveRatio), 
