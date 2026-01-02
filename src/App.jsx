@@ -506,25 +506,31 @@ function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemyPicks, 
 }
 
 // [REPLACE] Function: resolveCombat
-// [REQ 2] Updated Combat Formula: Base Ratio + (Diff * 3%)
+// [REPLACE] Function: resolveCombat
+// [REQ] Updated Combat Formula: Uses Average Power (Total / 5) for calculations
 function resolveCombat(powerA, powerB) {
-  const totalPower = powerA + powerB;
-  if (totalPower === 0) return Math.random() < 0.5 ? SIDES.BLUE : SIDES.RED;
+  // Convert Total Power to Average Power
+  const avgPowerA = powerA / 5;
+  const avgPowerB = powerB / 5;
+
+  const totalAvgPower = avgPowerA + avgPowerB;
+  if (totalAvgPower === 0) return Math.random() < 0.5 ? SIDES.BLUE : SIDES.RED;
   
-  // 1. Calculate Base Ratio (A / Total)
-  let winChanceA = powerA / totalPower;
+  // 1. Calculate Base Ratio (Average A / Total Average)
+  // Note: This ratio remains the same mathematically as (Total A / Total A+B)
+  let winChanceA = avgPowerA / totalAvgPower;
 
-  // 2. Calculate Difference
-  const diff = powerA - powerB;
+  // 2. Calculate Difference using Average Power
+  const diff = avgPowerA - avgPowerB;
 
-  // 3. Apply Modifier: 3% per 1 point difference
-  // If A > B, diff is positive, Chance increases.
-  // If A < B, diff is negative, Chance decreases.
-  const modifier = diff * 0.03; 
+  // 3. Apply Modifier: 3% per 1 point difference in AVERAGE power
+  // Example: If Team A avg is 82 and Team B avg is 80, diff is 2.
+  // Modifier = 2 * 0.03 = +6% win chance.
+  const modifier = diff * 0.02; 
   
   winChanceA += modifier;
 
-  // 4. Clamp probability between 0% and 100% to prevent errors
+  // 4. Clamp probability between 0% and 100%
   if (winChanceA < 0) winChanceA = 0;
   if (winChanceA > 1) winChanceA = 1;
 
@@ -1936,70 +1942,79 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
         });
 
         // B. Update Stats
-        setLiveStats(prevStats => {
-            const nextStats = { 
-                ...prevStats, 
-                kills: { ...prevStats.kills },
-                towers: { ...prevStats.towers },
-                players: prevStats.players.map(p => ({...p})) 
-            };
+       // B. Update Stats
+       setLiveStats(prevStats => {
+        const nextStats = { 
+            ...prevStats, 
+            kills: { ...prevStats.kills },
+            towers: { ...prevStats.towers },
+            players: prevStats.players.map(p => ({...p})) 
+        };
 
-            if (currentLogs.length > 0) {
-                setDisplayLogs(prevLogs => [...prevLogs, ...currentLogs].slice(-15));
-                currentLogs.forEach(l => {
-                    // [FIX] Improved Regex to correctly capture names for Kill/Death updates
-                    // Matches: "⚔️ [POS] Name (Champ)" or "🛡️ [POS] Name (Champ)"
-                    if (l.includes('⚔️') || l.includes('🛡️')) {
-                        // Regex Explanation:
-                        // 1. (?:⚔️|🛡️) : Match sword or shield icon
-                        // 2. \s*\[.*?\] : Match position tag like [MID]
-                        // 3. \s* : Optional space
-                        // 4. (.*?) : CAPTURE GROUP 1 (The Player Name)
-                        // 5. \s*\( : Match space and opening parenthesis for champ name
-                        const killerMatch = l.match(/(?:⚔️|🛡️)\s*\[.*?\]\s*(.*?)\s*\(/);
-                        const victimMatch = l.match(/➜\s*☠️\s*\[.*?\]\s*(.*?)\s*\(/);
+        if (currentLogs.length > 0) {
+            setDisplayLogs(prevLogs => [...prevLogs, ...currentLogs].slice(-15));
+            currentLogs.forEach(l => {
+                // [FIX] Improved Log Parsing to prevent "Team Kills"
+                // Matches: "⚔️ [POS] Name (Champ)" or "🛡️ [POS] Name (Champ)"
+                if (l.includes('⚔️') || l.includes('🛡️')) {
+                    const killerMatch = l.match(/(?:⚔️|🛡️)\s*\[.*?\]\s*(.*?)\s*\(/);
+                    const victimMatch = l.match(/➜\s*☠️\s*\[.*?\]\s*(.*?)\s*\(/);
+                    
+                    if (killerMatch && victimMatch) {
+                        const killerName = killerMatch[1].trim();
+                        const victimName = victimMatch[1].trim();
                         
-                        if (killerMatch && victimMatch) {
-                            const killerName = killerMatch[1].trim();
-                            const victimName = victimMatch[1].trim();
-                            
-                            const killer = nextStats.players.find(p => p.playerName === killerName);
-                            const victim = nextStats.players.find(p => p.playerName === victimName);
-                            
-                            if (killer) { 
-                                killer.k++; 
-                                nextStats.kills[killer.side]++; 
-                                killer.currentGold += 300; 
-                            }
-                            if (victim) { 
-                                victim.d++; 
-                            }
-                            
-                            if (l.includes('assists:')) {
-                                const assistPart = l.split('assists:')[1];
-                                // Assumes assists are comma separated names
-                                const assisters = assistPart.split(',').map(s => s.trim());
-                                assisters.forEach(aName => {
-                                    const ast = nextStats.players.find(p => p.playerName === aName);
-                                    if (ast) { 
-                                        ast.a++; 
-                                        ast.currentGold += 150; 
-                                    }
-                                });
+                        // Find players. Note: match might find the wrong side if names are identical.
+                        // We prioritize finding players on OPPOSITE sides.
+                        let killer = nextStats.players.find(p => p.playerName === killerName);
+                        let victim = nextStats.players.find(p => p.playerName === victimName);
+
+                        // Safety Check: If they are on the same side, try to find the player on the other side
+                        if (killer && victim && killer.side === victim.side) {
+                            const otherSide = killer.side === 'BLUE' ? 'RED' : 'BLUE';
+                            // Try to find victim on the other side first
+                            const altVictim = nextStats.players.find(p => p.playerName === victimName && p.side === otherSide);
+                            if (altVictim) {
+                                victim = altVictim;
+                            } else {
+                                // If victim wasn't on other side, maybe killer was?
+                                const altKiller = nextStats.players.find(p => p.playerName === killerName && p.side === otherSide);
+                                if (altKiller) killer = altKiller;
                             }
                         }
-                    }
-                    if (l.includes('포탑') || l.includes('억제기')) {
-                        if (l.includes(simulationData.blueTeam.name)) {
-                            nextStats.towers.BLUE++; 
-                            nextStats.players.filter(p => p.side === 'BLUE').forEach(p => p.currentGold += 150);
-                        } else {
-                            nextStats.towers.RED++;
-                            nextStats.players.filter(p => p.side === 'RED').forEach(p => p.currentGold += 150);
+                        
+                        if (killer && victim && killer.side !== victim.side) { 
+                            killer.k++; 
+                            nextStats.kills[killer.side]++; 
+                            killer.currentGold += 300; 
+                            victim.d++; 
+                        }
+                        
+                        if (l.includes('assists:')) {
+                            const assistPart = l.split('assists:')[1];
+                            const assisters = assistPart.split(',').map(s => s.trim());
+                            assisters.forEach(aName => {
+                                // Assisters must be on Killer's side
+                                const ast = nextStats.players.find(p => p.playerName === aName && p.side === killer?.side);
+                                if (ast) { 
+                                    ast.a++; 
+                                    ast.currentGold += 150; 
+                                }
+                            });
                         }
                     }
-                });
-            }
+                }
+                if (l.includes('포탑') || l.includes('억제기')) {
+                    if (l.includes(simulationData.blueTeam.name)) {
+                        nextStats.towers.BLUE++; 
+                        nextStats.players.filter(p => p.side === 'BLUE').forEach(p => p.currentGold += 150);
+                    } else {
+                        nextStats.towers.RED++;
+                        nextStats.players.filter(p => p.side === 'RED').forEach(p => p.currentGold += 150);
+                    }
+                }
+            });
+        }
 
             // Passive Gold & XP Logic (Per Second)
             nextStats.players.forEach(p => {
@@ -2396,218 +2411,222 @@ function Dashboard() {
       setOpponentChoice(null);
   };
 
+  // [FIX] Robust Round Progression using 'round' ID instead of Date strings
   const checkAndGenerateNextPlayInRound = (matches) => {
-      // 1라운드(2.6)가 모두 끝났는지 확인
-      const r1Matches = matches.filter(m => m.type === 'playin' && m.date.includes('2.6'));
-      const r1Finished = r1Matches.length > 0 && r1Matches.every(m => m.status === 'finished');
-      const r2Exists = matches.some(m => m.type === 'playin' && m.date.includes('2.7'));
-
-      if (r1Finished && !r2Exists) {
-          const r1Winners = r1Matches.map(m => teams.find(t => t.name === m.result.winner));
-          const playInSeeds = league.playInSeeds || []; 
-          const seed1 = teams.find(t => t.id === playInSeeds[0].id);
-          const seed2 = teams.find(t => t.id === playInSeeds[1].id);
-          
-          const winnersWithSeed = r1Winners.map(w => ({ ...w, seedIndex: playInSeeds.findIndex(s => s.id === w.id) }));
-          winnersWithSeed.sort((a, b) => a.seedIndex - b.seedIndex);
-          
-          if (seed1.id === myTeam.id) {
-              setOpponentChoice({
-                  type: 'playin',
-                  title: '플레이-인 2라운드 상대 선택',
-                  description: '1라운드 승리팀 중 한 팀을 2라운드 상대로 지명할 수 있습니다.',
-                  picker: seed1,
-                  opponents: winnersWithSeed,
-                  onConfirm: (pickedTeam) => {
-                      const remainingTeam = winnersWithSeed.find(w => w.id !== pickedTeam.id);
-                      generatePlayInRound2(matches, seed1, seed2, pickedTeam, remainingTeam);
-                  }
-              });
-              return;
-          } else {
-              const lowerSeedWinner = winnersWithSeed[1]; 
-              const higherSeedWinner = winnersWithSeed[0];
-              
-              let pickedTeam;
-              if (Math.random() < 0.65) {
-                  pickedTeam = lowerSeedWinner; 
-              } else {
-                  pickedTeam = higherSeedWinner;
-              }
-              const remainingTeam = (pickedTeam.id === lowerSeedWinner.id) ? higherSeedWinner : lowerSeedWinner;
-              
-              generatePlayInRound2(matches, seed1, seed2, pickedTeam, remainingTeam);
-          }
-      }
-
-      // 2라운드(2.7)가 모두 끝났는지 확인 -> 최종전 생성
-      const r2Matches = matches.filter(m => m.type === 'playin' && m.date.includes('2.7'));
-      const r2Finished = r2Matches.length > 0 && r2Matches.every(m => m.status === 'finished');
-      const finalExists = matches.some(m => m.type === 'playin' && m.date.includes('2.8'));
-
-      if (r2Finished && !finalExists) {
-          const losers = r2Matches.map(m => {
-             const winnerName = m.result.winner;
-             return m.t1 === teams.find(t=>t.name===winnerName).id ? teams.find(t=>t.id===m.t2) : teams.find(t=>t.id===m.t1);
-          });
-
-          const finalMatch = { 
-              id: Date.now() + 200, t1: losers[0].id, t2: losers[1].id, date: '2.8 (일)', time: '17:00', type: 'playin', format: 'BO5', status: 'pending', round: 3, label: '플레이-인 최종전'
-          };
-          
-          const newMatches = [...matches, finalMatch].sort((a,b) => parseFloat(a.date.split(' ')[0]) - parseFloat(b.date.split(' ')[0]));
-          updateLeague(league.id, { matches: newMatches });
-          setLeague(prev => ({ ...prev, matches: newMatches }));
-          alert("플레이-인 최종전 대진이 완성되었습니다!");
-      }
-  };
-
-  const checkAndGenerateNextPlayoffRound = (currentMatches) => {
-    if (!league.playoffSeeds) return;
-
-    const getWinner = m => teams.find(t => t.name === m.result.winner).id;
-    const getLoser = m => (m.t1 === getWinner(m) ? m.t2 : m.t1);
-
-    // --- R1 -> R2 (Winners/Losers) ---
-    const r1Matches = currentMatches.filter(m => m.type === 'playoff' && m.round === 1);
-    const r1Finished = r1Matches.length === 2 && r1Matches.every(m => m.status === 'finished');
-    const r2Exists = currentMatches.some(m => m.type === 'playoff' && m.round === 2);
+    // 1. Check if Round 1 is finished
+    const r1Matches = matches.filter(m => m.type === 'playin' && m.round === 1);
+    const r1Finished = r1Matches.length > 0 && r1Matches.every(m => m.status === 'finished');
+    const r2Exists = matches.some(m => m.type === 'playin' && m.round === 2);
 
     if (r1Finished && !r2Exists) {
-        const r1Winners = r1Matches.map(m => ({ id: getWinner(m), fromMatch: m.match }));
-        const r1Losers = r1Matches.map(m => ({ id: getLoser(m), fromMatch: m.match }));
+        const r1Winners = r1Matches.map(m => teams.find(t => t.name === m.result.winner));
+        const playInSeeds = league.playInSeeds || []; 
+        const seed1 = teams.find(t => t.id === playInSeeds[0].id);
+        const seed2 = teams.find(t => t.id === playInSeeds[1].id);
         
-        const seed1 = league.playoffSeeds.find(s => s.seed === 1).id;
-        const seed2 = league.playoffSeeds.find(s => s.seed === 2).id;
+        // Fallback if seeds are missing
+        if (!seed1 || !seed2) return;
 
-        const generateR2Matches = (pickedWinner) => {
-            const remainingWinner = r1Winners.find(w => w.id !== pickedWinner.id).id;
-            
-            const newPlayoffMatches = [
-                // R2 Winners
-                { id: Date.now() + 400, round: 2, match: 1, label: '승자조 2R', t1: seed1, t2: pickedWinner.id, date: '2.13 (금)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: seed1 },
-                { id: Date.now() + 401, round: 2, match: 2, label: '승자조 2R', t1: seed2, t2: remainingWinner, date: '2.13 (금)', time: '19:30', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: seed2 },
-                // R2 Losers
-                { id: Date.now() + 402, round: 2.1, match: 1, label: '패자조 1R', t1: r1Losers[0].id, t2: r1Losers[1].id, date: '2.14 (토)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: 'coin' },
-            ];
-            
-            const allMatches = [...currentMatches, ...newPlayoffMatches];
-            updateLeague(league.id, { matches: allMatches });
-            setLeague(prev => ({ ...prev, matches: allMatches }));
-            alert("👑 플레이오프 2라운드 대진이 완성되었습니다!");
-            setOpponentChoice(null);
-        };
-
-        if (seed1 === myTeam.id) {
+        const winnersWithSeed = r1Winners.map(w => ({ ...w, seedIndex: playInSeeds.findIndex(s => s.id === w.id) }));
+        winnersWithSeed.sort((a, b) => a.seedIndex - b.seedIndex);
+        
+        if (seed1.id === myTeam.id) {
             setOpponentChoice({
-                type: 'playoff_r2',
-                title: '플레이오프 2라운드 상대 선택',
+                type: 'playin',
+                title: '플레이-인 2라운드 상대 선택',
                 description: '1라운드 승리팀 중 한 팀을 2라운드 상대로 지명할 수 있습니다.',
-                picker: teams.find(t => t.id === seed1),
-                opponents: r1Winners.map(w => teams.find(t => t.id === w.id)),
-                onConfirm: (pickedTeam) => generateR2Matches(pickedTeam)
+                picker: seed1,
+                opponents: winnersWithSeed,
+                onConfirm: (pickedTeam) => {
+                    const remainingTeam = winnersWithSeed.find(w => w.id !== pickedTeam.id);
+                    generatePlayInRound2(matches, seed1, seed2, pickedTeam, remainingTeam);
+                }
             });
             return;
         } else {
-            // AI Logic: Pick the winner from the higher-seeded R1 match (3-seed's match) if they win, otherwise pick the other winner.
-            const r1m1Winner = getWinner(r1Matches.find(m => m.match === 1));
-            const r1m2Winner = getWinner(r1Matches.find(m => m.match === 2));
-            const r1m1Seed3 = r1Matches.find(m => m.match === 1).t1;
+            const lowerSeedWinner = winnersWithSeed[1]; 
+            const higherSeedWinner = winnersWithSeed[0];
             
-            let pickedId;
-            if (r1m1Winner === r1m1Seed3) { // If seed 3 won their match
-                pickedId = r1m2Winner; // Pick the other winner
+            let pickedTeam;
+            // Higher seed prefers lower seed winner generally
+            if (Math.random() < 0.65) {
+                pickedTeam = lowerSeedWinner; 
             } else {
-                pickedId = r1m1Winner; // Pick the team that beat seed 3
+                pickedTeam = higherSeedWinner;
             }
-            generateR2Matches(teams.find(t => t.id === pickedId));
+            const remainingTeam = (pickedTeam.id === lowerSeedWinner.id) ? higherSeedWinner : lowerSeedWinner;
+            generatePlayInRound2(matches, seed1, seed2, pickedTeam, remainingTeam);
         }
-        return; // Stop further checks
     }
 
-    // --- R2 -> R3 (Winners/Losers) ---
-    const r2wMatches = currentMatches.filter(m => m.type === 'playoff' && m.round === 2);
-    const r2lMatch = currentMatches.find(m => m.type === 'playoff' && m.round === 2.1);
-    const r2Finished = r2wMatches.length === 2 && r2wMatches.every(m => m.status === 'finished') && r2lMatch?.status === 'finished';
-    const r3Exists = currentMatches.some(m => m.type === 'playoff' && m.round === 3);
+    // 2. Check if Round 2 is finished -> Generate Final (Round 3)
+    const r2Matches = matches.filter(m => m.type === 'playin' && m.round === 2);
+    const r2Finished = r2Matches.length > 0 && r2Matches.every(m => m.status === 'finished');
+    const finalExists = matches.some(m => m.type === 'playin' && m.round === 3);
 
-    if (r2Finished && !r3Exists) {
-        const r2wWinners = r2wMatches.map(m => getWinner(m));
-        const r2wLosers = r2wMatches.map(m => ({ id: getLoser(m), seed: (league.playoffSeeds.find(s => s.id === getLoser(m)) || {seed: 99}).seed }));
-        r2wLosers.sort((a,b) => a.seed - b.seed); // Sort by seed, lower is better
+    if (r2Finished && !finalExists) {
+        const losers = r2Matches.map(m => {
+           const winnerName = m.result.winner;
+           // Determine loser safely
+           const t1 = teams.find(t=>t.id === m.t1);
+           const t2 = teams.find(t=>t.id === m.t2);
+           return t1.name === winnerName ? t2 : t1;
+        });
+
+        const finalMatch = { 
+            id: Date.now() + 200, t1: losers[0].id, t2: losers[1].id, date: '2.8 (일)', time: '17:00', type: 'playin', format: 'BO5', status: 'pending', round: 3, label: '플레이-인 최종전'
+        };
         
-        const r2lWinner = getWinner(r2lMatch);
-
-        const newPlayoffMatches = [
-            // R3 Winners
-            { id: Date.now() + 500, round: 3, match: 1, label: '승자조 결승', t1: r2wWinners[0], t2: r2wWinners[1], date: '2.18 (수)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: 'coin' },
-            // R2 Losers R2
-            { id: Date.now() + 501, round: 2.2, match: 1, label: '패자조 2R', t1: r2wLosers[1].id, t2: r2lWinner, date: '2.15 (일)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: r2wLosers[1].id },
-        ];
-
-        const allMatches = [...currentMatches, ...newPlayoffMatches];
-        updateLeague(league.id, { matches: allMatches });
-        setLeague(prev => ({ ...prev, matches: allMatches }));
-        alert("👑 플레이오프 3라운드 승자조 및 2라운드 패자조 경기가 생성되었습니다!");
-        return;
+        const newMatches = [...matches, finalMatch].sort((a,b) => parseFloat(a.date.split(' ')[0]) - parseFloat(b.date.split(' ')[0]));
+        updateLeague(league.id, { matches: newMatches });
+        setLeague(prev => ({ ...prev, matches: newMatches }));
+        alert("플레이-인 최종전 대진이 완성되었습니다!");
     }
-    
-    // --- R2.2 & R3 Winners -> R3 Losers ---
-    const r2_2Match = currentMatches.find(m => m.type === 'playoff' && m.round === 2.2);
-    const r3wMatch = currentMatches.find(m => m.type === 'playoff' && m.round === 3);
-    const r3lExists = currentMatches.some(m => m.type === 'playoff' && m.round === 3.1);
+};
 
-    if (r2_2Match?.status === 'finished' && r3wMatch?.status === 'finished' && !r3lExists) {
-        // BUG FIX: The loser from the WINNERS bracket (r2wMatches) should drop down, not the loser from the losers bracket.
-        const r2wMatchesFinished = currentMatches.filter(m => m.round === 2 && m.status === 'finished');
-        const r2wLosers = r2wMatchesFinished.map(m => ({ id: getLoser(m), seed: (league.playoffSeeds.find(s => s.id === getLoser(m)) || {seed: 99}).seed }));
-        r2wLosers.sort((a,b) => a.seed - b.seed); // Higher seed is r2wLosers[0]
-        
-        const r2_2Winner = getWinner(r2_2Match);
+// [FIX] Robust Playoff Progression using 'round' ID
+const checkAndGenerateNextPlayoffRound = (currentMatches) => {
+  if (!league.playoffSeeds) return;
 
-        const newMatch = { id: Date.now() + 600, round: 3.1, match: 1, label: '패자조 3R', t1: r2wLosers[0].id, t2: r2_2Winner, date: '2.19 (목)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: r2wLosers[0].id };
-        
-        const allMatches = [...currentMatches, newMatch];
-        updateLeague(league.id, { matches: allMatches });
-        setLeague(prev => ({ ...prev, matches: allMatches }));
-        alert("👑 플레이오프 3라운드 패자조 경기가 생성되었습니다!");
-        return;
-    }
+  const getWinner = m => teams.find(t => t.name === m.result.winner).id;
+  const getLoser = m => (m.t1 === getWinner(m) ? m.t2 : m.t1);
 
-    // --- R3 Losers & R3 Winners -> R4 (Finals Qualifier) ---
-    const r3lMatch = currentMatches.find(m => m.type === 'playoff' && m.round === 3.1);
-    const r4Exists = currentMatches.some(m => m.type === 'playoff' && m.round === 4);
+  // --- R1 -> R2 (Winners/Losers) ---
+  const r1Matches = currentMatches.filter(m => m.type === 'playoff' && m.round === 1);
+  const r1Finished = r1Matches.length === 2 && r1Matches.every(m => m.status === 'finished');
+  const r2Exists = currentMatches.some(m => m.type === 'playoff' && m.round === 2);
 
-    if (r3lMatch?.status === 'finished' && r3wMatch?.status === 'finished' && !r4Exists) {
-        const r3wLoser = getLoser(r3wMatch);
-        const r3lWinner = getWinner(r3lMatch);
+  if (r1Finished && !r2Exists) {
+      const r1Winners = r1Matches.map(m => ({ id: getWinner(m), fromMatch: m.match }));
+      const r1Losers = r1Matches.map(m => ({ id: getLoser(m), fromMatch: m.match }));
+      
+      const seed1 = league.playoffSeeds.find(s => s.seed === 1).id;
+      const seed2 = league.playoffSeeds.find(s => s.seed === 2).id;
 
-        const newMatch = { id: Date.now() + 700, round: 4, match: 1, label: '결승 진출전', t1: r3wLoser, t2: r3lWinner, date: '2.21 (토)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: r3wLoser };
-        
-        const allMatches = [...currentMatches, newMatch];
-        updateLeague(league.id, { matches: allMatches });
-        setLeague(prev => ({ ...prev, matches: allMatches }));
-        alert("👑 플레이오프 결승 진출전이 생성되었습니다!");
-        return;
-    }
+      const generateR2Matches = (pickedWinner) => {
+          const remainingWinner = r1Winners.find(w => w.id !== pickedWinner.id).id;
+          
+          const newPlayoffMatches = [
+              // R2 Winners
+              { id: Date.now() + 400, round: 2, match: 1, label: '승자조 2R', t1: seed1, t2: pickedWinner.id, date: '2.13 (금)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: seed1 },
+              { id: Date.now() + 401, round: 2, match: 2, label: '승자조 2R', t1: seed2, t2: remainingWinner, date: '2.13 (금)', time: '19:30', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: seed2 },
+              // R2 Losers
+              { id: Date.now() + 402, round: 2.1, match: 1, label: '패자조 1R', t1: r1Losers[0].id, t2: r1Losers[1].id, date: '2.14 (토)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: 'coin' },
+          ];
+          
+          const allMatches = [...currentMatches, ...newPlayoffMatches];
+          updateLeague(league.id, { matches: allMatches });
+          setLeague(prev => ({ ...prev, matches: allMatches }));
+          alert("👑 플레이오프 2라운드 대진이 완성되었습니다!");
+          setOpponentChoice(null);
+      };
 
-    // --- R4 & R3 Winners -> Grand Final ---
-    const r4Match = currentMatches.find(m => m.type === 'playoff' && m.round === 4);
-    const finalExists = currentMatches.some(m => m.type === 'playoff' && m.round === 5);
+      if (seed1 === myTeam.id) {
+          setOpponentChoice({
+              type: 'playoff_r2',
+              title: '플레이오프 2라운드 상대 선택',
+              description: '1라운드 승리팀 중 한 팀을 2라운드 상대로 지명할 수 있습니다.',
+              picker: teams.find(t => t.id === seed1),
+              opponents: r1Winners.map(w => teams.find(t => t.id === w.id)),
+              onConfirm: (pickedTeam) => generateR2Matches(pickedTeam)
+          });
+          return;
+      } else {
+          // AI Logic
+          const r1m1Winner = getWinner(r1Matches.find(m => m.match === 1));
+          const r1m2Winner = getWinner(r1Matches.find(m => m.match === 2));
+          const r1m1Seed3 = r1Matches.find(m => m.match === 1).t1;
+          
+          let pickedId;
+          if (r1m1Winner === r1m1Seed3) pickedId = r1m2Winner; 
+          else pickedId = r1m1Winner;
+          
+          generateR2Matches(teams.find(t => t.id === pickedId));
+      }
+      return; 
+  }
 
-    if (r4Match?.status === 'finished' && r3wMatch?.status === 'finished' && !finalExists) {
-        const r3wWinner = getWinner(r3wMatch);
-        const r4Winner = getWinner(r4Match);
+  // --- R2 -> R3 ---
+  const r2wMatches = currentMatches.filter(m => m.type === 'playoff' && m.round === 2);
+  const r2lMatch = currentMatches.find(m => m.type === 'playoff' && m.round === 2.1);
+  const r2Finished = r2wMatches.length === 2 && r2wMatches.every(m => m.status === 'finished') && r2lMatch?.status === 'finished';
+  const r3Exists = currentMatches.some(m => m.type === 'playoff' && m.round === 3);
 
-        const newMatch = { id: Date.now() + 800, round: 5, match: 1, label: '결승전', t1: r3wWinner, t2: r4Winner, date: '2.22 (일)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: r3wWinner };
-        
-        const allMatches = [...currentMatches, newMatch];
-        updateLeague(league.id, { matches: allMatches });
-        setLeague(prev => ({ ...prev, matches: allMatches }));
-        alert("🏆 대망의 결승전이 생성되었습니다!");
-        return;
-    }
-  };
+  if (r2Finished && !r3Exists) {
+      const r2wWinners = r2wMatches.map(m => getWinner(m));
+      const r2wLosers = r2wMatches.map(m => ({ id: getLoser(m), seed: (league.playoffSeeds.find(s => s.id === getLoser(m)) || {seed: 99}).seed }));
+      r2wLosers.sort((a,b) => a.seed - b.seed); 
+      
+      const r2lWinner = getWinner(r2lMatch);
+
+      const newPlayoffMatches = [
+          { id: Date.now() + 500, round: 3, match: 1, label: '승자조 결승', t1: r2wWinners[0], t2: r2wWinners[1], date: '2.18 (수)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: 'coin' },
+          { id: Date.now() + 501, round: 2.2, match: 1, label: '패자조 2R', t1: r2wLosers[1].id, t2: r2lWinner, date: '2.15 (일)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: r2wLosers[1].id },
+      ];
+
+      const allMatches = [...currentMatches, ...newPlayoffMatches];
+      updateLeague(league.id, { matches: allMatches });
+      setLeague(prev => ({ ...prev, matches: allMatches }));
+      alert("👑 플레이오프 3라운드 승자조 및 2라운드 패자조 경기가 생성되었습니다!");
+      return;
+  }
+  
+  // --- R2.2 & R3 -> R3 Loser ---
+  const r2_2Match = currentMatches.find(m => m.type === 'playoff' && m.round === 2.2);
+  const r3wMatch = currentMatches.find(m => m.type === 'playoff' && m.round === 3);
+  const r3lExists = currentMatches.some(m => m.type === 'playoff' && m.round === 3.1);
+
+  if (r2_2Match?.status === 'finished' && r3wMatch?.status === 'finished' && !r3lExists) {
+      const r2wMatchesFinished = currentMatches.filter(m => m.round === 2 && m.status === 'finished');
+      // Find the higher seed loser from Winner Bracket R2
+      const r2wLosers = r2wMatchesFinished.map(m => ({ id: getLoser(m), seed: (league.playoffSeeds.find(s => s.id === getLoser(m)) || {seed: 99}).seed }));
+      r2wLosers.sort((a,b) => a.seed - b.seed); 
+      
+      const r2_2Winner = getWinner(r2_2Match);
+
+      const newMatch = { id: Date.now() + 600, round: 3.1, match: 1, label: '패자조 3R', t1: r2wLosers[0].id, t2: r2_2Winner, date: '2.19 (목)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: r2wLosers[0].id };
+      
+      const allMatches = [...currentMatches, newMatch];
+      updateLeague(league.id, { matches: allMatches });
+      setLeague(prev => ({ ...prev, matches: allMatches }));
+      alert("👑 플레이오프 3라운드 패자조 경기가 생성되었습니다!");
+      return;
+  }
+
+  // --- R4 Qualifier ---
+  const r3lMatch = currentMatches.find(m => m.type === 'playoff' && m.round === 3.1);
+  const r4Exists = currentMatches.some(m => m.type === 'playoff' && m.round === 4);
+
+  if (r3lMatch?.status === 'finished' && r3wMatch?.status === 'finished' && !r4Exists) {
+      const r3wLoser = getLoser(r3wMatch);
+      const r3lWinner = getWinner(r3lMatch);
+
+      const newMatch = { id: Date.now() + 700, round: 4, match: 1, label: '결승 진출전', t1: r3wLoser, t2: r3lWinner, date: '2.21 (토)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: r3wLoser };
+      
+      const allMatches = [...currentMatches, newMatch];
+      updateLeague(league.id, { matches: allMatches });
+      setLeague(prev => ({ ...prev, matches: allMatches }));
+      alert("👑 플레이오프 결승 진출전이 생성되었습니다!");
+      return;
+  }
+
+  // --- Grand Final ---
+  const r4Match = currentMatches.find(m => m.type === 'playoff' && m.round === 4);
+  const finalExists = currentMatches.some(m => m.type === 'playoff' && m.round === 5);
+
+  if (r4Match?.status === 'finished' && r3wMatch?.status === 'finished' && !finalExists) {
+      const r3wWinner = getWinner(r3wMatch);
+      const r4Winner = getWinner(r4Match);
+
+      const newMatch = { id: Date.now() + 800, round: 5, match: 1, label: '결승전', t1: r3wWinner, t2: r4Winner, date: '2.22 (일)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: r3wWinner };
+      
+      const allMatches = [...currentMatches, newMatch];
+      updateLeague(league.id, { matches: allMatches });
+      setLeague(prev => ({ ...prev, matches: allMatches }));
+      alert("🏆 대망의 결승전이 생성되었습니다!");
+      return;
+  }
+};
 
   // [REPLACE] Function: runSimulationForMatch
   // Location: Inside Dashboard component, before handleProceedNextMatch
