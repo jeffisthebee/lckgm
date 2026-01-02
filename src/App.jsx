@@ -1876,11 +1876,8 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
 
             if (!result || !result.picks) throw new Error("Draft failed");
 
-            // [FIX] Correctly attach playerData from roster so Income Calculator works
             const enrichPlayer = (p, teamRoster, side) => {
-                // Find the full player object from the roster using the name
                 const rosterData = teamRoster.find(r => r.이름 === p.playerName);
-                // Fallback data if not found (prevents crash)
                 const safeData = rosterData || { 이름: p.playerName, 포지션: 'TOP', 상세: { 성장: 50, 라인전: 50, 무력: 50, 안정성: 50, 운영: 50, 한타: 50 } };
                 
                 return { 
@@ -1890,7 +1887,6 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                     currentGold: 500, 
                     lvl: 1, 
                     xp: 0, 
-                    // CRITICAL: Assign the found roster data to playerData
                     playerData: safeData 
                 };
             };
@@ -1942,91 +1938,86 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
         });
 
         // B. Update Stats
-       // B. Update Stats
-       setLiveStats(prevStats => {
-        const nextStats = { 
-            ...prevStats, 
-            kills: { ...prevStats.kills },
-            towers: { ...prevStats.towers },
-            players: prevStats.players.map(p => ({...p})) 
-        };
-
-        if (currentLogs.length > 0) {
-            setDisplayLogs(prevLogs => [...prevLogs, ...currentLogs].slice(-15));
-            currentLogs.forEach(l => {
-                // [FIX] Improved Log Parsing to prevent "Team Kills"
-                // Matches: "⚔️ [POS] Name (Champ)" or "🛡️ [POS] Name (Champ)"
-                if (l.includes('⚔️') || l.includes('🛡️')) {
-                    const killerMatch = l.match(/(?:⚔️|🛡️)\s*\[.*?\]\s*(.*?)\s*\(/);
-                    const victimMatch = l.match(/➜\s*☠️\s*\[.*?\]\s*(.*?)\s*\(/);
-                    
-                    if (killerMatch && victimMatch) {
-                        const killerName = killerMatch[1].trim();
-                        const victimName = victimMatch[1].trim();
-                        
-                        // Find players. Note: match might find the wrong side if names are identical.
-                        // We prioritize finding players on OPPOSITE sides.
-                        let killer = nextStats.players.find(p => p.playerName === killerName);
-                        let victim = nextStats.players.find(p => p.playerName === victimName);
-
-                        // Safety Check: If they are on the same side, try to find the player on the other side
-                        if (killer && victim && killer.side === victim.side) {
-                            const otherSide = killer.side === 'BLUE' ? 'RED' : 'BLUE';
-                            // Try to find victim on the other side first
-                            const altVictim = nextStats.players.find(p => p.playerName === victimName && p.side === otherSide);
-                            if (altVictim) {
-                                victim = altVictim;
-                            } else {
-                                // If victim wasn't on other side, maybe killer was?
-                                const altKiller = nextStats.players.find(p => p.playerName === killerName && p.side === otherSide);
-                                if (altKiller) killer = altKiller;
-                            }
-                        }
-                        
-                        if (killer && victim && killer.side !== victim.side) { 
-                            killer.k++; 
-                            nextStats.kills[killer.side]++; 
-                            killer.currentGold += 300; 
-                            victim.d++; 
-                        }
-                        
-                        if (l.includes('assists:')) {
-                            const assistPart = l.split('assists:')[1];
-                            const assisters = assistPart.split(',').map(s => s.trim());
-                            assisters.forEach(aName => {
-                                // Assisters must be on Killer's side
-                                const ast = nextStats.players.find(p => p.playerName === aName && p.side === killer?.side);
-                                if (ast) { 
-                                    ast.a++; 
-                                    ast.currentGold += 150; 
-                                }
-                            });
-                        }
-                    }
-                }
-                if (l.includes('포탑') || l.includes('억제기')) {
-                    if (l.includes(simulationData.blueTeam.name)) {
-                        nextStats.towers.BLUE++; 
-                        nextStats.players.filter(p => p.side === 'BLUE').forEach(p => p.currentGold += 150);
-                    } else {
-                        nextStats.towers.RED++;
-                        nextStats.players.filter(p => p.side === 'RED').forEach(p => p.currentGold += 150);
-                    }
-                }
-            });
-        }
+        setLiveStats(prevStats => {
+          const nextStats = { 
+              ...prevStats, 
+              kills: { ...prevStats.kills },
+              towers: { ...prevStats.towers },
+              players: prevStats.players.map(p => ({...p})) 
+          };
+  
+          if (currentLogs.length > 0) {
+              setDisplayLogs(prevLogs => [...prevLogs, ...currentLogs].slice(-15));
+              
+              currentLogs.forEach(l => {
+                  // [FIX] Improved Log Parsing & Team Kill Prevention
+                  if (l.includes('⚔️') || l.includes('🛡️')) {
+                      const killerMatch = l.match(/(?:⚔️|🛡️)\s*\[.*?\]\s*(.*?)\s*\(/);
+                      const victimMatch = l.match(/➜\s*☠️\s*\[.*?\]\s*(.*?)\s*\(/);
+                      
+                      if (killerMatch && victimMatch) {
+                          const killerName = killerMatch[1].trim();
+                          const victimName = victimMatch[1].trim();
+                          
+                          // Find all matching players for killer and victim
+                          const killerCandidates = nextStats.players.filter(p => p.playerName === killerName);
+                          const victimCandidates = nextStats.players.filter(p => p.playerName === victimName);
+  
+                          let killer = null;
+                          let victim = null;
+  
+                          // Logic to pair them ensuring they are on OPPOSITE sides
+                          for (const k of killerCandidates) {
+                              for (const v of victimCandidates) {
+                                  if (k.side !== v.side) {
+                                      killer = k;
+                                      victim = v;
+                                      break;
+                                  }
+                              }
+                              if (killer && victim) break;
+                          }
+  
+                          // Only process if we found a valid Enemy pair
+                          if (killer && victim) { 
+                              killer.k++; 
+                              nextStats.kills[killer.side]++; 
+                              killer.currentGold += 300; 
+                              victim.d++; 
+                          
+                              if (l.includes('assists:')) {
+                                  const assistPart = l.split('assists:')[1];
+                                  const assisters = assistPart.split(',').map(s => s.trim());
+                                  assisters.forEach(aName => {
+                                      // Assisters must be on Killer's side
+                                      const ast = nextStats.players.find(p => p.playerName === aName && p.side === killer?.side);
+                                      if (ast) { 
+                                          ast.a++; 
+                                          ast.currentGold += 150; 
+                                      }
+                                  });
+                              }
+                          }
+                      }
+                  }
+                  
+                  if (l.includes('포탑') || l.includes('억제기')) {
+                      if (l.includes(simulationData.blueTeam.name)) {
+                          nextStats.towers.BLUE++; 
+                          nextStats.players.filter(p => p.side === 'BLUE').forEach(p => p.currentGold += 150);
+                      } else {
+                          nextStats.towers.RED++;
+                          nextStats.players.filter(p => p.side === 'RED').forEach(p => p.currentGold += 150);
+                      }
+                  }
+              });
+          }
 
             // Passive Gold & XP Logic (Per Second)
             nextStats.players.forEach(p => {
-                // Calculate income based on player stats
-                // p.playerData is now guaranteed to exist due to startSet fix
                 const income = calculateIndividualIncome(p, currentMinute, 1.0); 
-                
-                // Add 1/60th of minute income per second
                 if (income.gold > 0) p.currentGold += (income.gold / 60);
                 if (income.xp > 0) p.xp += (income.xp / 60);
-
-                // Level Up Cap
                 if (p.lvl < 18) {
                     const reqXp = 180 + (p.lvl * 100);
                     if (p.xp >= reqXp) {
@@ -2046,7 +2037,6 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
         // C. Check End
         if (nextTime >= finalSec) {
             setGameTime(finalSec);
-            // Sync final stats exactly to ensure result screen is correct
             setLiveStats(st => ({ 
                 ...st, 
                 kills: simulationData.gameResult.finalKills 
@@ -2063,8 +2053,6 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
   if (!simulationData && phase !== 'SET_RESULT') return <div className="fixed inset-0 bg-black text-white flex items-center justify-center z-[200] font-bold text-3xl">경기 로딩 중...</div>;
 
   const { blueTeam, redTeam } = simulationData || {};
-
-  // [MODIFIED] Determine which score belongs to which side
   const isBlueTeamA = blueTeam?.name === teamA.name;
   const blueTeamWins = isBlueTeamA ? winsA : winsB;
   const redTeamWins = isBlueTeamA ? winsB : winsA;
@@ -2083,12 +2071,10 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
           )}
 
           <div className="h-24 flex items-center justify-between px-8">
-            {/* Blue Team (Left) */}
             <div className="flex flex-col w-1/3">
                  <div className="flex items-center gap-4 mb-2">
                     <div className="text-4xl font-black text-blue-500">{blueTeam?.name}</div>
                     <div className="flex gap-2">
-                        {/* [MODIFIED] Display wins for whoever is on Blue side */}
                         {Array(match.format === 'BO5' ? 3 : 2).fill(0).map((_,i) => (
                             <div key={i} className={`w-3 h-3 rounded-full ${i < blueTeamWins ? 'bg-blue-500' : 'bg-gray-700'}`}></div>
                         ))}
@@ -2102,7 +2088,6 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                  </div>
             </div>
 
-            {/* Center Scoreboard */}
             <div className="flex flex-col items-center justify-center w-1/3">
                 <div className="flex items-center gap-6">
                     <span className="text-5xl font-black text-blue-400">{liveStats.kills.BLUE}</span>
@@ -2120,11 +2105,9 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                 </div>
             </div>
 
-            {/* Red Team (Right) */}
             <div className="flex flex-col items-end w-1/3">
                  <div className="flex items-center gap-4 mb-2">
                     <div className="flex gap-2">
-                        {/* [MODIFIED] Display wins for whoever is on Red side */}
                         {Array(match.format === 'BO5' ? 3 : 2).fill(0).map((_,i) => (
                             <div key={i} className={`w-3 h-3 rounded-full ${i < redTeamWins ? 'bg-red-500' : 'bg-gray-700'}`}></div>
                         ))}
@@ -2143,7 +2126,7 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
 
       {/* 2. Main Game View */}
       <div className="flex-1 flex overflow-hidden">
-         {/* Left: Blue Team Players */}
+         {/* Left: Blue Team */}
          <div className="w-80 bg-gray-900 border-r border-gray-800 flex flex-col pt-2">
             {liveStats.players.filter(p => p.side === 'BLUE').map((p, i) => (
                 <div key={i} className="flex-1 border-b border-gray-800 relative p-2 flex items-center gap-3">
@@ -2168,7 +2151,7 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
             ))}
          </div>
 
-         {/* Center: Logs & Controls */}
+         {/* Center */}
          <div className="flex-1 flex flex-col bg-black/95 relative">
             <div className="flex-1 p-4 space-y-2 overflow-y-auto font-mono text-sm pb-20 scrollbar-hide">
                 {displayLogs.map((log, i) => (
@@ -2193,7 +2176,7 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
             </div>
          </div>
 
-         {/* Right: Red Team Players */}
+         {/* Right: Red Team */}
          <div className="w-80 bg-gray-900 border-l border-gray-800 flex flex-col pt-2">
             {liveStats.players.filter(p => p.side === 'RED').map((p, i) => (
                 <div key={i} className="flex-1 border-b border-gray-800 relative p-2 flex flex-row-reverse items-center gap-3 text-right">
@@ -2412,76 +2395,101 @@ function Dashboard() {
   };
 
   // [FIX] Robust Round Progression using 'round' ID instead of Date strings
-  const checkAndGenerateNextPlayInRound = (matches) => {
-    // 1. Check if Round 1 is finished
-    const r1Matches = matches.filter(m => m.type === 'playin' && m.round === 1);
-    const r1Finished = r1Matches.length > 0 && r1Matches.every(m => m.status === 'finished');
-    const r2Exists = matches.some(m => m.type === 'playin' && m.round === 2);
+  // [FIX] Robust Round Progression for Play-In (R1 -> R2 -> Final)
+const checkAndGenerateNextPlayInRound = (matches) => {
+  // 1. Check if Round 1 is finished
+  const r1Matches = matches.filter(m => m.type === 'playin' && m.round === 1);
+  const r1Finished = r1Matches.length > 0 && r1Matches.every(m => m.status === 'finished');
+  const r2Exists = matches.some(m => m.type === 'playin' && m.round === 2);
 
-    if (r1Finished && !r2Exists) {
-        const r1Winners = r1Matches.map(m => teams.find(t => t.name === m.result.winner));
-        const playInSeeds = league.playInSeeds || []; 
-        const seed1 = teams.find(t => t.id === playInSeeds[0].id);
-        const seed2 = teams.find(t => t.id === playInSeeds[1].id);
-        
-        // Fallback if seeds are missing
-        if (!seed1 || !seed2) return;
+  if (r1Finished && !r2Exists) {
+      const r1Winners = r1Matches.map(m => teams.find(t => t.name === m.result.winner));
+      const playInSeeds = league.playInSeeds || []; 
+      const seed1 = teams.find(t => t.id === playInSeeds[0].id);
+      const seed2 = teams.find(t => t.id === playInSeeds[1].id);
+      
+      // Fallback if seeds are missing
+      if (!seed1 || !seed2) return;
 
-        const winnersWithSeed = r1Winners.map(w => ({ ...w, seedIndex: playInSeeds.findIndex(s => s.id === w.id) }));
-        winnersWithSeed.sort((a, b) => a.seedIndex - b.seedIndex);
-        
-        if (seed1.id === myTeam.id) {
-            setOpponentChoice({
-                type: 'playin',
-                title: '플레이-인 2라운드 상대 선택',
-                description: '1라운드 승리팀 중 한 팀을 2라운드 상대로 지명할 수 있습니다.',
-                picker: seed1,
-                opponents: winnersWithSeed,
-                onConfirm: (pickedTeam) => {
-                    const remainingTeam = winnersWithSeed.find(w => w.id !== pickedTeam.id);
-                    generatePlayInRound2(matches, seed1, seed2, pickedTeam, remainingTeam);
-                }
-            });
-            return;
-        } else {
-            const lowerSeedWinner = winnersWithSeed[1]; 
-            const higherSeedWinner = winnersWithSeed[0];
-            
-            let pickedTeam;
-            // Higher seed prefers lower seed winner generally
-            if (Math.random() < 0.65) {
-                pickedTeam = lowerSeedWinner; 
-            } else {
-                pickedTeam = higherSeedWinner;
-            }
-            const remainingTeam = (pickedTeam.id === lowerSeedWinner.id) ? higherSeedWinner : lowerSeedWinner;
-            generatePlayInRound2(matches, seed1, seed2, pickedTeam, remainingTeam);
-        }
-    }
+      const winnersWithSeed = r1Winners.map(w => ({ ...w, seedIndex: playInSeeds.findIndex(s => s.id === w.id) }));
+      winnersWithSeed.sort((a, b) => a.seedIndex - b.seedIndex);
+      
+      // Logic for picking opponents (omitted strictly UI logic here, assuming choice is made or auto-generated)
+      // If it's the user's turn to pick, the UI handles calling generatePlayInRound2 directly.
+      // This block handles AUTO generation if the user isn't involved or after choice.
+      
+      // Check if we are waiting for user input (Seed 1 is My Team)
+      if (seed1.id === myTeam.id && !opponentChoice) {
+           setOpponentChoice({
+              type: 'playin',
+              title: '플레이-인 2라운드 상대 선택',
+              description: '1라운드 승리팀 중 한 팀을 2라운드 상대로 지명할 수 있습니다.',
+              picker: seed1,
+              opponents: winnersWithSeed,
+              onConfirm: (pickedTeam) => {
+                  const remainingTeam = winnersWithSeed.find(w => w.id !== pickedTeam.id);
+                  generatePlayInRound2(matches, seed1, seed2, pickedTeam, remainingTeam);
+              }
+          });
+          return;
+      } 
+      // If not my team, or already handled, AI generates:
+      if (seed1.id !== myTeam.id) {
+           const lowerSeedWinner = winnersWithSeed[1]; 
+           const higherSeedWinner = winnersWithSeed[0];
+           let pickedTeam;
+           // AI: Higher seed prefers lower seed winner generally
+           if (Math.random() < 0.65) {
+               pickedTeam = lowerSeedWinner; 
+           } else {
+               pickedTeam = higherSeedWinner;
+           }
+           const remainingTeam = (pickedTeam.id === lowerSeedWinner.id) ? higherSeedWinner : lowerSeedWinner;
+           generatePlayInRound2(matches, seed1, seed2, pickedTeam, remainingTeam);
+      }
+  }
 
-    // 2. Check if Round 2 is finished -> Generate Final (Round 3)
-    const r2Matches = matches.filter(m => m.type === 'playin' && m.round === 2);
-    const r2Finished = r2Matches.length > 0 && r2Matches.every(m => m.status === 'finished');
-    const finalExists = matches.some(m => m.type === 'playin' && m.round === 3);
+  // 2. Check if Round 2 is finished -> Generate Final (Round 3)
+  const r2Matches = matches.filter(m => m.type === 'playin' && m.round === 2);
+  const r2Finished = r2Matches.length > 0 && r2Matches.every(m => m.status === 'finished');
+  const finalExists = matches.some(m => m.type === 'playin' && m.round === 3);
 
-    if (r2Finished && !finalExists) {
-        const losers = r2Matches.map(m => {
-           const winnerName = m.result.winner;
-           // Determine loser safely
-           const t1 = teams.find(t=>t.id === m.t1);
-           const t2 = teams.find(t=>t.id === m.t2);
-           return t1.name === winnerName ? t2 : t1;
-        });
+  if (r2Finished && !finalExists) {
+      // [FIX] Logic to identify Round 2 Losers
+      const losers = r2Matches.map(m => {
+         const winnerName = m.result.winner;
+         // Safely find IDs
+         const t1Id = typeof m.t1 === 'object' ? m.t1.id : m.t1;
+         const t2Id = typeof m.t2 === 'object' ? m.t2.id : m.t2;
+         
+         const t1Obj = teams.find(t => t.id === t1Id);
+         const t2Obj = teams.find(t => t.id === t2Id);
 
-        const finalMatch = { 
-            id: Date.now() + 200, t1: losers[0].id, t2: losers[1].id, date: '2.8 (일)', time: '17:00', type: 'playin', format: 'BO5', status: 'pending', round: 3, label: '플레이-인 최종전'
-        };
-        
-        const newMatches = [...matches, finalMatch].sort((a,b) => parseFloat(a.date.split(' ')[0]) - parseFloat(b.date.split(' ')[0]));
-        updateLeague(league.id, { matches: newMatches });
-        setLeague(prev => ({ ...prev, matches: newMatches }));
-        alert("플레이-인 최종전 대진이 완성되었습니다!");
-    }
+         return t1Obj.name === winnerName ? t2Obj : t1Obj;
+      });
+
+      // Create Round 3 (Final Qualifier) Match
+      const finalMatch = { 
+          id: Date.now() + 200, 
+          t1: losers[0].id, 
+          t2: losers[1].id, 
+          date: '2.8 (일)', 
+          time: '17:00', 
+          type: 'playin', 
+          format: 'BO5', 
+          status: 'pending', 
+          round: 3, 
+          label: '플레이-인 최종전',
+          blueSidePriority: 'coin' // [REQ] Coin toss for side selection
+      };
+      
+      const newMatches = [...matches, finalMatch].sort((a,b) => parseFloat(a.date.split(' ')[0]) - parseFloat(b.date.split(' ')[0]));
+      
+      // Update League State
+      updateLeague(league.id, { matches: newMatches });
+      setLeague(prev => ({ ...prev, matches: newMatches }));
+      alert("🛡️ 플레이-인 최종전(2라운드 패자 대결) 대진이 완성되었습니다!");
+  }
 };
 
 // [FIX] Robust Playoff Progression using 'round' ID
