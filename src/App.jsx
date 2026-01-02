@@ -91,7 +91,7 @@ const SIM_CONSTANTS = {
 
   // [REQ 5] Updated Base Income Values
   BASE_INCOME: {
-      XP:   { TOP: 490, JGL: 490, MID: 490, ADC: 470, SUP: 385 },
+      XP:   { TOP: 475, JGL: 460, MID: 475, ADC: 450, SUP: 350 },
       GOLD: { TOP: 375, JGL: 325, MID: 425, ADC: 455, SUP: 260 }
   }
 };
@@ -132,7 +132,7 @@ const GAME_RULES = {
     },
   },
   OBJECTIVES: {
-    GRUBS: { time: 6, count: 3, gold: 300 }, 
+    GRUBS: { time: 7, count: 3, gold: 300 }, 
     HERALD: { time: 15, gold: 300 },
     BARON: { spawn: 20, duration: 3, gold: 1500, combat_bonus: 1.3 }, 
     ELDER: { spawn_after_soul: 6, duration: 3, combat_bonus: 1.6 },
@@ -559,7 +559,7 @@ function calculateIndividualIncome(pick, time, aliveRatio = 1.0) {
   
   // Base Constants
   const BASE_GOLD = { TOP: 375, JGL: 325, MID: 425, ADC: 455, SUP: 260 };
-  const BASE_XP = { TOP: 490, JGL: 490, MID: 490, ADC: 470, SUP: 385 }; // Same for Top/Jgl/Mid
+  const BASE_XP = { TOP: 475, JGL: 460, MID: 475, ADC: 450, SUP: 350 }; // Same for Top/Jgl/Mid
 
   let goldIncome = 0;
   let xpIncome = 0;
@@ -630,6 +630,7 @@ function calculateDeathTimer(level, time) {
 // Replaces: function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) { ... }
 // NOTE: This version tightens random variance, applies difficulty as a player-advantage multiplier (so 'easy' helps the player),
 // [REQ 2, 3, 4, 5] Updated Engine: Combat Probs, Multi-Kill, Penalties, Difficulty
+// [FIXED] Updated runGameTickEngine to prevent friendly fire in logs
 function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
   let time = 0; 
   let logs = [];
@@ -712,7 +713,7 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
 
   const VAR_RANGE_LOCAL = Math.min(SIM_CONSTANTS.VAR_RANGE, 0.06);
 
-  // [REQ 5] Updated Difficulty Multipliers (My Power Multipliers)
+  // Difficulty Multipliers
   const PLAYER_DIFFICULTY_MULTIPLIERS = {
     easy: 1.1,   
     normal: 1.0,
@@ -808,7 +809,6 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
           if (p.level < 18) {
             p.xp += income.xp;
             while (p.level < 18) {
-                // [REQ 2] Level Formula: 180 + (Current Level * 100)
                 const requiredXP = 180 + (p.level * 100);
                 if (p.xp >= requiredXP) {
                     p.xp -= requiredXP;
@@ -845,19 +845,19 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
     let powerBlue = calculateTeamPower(picksBlue, time, getActiveBuffs(SIDES.BLUE), 0, picksRed, minuteStartAbs);
     let powerRed = calculateTeamPower(picksRed, time, getActiveBuffs(SIDES.RED), 0, picksBlue, minuteStartAbs);
     
-    // [REQ 3] Dead Teammate Penalty
+    // Dead Teammate Penalty
     const applyDeadPenalty = (picks) => {
         const deadCount = picks.filter(p => p.deadUntil > minuteStartAbs).length;
-        if (deadCount === 1) return 0.95; // -5%
-        if (deadCount === 2) return 0.90; // -10%
-        if (deadCount === 3) return 0.75; // -25%
-        if (deadCount >= 4) return 0.50;  // -50%
+        if (deadCount === 1) return 0.95; 
+        if (deadCount === 2) return 0.90; 
+        if (deadCount === 3) return 0.75; 
+        if (deadCount >= 4) return 0.50;  
         return 1.0;
     };
     powerBlue *= applyDeadPenalty(picksBlue);
     powerRed *= applyDeadPenalty(picksRed);
 
-    // [REQ 5] Difficulty Adjustment
+    // Difficulty Adjustment
     if (playerTeamName && difficulty) {
         const playerMult = PLAYER_DIFFICULTY_MULTIPLIERS[difficulty] || 1.0;
         if (teamBlue.name === playerTeamName) powerBlue *= playerMult;
@@ -951,14 +951,14 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
 
     const powerDiffRatio = Math.abs(powerBlue - powerRed) / ((powerBlue + powerRed) / 2);
     
-    // [REQ 3] Combat Probability Logic
+    // Combat Probability
     let combatChance = 0;
     if (time <= 4) combatChance = 0.05;
     else if (time <= 7) combatChance = 0.40;
     else if (time <= 13) combatChance = 0.20;
     else if (time === 14) combatChance = 0.50;
     else if (time <= 19) combatChance = 0.30;
-    else combatChance = 0.25; // Default/Late
+    else combatChance = 0.25; 
 
     // Buffs override chances
     const isBaronActive = (state.baronBuff.side === SIDES.BLUE || state.baronBuff.side === SIDES.RED) && state.baronBuff.endTime >= time;
@@ -970,7 +970,6 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
     if (isElderActive) combatChance = 1.0; 
     if (isDragonSpawning) combatChance = 0.40;
 
-    // [SEARCH FOR THIS BLOCK INSIDE runGameTickEngine]
     if (Math.random() < combatChance) {
       const combatSec = Math.floor(Math.random() * 45);
       const combatAbsTime = minuteStartAbs + combatSec;
@@ -988,102 +987,106 @@ function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
       const winningTeamPicks = winner === SIDES.BLUE ? picksBlue : picksRed;
       const losingTeamPicks = loser === SIDES.BLUE ? picksRed : picksBlue;
       
-      // [MODIFIED] 1. Realistic Multi-Kill Probabilities
-      // 1 Kill: Default
-      // 2 Kills: 20% | 3 Kills: 5% | 4 Kills: 3% | 5 Kills: 1%
       let maxKills = 1;
-      const roll = Math.random(); // 0.0 to 1.0
+      const roll = Math.random(); 
 
-      if (roll > 0.99) maxKills = 5;      // Top 1%
-      else if (roll > 0.96) maxKills = 4; // Next 3% (Total 4%)
-      else if (roll > 0.91) maxKills = 3; // Next 5% (Total 9%)
-      else if (roll > 0.71) maxKills = 2; // Next 20% (Total 29%)
+      if (roll > 0.99) maxKills = 5;      
+      else if (roll > 0.96) maxKills = 4; 
+      else if (roll > 0.91) maxKills = 3; 
+      else if (roll > 0.71) maxKills = 2; 
       else maxKills = 1;
       
       const getAlivePlayers = (picks) => picks.filter(p => p.deadUntil <= combatAbsTime);
       let killCount = 0;
       
-      // ... (Rest of the combat logic regarding picking killer/victim remains the same)
-        
-        // Pick ONE main killer for the sequence (usually)
-        let aliveWinners = getAlivePlayers(winningTeamPicks);
-        const killer = getWeightedPlayer(aliveWinners, 'KILL');
+      // Pick ONE main killer for the sequence (usually)
+      let aliveWinners = getAlivePlayers(winningTeamPicks);
+      const killer = getWeightedPlayer(aliveWinners, 'KILL');
 
-        for(let k=0; k<maxKills; k++) {
-            // Re-fetch alive losers
-            const aliveLosers = getAlivePlayers(losingTeamPicks);
-            if (!killer || aliveLosers.length === 0) break;
+      for(let k=0; k<maxKills; k++) {
+          // Re-fetch alive losers
+          const aliveLosers = getAlivePlayers(losingTeamPicks);
+          if (!killer || aliveLosers.length === 0) break;
 
-            const victim = aliveLosers[Math.floor(Math.random() * aliveLosers.length)];
-            
-            if (victim) {
-                killCount++;
-                state.kills[winner]++;
-                killer.stats.kills++;
-                victim.stats.deaths++;
-                
-                const deathTime = calculateDeathTimer(victim.level, time);
-                victim.deadUntil = combatAbsTime + deathTime;
+          // [FIX] Ensure victim is not a teammate (Safety check by name)
+          const validVictims = aliveLosers.filter(v => v.playerName !== killer.playerName);
+          const victimPool = validVictims.length > 0 ? validVictims : aliveLosers;
 
-                grantGoldToPlayer(winner, winningTeamPicks.indexOf(killer), GAME_RULES.GOLD.KILL);
+          const victim = victimPool[Math.floor(Math.random() * victimPool.length)];
+          
+          if (victim) {
+              killCount++;
+              state.kills[winner]++;
+              killer.stats.kills++;
+              victim.stats.deaths++;
+              
+              const deathTime = calculateDeathTimer(victim.level, time);
+              victim.deadUntil = combatAbsTime + deathTime;
 
-                // Assists
-                let assistCount = Math.floor(Math.random() * 3) + 1; 
-                const assistCandidates = getAlivePlayers(winningTeamPicks).filter(p => p !== killer);
-                const assistNames = [];
-                for (let a = 0; a < assistCount && assistCandidates.length > 0; a++) {
-                    const assister = getWeightedPlayer(assistCandidates, 'ASSIST');
-                    if (assister && !assistNames.includes(assister.playerName)) {
-                        assister.stats.assists++;
-                        grantGoldToPlayer(winner, (winningTeamPicks.indexOf(assister)), GAME_RULES.GOLD.ASSIST);
-                        assistNames.push(assister.playerName);
-                    }
-                }
+              grantGoldToPlayer(winner, winningTeamPicks.indexOf(killer), GAME_RULES.GOLD.KILL);
 
-                // Flash Logic
-                let flashMsg = '';
-                if (Math.random() < 0.35 && killer.flashEndTime <= time) { killer.flashEndTime = time + 5; flashMsg = ' (⚡점멸 소모)'; }
-                if (Math.random() < 0.35 && victim.flashEndTime <= time) { victim.flashEndTime = time + 5; }
+              // Assists (Ensure assisters are on killer's team and not the killer)
+              let assistCount = Math.floor(Math.random() * 3) + 1; 
+              const assistCandidates = getAlivePlayers(winningTeamPicks).filter(p => p.playerName !== killer.playerName);
+              const assistNames = [];
+              for (let a = 0; a < assistCount && assistCandidates.length > 0; a++) {
+                  const assister = getWeightedPlayer(assistCandidates, 'ASSIST');
+                  if (assister && !assistNames.includes(assister.playerName)) {
+                      assister.stats.assists++;
+                      grantGoldToPlayer(winner, (winningTeamPicks.indexOf(assister)), GAME_RULES.GOLD.ASSIST);
+                      assistNames.push(assister.playerName);
+                  }
+              }
 
-                const killerChamp = killer.champName || 'Unknown';
-                const victimChamp = victim.champName || 'Unknown';
-                const assistText = assistNames.length > 0 ? ` | assists: ${assistNames.join(', ')}` : '';
-                
-                let multiKillLabel = '';
-                if (killCount === 2) multiKillLabel = ' [더블 킬!]';
-                if (killCount === 3) multiKillLabel = ' [트리플 킬!]';
-                if (killCount === 4) multiKillLabel = ' [쿼드라 킬!]';
-                if (killCount === 5) multiKillLabel = ' [펜타 킬!]';
+              // Flash Logic
+              let flashMsg = '';
+              if (Math.random() < 0.35 && killer.flashEndTime <= time) { killer.flashEndTime = time + 5; flashMsg = ' (⚡점멸 소모)'; }
+              if (Math.random() < 0.35 && victim.flashEndTime <= time) { victim.flashEndTime = time + 5; }
 
-                const killMsg = `⚔️ [${killer.playerData.포지션}] ${killer.playerName} (${killerChamp}) ➜ ☠️ [${victim.playerData.포지션}] ${victim.playerName} (${victimChamp})${assistText}${flashMsg}${multiKillLabel}`;
-                addEvent(combatSec + k, killMsg);
-            }
-        }
-        
-        // Counter Kill Chance (Only if not a wipe)
-        if (killCount < 3 && Math.random() < 0.35) {
-            const aliveLosers = getAlivePlayers(losingTeamPicks);
-            const aliveWinners = getAlivePlayers(winningTeamPicks);
-            
-            if (aliveLosers.length > 0 && aliveWinners.length > 0) {
-                state.kills[loser] += 1;
-                const counterKiller = getWeightedPlayer(aliveLosers, 'KILL');
-                const counterVictim = aliveWinners[Math.floor(Math.random() * aliveWinners.length)];
-                
-                if (counterKiller && counterVictim) {
-                    counterKiller.stats.kills += 1;
-                    counterVictim.stats.deaths += 1;
-                    const cDeathTime = calculateDeathTimer(counterVictim.level, time);
-                    counterVictim.deadUntil = combatAbsTime + cDeathTime;
+              const killerChamp = killer.champName || 'Unknown';
+              const victimChamp = victim.champName || 'Unknown';
+              const assistText = assistNames.length > 0 ? ` | assists: ${assistNames.join(', ')}` : '';
+              
+              let multiKillLabel = '';
+              if (killCount === 2) multiKillLabel = ' [더블 킬!]';
+              if (killCount === 3) multiKillLabel = ' [트리플 킬!]';
+              if (killCount === 4) multiKillLabel = ' [쿼드라 킬!]';
+              if (killCount === 5) multiKillLabel = ' [펜타 킬!]';
 
-                    grantGoldToPlayer(loser, losingTeamPicks.indexOf(counterKiller), GAME_RULES.GOLD.KILL + GAME_RULES.GOLD.ASSIST);
-                    const ckillerChamp = counterKiller.champName || 'Unknown';
-                    const cvictimChamp = counterVictim.champName || 'Unknown';
-                    const counterMsg = `🛡️ [${counterKiller.playerData.포지션}] ${counterKiller.playerName} (${ckillerChamp}) ➜ ☠️ [${counterVictim.playerData.포지션}] ${counterVictim.playerName} (${cvictimChamp}) (반격)`;
-                    addEvent(combatSec + 2, counterMsg);
-                }
-            }
-        }
+              const killMsg = `⚔️ [${killer.playerData.포지션}] ${killer.playerName} (${killerChamp}) ➜ ☠️ [${victim.playerData.포지션}] ${victim.playerName} (${victimChamp})${assistText}${flashMsg}${multiKillLabel}`;
+              addEvent(combatSec + k, killMsg);
+          }
+      }
+      
+      // Counter Kill Chance (Only if not a wipe)
+      if (killCount < 3 && Math.random() < 0.35) {
+          const aliveLosers = getAlivePlayers(losingTeamPicks);
+          const aliveWinners = getAlivePlayers(winningTeamPicks);
+          
+          if (aliveLosers.length > 0 && aliveWinners.length > 0) {
+              state.kills[loser] += 1;
+              const counterKiller = getWeightedPlayer(aliveLosers, 'KILL');
+
+              // [FIX] Ensure counter-victim is not teammate
+              const validCounterVictims = aliveWinners.filter(v => v.playerName !== counterKiller.playerName);
+              const counterVictimPool = validCounterVictims.length > 0 ? validCounterVictims : aliveWinners;
+              
+              const counterVictim = counterVictimPool[Math.floor(Math.random() * counterVictimPool.length)];
+              
+              if (counterKiller && counterVictim) {
+                  counterKiller.stats.kills += 1;
+                  counterVictim.stats.deaths += 1;
+                  const cDeathTime = calculateDeathTimer(counterVictim.level, time);
+                  counterVictim.deadUntil = combatAbsTime + cDeathTime;
+
+                  grantGoldToPlayer(loser, losingTeamPicks.indexOf(counterKiller), GAME_RULES.GOLD.KILL + GAME_RULES.GOLD.ASSIST);
+                  const ckillerChamp = counterKiller.champName || 'Unknown';
+                  const cvictimChamp = counterVictim.champName || 'Unknown';
+                  const counterMsg = `🛡️ [${counterKiller.playerData.포지션}] ${counterKiller.playerName} (${ckillerChamp}) ➜ ☠️ [${counterVictim.playerData.포지션}] ${counterVictim.playerName} (${cvictimChamp}) (반격)`;
+                  addEvent(combatSec + 2, counterMsg);
+              }
+          }
+      }
 
         let pushBaseSec = combatOccurred ? combatSec + 5 : Math.floor(Math.random() * 50);
         if (pushBaseSec > 59) pushBaseSec = 59;
@@ -3118,7 +3121,7 @@ const handleProceedNextMatch = () => {
     ? league.matches.some(m => m.type === 'playin')
     : false;
     
-  const isPlayInFinished = hasPlayInGenerated && league.matches.filter(m => m.type === 'playin').every(m => m.status === 'finished');
+    const isPlayInFinished = hasPlayInGenerated && league.matches.some(m => m.type === 'playin' && m.round === 3 && m.status === 'finished');
     
   const hasPlayoffsGenerated = league.matches
     ? league.matches.some(m => m.type === 'playoff')
