@@ -22,6 +22,21 @@ const updateLeague = (id, u) => {
 };
 const getLeagueById = (id) => getLeagues().find(l => l.id === id);
 
+// --- HELPER FUNCTIONS ---
+const getOvrBadgeStyle = (ovr) => {
+    if (ovr >= 95) return 'bg-red-100 text-red-700 border-red-300 ring-red-200';
+    if (ovr >= 90) return 'bg-orange-100 text-orange-700 border-orange-300 ring-orange-200';
+    if (ovr >= 85) return 'bg-purple-100 text-purple-700 border-purple-300 ring-purple-200';
+    if (ovr >= 80) return 'bg-blue-100 text-blue-700 border-blue-300 ring-blue-200';
+    return 'bg-green-100 text-green-700 border-green-300 ring-green-200';
+  };
+  
+  const getPotBadgeStyle = (pot) => {
+    if (pot >= 95) return 'text-purple-600 font-black'; 
+    if (pot >= 90) return 'text-blue-600 font-bold'; 
+    return 'text-gray-500 font-medium';
+  };
+
 export default function Dashboard() {
     const { leagueId } = useParams();
     const navigate = useNavigate();
