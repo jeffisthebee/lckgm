@@ -337,7 +337,7 @@ export function calculateIndividualIncome(pick, time, aliveRatio = 1.0) {
   // 2. Your Exact Base Income Settings
   // Note: SUP XP (240) is much lower than Top/Mid (400), so supports WILL fall behind naturally now.
   const BASE_XPM = { TOP: 400, JGL: 360, MID: 400, ADC: 360, SUP: 240 };
-  const BASE_GPM = { TOP: 340, JGL: 300, MID: 350, ADC: 380, SUP: 220 };
+  const BASE_GPM = { TOP: 320, JGL: 280, MID: 330, ADC: 360, SUP: 200 };
 
   // 3. Calculate "Effective Skill" for the current phase
   let weightedStat = 50;
@@ -358,7 +358,7 @@ export function calculateIndividualIncome(pick, time, aliveRatio = 1.0) {
   // 90 Stat -> (90/80)^2 = 1.26x Multiplier
   // 70 Stat -> (70/80)^2 = 0.76x Multiplier
   // Result: 90 Stat player gets ~65% MORE income than 70 Stat player.
-  let skillMultiplier = Math.pow(weightedStat / 80, 1.75);
+  let skillMultiplier = Math.pow(weightedStat / 80, 1.50);
 
   // Clamp the multiplier to prevent game-breaking values (0.6x to 1.35x)
   skillMultiplier = Math.max(0.6, Math.min(1.35, skillMultiplier));

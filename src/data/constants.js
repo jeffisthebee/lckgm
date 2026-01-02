@@ -25,7 +25,7 @@ export const SIM_CONSTANTS = {
   },
   BASE_INCOME: {
       XP:   { TOP: 400, JGL: 360, MID: 400, ADC: 360, SUP: 240 },
-      GOLD: { TOP: 340, JGL: 300, MID: 350, ADC: 380, SUP: 220 }
+      GOLD: { TOP: 320, JGL: 280, MID: 330, ADC: 360, SUP: 200 }
   }
 };
 
