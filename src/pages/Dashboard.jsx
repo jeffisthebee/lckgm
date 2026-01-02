@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { teams, teamFinanceData } from '../data/teams';
 import { championList, difficulties } from '../data/constants';
-import { getTeamRoster, simulateMatch } from '../engine/simEngine';
+import { simulateMatch, getTeamRoster, generateSchedule } from '../engine/simEngine';
 import LiveGamePlayer from '../components/LiveGamePlayer';
 import DetailedMatchResultModal from '../components/DetailedMatchResultModal';
 import playerList from '../data/players.json';

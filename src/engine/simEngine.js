@@ -1130,3 +1130,112 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
       history: matchHistory 
     };
   }
+
+  export const generateSchedule = (baronIds, elderIds) => {
+    const week1Days = ['1.14 (수)', '1.15 (목)', '1.16 (금)', '1.17 (토)', '1.18 (일)'];
+    const week2Days = ['1.21 (수)', '1.22 (목)', '1.23 (금)', '1.24 (토)', '1.25 (일)'];
+    
+    const shuffledElder = [...elderIds].sort(() => Math.random() - 0.5);
+    let allMatches = [];
+     
+    for (let i = 0; i < 5; i++) {
+      const baronTeam = baronIds[i];
+      const skipElderTeam = shuffledElder[i]; 
+      for (let j = 0; j < 5; j++) {
+        const elderTeam = elderIds[j];
+        if (elderTeam !== skipElderTeam) {
+          allMatches.push({ id: Date.now() + Math.random(), t1: baronTeam, t2: elderTeam, type: 'regular', status: 'pending', format: 'BO3' });
+        }
+      }
+    }
+  
+    const attemptFullSchedule = () => {
+      const pool = [...allMatches].sort(() => Math.random() - 0.5);
+      let week1Matches = [], week2Matches = [];
+      const counts = {};
+       
+      for (const m of pool) {
+        const c1 = counts[m.t1] || 0;
+        const c2 = counts[m.t2] || 0;
+        if (week1Matches.length < 10 && c1 < 2 && c2 < 2) {
+          week1Matches.push(m);
+          counts[m.t1] = c1 + 1;
+          counts[m.t2] = c2 + 1;
+        } else {
+          week2Matches.push(m);
+        }
+      }
+       
+      if (week1Matches.length !== 10) return null;
+      const w2Counts = {};
+      week2Matches.forEach(m => { w2Counts[m.t1] = (w2Counts[m.t1] || 0) + 1; w2Counts[m.t2] = (w2Counts[m.t2] || 0) + 1; });
+      if (Object.values(w2Counts).some(c => c !== 2)) return null;
+  
+      const assignDays = (matches, days) => {
+        let schedule = [];
+        let dayIdx = 0;
+        let lastPlayed = {};
+        let dailyPool = [...matches];
+  
+        while (dayIdx < 5) {
+          let todays = [];
+          for (let k = 0; k < 2; k++) {
+            const matchIdx = dailyPool.findIndex(m => {
+              if (todays.some(tm => tm.t1 === m.t1 || tm.t1 === m.t2 || tm.t2 === m.t1 || tm.t2 === m.t2)) return false;
+              const p1 = lastPlayed[m.t1];
+              const p2 = lastPlayed[m.t2];
+              if (p1 !== undefined && dayIdx - p1 <= 1) return false;
+              if (p2 !== undefined && dayIdx - p2 <= 1) return false;
+              return true;
+            });
+  
+            if (matchIdx !== -1) {
+              const m = dailyPool.splice(matchIdx, 1)[0];
+              todays.push(m);
+              lastPlayed[m.t1] = dayIdx;
+              lastPlayed[m.t2] = dayIdx;
+            } else {
+              return null;
+            }
+          }
+          schedule.push({ ...todays[0], date: days[dayIdx], time: '17:00' });
+          schedule.push({ ...todays[1], date: days[dayIdx], time: '19:30' });
+          dayIdx++;
+        }
+        return schedule;
+      };
+  
+      const s1 = assignDays(week1Matches, week1Days);
+      if (!s1) return null;
+      const s2 = assignDays(week2Matches, week2Days);
+      if (!s2) return null;
+  
+      return [...s1, ...s2];
+    };
+  
+    let finalSchedule = null;
+    let attempts = 0;
+    while (!finalSchedule && attempts < 100) {
+      finalSchedule = attemptFullSchedule();
+      attempts++;
+    }
+     
+    if (!finalSchedule) {
+        finalSchedule = [];
+        const days = [...week1Days, ...week2Days];
+        allMatches.forEach((m, i) => {
+            if(i < days.length * 2) {
+               finalSchedule.push({...m, date: days[Math.floor(i/2)], time: i%2===0?'17:00':'19:30'});
+            }
+        });
+    }
+  
+    finalSchedule.sort((a, b) => {
+      const dayA = parseFloat(a.date.split(' ')[0]);
+      const dayB = parseFloat(b.date.split(' ')[0]);
+      if (dayA !== dayB) return dayA - dayB;
+      return a.time === '17:00' ? -1 : 1;
+    });
+  
+    return finalSchedule;
+  };
