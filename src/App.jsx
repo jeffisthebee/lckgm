@@ -1948,6 +1948,7 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
 
         // B. Update Stats
         // B. Update Stats
+        // B. Update Stats
         setLiveStats(prevStats => {
           const nextStats = { 
               ...prevStats, 
@@ -1964,21 +1965,25 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                   // Check for Kill (⚔️) or Counter-Kill (🛡️)
                   if (l.includes('⚔️') || l.includes('🛡️')) {
                       try {
-                          // Log format: "⚔️ [POS] KillerName (Champ) ➜ ☠️ [POS] VictimName (Champ) | assists: A, B"
-                          // 1. Extract Killer Name
-                          // Split by '➜' to separate killer and victim parts
+                          // Log format example: "[12:30] ⚔️ [TOP] Zeus (Jayce) ➜ ☠️ [MID] Faker (Ahri) | assists: ..."
                           const parts = l.split('➜');
                           if (parts.length < 2) return;
 
-                          const killerPart = parts[0]; // "⚔️ [POS] KillerName (Champ) "
-                          const victimPart = parts[1]; // " ☠️ [POS] VictimName (Champ) | assists: ..."
+                          const killerPart = parts[0]; 
+                          const victimPart = parts[1]; 
 
-                          // Helper to extract name between "]" and "("
+                          // [FIXED] Updated Helper to correctly handle timestamps like [12:30]
+                          // It now grabs the text after the LAST ']' to ensure we get the name after [POS]
                           const extractName = (str) => {
-                              const afterBracket = str.split(']')[1];
-                              if (!afterBracket) return null;
-                              const name = afterBracket.split('(')[0];
-                              return name ? name.trim() : null;
+                              const segments = str.split(']'); 
+                              // segments ex: ["[12:30", " ⚔️ [TOP", " Zeus (Jayce) "]
+                              // We want the last segment that holds the name
+                              if (segments.length < 2) return null;
+                              
+                              const nameSegment = segments[segments.length - 1];
+                              if (!nameSegment.includes('(')) return null;
+                              
+                              return nameSegment.split('(')[0].trim();
                           };
 
                           const killerName = extractName(killerPart);
@@ -1998,15 +2003,12 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                                   // Update Assists
                                   if (l.includes('assists:')) {
                                       const assistStr = l.split('assists:')[1].trim();
-                                      // Remove any trailing suffixes like flashing or multikills
-                                      // Assists usually end at the end of string or before special chars
-                                      // Simple split by comma
                                       const rawAssisters = assistStr.split(',').map(s => {
-                                          // Clean up formatting (remove " [Double Kill!]" etc if attached)
                                           return s.split('[')[0].split('(')[0].trim();
                                       });
 
                                       rawAssisters.forEach(aName => {
+                                          // Ensure assister is on killer's side
                                           const assister = nextStats.players.find(p => p.playerName === aName && p.side === killer.side);
                                           if (assister) {
                                               assister.a++;
@@ -2021,19 +2023,19 @@ function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onCl
                       }
                   }
                   
-                  // Structure Parsing
+                  // Structure Parsing (Towers/Inhibs)
                   if (l.includes('포탑') || l.includes('억제기')) {
                       if (l.includes(simulationData.blueTeam.name)) {
                           nextStats.towers.BLUE++; 
-                          nextStats.players.filter(p => p.side === 'BLUE').forEach(p => p.currentGold += 150);
+                          // Global gold for structures
+                          nextStats.players.filter(p => p.side === 'BLUE').forEach(p => p.currentGold += 100);
                       } else if (l.includes(simulationData.redTeam.name)) {
                           nextStats.towers.RED++;
-                          nextStats.players.filter(p => p.side === 'RED').forEach(p => p.currentGold += 150);
+                          nextStats.players.filter(p => p.side === 'RED').forEach(p => p.currentGold += 100);
                       }
                   }
               });
           }
-
             // Passive Gold & XP Logic (Per Second)
             nextStats.players.forEach(p => {
                 const income = calculateIndividualIncome(p, currentMinute, 1.0); 
