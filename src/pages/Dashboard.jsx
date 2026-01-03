@@ -90,24 +90,30 @@ export default function Dashboard() {
     // [수정 1] 순위표 계산 함수 (플레이오프/플레이인 제외 로직 강화)
     const recalculateStandings = (lg) => {
       const newStandings = {};
+      
+      // Initialize 0-0-0 for all teams
       teams.forEach(t => { newStandings[t.id] = { w: 0, l: 0, diff: 0 }; });
-  
+    
       lg.matches.forEach(m => {
-          // [중요] 플레이인, 플레이오프, TBD 경기는 순위표 계산에서 절대적으로 제외
-          if (m.type === 'playin' || m.type === 'playoff' || m.type === 'tbd') return;
-  
+          // [CRITICAL FIX] Explicitly skip Playoff, Play-In, and TBD matches
+          if (m.type === 'playoff' || m.type === 'playin' || m.type === 'tbd') return;
+    
+          // Only count Finished Regular/Super matches
           if (m.status === 'finished' && (m.type === 'regular' || m.type === 'super')) {
               const winner = teams.find(t => t.name === m.result.winner);
-              // m.t1, m.t2가 ID일 수도 있고 객체일 수도 있으므로 안전하게 처리
+              
+              // Safety check for ID types (String vs Number)
               const t1Id = typeof m.t1 === 'object' ? m.t1.id : m.t1;
               const t2Id = typeof m.t2 === 'object' ? m.t2.id : m.t2;
               
               const actualLoserId = (t1Id === winner.id) ? t2Id : t1Id;
               
-              if(winner && actualLoserId) {
+              if (winner && actualLoserId) {
+                  // Add Win/Loss
                   newStandings[winner.id].w += 1;
                   newStandings[actualLoserId].l += 1;
                   
+                  // Calculate Point Diff (Set Score Difference)
                   const scores = m.result.score.split(':').map(Number);
                   const diff = Math.abs(scores[0] - scores[1]);
                   newStandings[winner.id].diff += diff;
@@ -115,8 +121,9 @@ export default function Dashboard() {
               }
           }
       });
+      
       setComputedStandings(newStandings);
-  };
+    };
   
     const handleMenuClick = (tabId) => {
       setActiveTab(tabId);

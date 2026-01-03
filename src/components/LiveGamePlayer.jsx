@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { calculateIndividualIncome, simulateSet } from '../engine/simEngine'; // Import the brain!
-
+import { calculateIndividualIncome, simulateSet } from '../engine/simEngine'; 
 
 export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onClose, externalGlobalBans = [] }) {
     const [currentSet, setCurrentSet] = useState(1);
@@ -32,8 +31,42 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
       
       setTimeout(() => {
           try {
-              const blueTeam = currentSet % 2 !== 0 ? teamA : teamB;
-              const redTeam = currentSet % 2 !== 0 ? teamB : teamA;
+              // ============================================================
+              // [LOGIC UPDATE] Loser Picks Side (90% Blue / 10% Red)
+              // ============================================================
+              let blueTeam, redTeam;
+
+              if (currentSet === 1) {
+                  // Game 1: Team A (Higher Seed/Home) is always Blue
+                  blueTeam = teamA;
+                  redTeam = teamB;
+              } else {
+                  // Game 2+: The loser of the previous set chooses the side
+                  // We get the last game result from matchHistory
+                  const lastGame = matchHistory[matchHistory.length - 1];
+                  
+                  // Safety Check (Should not happen if logic is correct)
+                  if (!lastGame) {
+                      blueTeam = currentSet % 2 !== 0 ? teamA : teamB;
+                      redTeam = currentSet % 2 !== 0 ? teamB : teamA;
+                  } else {
+                      const lastWinnerName = lastGame.winner;
+                      const previousLoser = (lastWinnerName === teamA.name) ? teamB : teamA;
+
+                      // 90% Chance Loser picks Blue Side
+                      const loserPicksBlue = Math.random() < 0.90;
+
+                      if (loserPicksBlue) {
+                          blueTeam = previousLoser;
+                          redTeam = (previousLoser.name === teamA.name) ? teamB : teamA;
+                      } else {
+                          // 10% Chance Loser picks Red Side (Strategic counter-pick?)
+                          redTeam = previousLoser;
+                          blueTeam = (previousLoser.name === teamA.name) ? teamB : teamA;
+                      }
+                  }
+              }
+              // ============================================================
               
               const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
   
@@ -76,15 +109,12 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
               onClose(); 
           }
       }, 500);
-    }, [currentSet, teamA, teamB, globalBanList, simOptions, onClose]);
+    }, [currentSet, teamA, teamB, globalBanList, simOptions, onClose, matchHistory]); // Added matchHistory to dependency
   
     useEffect(() => {
       if (phase === 'READY') startSet();
     }, [phase, startSet]);
   
-    // 2. Game Tick Loop
-    // 2. Game Tick Loop
-    // 2. Game Tick Loop
     useEffect(() => {
       if (phase !== 'GAME' || !simulationData || playbackSpeed === 0) return;
       
@@ -103,9 +133,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
           });
   
           // B. Update Stats
-          // B. Update Stats
-          // B. Update Stats
-          // B. Update Stats
           setLiveStats(prevStats => {
             const nextStats = { 
                 ...prevStats, 
@@ -118,30 +145,20 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 setDisplayLogs(prevLogs => [...prevLogs, ...currentLogs].slice(-15));
                 
                 currentLogs.forEach(l => {
-                    // [FIX] Robust Log Parsing for Stats (Handles Multi-Kill Tags correctly)
                     if (l.includes('⚔️') || l.includes('🛡️')) {
                         try {
-                            // Log format: "[12:30] ⚔️ [TOP] Killer (Champ) ➜ ☠️ [MID] Victim (Champ) [Double Kill!]"
                             const parts = l.split('➜');
                             if (parts.length < 2) return;
   
                             const killerPart = parts[0]; 
                             const victimPart = parts[1]; 
   
-                            // [FIXED] Updated Helper to ignore [Double Kill!] or [Timestamp] brackets
                             const extractName = (str) => {
-                                // 1. Cut off everything after the champion name starts '(' 
-                                // This removes trailing tags like [Double Kill!] automatically
                                 const openParenIndex = str.indexOf('(');
                                 if (openParenIndex === -1) return null;
-                                
-                                const preParen = str.substring(0, openParenIndex); // Ex: " ☠️ [MID] Faker "
-  
-                                // 2. Find the position bracket ']' immediately before the name
+                                const preParen = str.substring(0, openParenIndex); 
                                 const lastBracketIndex = preParen.lastIndexOf(']');
                                 if (lastBracketIndex === -1) return null;
-  
-                                // 3. The name is everything between that bracket and the paren
                                 return preParen.substring(lastBracketIndex + 1).trim();
                             };
   
@@ -153,18 +170,13 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                 const victim = nextStats.players.find(p => p.playerName === victimName);
   
                                 if (killer && victim && killer.side !== victim.side) {
-                                    // Update Kill/Death
                                     killer.k++;
                                     nextStats.kills[killer.side]++;
                                     killer.currentGold += 300;
                                     victim.d++;
                                 
-                                    // [NEW] Add XP for the Kill (Snowball Effect!)
-                                    // Formula: Base 100 + (Victim Level * 25)
-                                    // This makes the killer jump ahead in the level bar
                                     killer.xp += 100 + (victim.lvl * 25); 
                                 
-                                    // Update Assists
                                     if (l.includes('assists:')) {
                                         const assistStr = l.split('assists:')[1].trim();
                                         const rawAssisters = assistStr.split(',').map(s => {
@@ -176,7 +188,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                             if (assister) {
                                                 assister.a++;
                                                 assister.currentGold += 150;
-                                                // [NEW] Add XP for Assist (Shared XP)
                                                 assister.xp += 50 + (victim.lvl * 10);
                                             }
                                         });
@@ -188,7 +199,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                         }
                     }
                     
-                    // Structure Parsing (Towers/Inhibs)
                     if (l.includes('포탑') || l.includes('억제기')) {
                         if (l.includes(simulationData.blueTeam.name)) {
                             nextStats.towers.BLUE++; 
@@ -214,14 +224,12 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                   }
               });
   
-              // Recalculate Team Totals
               nextStats.gold.BLUE = Math.floor(nextStats.players.filter(p=>p.side==='BLUE').reduce((a,b)=>a+b.currentGold,0));
               nextStats.gold.RED = Math.floor(nextStats.players.filter(p=>p.side==='RED').reduce((a,b)=>a+b.currentGold,0));
   
               return nextStats;
           });
   
-          // C. Check End
           if (nextTime >= finalSec) {
               setGameTime(finalSec);
               setLiveStats(st => ({ 
@@ -247,7 +255,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     return (
       <div className="fixed inset-0 bg-gray-900 z-[200] flex flex-col text-white font-sans">
         
-        {/* 1. Header */}
         <div className="bg-black border-b border-gray-800 flex flex-col shrink-0">
             
             {globalBanList.length > 0 && (
@@ -311,7 +318,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             </div>
         </div>
   
-        {/* 2. Main Game View */}
         <div className="flex-1 flex overflow-hidden">
            {/* Left: Blue Team */}
            <div className="w-80 bg-gray-900 border-r border-gray-800 flex flex-col pt-2">
@@ -436,4 +442,4 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         )}
       </div>
     );
-  }
+}
