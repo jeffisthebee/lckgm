@@ -1116,16 +1116,44 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
     let currentSet = 1;
     let globalBanList = [];
     let matchHistory = [];
+    
+    // Track the loser to allow them to pick side next game
+    let previousLoser = null;
   
     while (winsA < targetWins && winsB < targetWins) {
       const currentFearlessBans = [...globalBanList];
-      const blueTeam = currentSet % 2 !== 0 ? teamA : teamB;
-      const redTeam = currentSet % 2 !== 0 ? teamB : teamA;
+      
+      let blueTeam, redTeam;
+  
+      // --- SIDE SELECTION LOGIC ---
+      if (currentSet === 1) {
+          // Game 1: Team A is always Blue (Default / Higher Seed)
+          blueTeam = teamA;
+          redTeam = teamB;
+      } else {
+          // Game 2+: Loser of previous game chooses side
+          // 90% chance Loser picks Blue side, 10% Red
+          const loserPicksBlue = Math.random() < 0.90;
+          
+          if (loserPicksBlue) {
+              blueTeam = previousLoser;
+              redTeam = (previousLoser.name === teamA.name) ? teamB : teamA;
+          } else {
+              redTeam = previousLoser;
+              blueTeam = (previousLoser.name === teamA.name) ? teamB : teamA;
+          }
+      }
   
       const setResult = simulateSet(blueTeam, redTeam, currentSet, currentFearlessBans, simOptions);
       
-      if (setResult.winnerName === teamA.name) winsA++;
-      else winsB++;
+      // Determine winner of this set
+      if (setResult.winnerName === teamA.name) {
+          winsA++;
+          previousLoser = teamB; // Team B lost
+      } else {
+          winsB++;
+          previousLoser = teamA; // Team A lost
+      }
   
       const scoreA = setResult.score[teamA.name];
       const scoreB = setResult.score[teamB.name];
@@ -1133,6 +1161,7 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
       matchHistory.push({
         setNumber: currentSet,
         winner: setResult.winnerName,
+        // Normalize picks/bans relative to Team A/B for UI consistency
         picks: blueTeam.name === teamA.name ? setResult.picks : { A: setResult.picks.B, B: setResult.picks.A },
         bans: blueTeam.name === teamA.name ? setResult.bans : { A: setResult.bans.B, B: setResult.bans.A },
         fearlessBans: currentFearlessBans,
@@ -1162,20 +1191,69 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
     const week1Days = ['1.14 (수)', '1.15 (목)', '1.16 (금)', '1.17 (토)', '1.18 (일)'];
     const week2Days = ['1.21 (수)', '1.22 (목)', '1.23 (금)', '1.24 (토)', '1.25 (일)'];
     
-    const shuffledElder = [...elderIds].sort(() => Math.random() - 0.5);
-    let allMatches = [];
-     
-    for (let i = 0; i < 5; i++) {
-      const baronTeam = baronIds[i];
-      const skipElderTeam = shuffledElder[i]; 
-      for (let j = 0; j < 5; j++) {
-        const elderTeam = elderIds[j];
-        if (elderTeam !== skipElderTeam) {
-          allMatches.push({ id: Date.now() + Math.random(), t1: baronTeam, t2: elderTeam, type: 'regular', status: 'pending', format: 'BO3' });
+    // Helper to count occurrences of a team on Blue side (t1)
+    const countBlues = (matches, teamId) => matches.filter(m => m.t1 === teamId).length;
+  
+    // 1. Generate Basic Matchups (Cross-Group)
+    let baseMatchups = [];
+    baronIds.forEach(bId => {
+        elderIds.forEach(eId => {
+            baseMatchups.push({ tA: bId, tB: eId });
+        });
+    });
+  
+    // 2. Try assignments until constraints are met
+    let validMatches = null;
+    let attempts = 0;
+  
+    while (!validMatches && attempts < 10000) {
+        attempts++;
+        
+        // A. Randomly decide which group gets 12 Blues (the other gets 13)
+        const baronTarget = Math.random() < 0.5 ? 12 : 13;
+        
+        // B. Randomly assign sides for all 25 games
+        const tempMatches = baseMatchups.map(m => {
+            const isBaronBlue = Math.random() < 0.5;
+            return {
+                t1: isBaronBlue ? m.tA : m.tB, // t1 is always Blue
+                t2: isBaronBlue ? m.tB : m.tA, // t2 is Red
+            };
+        });
+  
+        // C. Check Group Constraint (Baron Group Blue Count)
+        const baronBlueCount = tempMatches.filter(m => baronIds.includes(m.t1)).length;
+        if (baronBlueCount !== baronTarget) continue;
+  
+        // D. Check Team Constraint (Every team must be Blue 2 or 3 times)
+        const allTeams = [...baronIds, ...elderIds];
+        const allValid = allTeams.every(tid => {
+            const c = countBlues(tempMatches, tid);
+            return c === 2 || c === 3;
+        });
+  
+        if (allValid) {
+            validMatches = tempMatches;
         }
-      }
     }
   
+    // Fallback if loop fails (rare, but prevents crash)
+    if (!validMatches) {
+        console.warn("Could not satisfy perfect side balance, using random fallback.");
+        validMatches = baseMatchups.map(m => ({ t1: m.tA, t2: m.tB })); 
+    }
+  
+    // 3. Assign IDs and Metadata
+    let allMatches = validMatches.map(m => ({
+        id: Date.now() + Math.random(),
+        t1: m.t1, // Blue Side
+        t2: m.t2, // Red Side
+        type: 'regular',
+        status: 'pending',
+        format: 'BO3'
+    }));
+  
+    // 4. Distribute into Schedule (Weeks/Days)
     const attemptFullSchedule = () => {
       const pool = [...allMatches].sort(() => Math.random() - 0.5);
       let week1Matches = [], week2Matches = [];
@@ -1184,6 +1262,7 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
       for (const m of pool) {
         const c1 = counts[m.t1] || 0;
         const c2 = counts[m.t2] || 0;
+        // Prevent playing more than twice in Week 1 to spread games out
         if (week1Matches.length < 10 && c1 < 2 && c2 < 2) {
           week1Matches.push(m);
           counts[m.t1] = c1 + 1;
@@ -1194,14 +1273,11 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
       }
        
       if (week1Matches.length !== 10) return null;
-      const w2Counts = {};
-      week2Matches.forEach(m => { w2Counts[m.t1] = (w2Counts[m.t1] || 0) + 1; w2Counts[m.t2] = (w2Counts[m.t2] || 0) + 1; });
-      if (Object.values(w2Counts).some(c => c !== 2)) return null;
   
       const assignDays = (matches, days) => {
         let schedule = [];
         let dayIdx = 0;
-        let lastPlayed = {};
+        let lastPlayed = {}; // Prevent back-to-back days if possible
         let dailyPool = [...matches];
   
         while (dayIdx < 5) {
@@ -1209,10 +1285,6 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
           for (let k = 0; k < 2; k++) {
             const matchIdx = dailyPool.findIndex(m => {
               if (todays.some(tm => tm.t1 === m.t1 || tm.t1 === m.t2 || tm.t2 === m.t1 || tm.t2 === m.t2)) return false;
-              const p1 = lastPlayed[m.t1];
-              const p2 = lastPlayed[m.t2];
-              if (p1 !== undefined && dayIdx - p1 <= 1) return false;
-              if (p2 !== undefined && dayIdx - p2 <= 1) return false;
               return true;
             });
   
@@ -1241,12 +1313,13 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
     };
   
     let finalSchedule = null;
-    let attempts = 0;
-    while (!finalSchedule && attempts < 100) {
+    let attemptsSchedule = 0;
+    while (!finalSchedule && attemptsSchedule < 100) {
       finalSchedule = attemptFullSchedule();
-      attempts++;
+      attemptsSchedule++;
     }
      
+    // Final Fallback for scheduling if complex logic fails
     if (!finalSchedule) {
         finalSchedule = [];
         const days = [...week1Days, ...week2Days];
@@ -1257,6 +1330,7 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
         });
     }
   
+    // Sort by Date then Time
     finalSchedule.sort((a, b) => {
       const dayA = parseFloat(a.date.split(' ')[0]);
       const dayB = parseFloat(b.date.split(' ')[0]);
