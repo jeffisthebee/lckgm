@@ -94,33 +94,41 @@ export default function Dashboard() {
       // Initialize 0-0-0 for all teams
       teams.forEach(t => { newStandings[t.id] = { w: 0, l: 0, diff: 0 }; });
     
-      lg.matches.forEach(m => {
-          // [CRITICAL FIX] Explicitly skip Playoff, Play-In, and TBD matches
-          if (m.type === 'playoff' || m.type === 'playin' || m.type === 'tbd') return;
+      if (lg.matches) {
+          lg.matches.forEach(m => {
+              // [CRITICAL FIX] Explicitly only count 'regular' and 'super' matches.
+              if (m.type !== 'regular' && m.type !== 'super') return;
     
-          // Only count Finished Regular/Super matches
-          if (m.status === 'finished' && (m.type === 'regular' || m.type === 'super')) {
-              const winner = teams.find(t => t.name === m.result.winner);
-              
-              // Safety check for ID types (String vs Number)
-              const t1Id = typeof m.t1 === 'object' ? m.t1.id : m.t1;
-              const t2Id = typeof m.t2 === 'object' ? m.t2.id : m.t2;
-              
-              const actualLoserId = (t1Id === winner.id) ? t2Id : t1Id;
-              
-              if (winner && actualLoserId) {
-                  // Add Win/Loss
-                  newStandings[winner.id].w += 1;
-                  newStandings[actualLoserId].l += 1;
+              if (m.status === 'finished') {
+                  const winner = teams.find(t => t.name === m.result.winner);
                   
-                  // Calculate Point Diff (Set Score Difference)
-                  const scores = m.result.score.split(':').map(Number);
-                  const diff = Math.abs(scores[0] - scores[1]);
-                  newStandings[winner.id].diff += diff;
-                  newStandings[actualLoserId].diff -= diff;
+                  // Handle ID types safely
+                  const t1Id = typeof m.t1 === 'object' ? m.t1.id : m.t1;
+                  const t2Id = typeof m.t2 === 'object' ? m.t2.id : m.t2;
+                  
+                  if (!winner) return;
+                  
+                  const actualLoserId = (t1Id === winner.id) ? t2Id : t1Id;
+                  
+                  if (winner && actualLoserId) {
+                      newStandings[winner.id].w += 1;
+                      newStandings[actualLoserId].l += 1;
+                      
+                      if (m.result.score) {
+                          const parts = m.result.score.split(':');
+                          if (parts.length === 2) {
+                              const s1 = parseInt(parts[0]);
+                              const s2 = parseInt(parts[1]);
+                              const diff = Math.abs(s1 - s2);
+                              
+                              newStandings[winner.id].diff += diff;
+                              newStandings[actualLoserId].diff -= diff;
+                          }
+                      }
+                  }
               }
-          }
-      });
+          });
+      }
       
       setComputedStandings(newStandings);
     };
@@ -723,16 +731,18 @@ export default function Dashboard() {
     const calculateGroupScore = (groupType) => {
       if (!league.groups || !league.groups[groupType]) return 0;
       const groupIds = league.groups[groupType];
+      
       return league.matches.filter(m => {
           if (m.status !== 'finished') return false;
-          // IMPORTANT: exclude playin / playoff / tbd (group score only from regular / super)
-          if (m.type === 'playin' || m.type === 'playoff' || m.type === 'tbd') return false;
+          // [CRITICAL FIX] Ensure only Regular and Super matches count for Group Scores
+          if (m.type !== 'regular' && m.type !== 'super') return false;
+          
           const winnerTeam = teams.find(t => t.name === m.result.winner);
           if (!winnerTeam) return false;
           return groupIds.includes(winnerTeam.id);
       }).reduce((acc, m) => acc + (m.type === 'super' ? 2 : 1), 0);
     };
-  
+    
     const baronTotalWins = calculateGroupScore('baron');
     const elderTotalWins = calculateGroupScore('elder');
   

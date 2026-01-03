@@ -1188,154 +1188,148 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
   }
 
   export const generateSchedule = (baronIds, elderIds) => {
+    // LCK Cup Format: 2 Weeks of Regular Season (4 games per team)
+    // Week 1: Wed-Sun (5 days)
+    // Week 2: Wed-Sun (5 days)
     const week1Days = ['1.14 (수)', '1.15 (목)', '1.16 (금)', '1.17 (토)', '1.18 (일)'];
     const week2Days = ['1.21 (수)', '1.22 (목)', '1.23 (금)', '1.24 (토)', '1.25 (일)'];
-    
-    // Helper to count occurrences of a team on Blue side (t1)
-    const countBlues = (matches, teamId) => matches.filter(m => m.t1 === teamId).length;
   
-    // 1. Generate Basic Matchups (Cross-Group)
-    let baseMatchups = [];
+    // 1. Generate All Possible Cross-Group Matchups (5 Baron x 5 Elder = 25 matchups)
+    let allMatchups = [];
     baronIds.forEach(bId => {
         elderIds.forEach(eId => {
-            baseMatchups.push({ tA: bId, tB: eId });
+            allMatchups.push({ t1: bId, t2: eId }); 
         });
     });
   
-    // 2. Try assignments until constraints are met
-    let validMatches = null;
+    // 2. Select 20 Matches (4 games per team)
+    let selectedMatches = null;
     let attempts = 0;
   
-    while (!validMatches && attempts < 10000) {
+    while (!selectedMatches && attempts < 10000) {
         attempts++;
+        const shuffled = [...allMatchups].sort(() => Math.random() - 0.5);
         
-        // A. Randomly decide which group gets 12 Blues (the other gets 13)
-        const baronTarget = Math.random() < 0.5 ? 12 : 13;
-        
-        // B. Randomly assign sides for all 25 games
-        const tempMatches = baseMatchups.map(m => {
-            const isBaronBlue = Math.random() < 0.5;
-            return {
-                t1: isBaronBlue ? m.tA : m.tB, // t1 is always Blue
-                t2: isBaronBlue ? m.tB : m.tA, // t2 is Red
-            };
-        });
+        const candidateMatches = [];
+        const playCounts = {}; 
+        [...baronIds, ...elderIds].forEach(id => playCounts[id] = 0);
   
-        // C. Check Group Constraint (Baron Group Blue Count)
-        const baronBlueCount = tempMatches.filter(m => baronIds.includes(m.t1)).length;
-        if (baronBlueCount !== baronTarget) continue;
+        for (const m of shuffled) {
+            if (playCounts[m.t1] < 4 && playCounts[m.t2] < 4) {
+                candidateMatches.push(m);
+                playCounts[m.t1]++;
+                playCounts[m.t2]++;
+            }
+            if (candidateMatches.length === 20) break;
+        }
   
-        // D. Check Team Constraint (Every team must be Blue 2 or 3 times)
-        const allTeams = [...baronIds, ...elderIds];
-        const allValid = allTeams.every(tid => {
-            const c = countBlues(tempMatches, tid);
-            return c === 2 || c === 3;
-        });
-  
-        if (allValid) {
-            validMatches = tempMatches;
+        const allFour = Object.values(playCounts).every(count => count === 4);
+        if (allFour && candidateMatches.length === 20) {
+            selectedMatches = candidateMatches;
         }
     }
   
-    // Fallback if loop fails (rare, but prevents crash)
-    if (!validMatches) {
-        console.warn("Could not satisfy perfect side balance, using random fallback.");
-        validMatches = baseMatchups.map(m => ({ t1: m.tA, t2: m.tB })); 
+    if (!selectedMatches) {
+        console.warn("Perfect 4-game schedule generation failed. Using fallback.");
+        selectedMatches = allMatchups.slice(0, 20);
     }
   
-    // 3. Assign IDs and Metadata
-    let allMatches = validMatches.map(m => ({
-        id: Date.now() + Math.random(),
-        t1: m.t1, // Blue Side
-        t2: m.t2, // Red Side
-        type: 'regular',
-        status: 'pending',
-        format: 'BO3'
-    }));
+    // 3. Assign Sides Randomly
+    const finalMatches = selectedMatches.map(m => {
+        const swap = Math.random() < 0.5;
+        return {
+            id: Date.now() + Math.random(),
+            t1: swap ? m.t2 : m.t1, // Blue
+            t2: swap ? m.t1 : m.t2, // Red
+            type: 'regular',
+            status: 'pending',
+            format: 'BO3'
+        };
+    });
   
-    // 4. Distribute into Schedule (Weeks/Days)
-    const attemptFullSchedule = () => {
-      const pool = [...allMatches].sort(() => Math.random() - 0.5);
-      let week1Matches = [], week2Matches = [];
-      const counts = {};
-       
-      for (const m of pool) {
-        const c1 = counts[m.t1] || 0;
-        const c2 = counts[m.t2] || 0;
-        // Prevent playing more than twice in Week 1 to spread games out
-        if (week1Matches.length < 10 && c1 < 2 && c2 < 2) {
-          week1Matches.push(m);
-          counts[m.t1] = c1 + 1;
-          counts[m.t2] = c2 + 1;
-        } else {
-          week2Matches.push(m);
+    // 4. Distribute into Daily Schedule (2 matches per day for 10 days)
+    const fullScheduleDays = [...week1Days, ...week2Days]; 
+    let pool = [...finalMatches];
+    let dailySlots = Array(10).fill(null).map(() => []); 
+    
+    let sortAttempts = 0;
+    let success = false;
+  
+    while (!success && sortAttempts < 1000) {
+        sortAttempts++;
+        pool = pool.sort(() => Math.random() - 0.5); 
+        dailySlots = Array(10).fill(null).map(() => []);
+        
+        let possible = true;
+        
+        for (const match of pool) {
+            let assigned = false;
+            for (let d = 0; d < 10; d++) {
+                if (dailySlots[d].length >= 2) continue; 
+  
+                const teamsInMatch = [match.t1, match.t2];
+                
+                // Constraint 1: Team already playing today
+                const playingToday = dailySlots[d].some(m => 
+                    m.t1 === match.t1 || m.t2 === match.t1 || m.t1 === match.t2 || m.t2 === match.t2
+                );
+                if (playingToday) continue;
+  
+                // Constraint 2: Team played yesterday (Prevent back-to-back)
+                // We skip index 5 (Start of Week 2) because there is a break between Sun(4) and Wed(5)
+                let playedYesterday = false;
+                if (d > 0 && d !== 5) { 
+                    playedYesterday = dailySlots[d-1].some(m => 
+                        teamsInMatch.includes(m.t1) || teamsInMatch.includes(m.t2)
+                    );
+                }
+                if (playedYesterday) continue;
+  
+                dailySlots[d].push(match);
+                assigned = true;
+                break;
+            }
+            if (!assigned) {
+                possible = false;
+                break;
+            }
         }
-      }
-       
-      if (week1Matches.length !== 10) return null;
   
-      const assignDays = (matches, days) => {
-        let schedule = [];
-        let dayIdx = 0;
-        let lastPlayed = {}; // Prevent back-to-back days if possible
-        let dailyPool = [...matches];
+        if (possible) success = true;
+    }
   
-        while (dayIdx < 5) {
-          let todays = [];
-          for (let k = 0; k < 2; k++) {
-            const matchIdx = dailyPool.findIndex(m => {
-              if (todays.some(tm => tm.t1 === m.t1 || tm.t1 === m.t2 || tm.t2 === m.t1 || tm.t2 === m.t2)) return false;
-              return true;
+    let result = [];
+    // If scheduling logic succeeded, use the slots. Otherwise fallback to simple fill.
+    const slotsToUse = success ? dailySlots : []; 
+    
+    if (success) {
+        dailySlots.forEach((dayMatches, idx) => {
+            dayMatches.forEach((m, matchIdx) => {
+                result.push({
+                    ...m,
+                    date: fullScheduleDays[idx],
+                    time: matchIdx === 0 ? '17:00' : '19:30'
+                });
             });
-  
-            if (matchIdx !== -1) {
-              const m = dailyPool.splice(matchIdx, 1)[0];
-              todays.push(m);
-              lastPlayed[m.t1] = dayIdx;
-              lastPlayed[m.t2] = dayIdx;
-            } else {
-              return null;
-            }
-          }
-          schedule.push({ ...todays[0], date: days[dayIdx], time: '17:00' });
-          schedule.push({ ...todays[1], date: days[dayIdx], time: '19:30' });
-          dayIdx++;
-        }
-        return schedule;
-      };
-  
-      const s1 = assignDays(week1Matches, week1Days);
-      if (!s1) return null;
-      const s2 = assignDays(week2Matches, week2Days);
-      if (!s2) return null;
-  
-      return [...s1, ...s2];
-    };
-  
-    let finalSchedule = null;
-    let attemptsSchedule = 0;
-    while (!finalSchedule && attemptsSchedule < 100) {
-      finalSchedule = attemptFullSchedule();
-      attemptsSchedule++;
-    }
-     
-    // Final Fallback for scheduling if complex logic fails
-    if (!finalSchedule) {
-        finalSchedule = [];
-        const days = [...week1Days, ...week2Days];
-        allMatches.forEach((m, i) => {
-            if(i < days.length * 2) {
-               finalSchedule.push({...m, date: days[Math.floor(i/2)], time: i%2===0?'17:00':'19:30'});
+        });
+    } else {
+        pool.forEach((m, i) => {
+            const dayIdx = Math.floor(i / 2);
+            if (dayIdx < 10) {
+                result.push({
+                    ...m,
+                    date: fullScheduleDays[dayIdx],
+                    time: i % 2 === 0 ? '17:00' : '19:30'
+                });
             }
         });
     }
   
-    // Sort by Date then Time
-    finalSchedule.sort((a, b) => {
-      const dayA = parseFloat(a.date.split(' ')[0]);
-      const dayB = parseFloat(b.date.split(' ')[0]);
-      if (dayA !== dayB) return dayA - dayB;
-      return a.time === '17:00' ? -1 : 1;
+    return result.sort((a, b) => {
+        const dayA = parseFloat(a.date.split(' ')[0]);
+        const dayB = parseFloat(b.date.split(' ')[0]);
+        if (dayA !== dayB) return dayA - dayB;
+        return a.time === '17:00' ? -1 : 1;
     });
   
     return finalSchedule;
