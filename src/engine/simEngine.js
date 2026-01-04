@@ -358,7 +358,7 @@ export function calculateIndividualIncome(pick, time, aliveRatio = 1.0) {
   // 90 Stat -> (90/80)^2 = 1.26x Multiplier
   // 70 Stat -> (70/80)^2 = 0.76x Multiplier
   // Result: 90 Stat player gets ~65% MORE income than 70 Stat player.
-  let skillMultiplier = Math.pow(weightedStat / 80, 1.05);
+  let skillMultiplier = Math.pow(weightedStat / 85, 1.05);
 
   // Clamp the multiplier to prevent game-breaking values (0.6x to 1.35x)
   skillMultiplier = Math.max(0.6, Math.min(1.35, skillMultiplier));

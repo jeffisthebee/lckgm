@@ -1319,59 +1319,67 @@ export default function Dashboard() {
         </aside>
   
         <div className="flex-1 flex flex-col h-screen overflow-hidden">
-          <header className="bg-white border-b h-14 flex items-center justify-between px-6 shadow-sm z-10 flex-shrink-0">
-            <div className="flex items-center gap-6 text-sm">
-              <div className="flex items-center gap-2 font-bold text-gray-700"><span className="text-gray-400">📅</span> {effectiveDate}</div>
-              <div className="h-4 w-px bg-gray-300"></div>
-              <div className="flex items-center gap-2 font-bold text-gray-700"><span className="text-gray-400">🏆</span> {myRecord.w}승 {myRecord.l}패 ({myRecord.diff > 0 ? `+${myRecord.diff}` : myRecord.diff})</div>
-              <div className="h-4 w-px bg-gray-300"></div>
-              <div className="flex items-center gap-2 font-bold text-gray-700"><span className="text-gray-400">💰</span> 상금: {prizeMoney.toFixed(1)}억</div>
-            </div>
-            
-            <div className="flex items-center gap-3">
-              {hasDrafted && isRegularSeasonFinished && !hasSuperWeekGenerated && (
-                   <button 
-                   onClick={handleGenerateSuperWeek} 
-                   className="px-5 py-1.5 rounded-full font-bold text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition"
-                 >
-                     <span>🔥</span> 슈퍼위크 및 16.02 패치 확인
-                 </button>
-              )}
-  
-              {isSuperWeekFinished && !hasPlayInGenerated && (
-                  <button 
-                  onClick={handleGeneratePlayIn} 
-                  className="px-5 py-1.5 rounded-full font-bold text-sm bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition"
-                >
-                    <span>🛡️</span> 플레이-인 진출팀 확정
-                </button>
-              )} 
+        <header className="bg-white border-b h-14 flex items-center justify-between px-6 shadow-sm z-10 flex-shrink-0">
+          <div className="flex items-center gap-6 text-sm">
+            <div className="flex items-center gap-2 font-bold text-gray-700"><span className="text-gray-400">📅</span> {effectiveDate}</div>
+            <div className="h-4 w-px bg-gray-300"></div>
+            <div className="flex items-center gap-2 font-bold text-gray-700"><span className="text-gray-400">🏆</span> {myRecord.w}승 {myRecord.l}패 ({myRecord.diff > 0 ? `+${myRecord.diff}` : myRecord.diff})</div>
+            <div className="h-4 w-px bg-gray-300"></div>
+            <div className="flex items-center gap-2 font-bold text-gray-700"><span className="text-gray-400">💰</span> 상금: {prizeMoney.toFixed(1)}억</div>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            {/* [FIXED] Final Standings Button */}
+            {isSeasonOver && (
+               <button 
+               onClick={() => setShowFinalStandings(true)} 
+               className="px-5 py-1.5 rounded-full font-bold text-sm bg-gray-900 hover:bg-black text-yellow-400 shadow-sm flex items-center gap-2 transition border-2 border-yellow-500 animate-pulse"
+             >
+                 <span>🏆</span> 최종 순위 보기
+             </button>
+            )}
 
-  
-              {isPlayInFinished && !hasPlayoffsGenerated && (
-                  <button 
-                  onClick={handleGeneratePlayoffs} 
-                  className="px-5 py-1.5 rounded-full font-bold text-sm bg-yellow-500 hover:bg-yellow-600 text-white shadow-sm flex items-center gap-2 animate-bounce transition"
-                >
-                    <span>👑</span> 플레이오프 대진 생성
-                </button>
-              )}
-              
-  
-              {hasDrafted && nextGlobalMatch && !isMyNextMatch && (
-                  <button 
-                    onClick={handleProceedNextMatch} 
-                    className="px-5 py-1.5 rounded-full font-bold text-sm bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-2 animate-pulse transition"
-                  >
-                      <span>⏩</span> 다음 경기 진행 ({t1?.name} vs {t2?.name})
-                  </button>
-              )}
-  
-              <button onClick={handleDraftStart} disabled={hasDrafted} className={`px-6 py-1.5 rounded-full font-bold text-sm shadow-sm transition flex items-center gap-2 ${hasDrafted ? 'bg-gray-100 text-gray-400 cursor-not-allowed hidden' : 'bg-green-600 hover:bg-green-700 text-white animate-pulse'}`}>
-                  <span>▶</span> {hasDrafted ? "" : (isCaptain ? "LCK 컵 팀 선정하기" : "LCK 컵 조 확인하기")}
+            {hasDrafted && isRegularSeasonFinished && !hasSuperWeekGenerated && (
+                 <button 
+                 onClick={handleGenerateSuperWeek} 
+                 className="px-5 py-1.5 rounded-full font-bold text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition"
+               >
+                   <span>🔥</span> 슈퍼위크 및 16.02 패치 확인
+               </button>
+            )}
+
+            {isSuperWeekFinished && !hasPlayInGenerated && (
+                <button 
+                onClick={handleGeneratePlayIn} 
+                className="px-5 py-1.5 rounded-full font-bold text-sm bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition"
+              >
+                  <span>🛡️</span> 플레이-인 진출팀 확정
               </button>
-            </div>
-          </header>
+            )} 
+
+            {isPlayInFinished && !hasPlayoffsGenerated && (
+                <button 
+                onClick={handleGeneratePlayoffs} 
+                className="px-5 py-1.5 rounded-full font-bold text-sm bg-yellow-500 hover:bg-yellow-600 text-white shadow-sm flex items-center gap-2 animate-bounce transition"
+              >
+                  <span>👑</span> 플레이오프 대진 생성
+              </button>
+            )}
+            
+            {hasDrafted && nextGlobalMatch && !isMyNextMatch && (
+                <button 
+                  onClick={handleProceedNextMatch} 
+                  className="px-5 py-1.5 rounded-full font-bold text-sm bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-2 animate-pulse transition"
+                >
+                    <span>⏩</span> 다음 경기 진행 ({t1?.name} vs {t2?.name})
+                </button>
+            )}
+
+            <button onClick={handleDraftStart} disabled={hasDrafted} className={`px-6 py-1.5 rounded-full font-bold text-sm shadow-sm transition flex items-center gap-2 ${hasDrafted ? 'bg-gray-100 text-gray-400 cursor-not-allowed hidden' : 'bg-green-600 hover:bg-green-700 text-white animate-pulse'}`}>
+                <span>▶</span> {hasDrafted ? "" : (isCaptain ? "LCK 컵 팀 선정하기" : "LCK 컵 조 확인하기")}
+            </button>
+          </div>
+        </header>
 
           <main className="flex-1 overflow-y-auto p-6 scroll-smooth">
             <div className="max-w-7xl mx-auto">
