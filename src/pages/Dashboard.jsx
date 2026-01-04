@@ -1164,50 +1164,34 @@ export default function Dashboard() {
                                 <tr>
                                     <th className="p-4 text-center w-20">순위</th>
                                     <th className="p-4">팀</th>
-                                    <th className="p-4 text-right">상금</th>
+                                    <th className="p-4 text-right">상금 (추정)</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y">
-                                {standings.length > 0 ? standings.map((item) => {
-                                    // [LOGIC] Determine Prize Money & FST Status
-                                    let prizeText = '0.1억';
-                                    if (item.rank === 1) prizeText = '0.5억';
-                                    else if (item.rank === 2) prizeText = '0.25억';
-                                    else if (item.rank === 3) prizeText = '0.2억';
-
-                                    const isFstQualified = item.rank <= 2;
-
-                                    return (
-                                        <tr key={item.team.id} className={`${item.rank === 1 ? 'bg-yellow-50' : 'bg-white'}`}>
-                                            <td className="p-4 text-center">
-                                                {item.rank === 1 ? <span className="text-2xl">🥇</span> : 
-                                                 item.rank === 2 ? <span className="text-2xl">🥈</span> : 
-                                                 item.rank === 3 ? <span className="text-2xl">🥉</span> : 
-                                                 <span className="font-bold text-gray-500 text-lg">{item.rank}위</span>}
-                                            </td>
-                                            <td className="p-4 flex items-center gap-4">
-                                                <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold shadow-sm text-lg" 
-                                                     style={{backgroundColor: item.team.colors?.primary || '#333'}}>
-                                                    {item.team.name}
-                                                </div>
-                                                <div>
-                                                    <div className="font-black text-xl text-gray-800 flex items-center gap-2">
-                                                        {item.team.fullName}
-                                                        {isFstQualified && (
-                                                            <span className="text-[10px] bg-indigo-600 text-white px-2 py-0.5 rounded font-bold animate-pulse">
-                                                                FST 진출
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    {item.rank === 1 && <div className="text-xs font-bold text-yellow-600 bg-yellow-100 inline-block px-2 py-0.5 rounded mt-1">CHAMPION</div>}
-                                                </div>
-                                            </td>
-                                            <td className="p-4 text-right font-bold text-gray-600">
-                                                {prizeText}
-                                            </td>
-                                        </tr>
-                                    );
-                                }) : (
+                                {standings.length > 0 ? standings.map((item) => (
+                                    <tr key={item.team.id} className={`${item.rank === 1 ? 'bg-yellow-50' : 'bg-white'}`}>
+                                        <td className="p-4 text-center">
+                                            {item.rank === 1 ? <span className="text-2xl">🥇</span> : 
+                                             item.rank === 2 ? <span className="text-2xl">🥈</span> : 
+                                             item.rank === 3 ? <span className="text-2xl">🥉</span> : 
+                                             <span className="font-bold text-gray-500 text-lg">{item.rank}위</span>}
+                                        </td>
+                                        <td className="p-4 flex items-center gap-4">
+                                            {/* Optional chaining (?.) added to colors to prevent crash */}
+                                            <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold shadow-sm text-lg" 
+                                                 style={{backgroundColor: item.team.colors?.primary || '#333'}}>
+                                                {item.team.name}
+                                            </div>
+                                            <div>
+                                                <div className="font-black text-xl text-gray-800">{item.team.fullName}</div>
+                                                {item.rank === 1 && <div className="text-xs font-bold text-yellow-600 bg-yellow-100 inline-block px-2 py-0.5 rounded mt-1">CHAMPION</div>}
+                                            </div>
+                                        </td>
+                                        <td className="p-4 text-right font-bold text-gray-600">
+                                            {item.rank === 1 ? '5.0억' : item.rank === 2 ? '3.0억' : item.rank === 3 ? '1.5억' : '-'}
+                                        </td>
+                                    </tr>
+                                )) : (
                                     <tr><td colSpan="3" className="p-8 text-center text-gray-500">순위 데이터 계산 중 오류가 발생했습니다.</td></tr>
                                 )}
                             </tbody>
@@ -1225,27 +1209,6 @@ export default function Dashboard() {
     }
   };
     
-
-  // [ADD THIS LOGIC] Calculate and set Prize Money when season ends
-  useEffect(() => {
-    if (isSeasonOver) {
-        const standings = getFinalStandings();
-        const myRankEntry = standings.find(s => s.team.id === myTeam.id);
-        
-        if (myRankEntry) {
-            let money = 0.1; // Default for 4th and below (0.1억)
-            if (myRankEntry.rank === 1) money = 0.5;
-            else if (myRankEntry.rank === 2) money = 0.25;
-            else if (myRankEntry.rank === 3) money = 0.2;
-            
-            setPrizeMoney(money);
-            
-            // If you need to persist this to team finance data permanently:
-            // const currentFinance = teamFinanceData[myTeam.name] || { total_expenditure: 0 };
-            // teamFinanceData[myTeam.name] = { ...currentFinance, prize_revenue: money };
-        }
-    }
-  }, [isSeasonOver]); // Runs whenever season status checks change
   
     return (
       <div className="flex h-screen bg-gray-100 overflow-hidden font-sans relative">
