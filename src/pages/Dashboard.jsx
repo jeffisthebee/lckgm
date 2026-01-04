@@ -73,20 +73,31 @@ export default function Dashboard() {
       const loadData = () => {
         const found = getLeagueById(leagueId);
         if (found) {
+          // [FIX] Ensure 'team' is an object. If it's just an ID, find the team object.
+          let teamData = found.team;
+          if (typeof teamData !== 'object' || !teamData.id) {
+             // If found.team is just an ID (e.g. 1), find the actual team data
+             teamData = teams.find(t => t.id === Number(found.team)) || teams[0];
+          }
           // 데이터 무결성 검사 및 초기화
           const sanitizedLeague = {
-              ...found,
-              metaVersion: found.metaVersion || '16.01',
-              currentChampionList: found.currentChampionList || championList
-          };
-          setLeague(sanitizedLeague);
-          updateLeague(leagueId, { lastPlayed: new Date().toISOString() });
-          setViewingTeamId(sanitizedLeague.team.id);
-          recalculateStandings(sanitizedLeague);
-        }
-      };
-      loadData();
-    }, [leagueId]);
+            ...found,
+            team: teamData, // Ensure this is always the full object
+            metaVersion: found.metaVersion || '16.01',
+            currentChampionList: found.currentChampionList || championList
+        };
+
+        setLeague(sanitizedLeague);
+        updateLeague(leagueId, { lastPlayed: new Date().toISOString() });
+        
+        // [FIX] Safely set viewing ID
+        setViewingTeamId(teamData.id);
+        
+        recalculateStandings(sanitizedLeague);
+      }
+    };
+    loadData();
+  }, [leagueId]);
   
     // Fix 1: 순위표 재계산 함수 (전체 매치 기록 기반)
     // [수정 1] 순위표 계산 함수 (플레이오프/플레이인 제외 로직 강화)
@@ -144,9 +155,23 @@ export default function Dashboard() {
   
     if (!league) return <div className="flex h-screen items-center justify-center font-bold text-gray-500">데이터 로딩 중... (응답이 없으면 메인에서 초기화해주세요)</div>;
      
-    const myTeam = teams.find(t => String(t.id) === String(league.team.id)) || league.team;
-    const viewingTeam = teams.find(t => String(t.id) === String(viewingTeamId)) || myTeam;
-    const currentRoster = (playerList || []).filter(p => p.팀 === viewingTeam.name);
+    const resolveTeam = (source) => {
+      if (!source) return teams[0];
+      // If source is just an ID (number/string), find the team
+      if (typeof source !== 'object') {
+          return teams.find(t => String(t.id) === String(source)) || teams[0];
+      }
+      // If source is an object but missing ID/Colors, try to find matching team in DB
+      if (source.id) {
+           const found = teams.find(t => String(t.id) === String(source.id));
+           if (found) return found;
+      }
+      return source;
+  };
+
+  const myTeam = resolveTeam(league.team);
+  const viewingTeam = viewingTeamId ? resolveTeam(viewingTeamId) : myTeam;
+  const currentRoster = (playerList || []).filter(p => p.팀 === viewingTeam.name);
      
     const isCaptain = myTeam.id === 1 || myTeam.id === 2; 
     const hasDrafted = league.groups && league.groups.baron && league.groups.baron.length > 0;
