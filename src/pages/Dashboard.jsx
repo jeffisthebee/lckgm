@@ -1046,134 +1046,6 @@ export default function Dashboard() {
       const team2Name = t2 ? formatTeamName(t2.id, match.type) : 'TBD';
 
       // --- FINAL STANDINGS LOGIC ---
-  const getFinalStandings = () => {
-    if (!isSeasonOver) return [];
-    
-    const getLoserId = (m) => {
-        if (!m || m.status !== 'finished') return null;
-        const winnerName = m.result.winner;
-        const t1Id = typeof m.t1 === 'object' ? m.t1.id : m.t1;
-        const t2Id = typeof m.t2 === 'object' ? m.t2.id : m.t2;
-        const t1Obj = teams.find(t => t.id === t1Id);
-        return t1Obj.name === winnerName ? t2Id : t1Id;
-    };
-
-    const getWinnerId = (m) => {
-        if (!m || m.status !== 'finished') return null;
-        return teams.find(t => t.name === m.result.winner)?.id;
-    };
-
-    const findMatch = (type, round) => league.matches.find(m => m.type === type && m.round === round);
-    
-    // 1st & 2nd: Grand Final (Round 5)
-    const finalMatch = findMatch('playoff', 5);
-    const winnerId = getWinnerId(finalMatch);
-    const runnerUpId = getLoserId(finalMatch);
-
-    // 3rd: Round 4 Loser (Final Qualifier)
-    const r4Match = findMatch('playoff', 4);
-    const thirdId = getLoserId(r4Match);
-
-    // 4th: Round 3.1 Loser (Loser Bracket Semi)
-    const r3_1Match = findMatch('playoff', 3.1);
-    const fourthId = getLoserId(r3_1Match);
-
-    // 5th: Round 2.2 Loser (Loser Bracket QF 2)
-    const r2_2Match = findMatch('playoff', 2.2);
-    const fifthId = getLoserId(r2_2Match);
-
-    // 6th: Round 2.1 Loser (Loser Bracket QF 1)
-    const r2_1Match = findMatch('playoff', 2.1);
-    const sixthId = getLoserId(r2_1Match);
-
-    // 7th: Play-In Final (Round 3) Loser
-    const piFinalMatch = findMatch('playin', 3);
-    const seventhId = getLoserId(piFinalMatch);
-
-    // 8th & 9th: Play-In Round 1 Losers
-    const piR1Matches = league.matches.filter(m => m.type === 'playin' && m.round === 1);
-    const piR1Losers = piR1Matches.map(m => getLoserId(m));
-
-    // Sort 8th/9th by Play-In Seed (Lower seed number is better/higher rank)
-    // Ex: 3rd Seed (Loser) vs 4th Seed (Loser) -> 3rd Seed is 8th, 4th Seed is 9th
-    piR1Losers.sort((a, b) => {
-        const seedA = getTeamSeed(a, 'playin') || 99;
-        const seedB = getTeamSeed(b, 'playin') || 99;
-        return seedA - seedB;
-    });
-
-    // 10th: Group Stage Eliminated
-    const tenthId = league.seasonSummary?.eliminated;
-
-    const rankIds = [
-        winnerId, runnerUpId, thirdId, fourthId, fifthId, sixthId, seventhId, 
-        piR1Losers[0], piR1Losers[1], tenthId
-    ];
-
-    return rankIds.map((id, index) => {
-        if (!id) return null;
-        const t = teams.find(team => team.id === id);
-        return { rank: index + 1, team: t };
-    }).filter(item => item !== null);
-  };
-
-  const FinalStandingsModal = () => {
-    const standings = getFinalStandings();
-    
-    return (
-        <div className="absolute inset-0 z-50 bg-black/90 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl max-w-2xl w-full overflow-hidden shadow-2xl relative">
-                <div className="bg-gray-900 p-6 text-center relative">
-                    <h2 className="text-3xl font-black text-yellow-400">🏆 2026 LCK CUP FINAL STANDINGS</h2>
-                    <button 
-                        onClick={() => setShowFinalStandings(false)}
-                        className="absolute top-6 right-6 text-gray-400 hover:text-white font-bold"
-                    >
-                        ✕ 닫기
-                    </button>
-                </div>
-                <div className="p-0 overflow-y-auto max-h-[70vh]">
-                    <table className="w-full text-left">
-                        <thead className="bg-gray-100 border-b">
-                            <tr>
-                                <th className="p-4 text-center w-20">순위</th>
-                                <th className="p-4">팀</th>
-                                <th className="p-4 text-right">상금 (추정)</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y">
-                            {standings.map((item) => (
-                                <tr key={item.team.id} className={`${item.rank === 1 ? 'bg-yellow-50' : 'bg-white'}`}>
-                                    <td className="p-4 text-center">
-                                        {item.rank === 1 ? <span className="text-2xl">🥇</span> : 
-                                         item.rank === 2 ? <span className="text-2xl">🥈</span> : 
-                                         item.rank === 3 ? <span className="text-2xl">🥉</span> : 
-                                         <span className="font-bold text-gray-500 text-lg">{item.rank}위</span>}
-                                    </td>
-                                    <td className="p-4 flex items-center gap-4">
-                                        <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold shadow-sm text-lg" style={{backgroundColor: item.team.colors.primary}}>
-                                            {item.team.name}
-                                        </div>
-                                        <div>
-                                            <div className="font-black text-xl text-gray-800">{item.team.fullName}</div>
-                                            {item.rank === 1 && <div className="text-xs font-bold text-yellow-600 bg-yellow-100 inline-block px-2 py-0.5 rounded mt-1">CHAMPION</div>}
-                                        </div>
-                                    </td>
-                                    <td className="p-4 text-right font-bold text-gray-600">
-                                        {item.rank === 1 ? '5.0억' : item.rank === 2 ? '3.0억' : item.rank === 3 ? '1.5억' : '-'}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-                <div className="p-4 bg-gray-50 text-center border-t">
-                    <button onClick={() => setShowFinalStandings(false)} className="px-6 py-2 bg-gray-800 text-white font-bold rounded hover:bg-gray-700">확인</button>
-                </div>
-            </div>
-        </div>
-    );
-  };
   
       return (
           <div className={`bg-white border-2 rounded-lg shadow-sm w-full ${match.status === 'pending' ? 'border-gray-300' : 'border-gray-400'}`}>
@@ -1330,14 +1202,6 @@ export default function Dashboard() {
                 </button>
               )} 
 
-{isSeasonOver && (
-                 <button 
-                 onClick={() => setShowFinalStandings(true)} 
-                 className="px-5 py-1.5 rounded-full font-bold text-sm bg-gray-800 hover:bg-gray-900 text-yellow-400 shadow-sm flex items-center gap-2 transition border-2 border-yellow-500"
-               >
-                   <span>🏆</span> 최종 순위 보기
-               </button>
-              )}
   
               {isPlayInFinished && !hasPlayoffsGenerated && (
                   <button 
@@ -1347,6 +1211,7 @@ export default function Dashboard() {
                     <span>👑</span> 플레이오프 대진 생성
                 </button>
               )}
+              
   
               {hasDrafted && nextGlobalMatch && !isMyNextMatch && (
                   <button 
@@ -1362,7 +1227,7 @@ export default function Dashboard() {
               </button>
             </div>
           </header>
-  
+
           <main className="flex-1 overflow-y-auto p-6 scroll-smooth">
             <div className="max-w-7xl mx-auto">
                 
@@ -1925,6 +1790,154 @@ export default function Dashboard() {
                         
                         const t1Name = formatTeamName(m.t1, m.type);
                         const t2Name = formatTeamName(m.t2, m.type);
+
+                        // --- [FIXED] FINAL STANDINGS LOGIC ---
+  // This must be placed BEFORE the return() of Dashboard, not inside another component.
+  
+  const getFinalStandings = () => {
+    if (!isSeasonOver) return [];
+    
+    // 1. Helper to safely compare IDs (Handle String vs Number mismatch)
+    const safeId = (id) => (id && typeof id === 'object' ? id.id : Number(id));
+
+    const getLoserId = (m) => {
+        if (!m || m.status !== 'finished' || !m.result) return null;
+        const winnerName = m.result.winner;
+        
+        const t1Id = safeId(m.t1);
+        const t2Id = safeId(m.t2);
+        
+        // Find team object to check name
+        const t1Obj = teams.find(t => safeId(t.id) === t1Id);
+        if (!t1Obj) return t2Id; // Safety fallback
+
+        return t1Obj.name === winnerName ? t2Id : t1Id;
+    };
+
+    const getWinnerId = (m) => {
+        if (!m || m.status !== 'finished') return null;
+        return teams.find(t => t.name === m.result.winner)?.id;
+    };
+
+    const findMatch = (type, round) => league.matches.find(m => m.type === type && m.round === round);
+    
+    // --- Logic to find IDs for each rank ---
+    const finalMatch = findMatch('playoff', 5);
+    const winnerId = getWinnerId(finalMatch);
+    const runnerUpId = getLoserId(finalMatch);
+
+    const r4Match = findMatch('playoff', 4);
+    const thirdId = getLoserId(r4Match);
+
+    const r3_1Match = findMatch('playoff', 3.1);
+    const fourthId = getLoserId(r3_1Match);
+
+    const r2_2Match = findMatch('playoff', 2.2);
+    const fifthId = getLoserId(r2_2Match);
+
+    const r2_1Match = findMatch('playoff', 2.1);
+    const sixthId = getLoserId(r2_1Match);
+
+    const piFinalMatch = findMatch('playin', 3);
+    const seventhId = getLoserId(piFinalMatch);
+
+    // 8th & 9th: Play-In Round 1 Losers
+    const piR1Matches = league.matches.filter(m => m.type === 'playin' && m.round === 1);
+    const piR1Losers = piR1Matches.map(m => getLoserId(m)).filter(id => id !== null);
+
+    // Sort 8th/9th by Play-In Seed
+    piR1Losers.sort((a, b) => {
+        const seedA = getTeamSeed(a, 'playin') || 99;
+        const seedB = getTeamSeed(b, 'playin') || 99;
+        return seedA - seedB;
+    });
+
+    // 10th: Group Stage Eliminated
+    const tenthId = league.seasonSummary?.eliminated;
+
+    const rankIds = [
+        winnerId, runnerUpId, thirdId, fourthId, fifthId, sixthId, seventhId, 
+        piR1Losers[0], piR1Losers[1], tenthId
+    ];
+
+    // --- CRASH PREVENTION MAPPING ---
+    return rankIds.map((id, index) => {
+        if (!id) return null;
+        // Use safeId to find the team ensuring Number vs Number comparison
+        const t = teams.find(team => safeId(team.id) === safeId(id));
+        
+        if (!t) return null; // If team not found, skip (Prevents "undefined" crash)
+        return { rank: index + 1, team: t };
+    }).filter(item => item !== null);
+  };
+
+  const FinalStandingsModal = () => {
+    // Wrap in try-catch to prevent white screen if data is bad
+    try {
+        const standings = getFinalStandings();
+        
+        return (
+            <div className="absolute inset-0 z-[999] bg-black/90 flex items-center justify-center p-4">
+                <div className="bg-white rounded-2xl max-w-2xl w-full overflow-hidden shadow-2xl relative">
+                    <div className="bg-gray-900 p-6 text-center relative">
+                        <h2 className="text-3xl font-black text-yellow-400">🏆 2026 LCK CUP FINAL STANDINGS</h2>
+                        <button 
+                            onClick={() => setShowFinalStandings(false)}
+                            className="absolute top-6 right-6 text-gray-400 hover:text-white font-bold"
+                        >
+                            ✕ 닫기
+                        </button>
+                    </div>
+                    <div className="p-0 overflow-y-auto max-h-[70vh]">
+                        <table className="w-full text-left">
+                            <thead className="bg-gray-100 border-b">
+                                <tr>
+                                    <th className="p-4 text-center w-20">순위</th>
+                                    <th className="p-4">팀</th>
+                                    <th className="p-4 text-right">상금 (추정)</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y">
+                                {standings.length > 0 ? standings.map((item) => (
+                                    <tr key={item.team.id} className={`${item.rank === 1 ? 'bg-yellow-50' : 'bg-white'}`}>
+                                        <td className="p-4 text-center">
+                                            {item.rank === 1 ? <span className="text-2xl">🥇</span> : 
+                                             item.rank === 2 ? <span className="text-2xl">🥈</span> : 
+                                             item.rank === 3 ? <span className="text-2xl">🥉</span> : 
+                                             <span className="font-bold text-gray-500 text-lg">{item.rank}위</span>}
+                                        </td>
+                                        <td className="p-4 flex items-center gap-4">
+                                            {/* Optional chaining (?.) added to colors to prevent crash */}
+                                            <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold shadow-sm text-lg" 
+                                                 style={{backgroundColor: item.team.colors?.primary || '#333'}}>
+                                                {item.team.name}
+                                            </div>
+                                            <div>
+                                                <div className="font-black text-xl text-gray-800">{item.team.fullName}</div>
+                                                {item.rank === 1 && <div className="text-xs font-bold text-yellow-600 bg-yellow-100 inline-block px-2 py-0.5 rounded mt-1">CHAMPION</div>}
+                                            </div>
+                                        </td>
+                                        <td className="p-4 text-right font-bold text-gray-600">
+                                            {item.rank === 1 ? '5.0억' : item.rank === 2 ? '3.0억' : item.rank === 3 ? '1.5억' : '-'}
+                                        </td>
+                                    </tr>
+                                )) : (
+                                    <tr><td colSpan="3" className="p-8 text-center text-gray-500">순위 데이터 계산 중 오류가 발생했습니다.</td></tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div className="p-4 bg-gray-50 text-center border-t">
+                        <button onClick={() => setShowFinalStandings(false)} className="px-6 py-2 bg-gray-800 text-white font-bold rounded hover:bg-gray-700">확인</button>
+                    </div>
+                </div>
+            </div>
+        );
+    } catch (err) {
+        console.error(err);
+        return null; 
+    }
+  };
   
                         return (
                           <div key={i} className={`p-4 rounded-lg border flex flex-col gap-2 ${isMyMatch ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-200' : 'bg-white border-gray-200'}`}>
