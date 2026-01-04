@@ -66,6 +66,8 @@ export default function Dashboard() {
   
     // 플레이-인/플레이오프 상대 선택 모달 상태
     const [opponentChoice, setOpponentChoice] = useState(null); // { type: 'playin' | 'playoff', ...data }
+
+    const [showFinalStandings, setShowFinalStandings] = useState(false);
   
     useEffect(() => {
       const loadData = () => {
@@ -544,80 +546,6 @@ export default function Dashboard() {
       alert("경기 진행 중 오류 발생: " + err.message);
     }
   };
-
-  const [showFinalStandings, setShowFinalStandings] = useState(false);
-
-// Function to calculate final 1-10 rankings
-const getFinalSeasonRankings = () => {
-    if (!league.matches) return [];
-
-    // Helper: Find loser of a specific match round
-    const findLoserByRound = (roundName) => {
-        const match = league.matches.find(m => m.round === roundName && m.status === 'finished');
-        if (!match) return null;
-        return match.result.winner === match.t1.name ? match.t2 : match.t1;
-    };
-
-    // Helper: Find winner of finals
-    const findWinnerByRound = (roundName) => {
-        const match = league.matches.find(m => m.round === roundName && m.status === 'finished');
-        if (!match) return null;
-        return match.result.winner === match.t1.name ? match.t1 : match.t2;
-    };
-
-    // 1. Get Playoff/Playin Results
-    // Note: You must ensure your SimEngine tags matches with these 'round' names
-    const winner = findWinnerByRound('finals');
-    const runnerUp = findLoserByRound('finals'); // 2nd
-    const third = findLoserByRound('round4');    // 3rd (PO R4 Loser)
-    const fourth = findLoserByRound('round3');   // 4th (PO R3 Loser)
-    const fifth = findLoserByRound('round2');    // 5th (PO R2 Loser)
-    const sixth = findLoserByRound('round1');    // 6th (PO R1 Loser)
-    
-    const seventh = findLoserByRound('playin_final'); // 7th (Playin Final Loser)
-
-    // 8th & 9th Logic (Playin Round 1 Losers)
-    // Assuming playin round 1 has two matches: 'playin_r1_a' and 'playin_r1_b'
-    const loserPlayinA = findLoserByRound('playin_r1_a');
-    const loserPlayinB = findLoserByRound('playin_r1_b');
-    
-    let eighth, ninth;
-    
-    // Compare seeds for 8th/9th (Higher seed gets 8th)
-    // We check the computedStandings (regular season) for wins
-    if (loserPlayinA && loserPlayinB) {
-        const winsA = computedStandings[loserPlayinA.id]?.w || 0;
-        const winsB = computedStandings[loserPlayinB.id]?.w || 0;
-        
-        if (winsA >= winsB) {
-            eighth = loserPlayinA;
-            ninth = loserPlayinB;
-        } else {
-            eighth = loserPlayinB;
-            ninth = loserPlayinA;
-        }
-    }
-
-    // 10th Place (The team not in the top 9)
-    const top9Ids = [winner, runnerUp, third, fourth, fifth, sixth, seventh, eighth, ninth]
-        .filter(t => t) // filter nulls
-        .map(t => t.id);
-    
-    const tenth = teams.find(t => !top9Ids.includes(t.id));
-
-    return [
-        { rank: 1, team: winner, label: 'LCK CUP CHAMPION' },
-        { rank: 2, team: runnerUp, label: 'Runner-Up' },
-        { rank: 3, team: third, label: '3rd Place' },
-        { rank: 4, team: fourth, label: '4th Place' },
-        { rank: 5, team: fifth, label: '5th Place' },
-        { rank: 6, team: sixth, label: '6th Place' },
-        { rank: 7, team: seventh, label: 'Play-in Eliminated' },
-        { rank: 8, team: eighth, label: 'Play-in Eliminated' },
-        { rank: 9, team: ninth, label: 'Play-in Eliminated' },
-        { rank: 10, team: tenth, label: 'Season Eliminated' },
-    ];
-};
   
     // [1] 내 경기 시작하기 (안전장치 추가됨)
     // [1] 내 경기 시작하기 (안전장치 추가됨)
@@ -1116,6 +1044,136 @@ const getFinalSeasonRankings = () => {
   
       const team1Name = t1 ? formatTeamName(t1.id, match.type) : 'TBD';
       const team2Name = t2 ? formatTeamName(t2.id, match.type) : 'TBD';
+
+      // --- FINAL STANDINGS LOGIC ---
+  const getFinalStandings = () => {
+    if (!isSeasonOver) return [];
+    
+    const getLoserId = (m) => {
+        if (!m || m.status !== 'finished') return null;
+        const winnerName = m.result.winner;
+        const t1Id = typeof m.t1 === 'object' ? m.t1.id : m.t1;
+        const t2Id = typeof m.t2 === 'object' ? m.t2.id : m.t2;
+        const t1Obj = teams.find(t => t.id === t1Id);
+        return t1Obj.name === winnerName ? t2Id : t1Id;
+    };
+
+    const getWinnerId = (m) => {
+        if (!m || m.status !== 'finished') return null;
+        return teams.find(t => t.name === m.result.winner)?.id;
+    };
+
+    const findMatch = (type, round) => league.matches.find(m => m.type === type && m.round === round);
+    
+    // 1st & 2nd: Grand Final (Round 5)
+    const finalMatch = findMatch('playoff', 5);
+    const winnerId = getWinnerId(finalMatch);
+    const runnerUpId = getLoserId(finalMatch);
+
+    // 3rd: Round 4 Loser (Final Qualifier)
+    const r4Match = findMatch('playoff', 4);
+    const thirdId = getLoserId(r4Match);
+
+    // 4th: Round 3.1 Loser (Loser Bracket Semi)
+    const r3_1Match = findMatch('playoff', 3.1);
+    const fourthId = getLoserId(r3_1Match);
+
+    // 5th: Round 2.2 Loser (Loser Bracket QF 2)
+    const r2_2Match = findMatch('playoff', 2.2);
+    const fifthId = getLoserId(r2_2Match);
+
+    // 6th: Round 2.1 Loser (Loser Bracket QF 1)
+    const r2_1Match = findMatch('playoff', 2.1);
+    const sixthId = getLoserId(r2_1Match);
+
+    // 7th: Play-In Final (Round 3) Loser
+    const piFinalMatch = findMatch('playin', 3);
+    const seventhId = getLoserId(piFinalMatch);
+
+    // 8th & 9th: Play-In Round 1 Losers
+    const piR1Matches = league.matches.filter(m => m.type === 'playin' && m.round === 1);
+    const piR1Losers = piR1Matches.map(m => getLoserId(m));
+
+    // Sort 8th/9th by Play-In Seed (Lower seed number is better/higher rank)
+    // Ex: 3rd Seed (Loser) vs 4th Seed (Loser) -> 3rd Seed is 8th, 4th Seed is 9th
+    piR1Losers.sort((a, b) => {
+        const seedA = getTeamSeed(a, 'playin') || 99;
+        const seedB = getTeamSeed(b, 'playin') || 99;
+        return seedA - seedB;
+    });
+
+    // 10th: Group Stage Eliminated
+    const tenthId = league.seasonSummary?.eliminated;
+
+    const rankIds = [
+        winnerId, runnerUpId, thirdId, fourthId, fifthId, sixthId, seventhId, 
+        piR1Losers[0], piR1Losers[1], tenthId
+    ];
+
+    return rankIds.map((id, index) => {
+        if (!id) return null;
+        const t = teams.find(team => team.id === id);
+        return { rank: index + 1, team: t };
+    }).filter(item => item !== null);
+  };
+
+  const FinalStandingsModal = () => {
+    const standings = getFinalStandings();
+    
+    return (
+        <div className="absolute inset-0 z-50 bg-black/90 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-2xl w-full overflow-hidden shadow-2xl relative">
+                <div className="bg-gray-900 p-6 text-center relative">
+                    <h2 className="text-3xl font-black text-yellow-400">🏆 2026 LCK CUP FINAL STANDINGS</h2>
+                    <button 
+                        onClick={() => setShowFinalStandings(false)}
+                        className="absolute top-6 right-6 text-gray-400 hover:text-white font-bold"
+                    >
+                        ✕ 닫기
+                    </button>
+                </div>
+                <div className="p-0 overflow-y-auto max-h-[70vh]">
+                    <table className="w-full text-left">
+                        <thead className="bg-gray-100 border-b">
+                            <tr>
+                                <th className="p-4 text-center w-20">순위</th>
+                                <th className="p-4">팀</th>
+                                <th className="p-4 text-right">상금 (추정)</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                            {standings.map((item) => (
+                                <tr key={item.team.id} className={`${item.rank === 1 ? 'bg-yellow-50' : 'bg-white'}`}>
+                                    <td className="p-4 text-center">
+                                        {item.rank === 1 ? <span className="text-2xl">🥇</span> : 
+                                         item.rank === 2 ? <span className="text-2xl">🥈</span> : 
+                                         item.rank === 3 ? <span className="text-2xl">🥉</span> : 
+                                         <span className="font-bold text-gray-500 text-lg">{item.rank}위</span>}
+                                    </td>
+                                    <td className="p-4 flex items-center gap-4">
+                                        <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold shadow-sm text-lg" style={{backgroundColor: item.team.colors.primary}}>
+                                            {item.team.name}
+                                        </div>
+                                        <div>
+                                            <div className="font-black text-xl text-gray-800">{item.team.fullName}</div>
+                                            {item.rank === 1 && <div className="text-xs font-bold text-yellow-600 bg-yellow-100 inline-block px-2 py-0.5 rounded mt-1">CHAMPION</div>}
+                                        </div>
+                                    </td>
+                                    <td className="p-4 text-right font-bold text-gray-600">
+                                        {item.rank === 1 ? '5.0억' : item.rank === 2 ? '3.0억' : item.rank === 3 ? '1.5억' : '-'}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+                <div className="p-4 bg-gray-50 text-center border-t">
+                    <button onClick={() => setShowFinalStandings(false)} className="px-6 py-2 bg-gray-800 text-white font-bold rounded hover:bg-gray-700">확인</button>
+                </div>
+            </div>
+        </div>
+    );
+  };
   
       return (
           <div className={`bg-white border-2 rounded-lg shadow-sm w-full ${match.status === 'pending' ? 'border-gray-300' : 'border-gray-400'}`}>
@@ -1170,6 +1228,8 @@ const getFinalSeasonRankings = () => {
               </div>
           </div>
         )}
+
+{showFinalStandings && <FinalStandingsModal />}
   
   {isLiveGameMode && liveMatchData && (
     <LiveGamePlayer 
@@ -1268,6 +1328,15 @@ const getFinalSeasonRankings = () => {
                 >
                     <span>🛡️</span> 플레이-인 진출팀 확정
                 </button>
+              )} 
+
+{isSeasonOver && (
+                 <button 
+                 onClick={() => setShowFinalStandings(true)} 
+                 className="px-5 py-1.5 rounded-full font-bold text-sm bg-gray-800 hover:bg-gray-900 text-yellow-400 shadow-sm flex items-center gap-2 transition border-2 border-yellow-500"
+               >
+                   <span>🏆</span> 최종 순위 보기
+               </button>
               )}
   
               {isPlayInFinished && !hasPlayoffsGenerated && (
@@ -1891,76 +1960,9 @@ const getFinalSeasonRankings = () => {
                   )}
                 </div>
               )}
-  {/* --- [INSERT IN DASHBOARD JSX RETURN] --- */}
-
-{/* Final Standings Modal */}
-{showFinalStandings && (
-  <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 backdrop-blur-sm">
-    <div className="bg-white w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl">
-      
-      {/* Header */}
-      <div className="bg-gray-900 p-6 text-center">
-        <h2 className="text-3xl font-black text-amber-400 uppercase tracking-widest">2026 LCK CUP</h2>
-        <p className="text-gray-400 font-bold mt-1">FINAL STANDINGS</p>
-      </div>
-
-      {/* List */}
-      <div className="p-4 bg-gray-50 max-h-[70vh] overflow-y-auto">
-        {getFinalSeasonRankings().map((item, idx) => (
-          <div key={idx} className={`flex items-center p-4 mb-2 rounded-xl border ${item.rank === 1 ? 'bg-amber-50 border-amber-300' : 'bg-white border-gray-200'} shadow-sm`}>
-            
-            {/* Rank Number */}
-            <div className={`w-12 text-center font-black text-2xl ${item.rank === 1 ? 'text-amber-500' : 'text-gray-300'}`}>
-              {item.rank}
-            </div>
-
-            {/* Team Info */}
-            {item.team ? (
-              <div className="flex-1 flex items-center gap-4 ml-4">
-                <div 
-                  className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-md"
-                  style={{ backgroundColor: item.team.colors?.primary || '#333' }}
-                >
-                  {item.team.name}
-                </div>
-                <div>
-                  <div className="font-bold text-xl text-gray-800">{item.team.fullName}</div>
-                  <div className="text-xs font-bold text-gray-400 uppercase">{item.label}</div>
-                </div>
-              </div>
-            ) : (
-              <div className="flex-1 ml-4 text-gray-400 font-mono">TBD</div>
-            )}
-            
-            {/* Trophy Icon for Winner */}
-            {item.rank === 1 && <div className="text-4xl">🏆</div>}
-          </div>
-        ))}
-      </div>
-
-      {/* Footer / Close */}
-      <div className="p-4 bg-gray-100 border-t flex justify-center">
-        <button 
-          onClick={() => setShowFinalStandings(false)}
-          className="px-8 py-3 bg-gray-900 text-white font-bold rounded-lg hover:bg-black transition"
-        >
-          닫기 (Close)
-        </button>
-      </div>
-    </div>
-  </div>
-)}
+  
             </div>
           </main>
-          {/* Only show if the finals have been played */}
-{league.matches.some(m => m.round === 'finals' && m.status === 'finished') && (
-    <button 
-        onClick={() => setShowFinalStandings(true)}
-        className="w-full mb-4 py-4 bg-gradient-to-r from-amber-500 to-yellow-600 text-white font-black text-xl rounded-xl shadow-lg hover:scale-[1.02] transition"
-    >
-        🏆 최종 순위 보기 (View Final Standings)
-    </button>
-)}
         </div>
       </div>
     );
