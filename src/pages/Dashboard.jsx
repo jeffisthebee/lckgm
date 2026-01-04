@@ -73,31 +73,20 @@ export default function Dashboard() {
       const loadData = () => {
         const found = getLeagueById(leagueId);
         if (found) {
-          // [FIX] Ensure 'team' is an object. If it's just an ID, find the team object.
-          let teamData = found.team;
-          if (typeof teamData !== 'object' || !teamData.id) {
-             // If found.team is just an ID (e.g. 1), find the actual team data
-             teamData = teams.find(t => t.id === Number(found.team)) || teams[0];
-          }
           // 데이터 무결성 검사 및 초기화
           const sanitizedLeague = {
-            ...found,
-            team: teamData, // Ensure this is always the full object
-            metaVersion: found.metaVersion || '16.01',
-            currentChampionList: found.currentChampionList || championList
-        };
-
-        setLeague(sanitizedLeague);
-        updateLeague(leagueId, { lastPlayed: new Date().toISOString() });
-        
-        // [FIX] Safely set viewing ID
-        setViewingTeamId(teamData.id);
-        
-        recalculateStandings(sanitizedLeague);
-      }
-    };
-    loadData();
-  }, [leagueId]);
+              ...found,
+              metaVersion: found.metaVersion || '16.01',
+              currentChampionList: found.currentChampionList || championList
+          };
+          setLeague(sanitizedLeague);
+          updateLeague(leagueId, { lastPlayed: new Date().toISOString() });
+          setViewingTeamId(sanitizedLeague.team.id);
+          recalculateStandings(sanitizedLeague);
+        }
+      };
+      loadData();
+    }, [leagueId]);
   
     // Fix 1: 순위표 재계산 함수 (전체 매치 기록 기반)
     // [수정 1] 순위표 계산 함수 (플레이오프/플레이인 제외 로직 강화)
@@ -155,23 +144,9 @@ export default function Dashboard() {
   
     if (!league) return <div className="flex h-screen items-center justify-center font-bold text-gray-500">데이터 로딩 중... (응답이 없으면 메인에서 초기화해주세요)</div>;
      
-    const resolveTeam = (source) => {
-      if (!source) return teams[0];
-      // If source is just an ID (number/string), find the team
-      if (typeof source !== 'object') {
-          return teams.find(t => String(t.id) === String(source)) || teams[0];
-      }
-      // If source is an object but missing ID/Colors, try to find matching team in DB
-      if (source.id) {
-           const found = teams.find(t => String(t.id) === String(source.id));
-           if (found) return found;
-      }
-      return source;
-  };
-
-  const myTeam = resolveTeam(league.team);
-  const viewingTeam = viewingTeamId ? resolveTeam(viewingTeamId) : myTeam;
-  const currentRoster = (playerList || []).filter(p => p.팀 === viewingTeam.name);
+    const myTeam = teams.find(t => String(t.id) === String(league.team.id)) || league.team;
+    const viewingTeam = teams.find(t => String(t.id) === String(viewingTeamId)) || myTeam;
+    const currentRoster = (playerList || []).filter(p => p.팀 === viewingTeam.name);
      
     const isCaptain = myTeam.id === 1 || myTeam.id === 2; 
     const hasDrafted = league.groups && league.groups.baron && league.groups.baron.length > 0;
@@ -1166,23 +1141,6 @@ export default function Dashboard() {
     }).filter(item => item !== null);
   };
 
-  useEffect(() => {
-    if (isSeasonOver) {
-        // Calculate rank using the existing logic
-        const standings = getFinalStandings();
-        const myRankEntry = standings.find(s => s.team.id === myTeam.id);
-        
-        if (myRankEntry) {
-            let finalPrize = 0.1; // Default for 4th-10th (0.1억)
-            if (myRankEntry.rank === 1) finalPrize = 0.5;      // 1st: 0.5억
-            else if (myRankEntry.rank === 2) finalPrize = 0.25; // 2nd: 0.25억
-            else if (myRankEntry.rank === 3) finalPrize = 0.2;  // 3rd: 0.2억
-            
-            setPrizeMoney(finalPrize);
-        }
-    }
-  }, [isSeasonOver, league.matches]); // Runs whenever the season status updates
-
   const FinalStandingsModal = () => {
     // Wrap in try-catch to prevent white screen if data is bad
     try {
@@ -1206,7 +1164,7 @@ export default function Dashboard() {
                                 <tr>
                                     <th className="p-4 text-center w-20">순위</th>
                                     <th className="p-4">팀</th>
-                                    <th className="p-4 text-right">상금</th>
+                                    <th className="p-4 text-right">상금 (추정)</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y">
@@ -1219,26 +1177,18 @@ export default function Dashboard() {
                                              <span className="font-bold text-gray-500 text-lg">{item.rank}위</span>}
                                         </td>
                                         <td className="p-4 flex items-center gap-4">
+                                            {/* Optional chaining (?.) added to colors to prevent crash */}
                                             <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold shadow-sm text-lg" 
                                                  style={{backgroundColor: item.team.colors?.primary || '#333'}}>
                                                 {item.team.name}
                                             </div>
                                             <div>
-                                                <div className="flex items-center gap-2">
-                                                    <div className="font-black text-xl text-gray-800">{item.team.fullName}</div>
-                                                    {/* [NEW] FST Badge for 1st & 2nd Place */}
-                                                    {(item.rank === 1 || item.rank === 2) && (
-                                                        <span className="text-[10px] bg-blue-600 text-white px-1.5 py-0.5 rounded font-bold">FST 진출</span>
-                                                    )}
-                                                </div>
+                                                <div className="font-black text-xl text-gray-800">{item.team.fullName}</div>
                                                 {item.rank === 1 && <div className="text-xs font-bold text-yellow-600 bg-yellow-100 inline-block px-2 py-0.5 rounded mt-1">CHAMPION</div>}
                                             </div>
                                         </td>
                                         <td className="p-4 text-right font-bold text-gray-600">
-                                            {/* [NEW] Updated Prize Money Logic */}
-                                            {item.rank === 1 ? '0.5억' : 
-                                             item.rank === 2 ? '0.25억' : 
-                                             item.rank === 3 ? '0.2억' : '0.1억'}
+                                            {item.rank === 1 ? '5.0억' : item.rank === 2 ? '3.0억' : item.rank === 3 ? '1.5억' : '-'}
                                         </td>
                                     </tr>
                                 )) : (
