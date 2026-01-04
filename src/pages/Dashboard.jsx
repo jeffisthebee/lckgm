@@ -422,6 +422,82 @@ export default function Dashboard() {
         return;
     }
   };
+
+  // --- [INSERT INSIDE Dashboard COMPONENT] ---
+
+const [showFinalStandings, setShowFinalStandings] = useState(false);
+
+// Function to calculate final 1-10 rankings
+const getFinalSeasonRankings = () => {
+    if (!league.matches) return [];
+
+    // Helper: Find loser of a specific match round
+    const findLoserByRound = (roundName) => {
+        const match = league.matches.find(m => m.round === roundName && m.status === 'finished');
+        if (!match) return null;
+        return match.result.winner === match.t1.name ? match.t2 : match.t1;
+    };
+
+    // Helper: Find winner of finals
+    const findWinnerByRound = (roundName) => {
+        const match = league.matches.find(m => m.round === roundName && m.status === 'finished');
+        if (!match) return null;
+        return match.result.winner === match.t1.name ? match.t1 : match.t2;
+    };
+
+    // 1. Get Playoff/Playin Results
+    // Note: You must ensure your SimEngine tags matches with these 'round' names
+    const winner = findWinnerByRound('finals');
+    const runnerUp = findLoserByRound('finals'); // 2nd
+    const third = findLoserByRound('round4');    // 3rd (PO R4 Loser)
+    const fourth = findLoserByRound('round3');   // 4th (PO R3 Loser)
+    const fifth = findLoserByRound('round2');    // 5th (PO R2 Loser)
+    const sixth = findLoserByRound('round1');    // 6th (PO R1 Loser)
+    
+    const seventh = findLoserByRound('playin_final'); // 7th (Playin Final Loser)
+
+    // 8th & 9th Logic (Playin Round 1 Losers)
+    // Assuming playin round 1 has two matches: 'playin_r1_a' and 'playin_r1_b'
+    const loserPlayinA = findLoserByRound('playin_r1_a');
+    const loserPlayinB = findLoserByRound('playin_r1_b');
+    
+    let eighth, ninth;
+    
+    // Compare seeds for 8th/9th (Higher seed gets 8th)
+    // We check the computedStandings (regular season) for wins
+    if (loserPlayinA && loserPlayinB) {
+        const winsA = computedStandings[loserPlayinA.id]?.w || 0;
+        const winsB = computedStandings[loserPlayinB.id]?.w || 0;
+        
+        if (winsA >= winsB) {
+            eighth = loserPlayinA;
+            ninth = loserPlayinB;
+        } else {
+            eighth = loserPlayinB;
+            ninth = loserPlayinA;
+        }
+    }
+
+    // 10th Place (The team not in the top 9)
+    const top9Ids = [winner, runnerUp, third, fourth, fifth, sixth, seventh, eighth, ninth]
+        .filter(t => t) // filter nulls
+        .map(t => t.id);
+    
+    const tenth = teams.find(t => !top9Ids.includes(t.id));
+
+    return [
+        { rank: 1, team: winner, label: 'LCK CUP CHAMPION' },
+        { rank: 2, team: runnerUp, label: 'Runner-Up' },
+        { rank: 3, team: third, label: '3rd Place' },
+        { rank: 4, team: fourth, label: '4th Place' },
+        { rank: 5, team: fifth, label: '5th Place' },
+        { rank: 6, team: sixth, label: '6th Place' },
+        { rank: 7, team: seventh, label: 'Play-in Eliminated' },
+        { rank: 8, team: eighth, label: 'Play-in Eliminated' },
+        { rank: 9, team: ninth, label: 'Play-in Eliminated' },
+        { rank: 10, team: tenth, label: 'Season Eliminated' },
+    ];
+};
   
     // [REPLACE] Function: runSimulationForMatch
     // Location: Inside Dashboard component, before handleProceedNextMatch
@@ -1059,7 +1135,63 @@ export default function Dashboard() {
   
     // ==========================================
   
-    
+    {/* Final Standings Modal */}
+{showFinalStandings && (
+  <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 backdrop-blur-sm">
+    <div className="bg-white w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl">
+      
+      {/* Header */}
+      <div className="bg-gray-900 p-6 text-center">
+        <h2 className="text-3xl font-black text-amber-400 uppercase tracking-widest">2026 LCK CUP</h2>
+        <p className="text-gray-400 font-bold mt-1">FINAL STANDINGS</p>
+      </div>
+
+      {/* List */}
+      <div className="p-4 bg-gray-50 max-h-[70vh] overflow-y-auto">
+        {getFinalSeasonRankings().map((item, idx) => (
+          <div key={idx} className={`flex items-center p-4 mb-2 rounded-xl border ${item.rank === 1 ? 'bg-amber-50 border-amber-300' : 'bg-white border-gray-200'} shadow-sm`}>
+            
+            {/* Rank Number */}
+            <div className={`w-12 text-center font-black text-2xl ${item.rank === 1 ? 'text-amber-500' : 'text-gray-300'}`}>
+              {item.rank}
+            </div>
+
+            {/* Team Info */}
+            {item.team ? (
+              <div className="flex-1 flex items-center gap-4 ml-4">
+                <div 
+                  className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-md"
+                  style={{ backgroundColor: item.team.colors?.primary || '#333' }}
+                >
+                  {item.team.name}
+                </div>
+                <div>
+                  <div className="font-bold text-xl text-gray-800">{item.team.fullName}</div>
+                  <div className="text-xs font-bold text-gray-400 uppercase">{item.label}</div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 ml-4 text-gray-400 font-mono">TBD</div>
+            )}
+            
+            {/* Trophy Icon for Winner */}
+            {item.rank === 1 && <div className="text-4xl">🏆</div>}
+          </div>
+        ))}
+      </div>
+
+      {/* Footer / Close */}
+      <div className="p-4 bg-gray-100 border-t flex justify-center">
+        <button 
+          onClick={() => setShowFinalStandings(false)}
+          className="px-8 py-3 bg-gray-900 text-white font-bold rounded-lg hover:bg-black transition"
+        >
+          닫기 (Close)
+        </button>
+      </div>
+    </div>
+  </div>
+)}
   
     return (
       <div className="flex h-screen bg-gray-100 overflow-hidden font-sans relative">
@@ -1820,6 +1952,15 @@ export default function Dashboard() {
   
             </div>
           </main>
+          {/* Only show if the finals have been played */}
+{league.matches.some(m => m.round === 'finals' && m.status === 'finished') && (
+    <button 
+        onClick={() => setShowFinalStandings(true)}
+        className="w-full mb-4 py-4 bg-gradient-to-r from-amber-500 to-yellow-600 text-white font-black text-xl rounded-xl shadow-lg hover:scale-[1.02] transition"
+    >
+        🏆 최종 순위 보기 (View Final Standings)
+    </button>
+)}
         </div>
       </div>
     );
