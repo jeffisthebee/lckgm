@@ -111,6 +111,7 @@ export default function Dashboard() {
   
     // Fix 1: 순위표 재계산 함수 (전체 매치 기록 기반)
     // [수정 1] 순위표 계산 함수 (플레이오프/플레이인 제외 로직 강화)
+   // [FIX] 순위표 계산 함수 (안전장치 추가)
     const recalculateStandings = (lg) => {
       const newStandings = {};
       
@@ -119,29 +120,29 @@ export default function Dashboard() {
     
       if (lg.matches) {
           lg.matches.forEach(m => {
-              // [CRITICAL FIX] Explicitly only count 'regular' and 'super' matches.
               if (m.type !== 'regular' && m.type !== 'super') return;
     
-              if (m.status === 'finished') {
+              if (m.status === 'finished' && m.result) {
                   const winner = teams.find(t => t.name === m.result.winner);
                   
                   // Handle ID types safely
-                  const t1Id = typeof m.t1 === 'object' ? m.t1.id : m.t1;
-                  const t2Id = typeof m.t2 === 'object' ? m.t2.id : m.t2;
+                  const t1Id = (typeof m.t1 === 'object' && m.t1) ? m.t1.id : m.t1;
+                  const t2Id = (typeof m.t2 === 'object' && m.t2) ? m.t2.id : m.t2;
                   
                   if (!winner) return;
                   
                   const actualLoserId = (t1Id === winner.id) ? t2Id : t1Id;
                   
-                  if (winner && actualLoserId) {
+                  if (winner && actualLoserId && newStandings[winner.id] && newStandings[actualLoserId]) {
                       newStandings[winner.id].w += 1;
                       newStandings[actualLoserId].l += 1;
                       
+                      // [FIX] Safe score parsing
                       if (m.result.score) {
-                          const parts = m.result.score.split(':');
+                          const parts = String(m.result.score).split(':');
                           if (parts.length === 2) {
-                              const s1 = parseInt(parts[0]);
-                              const s2 = parseInt(parts[1]);
+                              const s1 = parseInt(parts[0]) || 0;
+                              const s2 = parseInt(parts[1]) || 0;
                               const diff = Math.abs(s1 - s2);
                               
                               newStandings[winner.id].diff += diff;
@@ -1057,27 +1058,40 @@ export default function Dashboard() {
     };
   
     const MatchupBox = ({ match, showScore = true }) => {
+      // Safety Check: If match is invalid, show TBD
       if (!match || (!match.t1 && !match.t2)) {
           return <div className="h-16 border-2 border-dashed rounded-lg flex items-center justify-center text-gray-400 text-sm w-full">TBD</div>;
       }
-      const t1 = teams.find(t => t.id === match.t1);
-      const t2 = teams.find(t => t.id === match.t2);
-      const winnerId = match.status === 'finished' ? teams.find(t => t.name === match.result.winner)?.id : null;
+
+      // Safety Check: Find teams safely
+      const t1 = teams.find(t => String(t.id) === String(match.t1));
+      const t2 = teams.find(t => String(t.id) === String(match.t2));
+      
+      // Safety Check: Identify winner safely
+      const winnerId = match.status === 'finished' && match.result?.winner 
+          ? teams.find(t => t.name === match.result.winner)?.id 
+          : null;
   
       const team1Name = t1 ? formatTeamName(t1.id, match.type) : 'TBD';
       const team2Name = t2 ? formatTeamName(t2.id, match.type) : 'TBD';
 
-      // --- FINAL STANDINGS LOGIC ---
+      // [FIX] Safe Score Parsing Function
+      const getScore = (index) => {
+        if (match.status !== 'finished' || !match.result || !match.result.score) return '';
+        // Ensure score is a string before splitting
+        const parts = String(match.result.score).split(':');
+        return parts[index] || '';
+      };
   
       return (
           <div className={`bg-white border-2 rounded-lg shadow-sm w-full ${match.status === 'pending' ? 'border-gray-300' : 'border-gray-400'}`}>
-              <div className={`flex justify-between items-center p-2 rounded-t-md ${winnerId === t1?.id ? 'bg-blue-100' : 'bg-gray-50'}`}>
-                  <span className={`font-bold text-sm ${winnerId === t1?.id ? 'text-blue-700' : 'text-gray-800'}`}>{team1Name}</span>
-                  {showScore && <span className={`font-black text-sm ${winnerId === t1?.id ? 'text-blue-700' : 'text-gray-500'}`}>{match.status === 'finished' ? match.result.score.split(':')[0] : ''}</span>}
+              <div className={`flex justify-between items-center p-2 rounded-t-md ${String(winnerId) === String(t1?.id) ? 'bg-blue-100' : 'bg-gray-50'}`}>
+                  <span className={`font-bold text-sm ${String(winnerId) === String(t1?.id) ? 'text-blue-700' : 'text-gray-800'}`}>{team1Name}</span>
+                  {showScore && <span className={`font-black text-sm ${String(winnerId) === String(t1?.id) ? 'text-blue-700' : 'text-gray-500'}`}>{getScore(0)}</span>}
               </div>
-              <div className={`flex justify-between items-center p-2 rounded-b-md ${winnerId === t2?.id ? 'bg-blue-100' : 'bg-gray-50'}`}>
-                  <span className={`font-bold text-sm ${winnerId === t2?.id ? 'text-blue-700' : 'text-gray-800'}`}>{team2Name}</span>
-                  {showScore && <span className={`font-black text-sm ${winnerId === t2?.id ? 'text-blue-700' : 'text-gray-500'}`}>{match.status === 'finished' ? match.result.score.split(':')[1] : ''}</span>}
+              <div className={`flex justify-between items-center p-2 rounded-b-md ${String(winnerId) === String(t2?.id) ? 'bg-blue-100' : 'bg-gray-50'}`}>
+                  <span className={`font-bold text-sm ${String(winnerId) === String(t2?.id) ? 'text-blue-700' : 'text-gray-800'}`}>{team2Name}</span>
+                  {showScore && <span className={`font-black text-sm ${String(winnerId) === String(t2?.id) ? 'text-blue-700' : 'text-gray-500'}`}>{getScore(1)}</span>}
               </div>
           </div>
       );
@@ -1322,12 +1336,22 @@ export default function Dashboard() {
                       <div className="text-left mb-2 font-bold text-gray-700">{draftTurn === 'user' ? "👉 영입할 팀을 선택하세요!" : "🤖 상대가 고민 중입니다..."}</div>
                       <div className="grid grid-cols-4 gap-3 overflow-y-auto max-h-[300px] p-2">
                           {draftPool.map(t => (
-                              <button key={t.id} onClick={() => handleUserPick(t.id)} disabled={draftTurn !== 'user'}
-                                  className={`p-4 rounded-xl border-2 transition flex flex-col items-center gap-2 hover:shadow-md ${draftTurn === 'user' ? 'bg-white border-gray-200 hover:border-blue-500 cursor-pointer' : 'bg-gray-50 border-gray-100 opacity-50 cursor-not-allowed'}`}>
-                                  <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold shadow-sm" style={{backgroundColor:t.colors.primary}}>{t.name}</div>
-                                  <div className="font-bold text-sm">{t.fullName}</div>
-                                  <div className="text-xs bg-gray-100 px-2 py-1 rounded">전력 {t.power}</div>
-                              </button>
+                              <button 
+                              key={t.id} 
+                              onClick={() => handleUserPick(t.id)} 
+                              disabled={draftTurn !== 'user'}
+                              className={`p-4 rounded-xl border-2 transition flex flex-col items-center gap-2 hover:shadow-md ${draftTurn === 'user' ? 'bg-white border-gray-200 hover:border-blue-500 cursor-pointer' : 'bg-gray-50 border-gray-100 opacity-50 cursor-not-allowed'}`}
+                          >
+                              <div 
+                                  className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold shadow-sm" 
+                                  // [FIX] Optional chaining for colors
+                                  style={{backgroundColor: t.colors?.primary || '#999'}}
+                              >
+                                  {t.name}
+                              </div>
+                              <div className="font-bold text-sm">{t.fullName}</div>
+                              <div className="text-xs bg-gray-100 px-2 py-1 rounded">전력 {t.power}</div>
+                          </button>
                           ))}
                       </div>
                   </div>
