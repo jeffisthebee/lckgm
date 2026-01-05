@@ -1188,50 +1188,71 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
   }
 
   export const generateSchedule = (baronIds, elderIds) => {
-    // LCK Cup Format: 2 Weeks of Regular Season (4 games per team)
-    // Week 1: Wed-Sun (5 days) - Indices 0-4
-    // Week 2: Wed-Sun (5 days) - Indices 5-9
-    const days = [
+    // LCK Cup Format: 2 Weeks of Regular Season (4 games) + 1 Super Week (1 game)
+    const regularDays = [
         '1.14 (수)', '1.15 (목)', '1.16 (금)', '1.17 (토)', '1.18 (일)', 
         '1.21 (수)', '1.22 (목)', '1.23 (금)', '1.24 (토)', '1.25 (일)'
     ];
   
-    // 1. Generate 20 Matches (Cross-Group, 4 games each)
-    // Each Baron team plays 4 different Elder teams (Partial Round Robin)
-    const matches = [];
-    const n = 5; // 5 teams per group
+    // 1. Generate All 5 Rounds of Matchups (Baron vs Elder)
+    // Rounds 0-3: Regular Season (20 matches)
+    // Round 4: Super Week (5 matches)
+    const allMatches = [];
+    const n = 5; 
     
-    // We generate 4 rounds of pairings
-    // Round 0: B[i] vs E[i]
-    // Round 1: B[i] vs E[i+1] ... etc
-    for (let r = 0; r < 4; r++) {
+    // Track Blue Side counts to enforce "At least 2 Blue" rule
+    const blueCounts = {};
+    [...baronIds, ...elderIds].forEach(id => blueCounts[id] = 0);
+  
+    // We generate 5 rounds total (Rounds 0-3 = Regular, Round 4 = Super Week)
+    for (let r = 0; r < 5; r++) {
         for (let i = 0; i < n; i++) {
             const b = baronIds[i];
             const e = elderIds[(i + r) % n];
             
-            // Random side selection
-            const swap = Math.random() < 0.5;
-            matches.push({
-                id: Date.now() + matches.length + (r * 10), // Unique ID
-                t1: swap ? e : b,
-                t2: swap ? b : e,
-                type: 'regular',
+            let t1, t2; // t1 is Blue, t2 is Red
+  
+            // Side Selection Logic
+            // Constraint: Total Group Blue/Red split ~ 12/13
+            // Constraint: Every team needs at least 2 Blue games
+            
+            // Heuristic: If one team has fewer Blue games, prioritize them for Blue
+            if (blueCounts[b] < 2 && blueCounts[e] >= 2) {
+                t1 = b; t2 = e;
+            } else if (blueCounts[e] < 2 && blueCounts[b] >= 2) {
+                t1 = e; t2 = b;
+            } else {
+                // If balanced, flip a coin
+                if (Math.random() < 0.5) { t1 = b; t2 = e; } 
+                else { t1 = e; t2 = b; }
+            }
+            
+            blueCounts[t1]++;
+  
+            allMatches.push({
+                id: Date.now() + allMatches.length + (r * 100),
+                t1: t1,
+                t2: t2,
+                type: r === 4 ? 'super' : 'regular', // Round 4 is Super Week
                 status: 'pending',
-                format: 'BO3',
-                label: '정규시즌'
+                format: r === 4 ? 'BO5' : 'BO3',     // Super Week is BO5
+                label: r === 4 ? '🔥 슈퍼위크' : '정규시즌',
+                roundIndex: r // Used for sorting later
             });
         }
     }
   
-    // 2. Scheduler: Fit 20 matches into 10 days (2 per day)
-    // Constraints: No back-to-back games (Consecutive days forbidden, except Week 1 Sun -> Week 2 Wed)
+    // 2. Separate Matches
+    const regularMatches = allMatches.filter(m => m.type === 'regular'); // 20 matches
+    // Super Week matches are NOT scheduled here (they are generated/displayed later or appended to end)
+    // But usually, generateSchedule returns the initial schedule (Regular Season).
+    // If you want Super Week included in the returned array but with TBD dates or specific dates:
     
+    // Let's schedule the 20 Regular Season matches first into the 10 days
     for (let attempt = 0; attempt < 5000; attempt++) {
-        // Shuffle matches to try a new permutation
-        const queue = [...matches].sort(() => Math.random() - 0.5);
-        
-        const slots = Array(10).fill(null).map(() => []); // 10 Days
-        const teamDays = {}; // Map<TeamID, Set<DayIndex>>
+        const queue = [...regularMatches].sort(() => Math.random() - 0.5);
+        const slots = Array(10).fill(null).map(() => []); 
+        const teamDays = {};
         [...baronIds, ...elderIds].forEach(id => teamDays[id] = new Set());
         
         let possible = true;
@@ -1240,61 +1261,56 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
             const t1 = match.t1;
             const t2 = match.t2;
   
-            // Find all valid days for this specific match
+            // Valid days (0-9)
             const validDayIndices = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].filter(d => {
-                // 1. Slot Capacity Check
                 if (slots[d].length >= 2) return false;
-  
-                // 2. Same Day Check (Cannot play twice a day)
                 if (teamDays[t1].has(d) || teamDays[t2].has(d)) return false;
   
-                // 3. Back-to-Back Check
-                // Check if team plays on d-1 or d+1. 
-                // Note: Day 4 (Sun) and Day 5 (Wed) are NOT consecutive in calendar, so we skip check there.
+                // Back-to-Back Check
                 const checkNeighbor = (teamId, day) => {
-                    // Check Previous Day (if not start of week)
-                    if (day > 0 && day !== 5) { 
-                        if (teamDays[teamId].has(day - 1)) return false; 
-                    }
-                    // Check Next Day (if not end of week)
-                    if (day < 9 && day !== 4) { 
-                        if (teamDays[teamId].has(day + 1)) return false; 
-                    }
+                    if (day > 0 && day !== 5) { if (teamDays[teamId].has(day - 1)) return false; }
+                    if (day < 9 && day !== 4) { if (teamDays[teamId].has(day + 1)) return false; }
                     return true;
                 };
-  
                 if (!checkNeighbor(t1, d)) return false;
                 if (!checkNeighbor(t2, d)) return false;
   
                 return true;
             });
   
-            if (validDayIndices.length === 0) {
-                possible = false;
-                break; // Fail this attempt
-            }
-  
-            // Pick a random valid slot
+            if (validDayIndices.length === 0) { possible = false; break; }
+            
             const pick = validDayIndices[Math.floor(Math.random() * validDayIndices.length)];
             slots[pick].push(match);
             teamDays[t1].add(pick);
             teamDays[t2].add(pick);
         }
   
-        // If we placed all matches successfully
         if (possible) {
             const finalSchedule = [];
             slots.forEach((dayMatches, dIdx) => {
                 dayMatches.forEach((m, mIdx) => {
                     finalSchedule.push({
                         ...m,
-                        date: days[dIdx],
+                        date: regularDays[dIdx],
                         time: mIdx === 0 ? '17:00' : '19:30'
                     });
                 });
             });
+            
+            // Return ONLY Regular Season matches sorted
+            // Super Week matches are typically generated by the "Generate Super Week" button 
+            // in Dashboard.jsx to simulate the mid-season break/patch update.
+            // If you want them returned now, uncomment below:
+            /*
+            const superWeekMatches = allMatches.filter(m => m.type === 'super');
+            superWeekMatches.forEach((m, i) => {
+               m.date = ['1.28 (수)', '1.29 (목)', '1.30 (금)', '1.31 (토)', '2.1 (일)'][i];
+               m.time = '17:00';
+               finalSchedule.push(m);
+            });
+            */
   
-            // Sort by Date then Time
             return finalSchedule.sort((a, b) => {
                 const da = parseFloat(a.date.split(' ')[0]);
                 const db = parseFloat(b.date.split(' ')[0]);
@@ -1303,11 +1319,10 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
         }
     }
   
-    // Fallback (Should rarely happen with 5000 attempts)
-    console.warn("Scheduler constraints could not be perfectly met. Returning fallback schedule.");
-    return matches.map((m, i) => ({
+    // Fallback
+    return regularMatches.map((m, i) => ({
         ...m,
-        date: days[Math.floor(i / 2)] || 'TBD',
+        date: regularDays[Math.floor(i / 2)] || 'TBD',
         time: i % 2 === 0 ? '17:00' : '19:30'
     }));
   };
