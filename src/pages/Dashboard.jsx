@@ -87,6 +87,28 @@ export default function Dashboard() {
       };
       loadData();
     }, [leagueId]);
+
+    // [NEW] Effect: Calculate and set prize money when season ends
+    useEffect(() => {
+      if (isSeasonOver && league) {
+        // 1. Get final standings
+        const finalStandings = getFinalStandings();
+        
+        // 2. Find my team's rank
+        const myRankEntry = finalStandings.find(s => String(s.team.id) === String(myTeam.id));
+        
+        if (myRankEntry) {
+          let earnedAmount = 0.1; // Default for 4th and below
+          
+          if (myRankEntry.rank === 1) earnedAmount = 0.5;
+          else if (myRankEntry.rank === 2) earnedAmount = 0.25;
+          else if (myRankEntry.rank === 3) earnedAmount = 0.2;
+          
+          // 3. Update the dashboard state
+          setPrizeMoney(earnedAmount);
+        }
+      }
+    }, [isSeasonOver, league, myTeam.id]);
   
     // Fix 1: 순위표 재계산 함수 (전체 매치 기록 기반)
     // [수정 1] 순위표 계산 함수 (플레이오프/플레이인 제외 로직 강화)
@@ -1141,25 +1163,7 @@ export default function Dashboard() {
     }).filter(item => item !== null);
   };
 
-  // [NEW] Effect to calculate earned prize money for the dashboard when season ends
-  useEffect(() => {
-    if (isSeasonOver) {
-        const standings = getFinalStandings();
-        const myRankItem = standings.find(s => s.team.id === myTeam.id);
-        
-        if (myRankItem) {
-            let money = 0.1; // Default (4th onwards)
-            if (myRankItem.rank === 1) money = 0.5;
-            else if (myRankItem.rank === 2) money = 0.25;
-            else if (myRankItem.rank === 3) money = 0.2;
-            
-            setPrizeMoney(money);
-        }
-    }
-  }, [isSeasonOver, league, myTeam.id]);
-
   const FinalStandingsModal = () => {
-    // Wrap in try-catch to prevent white screen if data is bad
     try {
         const standings = getFinalStandings();
         
@@ -1181,7 +1185,7 @@ export default function Dashboard() {
                                 <tr>
                                     <th className="p-4 text-center w-20">순위</th>
                                     <th className="p-4">팀</th>
-                                    <th className="p-4 text-right">상금 (추정)</th>
+                                    <th className="p-4 text-right">상금 (확정)</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y">
@@ -1194,24 +1198,25 @@ export default function Dashboard() {
                                              <span className="font-bold text-gray-500 text-lg">{item.rank}위</span>}
                                         </td>
                                         <td className="p-4 flex items-center gap-4">
-                                            {/* Optional chaining (?.) added to colors to prevent crash */}
                                             <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold shadow-sm text-lg" 
                                                  style={{backgroundColor: item.team.colors?.primary || '#333'}}>
                                                 {item.team.name}
                                             </div>
                                             <div>
-                                                <div className="font-black text-xl text-gray-800">{item.team.fullName}</div>
+                                                <div className="font-black text-xl text-gray-800 flex items-center gap-2">
+                                                    {item.team.fullName}
+                                                    {/* [NEW] FST 진출 Badge for Top 2 */}
+                                                    {item.rank <= 2 && (
+                                                        <span className="text-[10px] bg-indigo-600 text-white px-2 py-0.5 rounded shadow-sm animate-pulse">
+                                                            FST 진출
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 {item.rank === 1 && <div className="text-xs font-bold text-yellow-600 bg-yellow-100 inline-block px-2 py-0.5 rounded mt-1">CHAMPION</div>}
-                                                {/* [NEW] FST 진출 Label for Top 2 */}
-                                                {(item.rank === 1 || item.rank === 2) && (
-                                                    <div className="text-xs font-bold text-indigo-600 bg-indigo-100 inline-block px-2 py-0.5 rounded mt-1 ml-2">
-                                                        FST 진출
-                                                    </div>
-                                                )}
                                             </div>
                                         </td>
                                         <td className="p-4 text-right font-bold text-gray-600">
-                                            {/* [NEW] Prize Money Logic */}
+                                            {/* [NEW] Updated Prize Logic */}
                                             {item.rank === 1 ? '0.5억' : 
                                              item.rank === 2 ? '0.25억' : 
                                              item.rank === 3 ? '0.2억' : '0.1억'}
@@ -1351,8 +1356,7 @@ export default function Dashboard() {
             <div className="h-4 w-px bg-gray-300"></div>
             <div className="flex items-center gap-2 font-bold text-gray-700"><span className="text-gray-400">🏆</span> {myRecord.w}승 {myRecord.l}패 ({myRecord.diff > 0 ? `+${myRecord.diff}` : myRecord.diff})</div>
             <div className="h-4 w-px bg-gray-300"></div>
-            {/* [UPDATED] Prize money display now dynamically updates when season ends */}
-            <div className="flex items-center gap-2 font-bold text-gray-700"><span className="text-gray-400">💰</span> 상금: {prizeMoney === 0 ? '0.0' : prizeMoney}억</div>
+            <div className="flex items-center gap-2 font-bold text-gray-700"><span className="text-gray-400">💰</span> 상금: {prizeMoney.toFixed(1)}억</div>
           </div>
           
           <div className="flex items-center gap-3">
