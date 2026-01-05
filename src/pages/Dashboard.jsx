@@ -37,7 +37,7 @@ const getOvrBadgeStyle = (ovr) => {
     return 'text-gray-500 font-medium';
   };
 
-export default function Dashboard() {
+  export default function Dashboard() {
     const { leagueId } = useParams();
     const navigate = useNavigate();
     const [league, setLeague] = useState(null);
@@ -58,22 +58,54 @@ export default function Dashboard() {
     // 메타 분석 탭 상태
     const [metaRole, setMetaRole] = useState('TOP');
   
-    // 시뮬레이션 결과 모달 상태 (내 경기용 상세 모달)
+    // 시뮬레이션 결과 모달 상태
     const [myMatchResult, setMyMatchResult] = useState(null);
   
-    // 로컬 순위표 상태 (버그 수정용: API 호출 대신 계산된 값 사용)
+    // 로컬 순위표 상태
     const [computedStandings, setComputedStandings] = useState({});
   
     // 플레이-인/플레이오프 상대 선택 모달 상태
-    const [opponentChoice, setOpponentChoice] = useState(null); // { type: 'playin' | 'playoff', ...data }
-
+    const [opponentChoice, setOpponentChoice] = useState(null); 
     const [showFinalStandings, setShowFinalStandings] = useState(false);
+
+    // [MOVED UP] Define this helper before it is used in useEffect
+    const recalculateStandings = (lg) => {
+      const newStandings = {};
+      teams.forEach(t => { newStandings[t.id] = { w: 0, l: 0, diff: 0 }; });
+    
+      if (lg.matches) {
+          lg.matches.forEach(m => {
+              if (m.type !== 'regular' && m.type !== 'super') return;
+              if (m.status === 'finished') {
+                  const winner = teams.find(t => t.name === m.result.winner);
+                  const t1Id = typeof m.t1 === 'object' ? m.t1.id : m.t1;
+                  const t2Id = typeof m.t2 === 'object' ? m.t2.id : m.t2;
+                  
+                  if (!winner) return;
+                  const actualLoserId = (t1Id === winner.id) ? t2Id : t1Id;
+                  
+                  if (winner && actualLoserId) {
+                      newStandings[winner.id].w += 1;
+                      newStandings[actualLoserId].l += 1;
+                      if (m.result.score) {
+                          const parts = m.result.score.split(':');
+                          if (parts.length === 2) {
+                              const diff = Math.abs(parseInt(parts[0]) - parseInt(parts[1]));
+                              newStandings[winner.id].diff += diff;
+                              newStandings[actualLoserId].diff -= diff;
+                          }
+                      }
+                  }
+              }
+          });
+      }
+      setComputedStandings(newStandings);
+    };
   
     useEffect(() => {
       const loadData = () => {
         const found = getLeagueById(leagueId);
         if (found) {
-          // 데이터 무결성 검사 및 초기화
           const sanitizedLeague = {
               ...found,
               metaVersion: found.metaVersion || '16.01',
@@ -88,18 +120,16 @@ export default function Dashboard() {
       loadData();
     }, [leagueId]);
 
-    // [NEW] Effect: Calculate and set prize money when season ends
-    // [FIXED] Effect: Calculate and set prize money safely
+    // [FIXED] Effect: Calculate Prize Money Safely
+    // We use league.team.id directly to avoid referencing 'myTeam' before it is defined
     useEffect(() => {
-      // 1. Safety Check: Ensure league data exists
       if (!league || !league.matches) return;
 
-      // 2. Check if Season is Over (Calculated locally to prevent crash)
+      // Check if Season is Over
       const grandFinal = league.matches.find(m => m.type === 'playoff' && m.round === 5);
       const isSeasonFinished = grandFinal && grandFinal.status === 'finished';
 
       if (isSeasonFinished) {
-        // Helper to safely get IDs
         const getID = (id) => (typeof id === 'object' ? id.id : Number(id));
         const getWinnerId = (m) => teams.find(t => t.name === m.result.winner)?.id;
         const getLoserId = (m) => {
@@ -109,70 +139,25 @@ export default function Dashboard() {
             return t1Id === wId ? t2Id : t1Id;
         };
 
-        // 3. Identify Top 3 Teams
         const winnerId = getID(getWinnerId(grandFinal));
         const runnerUpId = getID(getLoserId(grandFinal));
         const r4Match = league.matches.find(m => m.type === 'playoff' && m.round === 4);
         const thirdId = getID(getLoserId(r4Match));
         
-        const myId = getID(myTeam.id);
+        // Use ID from league state directly
+        const myId = getID(league.team.id);
 
-        // 4. Determine My Prize
-        let earned = 0.1; // Default for 4th and below
+        let earned = 0.1; 
         if (myId === winnerId) earned = 0.5;
         else if (myId === runnerUpId) earned = 0.25;
         else if (myId === thirdId) earned = 0.2;
 
         setPrizeMoney(earned);
       }
-    }, [league, myTeam.id]);
+    }, [league]); // Removed 'myTeam.id' to prevent ReferenceError
   
     // Fix 1: 순위표 재계산 함수 (전체 매치 기록 기반)
     // [수정 1] 순위표 계산 함수 (플레이오프/플레이인 제외 로직 강화)
-    const recalculateStandings = (lg) => {
-      const newStandings = {};
-      
-      // Initialize 0-0-0 for all teams
-      teams.forEach(t => { newStandings[t.id] = { w: 0, l: 0, diff: 0 }; });
-    
-      if (lg.matches) {
-          lg.matches.forEach(m => {
-              // [CRITICAL FIX] Explicitly only count 'regular' and 'super' matches.
-              if (m.type !== 'regular' && m.type !== 'super') return;
-    
-              if (m.status === 'finished') {
-                  const winner = teams.find(t => t.name === m.result.winner);
-                  
-                  // Handle ID types safely
-                  const t1Id = typeof m.t1 === 'object' ? m.t1.id : m.t1;
-                  const t2Id = typeof m.t2 === 'object' ? m.t2.id : m.t2;
-                  
-                  if (!winner) return;
-                  
-                  const actualLoserId = (t1Id === winner.id) ? t2Id : t1Id;
-                  
-                  if (winner && actualLoserId) {
-                      newStandings[winner.id].w += 1;
-                      newStandings[actualLoserId].l += 1;
-                      
-                      if (m.result.score) {
-                          const parts = m.result.score.split(':');
-                          if (parts.length === 2) {
-                              const s1 = parseInt(parts[0]);
-                              const s2 = parseInt(parts[1]);
-                              const diff = Math.abs(s1 - s2);
-                              
-                              newStandings[winner.id].diff += diff;
-                              newStandings[actualLoserId].diff -= diff;
-                          }
-                      }
-                  }
-              }
-          });
-      }
-      
-      setComputedStandings(newStandings);
-    };
   
     const handleMenuClick = (tabId) => {
       setActiveTab(tabId);
@@ -1222,7 +1207,6 @@ export default function Dashboard() {
                                             <div>
                                                 <div className="font-black text-xl text-gray-800 flex items-center gap-2">
                                                     {item.team.fullName}
-                                                    {/* [NEW] FST 진출 Badge for Top 2 */}
                                                     {item.rank <= 2 && (
                                                         <span className="text-[10px] bg-indigo-600 text-white px-2 py-0.5 rounded shadow-sm animate-pulse">
                                                             FST 진출
@@ -1233,7 +1217,6 @@ export default function Dashboard() {
                                             </div>
                                         </td>
                                         <td className="p-4 text-right font-bold text-gray-600">
-                                            {/* [NEW] Updated Prize Values */}
                                             {item.rank === 1 ? '0.5억' : 
                                              item.rank === 2 ? '0.25억' : 
                                              item.rank === 3 ? '0.2억' : '0.1억'}
