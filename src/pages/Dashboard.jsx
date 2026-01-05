@@ -8,7 +8,7 @@ import LiveGamePlayer from '../components/LiveGamePlayer';
 import DetailedMatchResultModal from '../components/DetailedMatchResultModal';
 import playerList from '../data/players.json';
 
-// Helper functions
+// Helper functions (Paste getLeagues, updateLeague, etc here if they aren't used elsewhere)
 const getLeagues = () => { const s = localStorage.getItem('lckgm_leagues'); return s ? JSON.parse(s) : []; };
 const updateLeague = (id, u) => { 
   const leagues = getLeagues(); 
@@ -88,7 +88,8 @@ export default function Dashboard() {
       loadData();
     }, [leagueId]);
   
-    // 순위표 재계산 함수
+    // Fix 1: 순위표 재계산 함수 (전체 매치 기록 기반)
+    // [수정 1] 순위표 계산 함수 (플레이오프/플레이인 제외 로직 강화)
     const recalculateStandings = (lg) => {
       const newStandings = {};
       
@@ -97,11 +98,13 @@ export default function Dashboard() {
     
       if (lg.matches) {
           lg.matches.forEach(m => {
+              // [CRITICAL FIX] Explicitly only count 'regular' and 'super' matches.
               if (m.type !== 'regular' && m.type !== 'super') return;
     
               if (m.status === 'finished') {
                   const winner = teams.find(t => t.name === m.result.winner);
                   
+                  // Handle ID types safely
                   const t1Id = typeof m.t1 === 'object' ? m.t1.id : m.t1;
                   const t2Id = typeof m.t2 === 'object' ? m.t2.id : m.t2;
                   
@@ -150,8 +153,10 @@ export default function Dashboard() {
     
     const nextGlobalMatch = league.matches ? league.matches.find(m => m.status === 'pending') : null;
   
+    // [FIX] ID Normalization Helper to safely compare IDs (String vs Number)
     const safeId = (id) => (typeof id === 'object' ? id.id : Number(id));
   
+    // [FIX] Updated logic using safeId to prevent type mismatch errors
     const isMyNextMatch = nextGlobalMatch 
       ? (safeId(nextGlobalMatch.t1) === safeId(myTeam.id) || safeId(nextGlobalMatch.t2) === safeId(myTeam.id)) 
       : false;
@@ -172,7 +177,7 @@ export default function Dashboard() {
       const updatedLeague = { ...league, matches: updatedMatches };
       updateLeague(league.id, { matches: updatedMatches });
       setLeague(updatedLeague);
-      recalculateStandings(updatedLeague);
+      recalculateStandings(updatedLeague); // 순위표 즉시 갱신
       
       checkAndGenerateNextPlayInRound(updatedMatches);
       checkAndGenerateNextPlayoffRound(updatedMatches);
@@ -191,6 +196,10 @@ export default function Dashboard() {
         setOpponentChoice(null);
     };
   
+    // [FIX] Robust Round Progression using 'round' ID instead of Date strings
+    // [FIX] Robust Round Progression for Play-In (R1 -> R2 -> Final)
+  // [REPLACE] Function: checkAndGenerateNextPlayInRound
+  // Location: Inside Dashboard component, around line 1500
   const checkAndGenerateNextPlayInRound = (matches) => {
     // 1. Check if Round 1 is finished
     const r1Matches = matches.filter(m => m.type === 'playin' && m.round === 1);
@@ -201,8 +210,11 @@ export default function Dashboard() {
         const r1Winners = r1Matches.map(m => teams.find(t => t.name === m.result.winner));
         const playInSeeds = league.playInSeeds || []; 
         
+        // Fallback: If playInSeeds missing, try to reconstruct or abort safely
         if (!playInSeeds || playInSeeds.length < 2) {
            console.warn("PlayIn Seeds missing, using fallback.");
+           // Fallback logic could be added here, but for now we rely on seeds being present
+           // We will manually fetch seeds 1 and 2 from teams if possible, or just skip
         }
   
         const seed1 = teams.find(t => t.id === (playInSeeds[0]?.id || 0));
@@ -213,6 +225,7 @@ export default function Dashboard() {
         const winnersWithSeed = r1Winners.map(w => ({ ...w, seedIndex: playInSeeds.findIndex(s => s.id === w.id) }));
         winnersWithSeed.sort((a, b) => a.seedIndex - b.seedIndex);
         
+        // Check if we are waiting for user input (Seed 1 is My Team)
         if (seed1.id === myTeam.id && !opponentChoice) {
              setOpponentChoice({
                 type: 'playin',
@@ -228,6 +241,8 @@ export default function Dashboard() {
             return;
         } 
         
+        // If not my team, or I'm not seed 1, or just auto-gen needed
+        // Logic: If user is Seed 1, opponentChoice handles it. If user is NOT Seed 1, we auto-gen.
         if (seed1.id !== myTeam.id) {
              const lowerSeedWinner = winnersWithSeed[1]; 
              const higherSeedWinner = winnersWithSeed[0];
@@ -261,6 +276,7 @@ export default function Dashboard() {
     }
   };
   
+  // [FIX] Robust Playoff Progression using 'round' ID
   const checkAndGenerateNextPlayoffRound = (currentMatches) => {
     if (!league.playoffSeeds) return;
   
@@ -283,10 +299,10 @@ export default function Dashboard() {
             const remainingWinner = r1Winners.find(w => w.id !== pickedWinner.id).id;
             
             const newPlayoffMatches = [
-                // R2 Winners
+                // R2 Winners (Higher Seeds are t1 -> Blue Side)
                 { id: Date.now() + 400, round: 2, match: 1, label: '승자조 2R', t1: seed1, t2: pickedWinner.id, date: '2.13 (금)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' },
                 { id: Date.now() + 401, round: 2, match: 2, label: '승자조 2R', t1: seed2, t2: remainingWinner, date: '2.13 (금)', time: '19:30', type: 'playoff', format: 'BO5', status: 'pending' },
-                // R2 Losers
+                // R2 Losers (Random priority for losers bracket R1)
                 { id: Date.now() + 402, round: 2.1, match: 1, label: '패자조 1R', t1: r1Losers[0].id, t2: r1Losers[1].id, date: '2.14 (토)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: 'coin' },
             ];
             
@@ -308,10 +324,16 @@ export default function Dashboard() {
             });
             return;
         } else {
+            // AI Logic
             const r1m1Winner = getWinner(r1Matches.find(m => m.match === 1));
             const r1m2Winner = getWinner(r1Matches.find(m => m.match === 2));
+            // If the winner of Match 1 was the lower seed (Seed 6), Seed 1 avoids them if possible? 
+            // Default LCK logic: Seed 1 picks. AI picks random for now.
+            const r1m1Seed3 = r1Matches.find(m => m.match === 1).t1;
             
             let pickedId;
+            // Simple logic: Seed 1 picks the winner of the Seed 3 vs 6 match usually if 6 wins? 
+            // Randomize for variety
             pickedId = Math.random() < 0.5 ? r1m1Winner : r1m2Winner;
             generateR2Matches(teams.find(t => t.id === pickedId));
         }
@@ -327,12 +349,14 @@ export default function Dashboard() {
     if (r2Finished && !r3Exists) {
         const r2wWinners = r2wMatches.map(m => getWinner(m));
         const r2wLosers = r2wMatches.map(m => ({ id: getLoser(m), seed: (league.playoffSeeds.find(s => s.id === getLoser(m)) || {seed: 99}).seed }));
-        r2wLosers.sort((a,b) => a.seed - b.seed);
+        r2wLosers.sort((a,b) => a.seed - b.seed); // Sort losers by seed (Higher seed gets priority)
         
         const r2lWinner = getWinner(r2lMatch);
   
         const newPlayoffMatches = [
+            // Winner Bracket Final (Coin flip for side usually, or higher seed priority logic can be added)
             { id: Date.now() + 500, round: 3, match: 1, label: '승자조 결승', t1: r2wWinners[0], t2: r2wWinners[1], date: '2.18 (수)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: 'coin' },
+            // Loser Bracket R2 (Higher seed loser vs R1 loser winner)
             { id: Date.now() + 501, round: 2.2, match: 1, label: '패자조 2R', t1: r2wLosers[1].id, t2: r2lWinner, date: '2.15 (일)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' },
         ];
   
@@ -353,6 +377,7 @@ export default function Dashboard() {
         const r2wLosers = r2wMatchesFinished.map(m => ({ id: getLoser(m), seed: (league.playoffSeeds.find(s => s.id === getLoser(m)) || {seed: 99}).seed }));
         r2wLosers.sort((a,b) => a.seed - b.seed); 
         
+        // Highest seed loser from Winner bracket R2 waits here
         const highestSeedLoser = r2wLosers[0].id;
         const r2_2Winner = getWinner(r2_2Match);
   
@@ -365,12 +390,12 @@ export default function Dashboard() {
         return;
     }
   
-    // --- R4 Qualifier ---
+    // --- R4 Qualifier (Loser Bracket Final) ---
     const r3lMatch = currentMatches.find(m => m.type === 'playoff' && m.round === 3.1);
     const r4Exists = currentMatches.some(m => m.type === 'playoff' && m.round === 4);
   
     if (r3lMatch?.status === 'finished' && r3wMatch?.status === 'finished' && !r4Exists) {
-        const r3wLoser = getLoser(r3wMatch);
+        const r3wLoser = getLoser(r3wMatch); // Comes from Winner Final, so Higher seed
         const r3lWinner = getWinner(r3lMatch);
   
         const newMatch = { id: Date.now() + 700, round: 4, match: 1, label: '결승 진출전', t1: r3wLoser, t2: r3lWinner, date: '2.21 (토)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' };
@@ -387,8 +412,8 @@ export default function Dashboard() {
     const finalExists = currentMatches.some(m => m.type === 'playoff' && m.round === 5);
   
     if (r4Match?.status === 'finished' && r3wMatch?.status === 'finished' && !finalExists) {
-        const r3wWinner = getWinner(r3wMatch);
-        const r4Winner = getWinner(r4Match);
+        const r3wWinner = getWinner(r3wMatch); // Winner Bracket Champion
+        const r4Winner = getWinner(r4Match);   // Loser Bracket Champion
   
         const newMatch = { id: Date.now() + 800, round: 5, match: 1, label: '결승전', t1: r3wWinner, t2: r4Winner, date: '2.22 (일)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' };
         
@@ -400,6 +425,9 @@ export default function Dashboard() {
     }
   };
   
+    // [REPLACE] Function: runSimulationForMatch
+    // Location: Inside Dashboard component, before handleProceedNextMatch
+    // [FIX 2] Use simulateMatch for BO3/BO5 results (Set Score) instead of single set (Kill Score)
     const runSimulationForMatch = (match, isPlayerMatch) => {
       try {
         const getID = (val) => {
@@ -430,6 +458,7 @@ export default function Dashboard() {
           playerTeamName: isPlayerMatch ? myTeam.name : undefined
         };
         
+        // Changed from simulateSet to simulateMatch to get Set Scores (2:0, 2:1)
         const format = match.format || 'BO3';
         const result = simulateMatch(
           { ...t1Obj, roster: t1Roster },
@@ -440,6 +469,7 @@ export default function Dashboard() {
     
         if (!result) throw new Error("Simulation returned null result");
     
+        // Result from simulateMatch already contains { scoreString: "2:0", winner: "Name" }
         return {
             winnerName: result.winner,
             scoreString: result.scoreString
@@ -451,10 +481,18 @@ export default function Dashboard() {
       }
     };
     
+  // ==========================================
+    // [수정됨] Dashboard 내부 로직 통합 (여기서부터 복사하세요)
+    // ==========================================
+  // [FIX] 1. Missing Function for Blue Button
+  // [REPLACE FUNCTION handleProceedNextMatch]
+  // [REPLACE] Function: handleProceedNextMatch inside Dashboard component
+  // [FIX] Ensure Play-In and Playoff matches are processable via the Blue Button
   const handleProceedNextMatch = () => {
     try {
       if (!nextGlobalMatch) return;
   
+      // [FIX] Use safe ID check for button logic
       const getID = (val) => (val && typeof val === 'object' && val.id) ? val.id : val;
       const myId = String(myTeam.id);
       
@@ -463,14 +501,18 @@ export default function Dashboard() {
         String(getID(nextGlobalMatch.t2)) === myId;
   
       if (!isPlayerMatch) {
+        // For Play-In/Playoffs, the object structure might differ slightly (e.g. format field)
+        // but runSimulationForMatch handles ID resolution.
         const result = runSimulationForMatch(nextGlobalMatch, false);
   
         if (!result) throw new Error("Simulation returned null");
   
+        // [FIX] Improved Score Parsing for various match formats
         let scoreStr = "2:0"; 
         if (result.scoreString) {
             scoreStr = result.scoreString;
         } else if (result.score) {
+            // If score is an object { TeamA: '2', TeamB: '1' }
             const values = Object.values(result.score);
             if (values.length >= 2) scoreStr = `${values[0]}:${values[1]}`;
         }
@@ -488,14 +530,16 @@ export default function Dashboard() {
         
         updateLeague(league.id, updatedLeague);
         setLeague(updatedLeague);
-        recalculateStandings(updatedLeague); 
+        recalculateStandings(updatedLeague); // Update standings immediately
   
+        // [IMPORTANT] Trigger next round generation checks immediately after simulation
         checkAndGenerateNextPlayInRound(updatedMatches);
         checkAndGenerateNextPlayoffRound(updatedMatches);
   
         return;
       }
   
+      // If it is player match, navigate to match view
       navigate(`/match/${nextGlobalMatch.id}`);
     } catch (err) {
       console.error("Next Match Error:", err);
@@ -503,6 +547,9 @@ export default function Dashboard() {
     }
   };
   
+    // [1] 내 경기 시작하기 (안전장치 추가됨)
+    // [1] 내 경기 시작하기 (안전장치 추가됨)
+    // [FIX] 2. Robust Start Match Handler (Green Button)
     const handleStartMyMatch = () => {
       try {
         if (!nextGlobalMatch) {
@@ -510,6 +557,7 @@ export default function Dashboard() {
           return;
         }
     
+        // 1. Force IDs to Numbers
         const t1Id = typeof nextGlobalMatch.t1 === 'object' ? nextGlobalMatch.t1.id : Number(nextGlobalMatch.t1);
         const t2Id = typeof nextGlobalMatch.t2 === 'object' ? nextGlobalMatch.t2.id : Number(nextGlobalMatch.t2);
     
@@ -521,17 +569,21 @@ export default function Dashboard() {
           return;
         }
     
+        // 2. Fetch Rosters using the global function
         const t1Roster = getTeamRoster(t1Obj.name);
         const t2Roster = getTeamRoster(t2Obj.name);
   
+        // 3. Check for Champion List validity
         const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0) 
             ? league.currentChampionList 
             : championList;
     
+        // 4. Set Data for Live Modal
         setLiveMatchData({
           match: nextGlobalMatch,
           teamA: { ...t1Obj, roster: t1Roster },
           teamB: { ...t2Obj, roster: t2Roster },
+          // Pass the safe list specifically for the live mode
           safeChampionList: safeChampionList 
         });
         
@@ -543,7 +595,9 @@ export default function Dashboard() {
       }
     };
   
+    // [2] 경기 종료 처리 (이 함수가 없으면 흰 화면 뜸)
     const handleLiveMatchComplete = (match, resultData) => {
+      // 1. 매치 결과 업데이트
       const updatedMatches = league.matches.map(m => {
           if (m.id === match.id) {
               return {
@@ -558,20 +612,25 @@ export default function Dashboard() {
           return m;
       });
   
+      // 2. 리그 데이터 저장 및 상태 갱신
       const updatedLeague = { ...league, matches: updatedMatches };
       updateLeague(league.id, updatedLeague);
       setLeague(updatedLeague);
       recalculateStandings(updatedLeague);
   
+      // 3. 다음 라운드 생성 체크 (플레이인/플레이오프)
       checkAndGenerateNextPlayInRound(updatedMatches);
       checkAndGenerateNextPlayoffRound(updatedMatches);
   
+      // 4. 모달 닫기 및 데이터 초기화
       setIsLiveGameMode(false);
       setLiveMatchData(null);
       
+      // 5. 알림
       setTimeout(() => alert(`경기 종료! 승리: ${resultData.winner}`), 100);
     };
   
+    // [3] 드래프트 시작 핸들러
     const handleDraftStart = () => {
       if (hasDrafted) return;
       setIsDrafting(true);
@@ -677,6 +736,7 @@ export default function Dashboard() {
       
       return league.matches.filter(m => {
           if (m.status !== 'finished') return false;
+          // [CRITICAL FIX] Ensure only Regular and Super matches count for Group Scores
           if (m.type !== 'regular' && m.type !== 'super') return false;
           
           const winnerTeam = teams.find(t => t.name === m.result.winner);
@@ -985,6 +1045,8 @@ export default function Dashboard() {
       const team1Name = t1 ? formatTeamName(t1.id, match.type) : 'TBD';
       const team2Name = t2 ? formatTeamName(t2.id, match.type) : 'TBD';
 
+      // --- FINAL STANDINGS LOGIC ---
+  
       return (
           <div className={`bg-white border-2 rounded-lg shadow-sm w-full ${match.status === 'pending' ? 'border-gray-300' : 'border-gray-400'}`}>
               <div className={`flex justify-between items-center p-2 rounded-t-md ${winnerId === t1?.id ? 'bg-blue-100' : 'bg-gray-50'}`}>
@@ -999,20 +1061,25 @@ export default function Dashboard() {
       );
     };
   
+    // ==========================================
+  // --- FINAL STANDINGS LOGIC (Paste in the gap) ---
   const getFinalStandings = () => {
     if (!isSeasonOver) return [];
     
+    // Helper: Handle String vs Number ID mismatch
     const safeId = (id) => (id && typeof id === 'object' ? id.id : Number(id));
 
     const getLoserId = (m) => {
         if (!m || m.status !== 'finished' || !m.result) return null;
         const winnerName = m.result.winner;
         
+        // Safely get IDs
         const t1Id = safeId(m.t1);
         const t2Id = safeId(m.t2);
         
+        // Find team object to check name
         const t1Obj = teams.find(t => safeId(t.id) === t1Id);
-        if (!t1Obj) return t2Id; 
+        if (!t1Obj) return t2Id; // Safety fallback
 
         return t1Obj.name === winnerName ? t2Id : t1Id;
     };
@@ -1024,6 +1091,7 @@ export default function Dashboard() {
 
     const findMatch = (type, round) => league.matches.find(m => m.type === type && m.round === round);
     
+    // --- Logic to find IDs for each rank ---
     const finalMatch = findMatch('playoff', 5);
     const winnerId = getWinnerId(finalMatch);
     const runnerUpId = getLoserId(finalMatch);
@@ -1043,15 +1111,18 @@ export default function Dashboard() {
     const piFinalMatch = findMatch('playin', 3);
     const seventhId = getLoserId(piFinalMatch);
 
+    // 8th & 9th: Play-In Round 1 Losers
     const piR1Matches = league.matches.filter(m => m.type === 'playin' && m.round === 1);
     const piR1Losers = piR1Matches.map(m => getLoserId(m)).filter(id => id !== null);
 
+    // Sort 8th/9th by Play-In Seed
     piR1Losers.sort((a, b) => {
         const seedA = getTeamSeed(a, 'playin') || 99;
         const seedB = getTeamSeed(b, 'playin') || 99;
         return seedA - seedB;
     });
 
+    // 10th: Group Stage Eliminated
     const tenthId = league.seasonSummary?.eliminated;
 
     const rankIds = [
@@ -1059,31 +1130,36 @@ export default function Dashboard() {
         piR1Losers[0], piR1Losers[1], tenthId
     ];
 
+    // --- CRASH PREVENTION MAPPING ---
     return rankIds.map((id, index) => {
         if (!id) return null;
+        // Use safeId to find the team ensuring Number vs Number comparison
         const t = teams.find(team => safeId(team.id) === safeId(id));
         
-        if (!t) return null; 
+        if (!t) return null; // If team not found, skip (Prevents "undefined" crash)
         return { rank: index + 1, team: t };
     }).filter(item => item !== null);
   };
-  
-  // Calculate Prize Money for Dashboard Display when season ends
+
+  // [NEW] Effect to calculate earned prize money for the dashboard when season ends
   useEffect(() => {
-    if (isSeasonOver && league) {
-      const standings = getFinalStandings();
-      const myRankItem = standings.find(s => s.team.id === myTeam.id);
-      if (myRankItem) {
-        let money = 0.1;
-        if (myRankItem.rank === 1) money = 0.5;
-        else if (myRankItem.rank === 2) money = 0.25;
-        else if (myRankItem.rank === 3) money = 0.2;
-        setPrizeMoney(money);
-      }
+    if (isSeasonOver) {
+        const standings = getFinalStandings();
+        const myRankItem = standings.find(s => s.team.id === myTeam.id);
+        
+        if (myRankItem) {
+            let money = 0.1; // Default (4th onwards)
+            if (myRankItem.rank === 1) money = 0.5;
+            else if (myRankItem.rank === 2) money = 0.25;
+            else if (myRankItem.rank === 3) money = 0.2;
+            
+            setPrizeMoney(money);
+        }
     }
-  }, [league, isSeasonOver, myTeam.id]);
+  }, [isSeasonOver, league, myTeam.id]);
 
   const FinalStandingsModal = () => {
+    // Wrap in try-catch to prevent white screen if data is bad
     try {
         const standings = getFinalStandings();
         
@@ -1105,7 +1181,7 @@ export default function Dashboard() {
                                 <tr>
                                     <th className="p-4 text-center w-20">순위</th>
                                     <th className="p-4">팀</th>
-                                    <th className="p-4 text-right">상금 (확정)</th>
+                                    <th className="p-4 text-right">상금 (추정)</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y">
@@ -1118,23 +1194,24 @@ export default function Dashboard() {
                                              <span className="font-bold text-gray-500 text-lg">{item.rank}위</span>}
                                         </td>
                                         <td className="p-4 flex items-center gap-4">
+                                            {/* Optional chaining (?.) added to colors to prevent crash */}
                                             <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold shadow-sm text-lg" 
                                                  style={{backgroundColor: item.team.colors?.primary || '#333'}}>
                                                 {item.team.name}
                                             </div>
                                             <div>
-                                                <div className="font-black text-xl text-gray-800 flex items-center">
-                                                    {item.team.fullName}
-                                                    {item.rank <= 2 && (
-                                                        <span className="ml-2 bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded border border-blue-200">
-                                                            FST 진출
-                                                        </span>
-                                                    )}
-                                                </div>
+                                                <div className="font-black text-xl text-gray-800">{item.team.fullName}</div>
                                                 {item.rank === 1 && <div className="text-xs font-bold text-yellow-600 bg-yellow-100 inline-block px-2 py-0.5 rounded mt-1">CHAMPION</div>}
+                                                {/* [NEW] FST 진출 Label for Top 2 */}
+                                                {(item.rank === 1 || item.rank === 2) && (
+                                                    <div className="text-xs font-bold text-indigo-600 bg-indigo-100 inline-block px-2 py-0.5 rounded mt-1 ml-2">
+                                                        FST 진출
+                                                    </div>
+                                                )}
                                             </div>
                                         </td>
                                         <td className="p-4 text-right font-bold text-gray-600">
+                                            {/* [NEW] Prize Money Logic */}
                                             {item.rank === 1 ? '0.5억' : 
                                              item.rank === 2 ? '0.25억' : 
                                              item.rank === 3 ? '0.2억' : '0.1억'}
@@ -1207,6 +1284,8 @@ export default function Dashboard() {
             difficulty: league.difficulty,
             playerTeamName: myTeam.name
         }}
+        // [FIX] Removed undefined 'globalBanList'. 
+        // LiveGamePlayer manages its own global bans internally for the BO3/BO5 series.
         externalGlobalBans={[]} 
         onMatchComplete={handleLiveMatchComplete}
         onClose={() => setIsLiveGameMode(false)}
@@ -1272,10 +1351,12 @@ export default function Dashboard() {
             <div className="h-4 w-px bg-gray-300"></div>
             <div className="flex items-center gap-2 font-bold text-gray-700"><span className="text-gray-400">🏆</span> {myRecord.w}승 {myRecord.l}패 ({myRecord.diff > 0 ? `+${myRecord.diff}` : myRecord.diff})</div>
             <div className="h-4 w-px bg-gray-300"></div>
-            <div className="flex items-center gap-2 font-bold text-gray-700"><span className="text-gray-400">💰</span> 상금: {prizeMoney > 0 ? `${prizeMoney}억` : '0.0억'}</div>
+            {/* [UPDATED] Prize money display now dynamically updates when season ends */}
+            <div className="flex items-center gap-2 font-bold text-gray-700"><span className="text-gray-400">💰</span> 상금: {prizeMoney === 0 ? '0.0' : prizeMoney}억</div>
           </div>
           
           <div className="flex items-center gap-3">
+            {/* [FIXED] Final Standings Button */}
             {isSeasonOver && (
                <button 
                onClick={() => setShowFinalStandings(true)} 
@@ -1677,7 +1758,7 @@ export default function Dashboard() {
               {/* 재정 탭 */}
               {activeTab === 'finance' && (
                 <div className="bg-white rounded-lg border shadow-sm flex flex-col">
-                  {/* Added Navigation Header for Finance Tab */}
+                  {/* [FIX 3] Added Navigation Header for Finance Tab */}
                   <div className="p-6 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
                     <div className="flex items-center gap-4">
                       <button onClick={handlePrevTeam} className="p-2 bg-white rounded-full border hover:bg-gray-100 shadow-sm transition">◀</button>
