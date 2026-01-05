@@ -88,11 +88,13 @@ export default function Dashboard() {
       loadData();
     }, [leagueId]);
 
+    // [FIX] Updated Prize Money Logic: 1st(0.5), 2nd(0.25), 3rd(0.2), Rest(0.1)
     useEffect(() => {
       if (isSeasonOver && league) {
-        const standings = getFinalStandings();
-        // Use safeId for comparison
-        const safeId = (id) => (typeof id === 'object' ? id.id : Number(id));
+        const standings = getFinalStandings(); // Now safe to call
+        
+        // Helper to safely compare IDs (String vs Number)
+        const safeId = (id) => (id && typeof id === 'object' ? id.id : Number(id));
         const myRankEntry = standings.find(s => safeId(s.team.id) === safeId(myTeam.id));
 
         if (myRankEntry) {
@@ -105,7 +107,7 @@ export default function Dashboard() {
           setPrizeMoney(reward);
         }
       }
-    }, [isSeasonOver]);
+    }, [isSeasonOver, league]); // Added league to dependencies
   
     // Fix 1: 순위표 재계산 함수 (전체 매치 기록 기반)
     // [수정 1] 순위표 계산 함수 (플레이오프/플레이인 제외 로직 강화)
@@ -569,6 +571,7 @@ export default function Dashboard() {
     // [1] 내 경기 시작하기 (안전장치 추가됨)
     // [1] 내 경기 시작하기 (안전장치 추가됨)
     // [FIX] 2. Robust Start Match Handler (Green Button)
+    // [FIX] Robust Start Match Handler
     const handleStartMyMatch = () => {
       try {
         if (!nextGlobalMatch) {
@@ -576,24 +579,25 @@ export default function Dashboard() {
           return;
         }
     
-        // 1. Force IDs to Numbers
-        const t1Id = typeof nextGlobalMatch.t1 === 'object' ? nextGlobalMatch.t1.id : Number(nextGlobalMatch.t1);
-        const t2Id = typeof nextGlobalMatch.t2 === 'object' ? nextGlobalMatch.t2.id : Number(nextGlobalMatch.t2);
+        // 1. Force IDs to Numbers for safety
+        const getID = (val) => (val && typeof val === 'object' ? val.id : Number(val));
+        const t1Id = getID(nextGlobalMatch.t1);
+        const t2Id = getID(nextGlobalMatch.t2);
     
-        const t1Obj = teams.find(t => Number(t.id) === t1Id);
-        const t2Obj = teams.find(t => Number(t.id) === t2Id);
+        const t1Obj = teams.find(t => Number(t.id) === Number(t1Id));
+        const t2Obj = teams.find(t => Number(t.id) === Number(t2Id));
     
         if (!t1Obj || !t2Obj) {
           alert(`팀 데이터 오류! T1 ID: ${t1Id}, T2 ID: ${t2Id}`);
           return;
         }
     
-        // 2. Fetch Rosters using the global function
+        // 2. Fetch Rosters
         const t1Roster = getTeamRoster(t1Obj.name);
         const t2Roster = getTeamRoster(t2Obj.name);
   
-        // 3. Check for Champion List validity
-        const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0) 
+        // 3. Safety Check for Champion List
+        const safeChampionList = (league && league.currentChampionList && league.currentChampionList.length > 0) 
             ? league.currentChampionList 
             : championList;
     
@@ -602,7 +606,6 @@ export default function Dashboard() {
           match: nextGlobalMatch,
           teamA: { ...t1Obj, roster: t1Roster },
           teamB: { ...t2Obj, roster: t2Roster },
-          // Pass the safe list specifically for the live mode
           safeChampionList: safeChampionList 
         });
         
@@ -1083,9 +1086,10 @@ export default function Dashboard() {
     // ==========================================
   // --- FINAL STANDINGS LOGIC (Paste in the gap) ---
   // [FIX] Define this BEFORE useEffect to avoid initialization errors
-  const getFinalStandings = () => {
-    if (!isSeasonOver) return [];
-    
+  // [CRITICAL FIX] Defined as a hoisted function to prevent crash
+  function getFinalStandings() {
+    if (!league || !league.matches) return []; // Safety check
+
     // Helper: Handle String vs Number ID mismatch
     const safeId = (id) => (id && typeof id === 'object' ? id.id : Number(id));
 
@@ -1129,6 +1133,8 @@ export default function Dashboard() {
     // 8th & 9th: Play-In Round 1 Losers
     const piR1Matches = league.matches.filter(m => m.type === 'playin' && m.round === 1);
     const piR1Losers = piR1Matches.map(m => getLoserId(m)).filter(id => id !== null);
+    
+    // Sort losers by seed (lower seed number is better)
     piR1Losers.sort((a, b) => {
         const seedA = getTeamSeed(a, 'playin') || 99;
         const seedB = getTeamSeed(b, 'playin') || 99;
@@ -1149,9 +1155,10 @@ export default function Dashboard() {
         if (!t) return null;
         return { rank: index + 1, team: t };
     }).filter(item => item !== null);
-  };
+  }
 
   const FinalStandingsModal = () => {
+    // Wrap in try-catch to prevent white screen
     try {
         const standings = getFinalStandings();
         
@@ -1178,7 +1185,7 @@ export default function Dashboard() {
                             </thead>
                             <tbody className="divide-y">
                                 {standings.length > 0 ? standings.map((item) => {
-                                    // Determine Prize Money Text
+                                    // Determine Prize Money
                                     let prizeText = '0.1억';
                                     if (item.rank === 1) prizeText = '0.5억';
                                     else if (item.rank === 2) prizeText = '0.25억';
