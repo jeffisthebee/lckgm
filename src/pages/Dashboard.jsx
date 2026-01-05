@@ -1063,6 +1063,7 @@ export default function Dashboard() {
   
     // ==========================================
   // --- FINAL STANDINGS LOGIC (Paste in the gap) ---
+  // --- FINAL STANDINGS LOGIC ---
   const getFinalStandings = () => {
     if (!isSeasonOver) return [];
     
@@ -1141,6 +1142,24 @@ export default function Dashboard() {
     }).filter(item => item !== null);
   };
 
+  // [NEW] Effect to update Dashboard Prize Money when season ends
+  useEffect(() => {
+    if (isSeasonOver) {
+      const standings = getFinalStandings();
+      // Find my team in the standings
+      const myRankItem = standings.find(item => safeId(item.team.id) === safeId(myTeam.id));
+      
+      if (myRankItem) {
+        let prize = 0.1; // Default for 4th-10th
+        if (myRankItem.rank === 1) prize = 0.5;
+        else if (myRankItem.rank === 2) prize = 0.25;
+        else if (myRankItem.rank === 3) prize = 0.2;
+        
+        setPrizeMoney(prize);
+      }
+    }
+  }, [league, isSeasonOver, myTeam.id]);
+
   const FinalStandingsModal = () => {
     // Wrap in try-catch to prevent white screen if data is bad
     try {
@@ -1164,12 +1183,12 @@ export default function Dashboard() {
                                 <tr>
                                     <th className="p-4 text-center w-20">순위</th>
                                     <th className="p-4">팀</th>
-                                    <th className="p-4 text-right">상금 (추정)</th>
+                                    <th className="p-4 text-right">상금</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y">
                                 {standings.length > 0 ? standings.map((item) => (
-                                    <tr key={item.team.id} className={`${item.rank === 1 ? 'bg-yellow-50' : 'bg-white'}`}>
+                                    <tr key={item.team.id} className={`${item.rank === 1 ? 'bg-yellow-50' : item.rank === 2 ? 'bg-gray-50' : 'bg-white'}`}>
                                         <td className="p-4 text-center">
                                             {item.rank === 1 ? <span className="text-2xl">🥇</span> : 
                                              item.rank === 2 ? <span className="text-2xl">🥈</span> : 
@@ -1177,18 +1196,28 @@ export default function Dashboard() {
                                              <span className="font-bold text-gray-500 text-lg">{item.rank}위</span>}
                                         </td>
                                         <td className="p-4 flex items-center gap-4">
-                                            {/* Optional chaining (?.) added to colors to prevent crash */}
                                             <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold shadow-sm text-lg" 
                                                  style={{backgroundColor: item.team.colors?.primary || '#333'}}>
                                                 {item.team.name}
                                             </div>
                                             <div>
-                                                <div className="font-black text-xl text-gray-800">{item.team.fullName}</div>
+                                                <div className="font-black text-xl text-gray-800 flex items-center gap-2">
+                                                    {item.team.fullName}
+                                                    {/* [NEW] FST 진출 Badge for Top 2 */}
+                                                    {item.rank <= 2 && (
+                                                        <span className="text-[10px] bg-indigo-600 text-white px-1.5 py-0.5 rounded border border-indigo-700 shadow-sm">
+                                                            FST 진출
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 {item.rank === 1 && <div className="text-xs font-bold text-yellow-600 bg-yellow-100 inline-block px-2 py-0.5 rounded mt-1">CHAMPION</div>}
                                             </div>
                                         </td>
                                         <td className="p-4 text-right font-bold text-gray-600">
-                                            {item.rank === 1 ? '5.0억' : item.rank === 2 ? '3.0억' : item.rank === 3 ? '1.5억' : '-'}
+                                            {/* [NEW] Updated Prize Money Logic */}
+                                            {item.rank === 1 ? '0.5억' : 
+                                             item.rank === 2 ? '0.25억' : 
+                                             item.rank === 3 ? '0.2억' : '0.1억'}
                                         </td>
                                     </tr>
                                 )) : (
