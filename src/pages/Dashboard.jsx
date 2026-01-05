@@ -89,26 +89,43 @@ export default function Dashboard() {
     }, [leagueId]);
 
     // [NEW] Effect: Calculate and set prize money when season ends
+    // [FIXED] Effect: Calculate and set prize money safely
     useEffect(() => {
-      if (isSeasonOver && league) {
-        // 1. Get final standings
-        const finalStandings = getFinalStandings();
+      // 1. Safety Check: Ensure league data exists
+      if (!league || !league.matches) return;
+
+      // 2. Check if Season is Over (Calculated locally to prevent crash)
+      const grandFinal = league.matches.find(m => m.type === 'playoff' && m.round === 5);
+      const isSeasonFinished = grandFinal && grandFinal.status === 'finished';
+
+      if (isSeasonFinished) {
+        // Helper to safely get IDs
+        const getID = (id) => (typeof id === 'object' ? id.id : Number(id));
+        const getWinnerId = (m) => teams.find(t => t.name === m.result.winner)?.id;
+        const getLoserId = (m) => {
+            const wId = getWinnerId(m);
+            const t1Id = getID(m.t1);
+            const t2Id = getID(m.t2);
+            return t1Id === wId ? t2Id : t1Id;
+        };
+
+        // 3. Identify Top 3 Teams
+        const winnerId = getID(getWinnerId(grandFinal));
+        const runnerUpId = getID(getLoserId(grandFinal));
+        const r4Match = league.matches.find(m => m.type === 'playoff' && m.round === 4);
+        const thirdId = getID(getLoserId(r4Match));
         
-        // 2. Find my team's rank
-        const myRankEntry = finalStandings.find(s => String(s.team.id) === String(myTeam.id));
-        
-        if (myRankEntry) {
-          let earnedAmount = 0.1; // Default for 4th and below
-          
-          if (myRankEntry.rank === 1) earnedAmount = 0.5;
-          else if (myRankEntry.rank === 2) earnedAmount = 0.25;
-          else if (myRankEntry.rank === 3) earnedAmount = 0.2;
-          
-          // 3. Update the dashboard state
-          setPrizeMoney(earnedAmount);
-        }
+        const myId = getID(myTeam.id);
+
+        // 4. Determine My Prize
+        let earned = 0.1; // Default for 4th and below
+        if (myId === winnerId) earned = 0.5;
+        else if (myId === runnerUpId) earned = 0.25;
+        else if (myId === thirdId) earned = 0.2;
+
+        setPrizeMoney(earned);
       }
-    }, [isSeasonOver, league, myTeam.id]);
+    }, [league, myTeam.id]);
   
     // Fix 1: 순위표 재계산 함수 (전체 매치 기록 기반)
     // [수정 1] 순위표 계산 함수 (플레이오프/플레이인 제외 로직 강화)
@@ -1216,7 +1233,7 @@ export default function Dashboard() {
                                             </div>
                                         </td>
                                         <td className="p-4 text-right font-bold text-gray-600">
-                                            {/* [NEW] Updated Prize Logic */}
+                                            {/* [NEW] Updated Prize Values */}
                                             {item.rank === 1 ? '0.5억' : 
                                              item.rank === 2 ? '0.25억' : 
                                              item.rank === 3 ? '0.2억' : '0.1억'}
