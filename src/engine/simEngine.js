@@ -1222,13 +1222,16 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
     const allMatches = [];
     const n = 5; 
     
-    // Track Blue Side counts to enforce "At least 2 Blue" rule
-    const blueCounts = {};
-    [...baronIds, ...elderIds].forEach(id => blueCounts[id] = 0);
+    // Track Blue Side counts
+    const teamBlueCounts = {};
+    [...baronIds, ...elderIds].forEach(id => teamBlueCounts[id] = 0);
+    
+    // Track Group Totals to enforce 12/13 split
+    let baronGroupBlueTotal = 0;
+    let elderGroupBlueTotal = 0;
   
     // We generate 5 rounds total
     for (let r = 0; r < 5; r++) {
-        // [UPDATE] Super Week Logic:
         // Round 4 (Super Week): Use offset 0 to align matching Draft Orders (e.g., T1 vs KT)
         // Rounds 0-3 (Regular): Use offsets 1, 2, 3, 4 to generate remaining unique pairings
         const isSuperWeek = (r === 4);
@@ -1240,21 +1243,33 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
             
             let t1, t2; // t1 is Blue, t2 is Red
   
-            // Side Selection Logic
-            // Constraint: Total Group Blue/Red split ~ 12/13
-            // Constraint: Every team needs at least 2 Blue games
+            // --- Side Selection Logic (Strict Fairness) ---
+            const bBlue = teamBlueCounts[b];
+            const eBlue = teamBlueCounts[e];
             
-            if (blueCounts[b] < 2 && blueCounts[e] >= 2) {
+            // Priority 1: Enforce "At least 2 Blue Games" per team
+            if (bBlue < 2 && eBlue >= 2) {
                 t1 = b; t2 = e;
-            } else if (blueCounts[e] < 2 && blueCounts[b] >= 2) {
+            } else if (eBlue < 2 && bBlue >= 2) {
                 t1 = e; t2 = b;
-            } else {
-                // If balanced, flip a coin
+            } 
+            // Priority 2: Enforce Group Balance (12 vs 13 split)
+            // If individual needs are equal (both <2 or both >=2), balance the groups
+            else if (baronGroupBlueTotal < elderGroupBlueTotal) {
+                t1 = b; t2 = e;
+            } else if (elderGroupBlueTotal < baronGroupBlueTotal) {
+                t1 = e; t2 = b;
+            } 
+            // Priority 3: Random (Coin Flip) if perfectly balanced
+            else {
                 if (Math.random() < 0.5) { t1 = b; t2 = e; } 
                 else { t1 = e; t2 = b; }
             }
             
-            blueCounts[t1]++;
+            // Update Counts
+            teamBlueCounts[t1]++;
+            if (baronIds.includes(t1)) baronGroupBlueTotal++;
+            else elderGroupBlueTotal++;
   
             allMatches.push({
                 id: Date.now() + allMatches.length + (r * 100),
@@ -1336,4 +1351,4 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
         date: regularDays[Math.floor(i / 2)] || 'TBD',
         time: i % 2 === 0 ? '17:00' : '19:30'
     }));
-  };
+};
