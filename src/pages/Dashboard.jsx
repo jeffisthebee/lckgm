@@ -810,86 +810,89 @@ const getOvrBadgeStyle = (ovr) => {
   };
 
   const handleGenerateSuperWeek = () => {
-      const newMetaVersion = '16.02';
-      
-      // 1. Prepare Meta Update (With Deep Copy to force React update)
-      let newChampionList = JSON.parse(JSON.stringify(league.currentChampionList));
-      
-      try {
-          if (typeof updateChampionMeta === 'function') {
-              newChampionList = updateChampionMeta(newChampionList);
-          }
-      } catch (e) {
-          console.error("Meta update failed, keeping old stats:", e);
-      }
-  
-      // 2. Prepare Super Week Matches (Draft Order Logic)
-      const baronDraftOrder = league.groups.baron; 
-      const elderDraftOrder = league.groups.elder;
-      
-      let newMatches = [];
-      const days = ['1.28 (수)', '1.29 (목)', '1.30 (금)', '1.31 (토)', '2.1 (일)']; 
-  
-      let pairs = [];
-      for(let i=0; i<5; i++) {
-          if (baronDraftOrder[i] && elderDraftOrder[i]) {
-              pairs.push({ 
-                  t1: baronDraftOrder[i], 
-                  t2: elderDraftOrder[i], 
-                  orderIndex: i 
-              });
-          }
-      }
-      
-      // Shuffle Days
-      pairs.sort(() => Math.random() - 0.5);
-  
-      const cleanMatches = league.matches.filter(m => m.type !== 'tbd');
-  
-      pairs.forEach((pair, idx) => {
-          newMatches.push({
-              id: Date.now() + idx,
-              t1: pair.t1,
-              t2: pair.t2,
-              date: days[idx] || '2.1 (일)', 
-              time: '17:00',
-              type: 'super', 
-              format: 'BO5', 
-              status: 'pending'
-          });
-      });
-  
-      const updatedMatches = [...cleanMatches, ...newMatches];
-      updatedMatches.sort((a, b) => {
-          const dayA = parseFloat(a.date.split(' ')[0]);
-          const dayB = parseFloat(b.date.split(' ')[0]);
-          return dayA - dayB;
-      });
-  
-      // 3. Construct New State
-      const newLeagueState = { 
-          matches: updatedMatches,
-          currentChampionList: newChampionList,
-          metaVersion: newMetaVersion
-      };
+    const newMetaVersion = '16.02';
+    
+    // [FIX] Ensure we have a valid source list before deep copying
+    const sourceList = (league.currentChampionList && league.currentChampionList.length > 0) 
+        ? league.currentChampionList 
+        : championList;
 
-      // [FIX] Update UI State FIRST (Optimistic Update)
-      // This ensures the screen changes to 16.02 even if the database save takes a moment
-      setLeague(prev => ({ 
-          ...prev, 
-          ...newLeagueState 
-      }));
+    // 1. Prepare Meta Update (With Deep Copy to force React update)
+    let newChampionList = JSON.parse(JSON.stringify(sourceList));
+    
+    try {
+        if (typeof updateChampionMeta === 'function') {
+            newChampionList = updateChampionMeta(newChampionList);
+        }
+    } catch (e) {
+        console.error("Meta update failed, keeping old stats:", e);
+    }
 
-      // 4. Save to Database (Wrapped in try/catch to prevent crashes)
-      try {
-          updateLeague(league.id, newLeagueState);
-      } catch (error) {
-          console.error("Failed to save league data:", error);
-          // Optionally revert state here if save fails
-      }
+    // 2. Prepare Super Week Matches (Draft Order Logic)
+    const baronDraftOrder = league.groups.baron; 
+    const elderDraftOrder = league.groups.elder;
+    
+    let newMatches = [];
+    const days = ['1.28 (수)', '1.29 (목)', '1.30 (금)', '1.31 (토)', '2.1 (일)']; 
 
-      alert(`🔥 슈퍼위크 일정이 생성되었습니다!\n- 메타 패치: ${newMetaVersion} 적용 완료`);
-  };
+    let pairs = [];
+    for(let i=0; i<5; i++) {
+        if (baronDraftOrder[i] && elderDraftOrder[i]) {
+            pairs.push({ 
+                t1: baronDraftOrder[i], 
+                t2: elderDraftOrder[i], 
+                orderIndex: i 
+            });
+        }
+    }
+    
+    // Shuffle Days
+    pairs.sort(() => Math.random() - 0.5);
+
+    const cleanMatches = league.matches.filter(m => m.type !== 'tbd');
+
+    pairs.forEach((pair, idx) => {
+        newMatches.push({
+            id: Date.now() + idx,
+            t1: pair.t1,
+            t2: pair.t2,
+            date: days[idx] || '2.1 (일)', 
+            time: '17:00',
+            type: 'super', 
+            format: 'BO5', 
+            status: 'pending'
+        });
+    });
+
+    const updatedMatches = [...cleanMatches, ...newMatches];
+    updatedMatches.sort((a, b) => {
+        const dayA = parseFloat(a.date.split(' ')[0]);
+        const dayB = parseFloat(b.date.split(' ')[0]);
+        return dayA - dayB;
+    });
+
+    // 3. Construct New State
+    const newLeagueState = { 
+        matches: updatedMatches,
+        currentChampionList: newChampionList,
+        metaVersion: newMetaVersion
+    };
+
+    // [FIX] Update UI State FIRST (Optimistic Update)
+    setLeague(prev => ({ 
+        ...prev, 
+        ...newLeagueState 
+    }));
+
+    // 4. Save to Database
+    try {
+        updateLeague(league.id, newLeagueState);
+    } catch (error) {
+        console.error("Failed to save league data:", error);
+    }
+
+    alert(`🔥 슈퍼위크 일정이 생성되었습니다!\n- 메타 패치: ${newMetaVersion} 적용 완료`);
+};
   
     const handleGeneratePlayIn = () => {
         let isBaronWinner;
