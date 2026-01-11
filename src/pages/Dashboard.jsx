@@ -773,13 +773,14 @@ const getOvrBadgeStyle = (ovr) => {
     const elderTotalWins = calculateGroupScore('elder');
   
     const updateChampionMeta = (currentChamps) => {
-      // Probabilities for shifting tiers (Robust Definition)
+      // Probabilities for shifting tiers
+      // [FIX] Adjusted probabilities to ensure every row sums exactly to 1.00
       const probabilities = {
           1: { 1: 0.40, 2: 0.40, 3: 0.15, 4: 0.04, 5: 0.01 },
           2: { 1: 0.25, 2: 0.40, 3: 0.25, 4: 0.08, 5: 0.02 },
           3: { 1: 0.07, 2: 0.23, 3: 0.40, 4: 0.23, 5: 0.07 },
           4: { 1: 0.02, 2: 0.08, 3: 0.25, 4: 0.40, 5: 0.25 },
-          5: { 1: 0.01, 2: 0.04, 3: 0.15, 4: 0.25, 5: 0.40 },
+          5: { 1: 0.01, 2: 0.04, 3: 0.15, 4: 0.25, 5: 0.55 }, // [FIX] Increased to 0.55 (was 0.40) to sum to 1.0
       };
   
       const getNewTier = (currentTier) => {
@@ -790,10 +791,10 @@ const getOvrBadgeStyle = (ovr) => {
           let cumulative = 0;
           const chances = probabilities[tierNum];
           
-          // [FIX] Explicit iteration order (1 -> 5) to ensure deterministic probability distribution
-          const orderedTiers = ['1', '2', '3', '4', '5'];
+          // [FIX] Use explicit array order to guarantee deterministic logic
+          const order = ['1', '2', '3', '4', '5'];
           
-          for (const t of orderedTiers) {
+          for (const t of order) {
               if (chances[t] !== undefined) {
                   cumulative += chances[t];
                   if (rand < cumulative) {
@@ -815,30 +816,23 @@ const getOvrBadgeStyle = (ovr) => {
     const handleGenerateSuperWeek = () => {
       const newMetaVersion = '16.02';
       
-      // [FIX] Safety: Use existing list or fallback to default imports if missing
+      // 1. Get Source List (Current or Default)
       const sourceList = (league.currentChampionList && league.currentChampionList.length > 0) 
           ? league.currentChampionList 
           : championList;
   
-      // 1. Prepare Meta Update (Safe Deep Copy)
+      // 2. Generate New Meta List
       let newChampionList = [];
       try {
-          // Deep copy to ensure we don't mutate state directly before setting it
+          // Create a deep copy to modify
           const listClone = JSON.parse(JSON.stringify(sourceList));
-          
-          // Execute meta update
-          const updated = updateChampionMeta(listClone);
-          if (updated && updated.length > 0) {
-              newChampionList = updated;
-          } else {
-               newChampionList = listClone;
-          }
+          newChampionList = updateChampionMeta(listClone);
       } catch (e) {
-          console.error("Meta update failed, reverting to previous stats:", e);
-          newChampionList = sourceList; // Fallback
+          console.error("Meta update failed:", e);
+          newChampionList = sourceList;
       }
   
-      // 2. Prepare Super Week Matches (Draft Order Logic)
+      // 3. Prepare Super Week Matches
       const baronDraftOrder = league.groups?.baron || []; 
       const elderDraftOrder = league.groups?.elder || [];
       
@@ -846,7 +840,6 @@ const getOvrBadgeStyle = (ovr) => {
       const days = ['1.28 (수)', '1.29 (목)', '1.30 (금)', '1.31 (토)', '2.1 (일)']; 
   
       let pairs = [];
-      // Ensure we handle potentially different group sizes gracefully (though they should be 5)
       for(let i=0; i<5; i++) {
           if (baronDraftOrder[i] && elderDraftOrder[i]) {
               pairs.push({ 
@@ -857,7 +850,7 @@ const getOvrBadgeStyle = (ovr) => {
           }
       }
       
-      // Shuffle Days randomly
+      // Shuffle match order
       pairs.sort(() => Math.random() - 0.5);
   
       const cleanMatches = league.matches ? league.matches.filter(m => m.type !== 'tbd') : [];
@@ -882,29 +875,19 @@ const getOvrBadgeStyle = (ovr) => {
           return dayA - dayB;
       });
   
-      // 3. Construct New State
+      // 4. Update State & DB
       const newLeagueState = { 
           matches: updatedMatches,
-          currentChampionList: newChampionList, // Updated list applied here
+          currentChampionList: newChampionList,
           metaVersion: newMetaVersion
       };
   
-      // [FIX] Update UI State FIRST (Optimistic Update)
-      setLeague(prev => ({ 
-          ...prev, 
-          ...newLeagueState 
-      }));
+      setLeague(prev => ({ ...prev, ...newLeagueState }));
+      updateLeague(league.id, newLeagueState);
   
-      // 4. Save to Database
-      try {
-          updateLeague(league.id, newLeagueState);
-      } catch (error) {
-          console.error("Failed to save league data:", error);
-      }
-  
-      alert(`🔥 슈퍼위크 일정이 생성되었습니다!\n- 메타 패치: ${newMetaVersion} 적용 완료\n- 모든 챔피언 티어가 변동되었습니다.`);
+      alert(`🔥 슈퍼위크 일정이 생성되었습니다!\n- 메타 패치: ${newMetaVersion} 적용 완료`);
     };
-    
+
     const handleGeneratePlayIn = () => {
         let isBaronWinner;
         if (baronTotalWins > elderTotalWins) {
