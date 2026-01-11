@@ -806,15 +806,28 @@ const getOvrBadgeStyle = (ovr) => {
       const newChampionList = updateChampionMeta(league.currentChampionList);
       const newMetaVersion = '16.02';
   
-      const baronSorted = getSortedGroup([...league.groups.baron]);
-      const elderSorted = getSortedGroup([...league.groups.elder]);
+      // [UPDATED] Use original Draft Order (Raw Groups) instead of Standings (Sorted)
+      // const baronSorted = getSortedGroup([...league.groups.baron]); // Removed
+      // const elderSorted = getSortedGroup([...league.groups.elder]); // Removed
+      
+      const baronDraftOrder = league.groups.baron;
+      const elderDraftOrder = league.groups.elder;
+      
       let newMatches = [];
       const days = ['1.28 (수)', '1.29 (목)', '1.30 (금)', '1.31 (토)', '2.1 (일)']; 
   
       let pairs = [];
+      // Match indices directly: 1st Pick vs 1st Pick, 2nd vs 2nd, etc.
       for(let i=0; i<5; i++) {
-          pairs.push({ t1: baronSorted[i], t2: elderSorted[i], rank: i+1 });
+          pairs.push({ 
+              t1: baronDraftOrder[i], 
+              t2: elderDraftOrder[i], 
+              orderIndex: i 
+          });
       }
+      
+      // Shuffle pairs so the specific match-ups get assigned to random days 
+      // (or remove this line if you want 1st picks to always play on a specific day)
       pairs.sort(() => Math.random() - 0.5);
   
       const cleanMatches = league.matches.filter(m => m.type !== 'tbd');
@@ -850,7 +863,7 @@ const getOvrBadgeStyle = (ovr) => {
           currentChampionList: newChampionList,
           metaVersion: newMetaVersion
       }));
-      alert(`🔥 슈퍼위크 일정이 생성되고, 메타가 16.02 패치로 변경되었습니다!`);
+      alert(`🔥 슈퍼위크 일정이 생성되고, 메타가 16.02 패치로 변경되었습니다! (대진 기준: 드래프트 순서)`);
     };
   
     const handleGeneratePlayIn = () => {
