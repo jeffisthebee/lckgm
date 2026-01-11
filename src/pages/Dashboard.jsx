@@ -773,7 +773,7 @@ const getOvrBadgeStyle = (ovr) => {
     const elderTotalWins = calculateGroupScore('elder');
   
     const updateChampionMeta = (currentChamps) => {
-      // Probabilities for shifting tiers
+      // Probabilities for shifting tiers (Robust Definition)
       const probabilities = {
           1: { 1: 0.40, 2: 0.40, 3: 0.15, 4: 0.04, 5: 0.01 },
           2: { 1: 0.25, 2: 0.40, 3: 0.25, 4: 0.08, 5: 0.02 },
@@ -783,124 +783,128 @@ const getOvrBadgeStyle = (ovr) => {
       };
   
       const getNewTier = (currentTier) => {
-          // [FIX] Safety check: Ensure tier is a valid number 1-5
           const tierNum = parseInt(currentTier, 10);
-          if (!tierNum || !probabilities[tierNum]) return tierNum || 3; // Default to 3 if invalid
+          if (!tierNum || !probabilities[tierNum]) return tierNum || 3;
   
           const rand = Math.random();
           let cumulative = 0;
           const chances = probabilities[tierNum];
           
-          for (const t in chances) {
-              cumulative += chances[t];
-              if (rand < cumulative) {
-                  return parseInt(t, 10);
+          // [FIX] Explicit iteration order (1 -> 5) to ensure deterministic probability distribution
+          const orderedTiers = ['1', '2', '3', '4', '5'];
+          
+          for (const t of orderedTiers) {
+              if (chances[t] !== undefined) {
+                  cumulative += chances[t];
+                  if (rand < cumulative) {
+                      return parseInt(t, 10);
+                  }
               }
           }
           return tierNum; 
       };
   
-      // [FIX] Ensure we map over a valid array
       if (!Array.isArray(currentChamps)) return [];
       
       return currentChamps.map(champ => {
           let newTier = getNewTier(champ.tier);
           return { ...champ, tier: newTier };
       });
-  };
-
-  const handleGenerateSuperWeek = () => {
-    const newMetaVersion = '16.02';
-    
-    // [FIX] Safety: Use existing list or fallback to default imports if missing
-    const sourceList = (league.currentChampionList && league.currentChampionList.length > 0) 
-        ? league.currentChampionList 
-        : championList;
-
-    // 1. Prepare Meta Update (Safe Deep Copy)
-    let newChampionList = [];
-    try {
-        newChampionList = JSON.parse(JSON.stringify(sourceList));
-        
-        if (typeof updateChampionMeta === 'function') {
-            const updated = updateChampionMeta(newChampionList);
-            // [FIX] Ensure we don't accidentally save an empty list if update fails
-            if (updated && updated.length > 0) {
-                newChampionList = updated;
-            }
-        }
-    } catch (e) {
-        console.error("Meta update failed, reverting to previous stats:", e);
-        newChampionList = sourceList; // Fallback
-    }
-
-    // 2. Prepare Super Week Matches (Draft Order Logic)
-    // [FIX] Use safe defaults for groups if they are missing
-    const baronDraftOrder = league.groups?.baron || []; 
-    const elderDraftOrder = league.groups?.elder || [];
-    
-    let newMatches = [];
-    const days = ['1.28 (수)', '1.29 (목)', '1.30 (금)', '1.31 (토)', '2.1 (일)']; 
-
-    let pairs = [];
-    for(let i=0; i<5; i++) {
-        if (baronDraftOrder[i] && elderDraftOrder[i]) {
-            pairs.push({ 
-                t1: baronDraftOrder[i], 
-                t2: elderDraftOrder[i], 
-                orderIndex: i 
-            });
-        }
-    }
-    
-    // Shuffle Days
-    pairs.sort(() => Math.random() - 0.5);
-
-    const cleanMatches = league.matches ? league.matches.filter(m => m.type !== 'tbd') : [];
-
-    pairs.forEach((pair, idx) => {
-        newMatches.push({
-            id: Date.now() + idx,
-            t1: pair.t1,
-            t2: pair.t2,
-            date: days[idx] || '2.1 (일)', 
-            time: '17:00',
-            type: 'super', 
-            format: 'BO5', 
-            status: 'pending'
-        });
-    });
-
-    const updatedMatches = [...cleanMatches, ...newMatches];
-    updatedMatches.sort((a, b) => {
-        const dayA = parseFloat(a.date.split(' ')[0]);
-        const dayB = parseFloat(b.date.split(' ')[0]);
-        return dayA - dayB;
-    });
-
-    // 3. Construct New State
-    const newLeagueState = { 
-        matches: updatedMatches,
-        currentChampionList: newChampionList,
-        metaVersion: newMetaVersion
     };
-
-    // [FIX] Update UI State FIRST (Optimistic Update)
-    setLeague(prev => ({ 
-        ...prev, 
-        ...newLeagueState 
-    }));
-
-    // 4. Save to Database
-    try {
-        updateLeague(league.id, newLeagueState);
-    } catch (error) {
-        console.error("Failed to save league data:", error);
-    }
-
-    alert(`🔥 슈퍼위크 일정이 생성되었습니다!\n- 메타 패치: ${newMetaVersion} 적용 완료`);
-};
   
+    const handleGenerateSuperWeek = () => {
+      const newMetaVersion = '16.02';
+      
+      // [FIX] Safety: Use existing list or fallback to default imports if missing
+      const sourceList = (league.currentChampionList && league.currentChampionList.length > 0) 
+          ? league.currentChampionList 
+          : championList;
+  
+      // 1. Prepare Meta Update (Safe Deep Copy)
+      let newChampionList = [];
+      try {
+          // Deep copy to ensure we don't mutate state directly before setting it
+          const listClone = JSON.parse(JSON.stringify(sourceList));
+          
+          // Execute meta update
+          const updated = updateChampionMeta(listClone);
+          if (updated && updated.length > 0) {
+              newChampionList = updated;
+          } else {
+               newChampionList = listClone;
+          }
+      } catch (e) {
+          console.error("Meta update failed, reverting to previous stats:", e);
+          newChampionList = sourceList; // Fallback
+      }
+  
+      // 2. Prepare Super Week Matches (Draft Order Logic)
+      const baronDraftOrder = league.groups?.baron || []; 
+      const elderDraftOrder = league.groups?.elder || [];
+      
+      let newMatches = [];
+      const days = ['1.28 (수)', '1.29 (목)', '1.30 (금)', '1.31 (토)', '2.1 (일)']; 
+  
+      let pairs = [];
+      // Ensure we handle potentially different group sizes gracefully (though they should be 5)
+      for(let i=0; i<5; i++) {
+          if (baronDraftOrder[i] && elderDraftOrder[i]) {
+              pairs.push({ 
+                  t1: baronDraftOrder[i], 
+                  t2: elderDraftOrder[i], 
+                  orderIndex: i 
+              });
+          }
+      }
+      
+      // Shuffle Days randomly
+      pairs.sort(() => Math.random() - 0.5);
+  
+      const cleanMatches = league.matches ? league.matches.filter(m => m.type !== 'tbd') : [];
+  
+      pairs.forEach((pair, idx) => {
+          newMatches.push({
+              id: Date.now() + idx,
+              t1: pair.t1,
+              t2: pair.t2,
+              date: days[idx] || '2.1 (일)', 
+              time: '17:00',
+              type: 'super', 
+              format: 'BO5', 
+              status: 'pending'
+          });
+      });
+  
+      const updatedMatches = [...cleanMatches, ...newMatches];
+      updatedMatches.sort((a, b) => {
+          const dayA = parseFloat(a.date.split(' ')[0]);
+          const dayB = parseFloat(b.date.split(' ')[0]);
+          return dayA - dayB;
+      });
+  
+      // 3. Construct New State
+      const newLeagueState = { 
+          matches: updatedMatches,
+          currentChampionList: newChampionList, // Updated list applied here
+          metaVersion: newMetaVersion
+      };
+  
+      // [FIX] Update UI State FIRST (Optimistic Update)
+      setLeague(prev => ({ 
+          ...prev, 
+          ...newLeagueState 
+      }));
+  
+      // 4. Save to Database
+      try {
+          updateLeague(league.id, newLeagueState);
+      } catch (error) {
+          console.error("Failed to save league data:", error);
+      }
+  
+      alert(`🔥 슈퍼위크 일정이 생성되었습니다!\n- 메타 패치: ${newMetaVersion} 적용 완료\n- 모든 챔피언 티어가 변동되었습니다.`);
+    };
+    
     const handleGeneratePlayIn = () => {
         let isBaronWinner;
         if (baronTotalWins > elderTotalWins) {
