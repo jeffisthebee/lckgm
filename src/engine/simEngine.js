@@ -267,20 +267,42 @@ export function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemy
     
     let combatPower = (rawStat * SIM_CONSTANTS.WEIGHTS.STATS) + (metaScore * SIM_CONSTANTS.WEIGHTS.META) + (masteryScore * SIM_CONSTANTS.WEIGHTS.MASTERY);
     
-    // Level & Gold Scaling
+    // --- Level Bonus Logic ---
     let levelBonus = 0;
-    for (let i = 1; i <= pick.level; i++) {
-        if (i <= 5) levelBonus += 0.0015; else if (i === 6) levelBonus += 0.0030;
-        else if (i <= 10) levelBonus += 0.0015; else if (i === 11) levelBonus += 0.00225;
-        else if (i <= 15) levelBonus += 0.0015; else if (i === 16) levelBonus += 0.0030;
+    
+    // Logic: Only TOP role calculates up to level 20. Everyone else is capped at 18 (standard).
+    const maxLevelCalc = (pick.role === 'TOP') ? 20 : 18;
+    const effectiveLevel = Math.min(pick.level, maxLevelCalc);
+
+    for (let i = 1; i <= effectiveLevel; i++) {
+        if (i <= 5) levelBonus += 0.0015; 
+        else if (i === 6) levelBonus += 0.0030;
+        else if (i <= 10) levelBonus += 0.0015; 
+        else if (i === 11) levelBonus += 0.00225;
+        else if (i <= 15) levelBonus += 0.0015; 
+        else if (i === 16) levelBonus += 0.0030;
         else levelBonus += 0.0015;
     }
     combatPower *= (1 + levelBonus);
 
+    // --- Gold Multiplier Logic ---
     const currentGold = pick.currentGold || 500;
-    let goldMultiplier = 1 + (currentGold * 0.0000025); 
-    if (currentGold >= 3500) goldMultiplier += 0.03; if (currentGold >= 6500) goldMultiplier += 0.06;  
-    if (currentGold >= 10000) goldMultiplier += 0.10; if (currentGold >= 13500) goldMultiplier += 0.15; 
+    
+    // Logic: Gold multiplier stops scaling at 19000 for ADC, and 16000 for other roles.
+    // We use Math.min to cap the gold used in the multiplier formula.
+    const goldCap = (pick.role === 'ADC') ? 19000 : 16000;
+    const effectiveGold = Math.min(currentGold, goldCap);
+
+    let goldMultiplier = 1 + (effectiveGold * 0.0000025); 
+
+    // Flat bonuses check actual gold possessed (currentGold), not the capped calculation gold.
+    // (Though since the caps are 16k+, both variables would trigger these thresholds equally).
+    if (currentGold >= 3500) goldMultiplier += 0.03; 
+    if (currentGold >= 6500) goldMultiplier += 0.06;  
+    if (currentGold >= 10000) goldMultiplier += 0.10; 
+    if (currentGold >= 13000) goldMultiplier += 0.15; 
+    if (currentGold >= 15000) goldMultiplier += 0.20;
+    
     combatPower *= goldMultiplier;
 
     // Buffs
@@ -381,8 +403,8 @@ function calculateDeathTimer(level, time) {
     let timer = 8 + (level * 1.5);
     if (time > 15) timer += (time - 15) * 0.15;
     if (time > 25) timer += (time - 25) * 0.3;
-    if (time > 30) timer += (time - 30) * 0.4; 
-    if (time > 35) timer += (time - 35) * 0.5; 
+    if (time > 30) timer += (time - 30) * 0.5; 
+    if (time > 35) timer += (time - 35) * 0.7; 
     return Math.min(150, timer);
 }
 export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {

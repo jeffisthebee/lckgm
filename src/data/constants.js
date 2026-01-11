@@ -75,10 +75,10 @@ export const GAME_RULES = {
   GOLD: {
     START: 500, KILL: 300, ASSIST: 150, 
     TURRET: { 
-        OUTER_PLATE: { local: 250, team: 50 },
-        INNER_MID: { local: 425, team: 25 },
-        INNER_SIDE: { local: 675, team: 25 }, 
-        INHIB_TURRET: { local: 375, team: 25 }
+        OUTER_PLATE: { local: 120, team: 50 },
+        INNER_MID: { local: 600, team: 25 },
+        INNER_SIDE: { local: 600, team: 25 }, 
+        INHIB_TURRET: { local: 600, team: 25 }
     },
   },
 };
