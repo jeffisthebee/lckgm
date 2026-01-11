@@ -803,32 +803,30 @@ const getOvrBadgeStyle = (ovr) => {
     };
   
     const handleGenerateSuperWeek = () => {
-      const newChampionList = updateChampionMeta(league.currentChampionList);
+      // 1. Prepare Meta Update (Safety Check)
+      let newChampionList = league.currentChampionList;
+      try {
+          if (typeof updateChampionMeta === 'function') {
+              newChampionList = updateChampionMeta(league.currentChampionList);
+          } else {
+              console.warn("updateChampionMeta function not found. Skipping champion stats update.");
+          }
+      } catch (e) {
+          console.error("Error updating champion meta:", e);
+      }
+      
       const newMetaVersion = '16.02';
   
-      // [FIX] The league.groups state is likely already sorted by Standings (Wins/Losses).
-      // We must restore the original Draft Order (Captain -> 5th pick) using ID or a draft index.
-      const restoreDraftOrder = (group) => {
-          return [...group].sort((a, b) => {
-              // Priority 1: Sort by 'draftOrder' if you added that property
-              // Priority 2: Sort by 'id' (assuming teams were created in draft order)
-              return (a.draftOrder ?? a.id) - (b.draftOrder ?? b.id);
-          });
-      };
-  
-      const baronDraftOrder = restoreDraftOrder(league.groups.baron);
-      const elderDraftOrder = restoreDraftOrder(league.groups.elder);
-  
+      // 2. Prepare Super Week Matches (Based on Draft Order)
+      const baronDraftOrder = league.groups.baron; 
+      const elderDraftOrder = league.groups.elder;
+      
       let newMatches = [];
       const days = ['1.28 (수)', '1.29 (목)', '1.30 (금)', '1.31 (토)', '2.1 (일)']; 
   
       let pairs = [];
-  
-      // Match indices directly: 
-      // Index 0 (Captain) vs Index 0 (Captain)
-      // Index 1 (1st Pick) vs Index 1 (1st Pick) ...
+      // Match indices directly (Captain vs Captain, 1st Pick vs 1st Pick, etc.)
       for(let i=0; i<5; i++) {
-          // Safety check to ensure teams exist
           if (baronDraftOrder[i] && elderDraftOrder[i]) {
               pairs.push({ 
                   t1: baronDraftOrder[i], 
@@ -837,8 +835,8 @@ const getOvrBadgeStyle = (ovr) => {
               });
           }
       }
-  
-      // Shuffle only the DATE assignment (Pairs remain locked)
+      
+      // Shuffle which DAY the match happens (but pairings remain locked)
       pairs.sort(() => Math.random() - 0.5);
   
       const cleanMatches = league.matches.filter(m => m.type !== 'tbd');
@@ -857,25 +855,32 @@ const getOvrBadgeStyle = (ovr) => {
       });
   
       const updatedMatches = [...cleanMatches, ...newMatches];
+      
+      // Sort matches by Date
       updatedMatches.sort((a, b) => {
           const dayA = parseFloat(a.date.split(' ')[0]);
           const dayB = parseFloat(b.date.split(' ')[0]);
           return dayA - dayB;
       });
   
-      updateLeague(league.id, { 
+      // 3. Update State & Save
+      const newLeagueState = { 
           matches: updatedMatches,
           currentChampionList: newChampionList,
-          metaVersion: newMetaVersion
-      });
+          metaVersion: newMetaVersion // Explicitly setting this
+      };
+
+      // Save to Database/Local Storage
+      updateLeague(league.id, newLeagueState);
+
+      // Update UI State
       setLeague(prev => ({ 
           ...prev, 
-          matches: updatedMatches,
-          currentChampionList: newChampionList,
-          metaVersion: newMetaVersion
+          ...newLeagueState 
       }));
-      alert(`🔥 슈퍼위크 일정이 생성되고, 메타가 16.02 패치로 변경되었습니다! (대진 기준: 드래프트 순서)`);
-  };
+
+      alert(`🔥 슈퍼위크 일정이 생성되었습니다!\n- 대진 기준: 드래프트 순서\n- 메타 패치: ${newMetaVersion}`);
+    };
   
     const handleGeneratePlayIn = () => {
         let isBaronWinner;
