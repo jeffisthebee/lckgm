@@ -1405,7 +1405,7 @@ const getOvrBadgeStyle = (ovr) => {
           </div>
           
           <div className="flex items-center gap-3">
-            {/* [FIXED] Final Standings Button */}
+            {/* [1] Final Standings Button */}
             {isSeasonOver && (
                <button 
                onClick={() => setShowFinalStandings(true)} 
@@ -1415,7 +1415,9 @@ const getOvrBadgeStyle = (ovr) => {
              </button>
             )}
 
-{hasDrafted && isRegularSeasonFinished && (!hasSuperWeekGenerated || league.metaVersion !== '16.02') && (
+            {/* [2] Super Week & Meta Check Button (Purple) */}
+            {/* Logic: Shows if regular season is done AND (Super Week not generated OR Meta is outdated) */}
+            {hasDrafted && isRegularSeasonFinished && (!hasSuperWeekGenerated || league.metaVersion !== '16.02') && (
                  <button 
                  onClick={handleGenerateSuperWeek} 
                  className="px-5 py-1.5 rounded-full font-bold text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition"
@@ -1424,6 +1426,7 @@ const getOvrBadgeStyle = (ovr) => {
                </button>
             )}
 
+            {/* [3] Play-In Button */}
             {isSuperWeekFinished && !hasPlayInGenerated && (
                 <button 
                 onClick={handleGeneratePlayIn} 
@@ -1433,6 +1436,7 @@ const getOvrBadgeStyle = (ovr) => {
               </button>
             )} 
 
+            {/* [4] Playoff Button */}
             {isPlayInFinished && !hasPlayoffsGenerated && (
                 <button 
                 onClick={handleGeneratePlayoffs} 
@@ -1442,7 +1446,10 @@ const getOvrBadgeStyle = (ovr) => {
               </button>
             )}
             
-            {hasDrafted && nextGlobalMatch && !isMyNextMatch && (
+            {/* [5] Next Match Button (Blue) - UPDATED TO BLOCK PROGRESSION */}
+            {/* Logic: Added condition to HIDE this button if it's Super Week but meta isn't 16.02 yet */}
+            {hasDrafted && nextGlobalMatch && !isMyNextMatch && 
+             !(nextGlobalMatch.type === 'super' && league.metaVersion !== '16.02') && (
                 <button 
                   onClick={handleProceedNextMatch} 
                   className="px-5 py-1.5 rounded-full font-bold text-sm bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-2 animate-pulse transition"
@@ -1451,6 +1458,7 @@ const getOvrBadgeStyle = (ovr) => {
                 </button>
             )}
 
+            {/* [6] Draft/Team Button */}
             <button onClick={handleDraftStart} disabled={hasDrafted} className={`px-6 py-1.5 rounded-full font-bold text-sm shadow-sm transition flex items-center gap-2 ${hasDrafted ? 'bg-gray-100 text-gray-400 cursor-not-allowed hidden' : 'bg-green-600 hover:bg-green-700 text-white animate-pulse'}`}>
                 <span>▶</span> {hasDrafted ? "" : (isCaptain ? "LCK 컵 팀 선정하기" : "LCK 컵 조 확인하기")}
             </button>
