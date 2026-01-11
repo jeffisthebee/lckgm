@@ -806,30 +806,39 @@ const getOvrBadgeStyle = (ovr) => {
       const newChampionList = updateChampionMeta(league.currentChampionList);
       const newMetaVersion = '16.02';
   
-      // [CRITICAL CHANGE] Use Raw Draft Order directly
-      // Do NOT use getSortedGroup() here, or it will match based on Standings.
-      const baronDraftOrder = league.groups.baron; // Assumes this array preserves initial draft order
-      const elderDraftOrder = league.groups.elder; // Assumes this array preserves initial draft order
-      
+      // [FIX] The league.groups state is likely already sorted by Standings (Wins/Losses).
+      // We must restore the original Draft Order (Captain -> 5th pick) using ID or a draft index.
+      const restoreDraftOrder = (group) => {
+          return [...group].sort((a, b) => {
+              // Priority 1: Sort by 'draftOrder' if you added that property
+              // Priority 2: Sort by 'id' (assuming teams were created in draft order)
+              return (a.draftOrder ?? a.id) - (b.draftOrder ?? b.id);
+          });
+      };
+  
+      const baronDraftOrder = restoreDraftOrder(league.groups.baron);
+      const elderDraftOrder = restoreDraftOrder(league.groups.elder);
+  
       let newMatches = [];
       const days = ['1.28 (수)', '1.29 (목)', '1.30 (금)', '1.31 (토)', '2.1 (일)']; 
   
       let pairs = [];
-      
+  
       // Match indices directly: 
       // Index 0 (Captain) vs Index 0 (Captain)
-      // Index 1 (1st Pick) vs Index 1 (1st Pick)
-      // ... and so on.
+      // Index 1 (1st Pick) vs Index 1 (1st Pick) ...
       for(let i=0; i<5; i++) {
-          pairs.push({ 
-              t1: baronDraftOrder[i], 
-              t2: elderDraftOrder[i], 
-              orderIndex: i 
-          });
+          // Safety check to ensure teams exist
+          if (baronDraftOrder[i] && elderDraftOrder[i]) {
+              pairs.push({ 
+                  t1: baronDraftOrder[i], 
+                  t2: elderDraftOrder[i], 
+                  orderIndex: i 
+              });
+          }
       }
-      
-      // Optional: Shuffle the DAYS the matches occur on, but keep the PAIRINGS intact.
-      // If you want the Captain match (Index 0) to always be the last day, remove this sort.
+  
+      // Shuffle only the DATE assignment (Pairs remain locked)
       pairs.sort(() => Math.random() - 0.5);
   
       const cleanMatches = league.matches.filter(m => m.type !== 'tbd');
@@ -848,8 +857,6 @@ const getOvrBadgeStyle = (ovr) => {
       });
   
       const updatedMatches = [...cleanMatches, ...newMatches];
-      
-      // Sort matches by Date
       updatedMatches.sort((a, b) => {
           const dayA = parseFloat(a.date.split(' ')[0]);
           const dayB = parseFloat(b.date.split(' ')[0]);
@@ -868,7 +875,7 @@ const getOvrBadgeStyle = (ovr) => {
           metaVersion: newMetaVersion
       }));
       alert(`🔥 슈퍼위크 일정이 생성되고, 메타가 16.02 패치로 변경되었습니다! (대진 기준: 드래프트 순서)`);
-    };
+  };
   
     const handleGeneratePlayIn = () => {
         let isBaronWinner;
