@@ -774,31 +774,32 @@ const getOvrBadgeStyle = (ovr) => {
   
     const updateChampionMeta = (currentChamps) => {
       // Probabilities for shifting tiers
-      // [FIX] Adjusted probabilities to ensure every row sums exactly to 1.00
       const probabilities = {
           1: { 1: 0.40, 2: 0.40, 3: 0.15, 4: 0.04, 5: 0.01 },
           2: { 1: 0.25, 2: 0.40, 3: 0.25, 4: 0.08, 5: 0.02 },
           3: { 1: 0.07, 2: 0.23, 3: 0.40, 4: 0.23, 5: 0.07 },
           4: { 1: 0.02, 2: 0.08, 3: 0.25, 4: 0.40, 5: 0.25 },
-          5: { 1: 0.01, 2: 0.04, 3: 0.15, 4: 0.25, 5: 0.55 }, // [FIX] Increased to 0.55 (was 0.40) to sum to 1.0
+          5: { 1: 0.01, 2: 0.04, 3: 0.15, 4: 0.25, 5: 0.55 },
       };
   
       const getNewTier = (currentTier) => {
-          const tierNum = parseInt(currentTier, 10);
-          if (!tierNum || !probabilities[tierNum]) return tierNum || 3;
+          // Ensure tier is treated as a number for lookup
+          const tierNum = parseInt(currentTier, 10) || 3;
+          
+          if (!probabilities[tierNum]) return tierNum;
   
           const rand = Math.random();
           let cumulative = 0;
           const chances = probabilities[tierNum];
           
-          // [FIX] Use explicit array order to guarantee deterministic logic
-          const order = ['1', '2', '3', '4', '5'];
+          // Use explicit array order to guarantee deterministic logic
+          const order = [1, 2, 3, 4, 5];
           
           for (const t of order) {
               if (chances[t] !== undefined) {
                   cumulative += chances[t];
                   if (rand < cumulative) {
-                      return parseInt(t, 10);
+                      return t;
                   }
               }
           }
@@ -876,10 +877,11 @@ const getOvrBadgeStyle = (ovr) => {
       });
   
       // 4. Update State & DB
+      // Explicitly ensuring metaVersion is updated in the state object
       const newLeagueState = { 
           matches: updatedMatches,
           currentChampionList: newChampionList,
-          metaVersion: newMetaVersion
+          metaVersion: newMetaVersion 
       };
   
       setLeague(prev => ({ ...prev, ...newLeagueState }));
