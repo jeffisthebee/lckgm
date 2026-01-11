@@ -806,25 +806,30 @@ const getOvrBadgeStyle = (ovr) => {
       const newChampionList = updateChampionMeta(league.currentChampionList);
       const newMetaVersion = '16.02';
   
-      // [UPDATED] Use Standings (Sorted Groups) instead of Draft Order
-      // Ensure getSortedGroup is defined in your component or imported
-      const baronSorted = getSortedGroup([...league.groups.baron]); 
-      const elderSorted = getSortedGroup([...league.groups.elder]);
+      // [CRITICAL CHANGE] Use Raw Draft Order directly
+      // Do NOT use getSortedGroup() here, or it will match based on Standings.
+      const baronDraftOrder = league.groups.baron; // Assumes this array preserves initial draft order
+      const elderDraftOrder = league.groups.elder; // Assumes this array preserves initial draft order
       
       let newMatches = [];
       const days = ['1.28 (수)', '1.29 (목)', '1.30 (금)', '1.31 (토)', '2.1 (일)']; 
   
       let pairs = [];
-      // Match indices by Rank: 1st vs 1st, 2nd vs 2nd, etc.
+      
+      // Match indices directly: 
+      // Index 0 (Captain) vs Index 0 (Captain)
+      // Index 1 (1st Pick) vs Index 1 (1st Pick)
+      // ... and so on.
       for(let i=0; i<5; i++) {
           pairs.push({ 
-              t1: baronSorted[i], 
-              t2: elderSorted[i], 
-              rank: i + 1 // Tracking rank for reference
+              t1: baronDraftOrder[i], 
+              t2: elderDraftOrder[i], 
+              orderIndex: i 
           });
       }
       
-      // Shuffle pairs so the specific match-ups (e.g. 1st vs 1st) get assigned to random days
+      // Optional: Shuffle the DAYS the matches occur on, but keep the PAIRINGS intact.
+      // If you want the Captain match (Index 0) to always be the last day, remove this sort.
       pairs.sort(() => Math.random() - 0.5);
   
       const cleanMatches = league.matches.filter(m => m.type !== 'tbd');
@@ -838,12 +843,13 @@ const getOvrBadgeStyle = (ovr) => {
               time: '17:00',
               type: 'super', 
               format: 'BO5', 
-              status: 'pending',
-              description: `Group Rank #${pair.rank} Match` // Optional: Adds context to the match
+              status: 'pending'
           });
       });
   
       const updatedMatches = [...cleanMatches, ...newMatches];
+      
+      // Sort matches by Date
       updatedMatches.sort((a, b) => {
           const dayA = parseFloat(a.date.split(' ')[0]);
           const dayB = parseFloat(b.date.split(' ')[0]);
@@ -861,7 +867,7 @@ const getOvrBadgeStyle = (ovr) => {
           currentChampionList: newChampionList,
           metaVersion: newMetaVersion
       }));
-      alert(`🔥 슈퍼위크 일정이 생성되고, 메타가 16.02 패치로 변경되었습니다! (대진 기준: 순위 기반)`);
+      alert(`🔥 슈퍼위크 일정이 생성되고, 메타가 16.02 패치로 변경되었습니다! (대진 기준: 드래프트 순서)`);
     };
   
     const handleGeneratePlayIn = () => {
