@@ -812,25 +812,32 @@ const getOvrBadgeStyle = (ovr) => {
   const handleGenerateSuperWeek = () => {
     const newMetaVersion = '16.02';
     
-    // [FIX] Ensure we have a valid source list before deep copying
+    // [FIX] Safety: Use existing list or fallback to default imports if missing
     const sourceList = (league.currentChampionList && league.currentChampionList.length > 0) 
         ? league.currentChampionList 
         : championList;
 
-    // 1. Prepare Meta Update (With Deep Copy to force React update)
-    let newChampionList = JSON.parse(JSON.stringify(sourceList));
-    
+    // 1. Prepare Meta Update (Safe Deep Copy)
+    let newChampionList = [];
     try {
+        newChampionList = JSON.parse(JSON.stringify(sourceList));
+        
         if (typeof updateChampionMeta === 'function') {
-            newChampionList = updateChampionMeta(newChampionList);
+            const updated = updateChampionMeta(newChampionList);
+            // [FIX] Ensure we don't accidentally save an empty list if update fails
+            if (updated && updated.length > 0) {
+                newChampionList = updated;
+            }
         }
     } catch (e) {
-        console.error("Meta update failed, keeping old stats:", e);
+        console.error("Meta update failed, reverting to previous stats:", e);
+        newChampionList = sourceList; // Fallback
     }
 
     // 2. Prepare Super Week Matches (Draft Order Logic)
-    const baronDraftOrder = league.groups.baron; 
-    const elderDraftOrder = league.groups.elder;
+    // [FIX] Use safe defaults for groups if they are missing
+    const baronDraftOrder = league.groups?.baron || []; 
+    const elderDraftOrder = league.groups?.elder || [];
     
     let newMatches = [];
     const days = ['1.28 (수)', '1.29 (목)', '1.30 (금)', '1.31 (토)', '2.1 (일)']; 
@@ -849,7 +856,7 @@ const getOvrBadgeStyle = (ovr) => {
     // Shuffle Days
     pairs.sort(() => Math.random() - 0.5);
 
-    const cleanMatches = league.matches.filter(m => m.type !== 'tbd');
+    const cleanMatches = league.matches ? league.matches.filter(m => m.type !== 'tbd') : [];
 
     pairs.forEach((pair, idx) => {
         newMatches.push({
