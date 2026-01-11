@@ -817,7 +817,13 @@ const getOvrBadgeStyle = (ovr) => {
     const handleGenerateSuperWeek = () => {
       const newMetaVersion = '16.02';
       
-      // 1. Get Source List (Current or Default)
+      // Safety Check: If already updated, stop.
+      if (league.metaVersion === newMetaVersion) {
+          alert("이미 16.02 메타 패치가 적용되어 있습니다.");
+          return;
+      }
+
+      // 1. Get Source List
       const sourceList = (league.currentChampionList && league.currentChampionList.length > 0) 
           ? league.currentChampionList 
           : championList;
@@ -825,7 +831,6 @@ const getOvrBadgeStyle = (ovr) => {
       // 2. Generate New Meta List
       let newChampionList = [];
       try {
-          // Create a deep copy to modify
           const listClone = JSON.parse(JSON.stringify(sourceList));
           newChampionList = updateChampionMeta(listClone);
       } catch (e) {
@@ -833,51 +838,54 @@ const getOvrBadgeStyle = (ovr) => {
           newChampionList = sourceList;
       }
   
-      // 3. Prepare Super Week Matches
-      const baronDraftOrder = league.groups?.baron || []; 
-      const elderDraftOrder = league.groups?.elder || [];
+      // 3. Prepare Super Week Matches (ONLY generate if they don't exist yet)
+      const existingSuperMatches = league.matches ? league.matches.filter(m => m.type === 'super') : [];
+      let updatedMatches = league.matches || [];
+
+      if (existingSuperMatches.length === 0) {
+          const baronDraftOrder = league.groups?.baron || []; 
+          const elderDraftOrder = league.groups?.elder || [];
+          
+          let newMatches = [];
+          const days = ['1.28 (수)', '1.29 (목)', '1.30 (금)', '1.31 (토)', '2.1 (일)']; 
       
-      let newMatches = [];
-      const days = ['1.28 (수)', '1.29 (목)', '1.30 (금)', '1.31 (토)', '2.1 (일)']; 
-  
-      let pairs = [];
-      for(let i=0; i<5; i++) {
-          if (baronDraftOrder[i] && elderDraftOrder[i]) {
-              pairs.push({ 
-                  t1: baronDraftOrder[i], 
-                  t2: elderDraftOrder[i], 
-                  orderIndex: i 
-              });
+          let pairs = [];
+          for(let i=0; i<5; i++) {
+              if (baronDraftOrder[i] && elderDraftOrder[i]) {
+                  pairs.push({ 
+                      t1: baronDraftOrder[i], 
+                      t2: elderDraftOrder[i], 
+                      orderIndex: i 
+                  });
+              }
           }
-      }
+          
+          pairs.sort(() => Math.random() - 0.5); // Shuffle
       
-      // Shuffle match order
-      pairs.sort(() => Math.random() - 0.5);
-  
-      const cleanMatches = league.matches ? league.matches.filter(m => m.type !== 'tbd') : [];
-  
-      pairs.forEach((pair, idx) => {
-          newMatches.push({
-              id: Date.now() + idx,
-              t1: pair.t1,
-              t2: pair.t2,
-              date: days[idx] || '2.1 (일)', 
-              time: '17:00',
-              type: 'super', 
-              format: 'BO5', 
-              status: 'pending'
+          const cleanMatches = league.matches ? league.matches.filter(m => m.type !== 'tbd') : [];
+      
+          pairs.forEach((pair, idx) => {
+              newMatches.push({
+                  id: Date.now() + idx,
+                  t1: pair.t1,
+                  t2: pair.t2,
+                  date: days[idx] || '2.1 (일)', 
+                  time: '17:00',
+                  type: 'super', 
+                  format: 'BO5', 
+                  status: 'pending'
+              });
           });
-      });
-  
-      const updatedMatches = [...cleanMatches, ...newMatches];
-      updatedMatches.sort((a, b) => {
-          const dayA = parseFloat(a.date.split(' ')[0]);
-          const dayB = parseFloat(b.date.split(' ')[0]);
-          return dayA - dayB;
-      });
+      
+          updatedMatches = [...cleanMatches, ...newMatches];
+          updatedMatches.sort((a, b) => {
+              const dayA = parseFloat(a.date.split(' ')[0]);
+              const dayB = parseFloat(b.date.split(' ')[0]);
+              return dayA - dayB;
+          });
+      }
   
       // 4. Update State & DB
-      // Explicitly ensuring metaVersion is updated in the state object
       const newLeagueState = { 
           matches: updatedMatches,
           currentChampionList: newChampionList,
@@ -887,7 +895,7 @@ const getOvrBadgeStyle = (ovr) => {
       setLeague(prev => ({ ...prev, ...newLeagueState }));
       updateLeague(league.id, newLeagueState);
   
-      alert(`🔥 슈퍼위크 일정이 생성되었습니다!\n- 메타 패치: ${newMetaVersion} 적용 완료`);
+      alert(`🔥 16.02 메타 패치 및 슈퍼위크 업데이트 완료!`);
     };
 
     const handleGeneratePlayIn = () => {
@@ -1407,7 +1415,7 @@ const getOvrBadgeStyle = (ovr) => {
              </button>
             )}
 
-            {hasDrafted && isRegularSeasonFinished && !hasSuperWeekGenerated && (
+{hasDrafted && isRegularSeasonFinished && (!hasSuperWeekGenerated || league.metaVersion !== '16.02') && (
                  <button 
                  onClick={handleGenerateSuperWeek} 
                  className="px-5 py-1.5 rounded-full font-bold text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition"
