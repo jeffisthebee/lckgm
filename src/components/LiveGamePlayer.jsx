@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { calculateIndividualIncome, simulateSet, runGameTickEngine, selectPickFromTop3, selectBanFromProbabilities } from '../engine/simEngine';
+import { calculateIndividualIncome, simulateSet, runGameTickEngine, enrichPicks } from '../engine/simEngine';
 import { DRAFT_SEQUENCE, championList } from '../data/constants'; 
 
 
@@ -336,83 +337,64 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     };
 
     const finalizeManualDraft = () => {
-        // **FIX: Ensure role property is correctly assigned**
-        const mapToEngineFormat = (sidePicks, roster) => {
-            return ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(pos => {
-                const c = sidePicks[pos];
-                const safeChamp = c || championList.find(ch => ch.role === pos) || championList[0];
-                const p = roster.find(pl => pl.포지션 === pos);
-                
-                return {
-                    champName: safeChamp.name,
-                    tier: safeChamp.tier,
-                    mastery: { games: 0, winRate: 50, kda: 3.0 },
-                    playerName: p ? p.이름 : 'Unknown',
-                    playerOvr: p ? p.종합 : 75,
-                    role: pos, // **CRITICAL: Explicit role assignment**
-                    ...safeChamp,
-                    classType: safeChamp.class,
-                    dmgType: safeChamp.dmg_type || 'AD' // **ADD: Damage type**
-                };
-            }).filter(Boolean);
-        };
-    
-        const picksBlueDetailed = mapToEngineFormat(manualPicks.blue, manualTeams.blue.roster);
-        const picksRedDetailed = mapToEngineFormat(manualPicks.red, manualTeams.red.roster);
-    
-        // **FIX: Validate picks before running engine**
-        if (picksBlueDetailed.length < 5 || picksRedDetailed.length < 5) {
-            console.error('Draft incomplete:', { picksBlueDetailed, picksRedDetailed });
-            alert('Draft is incomplete. Cannot start game.');
-            return;
-        }
-    
-        console.log('Running engine with picks:', { picksBlueDetailed, picksRedDetailed });
-    
-        // Run Engine
-        const result = runGameTickEngine(manualTeams.blue, manualTeams.red, picksBlueDetailed, picksRedDetailed, simOptions);
-        
-        // Enrich Players (unchanged)
-        const enrichPlayer = (p, teamRoster, side) => {
-            const rosterData = teamRoster.find(r => r.이름 === p.playerName);
-            const safeData = rosterData || { 
-                이름: p.playerName, 
-                포지션: p.role || 'TOP', 
-                상세: { 성장: 50, 라인전: 50, 무력: 50, 안정성: 50, 운영: 50, 한타: 50 } 
+        try {
+            // 1. Convert Manual State to Simple List (playerName, champName)
+            const createSimpleList = (sidePicks, roster) => {
+                return ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(pos => {
+                    const c = sidePicks[pos];
+                    // Safety: Use a default champion if one is missing (rare edge case)
+                    const safeChamp = c || championList[0];
+                    const p = roster.find(pl => pl.포지션 === pos);
+                    
+                    return {
+                        champName: safeChamp.name,
+                        playerName: p ? p.이름 : 'Unknown',
+                        role: pos
+                    };
+                });
             };
-            return { ...p, side, k: 0, d: 0, a: 0, currentGold: 500, lvl: 1, xp: 0, playerData: safeData };
-        };
-    
-        const initPlayers = [
-            ...picksBlueDetailed.map(p => enrichPlayer(p, manualTeams.blue.roster, 'BLUE')),
-            ...picksRedDetailed.map(p => enrichPlayer(p, manualTeams.red.roster, 'RED'))
-        ];
-    
-        const blueBanNames = draftState.blueBans;
-        const redBanNames = draftState.redBans;
-    
-        setSimulationData({
-            winnerName: result.winnerName,
-            gameResult: result,
-            logs: result.logs,
-            blueTeam: manualTeams.blue,
-            redTeam: manualTeams.red,
-            totalSeconds: result.totalSeconds,
-            picks: { A: picksBlueDetailed, B: picksRedDetailed },
-            bans: { A: blueBanNames, B: redBanNames },
-            usedChamps: Array.from(manualLockedChamps)
-        });
-    
-        setLiveStats({
-            kills: { BLUE: 0, RED: 0 },
-            gold: { BLUE: 2500, RED: 2500 },
-            towers: { BLUE: 0, RED: 0 },
-            players: initPlayers
-        });
-    
-        setGameTime(0);
-        setDisplayLogs([]);
-        setPhase('GAME');
+
+            const simpleBlue = createSimpleList(manualPicks.blue, manualTeams.blue.roster);
+            const simpleRed = createSimpleList(manualPicks.red, manualTeams.red.roster);
+
+            // 2. Use the Engine's Enrichment Logic (The Surgery Result!)
+            // This adds conditionModifier, dmgType, classType, etc. automatically
+            const picksBlueDetailed = enrichPicks(simpleBlue, manualTeams.blue.roster, championList);
+            const picksRedDetailed = enrichPicks(simpleRed, manualTeams.red.roster, championList);
+
+            // 3. Run Engine
+            const result = runGameTickEngine(manualTeams.blue, manualTeams.red, picksBlueDetailed, picksRedDetailed, simOptions);
+            
+            // 4. Finalize Data for UI
+            setSimulationData({
+                winnerName: result.winnerName,
+                gameResult: result,
+                logs: result.logs,
+                blueTeam: manualTeams.blue,
+                redTeam: manualTeams.red,
+                totalSeconds: result.totalSeconds,
+                picks: { A: picksBlueDetailed, B: picksRedDetailed },
+                bans: { A: draftState.blueBans, B: draftState.redBans },
+                usedChamps: Array.from(manualLockedChamps)
+            });
+
+            // Set Initial Stats for the UI View
+            const initPlayers = [...picksBlueDetailed, ...picksRedDetailed];
+            setLiveStats({
+                kills: { BLUE: 0, RED: 0 },
+                gold: { BLUE: 2500, RED: 2500 },
+                towers: { BLUE: 0, RED: 0 },
+                players: initPlayers
+            });
+
+            setGameTime(0);
+            setDisplayLogs([]);
+            setPhase('GAME');
+
+        } catch (e) {
+            console.error("Manual Draft Finalize Error:", e);
+            alert("게임 생성 중 오류가 발생했습니다. (데이터 불일치)");
+        }
     };
 
     // --- AUTO MODE HELPER ---

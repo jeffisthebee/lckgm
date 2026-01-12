@@ -995,6 +995,46 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
     };
   }
 
+  const getConditionModifier = (player) => {
+    if (!player) return 1.0;
+    const stability = player.상세?.안정성 || 50;
+    const variancePercent = ((100 - stability) / stability) * 10; 
+    const fluctuation = (Math.random() * variancePercent * 2) - variancePercent;
+    return 1 + (fluctuation / 100);
+};
+
+export const enrichPicks = (picks, roster, currentChampionList) => {
+  return picks.map(p => {
+      // Safe lookup
+      const playerData = roster.find(player => player && player.이름 === p.playerName);
+      const champData = (currentChampionList || championList).find(c => c.name === p.champName);
+
+      // Fallback if data is missing
+      if (!playerData || !champData) {
+        console.warn(`Missing data for player/champ: ${p.playerName} / ${p.champName}`);
+        return {
+          ...p,
+          dmgType: 'AD',
+          classType: '전사',
+          playerData: playerData || { 이름: p.playerName, 포지션: 'TOP', 상세: { 안정성: 50 }, 종합: 70 },
+          conditionModifier: 1.0,
+          stats: { kills: 0, deaths: 0, assists: 0, damage: 0, takenDamage: 0 },
+          currentGold: 500,
+          level: 1
+        };
+      }
+
+      return {
+          ...p,
+          ...champData, // Spreads tier, id, etc.
+          dmgType: champData.dmg_type || 'AD', 
+          classType: getChampionClass(champData, playerData.포지션),
+          playerData: playerData,
+          conditionModifier: getConditionModifier(playerData) // The critical missing piece!
+      };
+  });
+};
+
   export function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions) {
     const { currentChampionList } = simOptions;
     
@@ -1023,14 +1063,6 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
         fearlessBans: draftResult?.fearlessBans || (Array.isArray(fearlessBans) ? [...fearlessBans] : (fearlessBans ? [fearlessBans] : []))
       };
     }
-  
-    const getConditionModifier = (player) => {
-        if (!player) return 1.0;
-        const stability = player.상세?.안정성 || 50;
-        const variancePercent = ((100 - stability) / stability) * 10; 
-        const fluctuation = (Math.random() * variancePercent * 2) - variancePercent;
-        return 1 + (fluctuation / 100);
-    };
   
     // 3. Enrich Picks with Data (CRITICAL FIX: Safety Checks Added)
     const addPlayerData = (picks, roster) => {
@@ -1065,8 +1097,8 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
         });
     };
   
-    const picksBlue_detailed = addPlayerData(draftResult.picks.A, teamBlue.roster);
-    const picksRed_detailed = addPlayerData(draftResult.picks.B, teamRed.roster);
+    const picksBlue_detailed = enrichPicks(draftResult.picks.A, teamBlue.roster, currentChampionList);
+    const picksRed_detailed = enrichPicks(draftResult.picks.B, teamRed.roster, currentChampionList);
   
     // 4. Run Game Engine
     const gameResult = runGameTickEngine(teamBlue, teamRed, picksBlue_detailed, picksRed_detailed, simOptions);
