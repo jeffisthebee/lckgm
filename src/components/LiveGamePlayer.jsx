@@ -249,27 +249,37 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             
             selectedChamp = selectBanFromProbabilities(opponentTeam, availableChamps, opponentOpenRoles);
             
-            // Fallback if engine returns null
             if (!selectedChamp) {
                 const idx = Math.floor(Math.random() * Math.min(10, availableChamps.length));
                 selectedChamp = availableChamps[idx];
             }
         } else {
-            // Use the engine's pick logic
+            // **FIX: Use engine's intelligent pick logic**
             const currentPicks = side === 'BLUE' ? manualPicks.blue : manualPicks.red;
-            const roles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
-            const neededRole = roles.find(r => !currentPicks[r]);
+            const remainingRoles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].filter(r => !currentPicks[r]);
             
-            if (neededRole) {
-                const player = team.roster.find(p => p.포지션 === neededRole);
+            // Build candidates for ALL remaining roles (not just one)
+            let roleCandidates = [];
+            remainingRoles.forEach(role => {
+                const player = team.roster.find(p => p.포지션 === role);
                 if (player) {
-                    selectedChamp = selectPickFromTop3(player, availableChamps);
+                    const candidateChamp = selectPickFromTop3(player, availableChamps);
+                    if (candidateChamp) {
+                        roleCandidates.push({ role, champ: candidateChamp, score: candidateChamp.score });
+                    }
                 }
-            }
+            });
             
-            // Fallback if engine returns null
-            if (!selectedChamp) {
-                selectedChamp = getRecommendedChampion(neededRole || 'MID', [], availableChamps);
+            // Sort by score and pick the BEST overall (not just first role)
+            roleCandidates.sort((a, b) => b.score - a.score);
+            
+            if (roleCandidates.length > 0) {
+                const bestPick = roleCandidates[0];
+                selectedChamp = { ...bestPick.champ, role: bestPick.role }; // Attach role to champ
+            } else {
+                // Fallback
+                const neededRole = remainingRoles[0] || 'MID';
+                selectedChamp = getRecommendedChampion(neededRole, [], availableChamps);
             }
         }
     
@@ -326,7 +336,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     };
 
     const finalizeManualDraft = () => {
-        // Map to Engine Format
+        // **FIX: Ensure role property is correctly assigned**
         const mapToEngineFormat = (sidePicks, roster) => {
             return ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(pos => {
                 const c = sidePicks[pos];
@@ -339,9 +349,10 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                     mastery: { games: 0, winRate: 50, kda: 3.0 },
                     playerName: p ? p.이름 : 'Unknown',
                     playerOvr: p ? p.종합 : 75,
-                    role: pos,
+                    role: pos, // **CRITICAL: Explicit role assignment**
                     ...safeChamp,
-                    classType: safeChamp.class
+                    classType: safeChamp.class,
+                    dmgType: safeChamp.dmg_type || 'AD' // **ADD: Damage type**
                 };
             }).filter(Boolean);
         };
@@ -349,10 +360,19 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         const picksBlueDetailed = mapToEngineFormat(manualPicks.blue, manualTeams.blue.roster);
         const picksRedDetailed = mapToEngineFormat(manualPicks.red, manualTeams.red.roster);
     
+        // **FIX: Validate picks before running engine**
+        if (picksBlueDetailed.length < 5 || picksRedDetailed.length < 5) {
+            console.error('Draft incomplete:', { picksBlueDetailed, picksRedDetailed });
+            alert('Draft is incomplete. Cannot start game.');
+            return;
+        }
+    
+        console.log('Running engine with picks:', { picksBlueDetailed, picksRedDetailed });
+    
         // Run Engine
         const result = runGameTickEngine(manualTeams.blue, manualTeams.red, picksBlueDetailed, picksRedDetailed, simOptions);
         
-        // Enrich Players
+        // Enrich Players (unchanged)
         const enrichPlayer = (p, teamRoster, side) => {
             const rosterData = teamRoster.find(r => r.이름 === p.playerName);
             const safeData = rosterData || { 
@@ -368,9 +388,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             ...picksRedDetailed.map(p => enrichPlayer(p, manualTeams.red.roster, 'RED'))
         ];
     
-        // **FIX: Convert ban name strings to champion names array**
-        const blueBanNames = draftState.blueBans; // These are already strings
-        const redBanNames = draftState.redBans;   // These are already strings
+        const blueBanNames = draftState.blueBans;
+        const redBanNames = draftState.redBans;
     
         setSimulationData({
             winnerName: result.winnerName,
@@ -380,7 +399,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             redTeam: manualTeams.red,
             totalSeconds: result.totalSeconds,
             picks: { A: picksBlueDetailed, B: picksRedDetailed },
-            bans: { A: blueBanNames, B: redBanNames }, // Use string arrays directly
+            bans: { A: blueBanNames, B: redBanNames },
             usedChamps: Array.from(manualLockedChamps)
         });
     
