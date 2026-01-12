@@ -7,8 +7,36 @@ import { simulateMatch, getTeamRoster, generateSchedule } from '../engine/simEng
 import LiveGamePlayer from '../components/LiveGamePlayer';
 import DetailedMatchResultModal from '../components/DetailedMatchResultModal';
 import playerList from '../data/players.json';
-import { getLeagues, updateLeague, getLeagueById, getOvrBadgeStyle, getPotBadgeStyle} from '../utils/leagueUtils';
+import { computeStandings } from '../engine/BracketManager';
 
+// Helper functions (Paste getLeagues, updateLeague, etc here if they aren't used elsewhere)
+const getLeagues = () => { const s = localStorage.getItem('lckgm_leagues'); return s ? JSON.parse(s) : []; };
+const updateLeague = (id, u) => { 
+  const leagues = getLeagues(); 
+  const index = leagues.findIndex(l => l.id === id); 
+  if (index !== -1) { 
+    leagues[index] = { ...leagues[index], ...u }; 
+    localStorage.setItem('lckgm_leagues', JSON.stringify(leagues));
+    return leagues[index];
+  }
+  return null;
+};
+const getLeagueById = (id) => getLeagues().find(l => l.id === id);
+
+// --- HELPER FUNCTIONS ---
+const getOvrBadgeStyle = (ovr) => {
+    if (ovr >= 95) return 'bg-red-100 text-red-700 border-red-300 ring-red-200';
+    if (ovr >= 90) return 'bg-orange-100 text-orange-700 border-orange-300 ring-orange-200';
+    if (ovr >= 85) return 'bg-purple-100 text-purple-700 border-purple-300 ring-purple-200';
+    if (ovr >= 80) return 'bg-blue-100 text-blue-700 border-blue-300 ring-blue-200';
+    return 'bg-green-100 text-green-700 border-green-300 ring-green-200';
+  };
+  
+  const getPotBadgeStyle = (pot) => {
+    if (pot >= 95) return 'text-purple-600 font-black'; 
+    if (pot >= 90) return 'text-blue-600 font-bold'; 
+    return 'text-gray-500 font-medium';
+  };
 
   export default function Dashboard() {
     const { leagueId } = useParams();
@@ -43,37 +71,12 @@ import { getLeagues, updateLeague, getLeagueById, getOvrBadgeStyle, getPotBadgeS
 
     // [MOVED UP] Define this helper before it is used in useEffect
     const recalculateStandings = (lg) => {
-      const newStandings = {};
-      teams.forEach(t => { newStandings[t.id] = { w: 0, l: 0, diff: 0 }; });
-    
-      if (lg.matches) {
-          lg.matches.forEach(m => {
-              if (m.type !== 'regular' && m.type !== 'super') return;
-              if (m.status === 'finished') {
-                  const winner = teams.find(t => t.name === m.result.winner);
-                  const t1Id = typeof m.t1 === 'object' ? m.t1.id : m.t1;
-                  const t2Id = typeof m.t2 === 'object' ? m.t2.id : m.t2;
-                  
-                  if (!winner) return;
-                  const actualLoserId = (t1Id === winner.id) ? t2Id : t1Id;
-                  
-                  if (winner && actualLoserId) {
-                      newStandings[winner.id].w += 1;
-                      newStandings[actualLoserId].l += 1;
-                      if (m.result.score) {
-                          const parts = m.result.score.split(':');
-                          if (parts.length === 2) {
-                              const diff = Math.abs(parseInt(parts[0]) - parseInt(parts[1]));
-                              newStandings[winner.id].diff += diff;
-                              newStandings[actualLoserId].diff -= diff;
-                          }
-                      }
-                  }
-              }
-          });
-      }
+      // We now just ask our new "Manager" to do the math for us!
+      const newStandings = computeStandings(lg);
+      
+      // Then we update the UI state
       setComputedStandings(newStandings);
-    };
+  };
   
     useEffect(() => {
       const loadData = () => {
