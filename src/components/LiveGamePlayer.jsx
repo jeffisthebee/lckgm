@@ -18,6 +18,10 @@ const getRecommendedChampion = (role, currentChamps, availableChamps) => {
 };
 
 export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onClose, externalGlobalBans = [], isManualMode = false }) {
+    // [FIX] Define Active Champion List (Dynamic Meta)
+    // If simOptions has a specific list (e.g., Super Week), use it. Otherwise, fallback to default.
+    const activeChampionList = simOptions?.currentChampionList || championList;
+
     const [currentSet, setCurrentSet] = useState(1);
     const [winsA, setWinsA] = useState(0);
     const [winsB, setWinsB] = useState(0);
@@ -235,7 +239,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
 
     // --- MANUAL MODE HELPER FUNCTIONS ---
     const handleCpuTurn = (stepInfo, team, side) => {
-        const availableChamps = championList.filter(c => !manualLockedChamps.has(c.name));
+        // [FIX] Use activeChampionList instead of static championList to respect meta
+        const availableChamps = activeChampionList.filter(c => !manualLockedChamps.has(c.name));
         let selectedChamp = null;
     
         if (stepInfo.type === 'BAN') {
@@ -330,7 +335,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     };
 
     // =========================================================================
-    // [FIX] FINALIZE MANUAL DRAFT (Prevents Crash)
+    // [FIX] FINALIZE MANUAL DRAFT (Prevents Crash & Uses Dynamic Meta)
     // =========================================================================
     const finalizeManualDraft = () => {
         // We explicitly map the manual picks to the format the engine expects
@@ -338,7 +343,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         const mapToEngineFormat = (sidePicks, roster, teamSide) => {
             return ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(pos => {
                 const c = sidePicks[pos];
-                const safeChamp = c || championList.find(ch => ch.role === pos) || championList[0];
+                // [FIX] Use activeChampionList for safe fallback to match the meta
+                const safeChamp = c || activeChampionList.find(ch => ch.role === pos) || activeChampionList[0];
                 const p = roster.find(pl => pl.포지션 === pos);
                 
                 // [CRITICAL FIX] Create a safe player object if missing
@@ -405,8 +411,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             picks: { A: picksBlueDetailed, B: picksRedDetailed },
             bans: { A: draftState.blueBans, B: draftState.redBans },
             
-            // [FIX] Only add the PICKED champions to the Fearless Ban list
-            // Previously: Array.from(manualLockedChamps) <--- Included bans
+            // [FIX] Fearless Bans: Only include picked champions from this set
             usedChamps: [...picksBlueDetailed, ...picksRedDetailed].map(p => p.champName) 
         });
     
@@ -563,7 +568,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         return <div className="fixed inset-0 bg-black text-white flex items-center justify-center z-[200] font-bold text-3xl">경기 로딩 중...</div>;
     }
     
-    // [FIX] Correct Team Name Logic: Safe access for both modes
+    // Correct Team Name Logic: Safe access for both modes
     const currentBlueTeam = isManualMode ? manualTeams.blue : simulationData?.blueTeam;
     const currentRedTeam = isManualMode ? manualTeams.red : simulationData?.redTeam;
     
@@ -578,9 +583,10 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
          (currentStepInfo.side === 'RED' && manualTeams.red.name === simOptions.playerTeamName));
     
     // Recommended Champion Logic
+    // [FIX] Uses activeChampionList to suggest appropriate meta picks
     let recommendedChamp = null;
     if (isManualMode && isUserTurn) {
-        const available = championList.filter(c => !manualLockedChamps.has(c.name));
+        const available = activeChampionList.filter(c => !manualLockedChamps.has(c.name));
         recommendedChamp = getRecommendedChampion(filterRole, [], available);
     }
 
@@ -739,8 +745,9 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
 
                              {/* Champion Grid */}
                              <div className="flex-1 overflow-y-auto p-4 grid grid-cols-5 gap-3 content-start">
-                                 {championList
-                                    .filter(c => c.role === (filterRole === 'SUP' ? 'SUP' : filterRole)) // Strict role filter for user simplicity
+                                 {/* [FIX] Render activeChampionList to show correct meta stats */}
+                                 {activeChampionList
+                                    .filter(c => c.role === (filterRole === 'SUP' ? 'SUP' : filterRole)) 
                                     .sort((a,b) => a.tier - b.tier)
                                     .map(champ => {
                                         const isLocked = manualLockedChamps.has(champ.name);
