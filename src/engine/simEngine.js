@@ -54,7 +54,7 @@ export const getChampionClass = (champ, position) => {
   return GAME_RULES.DEFAULT_ROLES[position] || '전사';
 };
 
-const MASTERY_MAP = playerList.reduce((acc, player) => {
+ const MASTERY_MAP = playerList.reduce((acc, player) => {
     acc[player.이름] = { id: player.이름, pool: [] };
     return acc;
 }, {});
@@ -77,7 +77,7 @@ function getMetaScore(position, tier, masteryScore) {
   return 100 * coeff;
 }
 
-function calculateChampionScore(player, champion, masteryData) {
+ function calculateChampionScore(player, champion, masteryData) {
   const playerStat = player.종합 || 85; 
   const masteryScore = calculateMasteryScore(player, masteryData);
   const metaScore = getMetaScore(player.포지션, champion.tier, masteryScore);
@@ -87,7 +87,7 @@ function calculateChampionScore(player, champion, masteryData) {
 }
 
 // --- DRAFT LOGIC ---
-function selectPickFromTop3(player, availableChampions) {
+ function selectPickFromTop3(player, availableChampions) {
   const playerData = MASTERY_MAP[player.이름];
   const roleChamps = availableChampions.filter(c => c.role === player.포지션);
   const pool = roleChamps.length > 0 ? roleChamps : availableChampions;
@@ -117,7 +117,7 @@ function selectPickFromTop3(player, availableChampions) {
 
 // In src/engine/simEngine.js
 
-function selectBanFromProbabilities(opponentTeam, availableChampions, targetRoles) {
+ function selectBanFromProbabilities(opponentTeam, availableChampions, targetRoles) {
   let candidates = [];
   
   // [FIX] Filter the roster to only include players whose roles are still open (in targetRoles)

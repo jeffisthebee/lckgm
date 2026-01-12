@@ -574,7 +574,8 @@ const getOvrBadgeStyle = (ovr) => {
     // [1] 내 경기 시작하기 (안전장치 추가됨)
     // [1] 내 경기 시작하기 (안전장치 추가됨)
     // [FIX] 2. Robust Start Match Handler (Green Button)
-    const handleStartMyMatch = () => {
+    // [FIX] 2. Robust Start Match Handler (Green Button) - Updated for Captain Mode
+    const handleStartMyMatch = (mode = 'auto') => {
       try {
         if (!nextGlobalMatch) {
           alert("진행할 경기가 없습니다.");
@@ -602,13 +603,13 @@ const getOvrBadgeStyle = (ovr) => {
             ? league.currentChampionList 
             : championList;
     
-        // 4. Set Data for Live Modal
+        // 4. Set Data for Live Modal (Added isManualMode flag)
         setLiveMatchData({
           match: nextGlobalMatch,
           teamA: { ...t1Obj, roster: t1Roster },
           teamB: { ...t2Obj, roster: t2Roster },
-          // Pass the safe list specifically for the live mode
-          safeChampionList: safeChampionList 
+          safeChampionList: safeChampionList,
+          isManualMode: mode === 'manual' // <--- NEW FLAG
         });
         
         setIsLiveGameMode(true);
@@ -1324,18 +1325,18 @@ const getOvrBadgeStyle = (ovr) => {
 
 {showFinalStandings && <FinalStandingsModal />}
   
-  {isLiveGameMode && liveMatchData && (
+{isLiveGameMode && liveMatchData && (
     <LiveGamePlayer 
         match={liveMatchData.match}
         teamA={liveMatchData.teamA}
         teamB={liveMatchData.teamB}
+        // Pass the Manual Mode Flag
+        isManualMode={liveMatchData.isManualMode} 
         simOptions={{
             currentChampionList: league.currentChampionList,
             difficulty: league.difficulty,
             playerTeamName: myTeam.name
         }}
-        // [FIX] Removed undefined 'globalBanList'. 
-        // LiveGamePlayer manages its own global bans internally for the BO3/BO5 series.
         externalGlobalBans={[]} 
         onMatchComplete={handleLiveMatchComplete}
         onClose={() => setIsLiveGameMode(false)}
@@ -1487,15 +1488,28 @@ const getOvrBadgeStyle = (ovr) => {
                               </span>
                               
                               {isMyNextMatch ? (
-                                  <button onClick={handleStartMyMatch} className="mt-3 px-6 py-3 bg-green-500 hover:bg-green-600 text-white font-bold rounded-lg shadow-lg transform transition hover:scale-105 animate-bounce">
-                                      ⚔️ 경기 시작 (직접 플레이)
-                                  </button>
+                                  <div className="flex flex-col gap-2 mt-3 w-full">
+                                      {/* Button 1: Captain Mode (Manual) */}
+                                      <button 
+                                        onClick={() => handleStartMyMatch('manual')} 
+                                        className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg shadow-md transform transition hover:scale-105 flex items-center justify-center gap-2"
+                                      >
+                                          <span>🎮</span> 경기 시작 (직접 플레이)
+                                      </button>
+                                      
+                                      {/* Button 2: Watch Mode (AI) */}
+                                      <button 
+                                        onClick={() => handleStartMyMatch('auto')} 
+                                        className="w-full px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-lg shadow-md transform transition hover:scale-105 flex items-center justify-center gap-2"
+                                      >
+                                          <span>📺</span> 경기 시작 (AI 시뮬)
+                                      </button>
+                                  </div>
                               ) : (
                                   <div className="mt-3 text-sm font-bold text-gray-400 bg-white px-3 py-1 rounded border">
                                       상단바의 [⏩ 다음 경기 진행]을 눌러주세요
                                   </div>
                               )}
-  
                             </div>
                           ) : <div className="text-xs font-bold text-blue-600">{isSeasonOver ? '시즌 종료' : '대진 생성 대기 중'}</div>}
                         </div>
