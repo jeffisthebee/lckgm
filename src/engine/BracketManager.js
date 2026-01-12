@@ -53,42 +53,32 @@ export const computeStandings = (league) => {
     return newStandings;
 };
 
-export const calculateGroupScore = (groupType) => {
-    if (!league.groups || !league.groups[groupType]) return 0;
-    const groupIds = league.groups[groupType];
-    
-    return league.matches.filter(m => {
-        if (m.status !== 'finished') return false;
-        // [CRITICAL FIX] Ensure only Regular and Super matches count for Group Scores
-        if (m.type !== 'regular' && m.type !== 'super') return false;
-        
-        const winnerTeam = teams.find(t => t.name === m.result.winner);
-        if (!winnerTeam) return false;
-        return groupIds.includes(winnerTeam.id);
-    }).reduce((acc, m) => acc + (m.type === 'super' ? 2 : 1), 0);
-  };
+export const calculateFinalStandings = (league) => {
+    if (!league || !league.matches) return [];
 
- export const getFinalStandings = () => {
+    // Helper: Check if season is over
+    const grandFinal = league.matches.find(m => m.type === 'playoff' && m.round === 5);
+    const isSeasonOver = grandFinal && grandFinal.status === 'finished';
+
     if (!isSeasonOver) return [];
-    
+
     // Helper: Handle String vs Number ID mismatch
     const safeId = (id) => (id && typeof id === 'object' ? id.id : Number(id));
 
+    // Helper: Get Loser ID from a match
     const getLoserId = (m) => {
         if (!m || m.status !== 'finished' || !m.result) return null;
         const winnerName = m.result.winner;
-        
-        // Safely get IDs
         const t1Id = safeId(m.t1);
         const t2Id = safeId(m.t2);
         
         // Find team object to check name
         const t1Obj = teams.find(t => safeId(t.id) === t1Id);
         if (!t1Obj) return t2Id; // Safety fallback
-
         return t1Obj.name === winnerName ? t2Id : t1Id;
     };
 
+    // Helper: Get Winner ID from a match
     const getWinnerId = (m) => {
         if (!m || m.status !== 'finished') return null;
         return teams.find(t => t.name === m.result.winner)?.id;
@@ -96,7 +86,7 @@ export const calculateGroupScore = (groupType) => {
 
     const findMatch = (type, round) => league.matches.find(m => m.type === type && m.round === round);
     
-    // --- Logic to find IDs for each rank ---
+    // --- Determine IDs for each rank ---
     const finalMatch = findMatch('playoff', 5);
     const winnerId = getWinnerId(finalMatch);
     const runnerUpId = getLoserId(finalMatch);
@@ -122,9 +112,8 @@ export const calculateGroupScore = (groupType) => {
 
     // Sort 8th/9th by Play-In Seed
     piR1Losers.sort((a, b) => {
-        const seedA = getTeamSeed(a, 'playin') || 99;
-        const seedB = getTeamSeed(b, 'playin') || 99;
-        return seedA - seedB;
+        const getSeed = (tid) => league.playInSeeds?.find(s => s.id === tid)?.seed || 99;
+        return getSeed(a) - getSeed(b);
     });
 
     // 10th: Group Stage Eliminated
@@ -135,13 +124,11 @@ export const calculateGroupScore = (groupType) => {
         piR1Losers[0], piR1Losers[1], tenthId
     ];
 
-    // --- CRASH PREVENTION MAPPING ---
+    // --- Map IDs to Team Objects ---
     return rankIds.map((id, index) => {
         if (!id) return null;
-        // Use safeId to find the team ensuring Number vs Number comparison
         const t = teams.find(team => safeId(team.id) === safeId(id));
-        
-        if (!t) return null; // If team not found, skip (Prevents "undefined" crash)
+        if (!t) return null;
         return { rank: index + 1, team: t };
     }).filter(item => item !== null);
-  };
+};
