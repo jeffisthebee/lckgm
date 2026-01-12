@@ -87,7 +87,7 @@ function getMetaScore(position, tier, masteryScore) {
 }
 
 // --- DRAFT LOGIC ---
- function selectPickFromTop3(player, availableChampions) {
+ export function selectPickFromTop3(player, availableChampions) {
   const playerData = MASTERY_MAP[player.이름];
   const roleChamps = availableChampions.filter(c => c.role === player.포지션);
   const pool = roleChamps.length > 0 ? roleChamps : availableChampions;
@@ -117,7 +117,7 @@ function getMetaScore(position, tier, masteryScore) {
 
 // In src/engine/simEngine.js
 
- function selectBanFromProbabilities(opponentTeam, availableChampions, targetRoles) {
+ export function selectBanFromProbabilities(opponentTeam, availableChampions, targetRoles) {
   let candidates = [];
   
   // [FIX] Filter the roster to only include players whose roles are still open (in targetRoles)

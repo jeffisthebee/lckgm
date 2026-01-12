@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { calculateIndividualIncome, simulateSet, runGameTickEngine } from '../engine/simEngine'; 
+import { calculateIndividualIncome, simulateSet, runGameTickEngine, selectPickFromTop3, selectBanFromProbabilities } from '../engine/simEngine';
 import { DRAFT_SEQUENCE, championList } from '../data/constants'; 
+
 
 // --- HELPER: Simple Scoring for Recommendation (Frontend Version) ---
 const getRecommendedChampion = (role, currentChamps, availableChamps) => {
@@ -237,17 +238,41 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     const handleCpuTurn = (stepInfo, team, side) => {
         const availableChamps = championList.filter(c => !manualLockedChamps.has(c.name));
         let selectedChamp = null;
-
+    
         if (stepInfo.type === 'BAN') {
-            const idx = Math.floor(Math.random() * Math.min(10, availableChamps.length));
-            selectedChamp = availableChamps[idx];
+            // Use the engine's ban logic
+            const opponentSide = side === 'BLUE' ? 'RED' : 'BLUE';
+            const opponentTeam = side === 'BLUE' ? manualTeams.red : manualTeams.blue;
+            const opponentOpenRoles = side === 'BLUE' 
+                ? ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].filter(r => !manualPicks.red[r])
+                : ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].filter(r => !manualPicks.blue[r]);
+            
+            selectedChamp = selectBanFromProbabilities(opponentTeam, availableChamps, opponentOpenRoles);
+            
+            // Fallback if engine returns null
+            if (!selectedChamp) {
+                const idx = Math.floor(Math.random() * Math.min(10, availableChamps.length));
+                selectedChamp = availableChamps[idx];
+            }
         } else {
+            // Use the engine's pick logic
             const currentPicks = side === 'BLUE' ? manualPicks.blue : manualPicks.red;
             const roles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
             const neededRole = roles.find(r => !currentPicks[r]);
-            selectedChamp = getRecommendedChampion(neededRole || 'MID', [], availableChamps);
+            
+            if (neededRole) {
+                const player = team.roster.find(p => p.포지션 === neededRole);
+                if (player) {
+                    selectedChamp = selectPickFromTop3(player, availableChamps);
+                }
+            }
+            
+            // Fallback if engine returns null
+            if (!selectedChamp) {
+                selectedChamp = getRecommendedChampion(neededRole || 'MID', [], availableChamps);
+            }
         }
-
+    
         if (selectedChamp) {
             commitDraftAction(stepInfo, selectedChamp, team, side);
         }
@@ -301,51 +326,52 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     };
 
     const finalizeManualDraft = () => {
-        // [FIX] Robust Mapping to Engine Format
+        // Map to Engine Format
         const mapToEngineFormat = (sidePicks, roster) => {
             return ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(pos => {
                 const c = sidePicks[pos];
-                // CRITICAL SAFETY: If role missing, inject dummy
                 const safeChamp = c || championList.find(ch => ch.role === pos) || championList[0];
                 const p = roster.find(pl => pl.포지션 === pos);
                 
                 return {
                     champName: safeChamp.name,
                     tier: safeChamp.tier,
-                    mastery: { games: 0, winRate: 50, kda: 3.0 }, 
+                    mastery: { games: 0, winRate: 50, kda: 3.0 },
                     playerName: p ? p.이름 : 'Unknown',
                     playerOvr: p ? p.종합 : 75,
                     role: pos,
                     ...safeChamp,
-                    classType: safeChamp.class 
+                    classType: safeChamp.class
                 };
             }).filter(Boolean);
         };
-
+    
         const picksBlueDetailed = mapToEngineFormat(manualPicks.blue, manualTeams.blue.roster);
         const picksRedDetailed = mapToEngineFormat(manualPicks.red, manualTeams.red.roster);
-
+    
         // Run Engine
         const result = runGameTickEngine(manualTeams.blue, manualTeams.red, picksBlueDetailed, picksRedDetailed, simOptions);
         
-        // [FIX] Robust Player Enrichment
+        // Enrich Players
         const enrichPlayer = (p, teamRoster, side) => {
             const rosterData = teamRoster.find(r => r.이름 === p.playerName);
-            // CRITICAL SAFETY: Fallback data prevents crashes
             const safeData = rosterData || { 
                 이름: p.playerName, 
                 포지션: p.role || 'TOP', 
                 상세: { 성장: 50, 라인전: 50, 무력: 50, 안정성: 50, 운영: 50, 한타: 50 } 
             };
-            return { ...p, side, playerData: safeData };
+            return { ...p, side, k: 0, d: 0, a: 0, currentGold: 500, lvl: 1, xp: 0, playerData: safeData };
         };
-
+    
         const initPlayers = [
             ...picksBlueDetailed.map(p => enrichPlayer(p, manualTeams.blue.roster, 'BLUE')),
             ...picksRedDetailed.map(p => enrichPlayer(p, manualTeams.red.roster, 'RED'))
         ];
-
-        // [FIX] Fully populate simulationData to match simulateSet output
+    
+        // **FIX: Convert ban name strings to champion names array**
+        const blueBanNames = draftState.blueBans; // These are already strings
+        const redBanNames = draftState.redBans;   // These are already strings
+    
         setSimulationData({
             winnerName: result.winnerName,
             gameResult: result,
@@ -354,17 +380,17 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             redTeam: manualTeams.red,
             totalSeconds: result.totalSeconds,
             picks: { A: picksBlueDetailed, B: picksRedDetailed },
-            bans: { A: draftState.blueBans, B: draftState.redBans },
+            bans: { A: blueBanNames, B: redBanNames }, // Use string arrays directly
             usedChamps: Array.from(manualLockedChamps)
         });
-
+    
         setLiveStats({
             kills: { BLUE: 0, RED: 0 },
             gold: { BLUE: 2500, RED: 2500 },
             towers: { BLUE: 0, RED: 0 },
             players: initPlayers
         });
-
+    
         setGameTime(0);
         setDisplayLogs([]);
         setPhase('GAME');
