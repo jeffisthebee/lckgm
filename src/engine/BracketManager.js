@@ -52,3 +52,73 @@ export const computeStandings = (league) => {
 
     return newStandings;
 };
+
+export const calculateGroupScore = (groupType) => {
+    if (!league.groups || !league.groups[groupType]) return 0;
+    const groupIds = league.groups[groupType];
+    
+    return league.matches.filter(m => {
+        if (m.status !== 'finished') return false;
+        // [CRITICAL FIX] Ensure only Regular and Super matches count for Group Scores
+        if (m.type !== 'regular' && m.type !== 'super') return false;
+        
+        const winnerTeam = teams.find(t => t.name === m.result.winner);
+        if (!winnerTeam) return false;
+        return groupIds.includes(winnerTeam.id);
+    }).reduce((acc, m) => acc + (m.type === 'super' ? 2 : 1), 0);
+  };
+
+  export const computeFinalStandings = (league) => {
+    // Check if Grand Final (Round 5) is finished
+    const grandFinal = league.matches.find(m => m.type === 'playoff' && m.round === 5);
+    const isSeasonOver = grandFinal && grandFinal.status === 'finished';
+
+    if (!isSeasonOver) return [];
+    
+    // Helpers for ID safety
+    const safeId = (id) => (id && typeof id === 'object' ? id.id : Number(id));
+    const getWinnerId = (m) => (m && m.status === 'finished' ? teams.find(t => t.name === m.result.winner)?.id : null);
+    const getLoserId = (m) => {
+        if (!m || m.status !== 'finished' || !m.result) return null;
+        const wId = getWinnerId(m);
+        const t1Id = safeId(m.t1);
+        const t2Id = safeId(m.t2);
+        return t1Id === wId ? t2Id : t1Id;
+    };
+
+    const findMatch = (type, round) => league.matches.find(m => m.type === type && m.round === round);
+    
+    // 1. Determine IDs for every rank
+    const winnerId = getWinnerId(grandFinal);
+    const runnerUpId = getLoserId(grandFinal);
+    const thirdId = getLoserId(findMatch('playoff', 4));
+    const fourthId = getLoserId(findMatch('playoff', 3.1));
+    const fifthId = getLoserId(findMatch('playoff', 2.2));
+    const sixthId = getLoserId(findMatch('playoff', 2.1));
+    const seventhId = getLoserId(findMatch('playin', 3));
+
+    // 8th & 9th: Play-In Round 1 Losers (Sorted by Seed)
+    const piR1Matches = league.matches.filter(m => m.type === 'playin' && m.round === 1);
+    const piR1Losers = piR1Matches.map(m => getLoserId(m)).filter(id => id !== null);
+    
+    piR1Losers.sort((a, b) => {
+        const seedA = league.playInSeeds?.find(s => s.id === a)?.seed || 99;
+        const seedB = league.playInSeeds?.find(s => s.id === b)?.seed || 99;
+        return seedA - seedB;
+    });
+
+    const tenthId = league.seasonSummary?.eliminated;
+
+    const rankIds = [
+        winnerId, runnerUpId, thirdId, fourthId, fifthId, sixthId, seventhId, 
+        piR1Losers[0], piR1Losers[1], tenthId
+    ];
+
+    // 2. Map IDs to Team Objects
+    return rankIds.map((id, index) => {
+        if (!id) return null;
+        const t = teams.find(team => safeId(team.id) === safeId(id));
+        if (!t) return null;
+        return { rank: index + 1, team: t };
+    }).filter(item => item !== null);
+};
