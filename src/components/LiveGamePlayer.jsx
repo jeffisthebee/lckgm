@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { calculateIndividualIncome, simulateSet, runGameTickEngine, selectPickFromTop3, selectBanFromProbabilities } from '../engine/simEngine';
 import { DRAFT_SEQUENCE, championList } from '../data/constants'; 
 
-
 // --- HELPER: Simple Scoring for Recommendation (Frontend Version) ---
 const getRecommendedChampion = (role, currentChamps, availableChamps) => {
     // Filter by Role
@@ -240,7 +239,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         let selectedChamp = null;
     
         if (stepInfo.type === 'BAN') {
-            // Use the engine's ban logic
             const opponentSide = side === 'BLUE' ? 'RED' : 'BLUE';
             const opponentTeam = side === 'BLUE' ? manualTeams.red : manualTeams.blue;
             const opponentOpenRoles = side === 'BLUE' 
@@ -254,11 +252,9 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 selectedChamp = availableChamps[idx];
             }
         } else {
-            // **FIX: Use engine's intelligent pick logic**
             const currentPicks = side === 'BLUE' ? manualPicks.blue : manualPicks.red;
             const remainingRoles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].filter(r => !currentPicks[r]);
             
-            // Build candidates for ALL remaining roles (not just one)
             let roleCandidates = [];
             remainingRoles.forEach(role => {
                 const player = team.roster.find(p => p.포지션 === role);
@@ -270,14 +266,12 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 }
             });
             
-            // Sort by score and pick the BEST overall (not just first role)
             roleCandidates.sort((a, b) => b.score - a.score);
             
             if (roleCandidates.length > 0) {
                 const bestPick = roleCandidates[0];
-                selectedChamp = { ...bestPick.champ, role: bestPick.role }; // Attach role to champ
+                selectedChamp = { ...bestPick.champ, role: bestPick.role };
             } else {
-                // Fallback
                 const neededRole = remainingRoles[0] || 'MID';
                 selectedChamp = getRecommendedChampion(neededRole, [], availableChamps);
             }
@@ -335,79 +329,93 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         setDraftTimer(25); 
     };
 
+    // =========================================================================
+    // [FIX] FINALIZE MANUAL DRAFT (Prevents Crash)
+    // =========================================================================
     const finalizeManualDraft = () => {
-        // **FIX: Ensure role property is correctly assigned**
-        const mapToEngineFormat = (sidePicks, roster) => {
+        // We explicitly map the manual picks to the format the engine expects
+        // ensuring playerData is attached so runGameTickEngine doesn't crash.
+        const mapToEngineFormat = (sidePicks, roster, teamSide) => {
             return ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(pos => {
                 const c = sidePicks[pos];
                 const safeChamp = c || championList.find(ch => ch.role === pos) || championList[0];
                 const p = roster.find(pl => pl.포지션 === pos);
                 
+                // [CRITICAL FIX] Create a safe player object if missing
+                const safePlayerData = p || { 
+                    이름: 'Unknown', 
+                    포지션: pos, 
+                    종합: 75, 
+                    상세: { 라인전: 75, 무력: 75, 한타: 75, 성장: 75, 안정성: 75, 운영: 75 } 
+                };
+
                 return {
+                    // Core Data
                     champName: safeChamp.name,
                     tier: safeChamp.tier,
+                    role: pos,
+                    side: teamSide,
+                    
+                    // Stats / Class
+                    classType: safeChamp.class || '전사',
+                    dmgType: safeChamp.dmg_type || 'AD',
                     mastery: { games: 0, winRate: 50, kda: 3.0 },
-                    playerName: p ? p.이름 : 'Unknown',
-                    playerOvr: p ? p.종합 : 75,
-                    role: pos, // **CRITICAL: Explicit role assignment**
-                    ...safeChamp,
-                    classType: safeChamp.class,
-                    dmgType: safeChamp.dmg_type || 'AD' // **ADD: Damage type**
+                    
+                    // [CRITICAL FIX] Attach Player Data so engine can read 'playerData.상세'
+                    playerName: safePlayerData.이름,
+                    playerOvr: safePlayerData.종합,
+                    playerData: safePlayerData,
+                    
+                    // Engine State Initialization
+                    conditionModifier: 1.0,
+                    currentGold: 500,
+                    level: 1,
+                    xp: 0,
+                    deadUntil: 0,
+                    flashEndTime: 0,
+                    stats: { kills: 0, deaths: 0, assists: 0, damage: 0, takenDamage: 0 }
                 };
             }).filter(Boolean);
         };
     
-        const picksBlueDetailed = mapToEngineFormat(manualPicks.blue, manualTeams.blue.roster);
-        const picksRedDetailed = mapToEngineFormat(manualPicks.red, manualTeams.red.roster);
+        const picksBlueDetailed = mapToEngineFormat(manualPicks.blue, manualTeams.blue.roster, 'BLUE');
+        const picksRedDetailed = mapToEngineFormat(manualPicks.red, manualTeams.red.roster, 'RED');
     
-        // **FIX: Validate picks before running engine**
         if (picksBlueDetailed.length < 5 || picksRedDetailed.length < 5) {
-            console.error('Draft incomplete:', { picksBlueDetailed, picksRedDetailed });
-            alert('Draft is incomplete. Cannot start game.');
+            alert('Draft Error: Incomplete teams.');
             return;
         }
     
-        console.log('Running engine with picks:', { picksBlueDetailed, picksRedDetailed });
-    
-        // Run Engine
+        // Call the extracted engine function
         const result = runGameTickEngine(manualTeams.blue, manualTeams.red, picksBlueDetailed, picksRedDetailed, simOptions);
         
-        // Enrich Players (unchanged)
-        const enrichPlayer = (p, teamRoster, side) => {
-            const rosterData = teamRoster.find(r => r.이름 === p.playerName);
-            const safeData = rosterData || { 
-                이름: p.playerName, 
-                포지션: p.role || 'TOP', 
-                상세: { 성장: 50, 라인전: 50, 무력: 50, 안정성: 50, 운영: 50, 한타: 50 } 
-            };
-            return { ...p, side, k: 0, d: 0, a: 0, currentGold: 500, lvl: 1, xp: 0, playerData: safeData };
-        };
-    
-        const initPlayers = [
-            ...picksBlueDetailed.map(p => enrichPlayer(p, manualTeams.blue.roster, 'BLUE')),
-            ...picksRedDetailed.map(p => enrichPlayer(p, manualTeams.red.roster, 'RED'))
-        ];
-    
-        const blueBanNames = draftState.blueBans;
-        const redBanNames = draftState.redBans;
-    
+        // Setup Simulation Data for Playback
         setSimulationData({
             winnerName: result.winnerName,
             gameResult: result,
-            logs: result.logs,
+            logs: [
+                `========== [ MANUAL DRAFT ] ==========`,
+                ...draftLogs,
+                `========== [ GAME START ] ==========`,
+                ...result.logs
+            ],
             blueTeam: manualTeams.blue,
             redTeam: manualTeams.red,
             totalSeconds: result.totalSeconds,
             picks: { A: picksBlueDetailed, B: picksRedDetailed },
-            bans: { A: blueBanNames, B: redBanNames },
+            bans: { A: draftState.blueBans, B: draftState.redBans },
             usedChamps: Array.from(manualLockedChamps)
         });
     
+        // Initialize Live Stats
         setLiveStats({
             kills: { BLUE: 0, RED: 0 },
             gold: { BLUE: 2500, RED: 2500 },
             towers: { BLUE: 0, RED: 0 },
-            players: initPlayers
+            players: [...picksBlueDetailed, ...picksRedDetailed].map(p => ({
+                ...p,
+                k: 0, d: 0, a: 0, lvl: 1, xp: 0, currentGold: 500
+            }))
         });
     
         setGameTime(0);
@@ -454,7 +462,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         setPhase('GAME');
     };
 
-    // ... (Keep existing GAME phase useEffect unchanged) ...
+    // --- GAME PHASE TICK ---
     useEffect(() => {
       if (phase !== 'GAME' || !simulationData || playbackSpeed === 0) return;
       
