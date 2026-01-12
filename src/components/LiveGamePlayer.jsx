@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { calculateIndividualIncome, simulateSet, runGameTickEngine } from '../engine/simEngine'; 
 import { DRAFT_SEQUENCE, championList } from '../data/constants'; 
 
-// --- HELPER: Simple Scoring for Recommendation (Frontend Version) ---
+// --- HELPER: Simple Scoring for Recommendation ---
 const getRecommendedChampion = (role, currentChamps, availableChamps) => {
     // Filter by Role
     const roleChamps = availableChamps.filter(c => c.role === (role === 'SUP' ? 'SUP' : role));
@@ -80,7 +80,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
 
       // Reset Manual State
       setManualPicks({ blue: {}, red: {} });
-      setManualLockedChamps(new Set(globalBanList)); // Start with Fearless Bans
+      setManualLockedChamps(new Set(globalBanList)); 
       setSelectedChampion(null);
 
       setTimeout(() => {
@@ -109,7 +109,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
               }
 
               if (isManualMode) {
-                  // MANUAL: Just setup teams and go to DRAFT
+                  // MANUAL: Setup teams and go to DRAFT
                   setManualTeams({ blue: blueTeam, red: redTeam });
                   setPhase('DRAFT');
               } else {
@@ -161,23 +161,31 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         // Draft Finished?
         if (draftStep >= DRAFT_SEQUENCE.length) {
             if (isManualMode) {
-                finalizeManualDraft();
+                // Ensure state is fully updated before finalizing
+                if (Object.keys(manualPicks.blue).length === 5 && Object.keys(manualPicks.red).length === 5) {
+                    finalizeManualDraft();
+                } else {
+                    console.warn("Waiting for picks to commit...");
+                }
             } else {
                 setTimeout(() => setPhase('GAME'), 1000);
             }
             return;
         }
 
-        // --- MANUAL MODE CPU TURN HANDLING ---
+        // --- MANUAL MODE ---
         if (isManualMode) {
             const stepInfo = DRAFT_SEQUENCE[draftStep];
-            const actingTeamSide = stepInfo.side; // 'BLUE' or 'RED'
+            const actingTeamSide = stepInfo.side; 
             const actingTeamObj = actingTeamSide === 'BLUE' ? manualTeams.blue : manualTeams.red;
+            
+            // Check if teams are loaded to prevent crash
+            if (!actingTeamObj) return; 
+
             const isPlayerTurn = actingTeamObj.name === simOptions.playerTeamName;
 
             // Auto-filter role for player convenience
             if (isPlayerTurn && stepInfo.type === 'PICK') {
-                // Find next open role for my team
                 const myPicks = actingTeamSide === 'BLUE' ? manualPicks.blue : manualPicks.red;
                 const roles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
                 const neededRole = roles.find(r => !myPicks[r]);
@@ -186,8 +194,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
 
             if (!isPlayerTurn) {
                 // CPU TURN
-                const triggerTime = 22; // CPU acts fast in manual mode (at 22s remaining)
-                
+                const triggerTime = 22; // CPU acts fast
                 const timer = setInterval(() => {
                     setDraftTimer(prev => {
                         if (prev <= triggerTime) {
@@ -200,13 +207,12 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 }, 1000);
                 return () => clearInterval(timer);
             } else {
-                // PLAYER TURN: Just tick down
+                // PLAYER TURN
                 const timer = setInterval(() => {
                     setDraftTimer(prev => {
                         if (prev <= 0) {
-                            // Auto-pick random if time runs out
                             clearInterval(timer);
-                            handleCpuTurn(stepInfo, actingTeamObj, actingTeamSide); // Treat as CPU pick for randomness
+                            handleCpuTurn(stepInfo, actingTeamObj, actingTeamSide); // Time out -> Auto pick
                             return 25;
                         }
                         return prev - 1;
@@ -216,7 +222,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             }
         } 
         
-        // --- AUTO MODE LOGIC (Original) ---
+        // --- AUTO MODE ---
         else if (simulationData) {
             const triggerTime = Math.floor(Math.random() * 12) + 1; 
             const timer = setInterval(() => {
@@ -275,7 +281,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         const actionLabel = stepInfo.type === 'BAN' ? '🚫' : '✅';
         const logMsg = `[${stepInfo.order}] ${stepInfo.label}: ${actionLabel} ${champ.name}`;
         
-        // Update Logs
+        // Update Logs & Locked List
         setDraftLogs(prev => [...prev, logMsg]);
         setManualLockedChamps(prev => new Set([...prev, champ.name]));
 
@@ -286,12 +292,10 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 if (side === 'BLUE') newState.blueBans = [...prev.blueBans, champ.name];
                 else newState.redBans = [...prev.redBans, champ.name];
             } else {
-                // For Visuals, just push to array (logic handled in manualPicks for engine)
                 const teamPicks = side === 'BLUE' ? prev.bluePicks : prev.redPicks;
                 const emptyIdx = teamPicks.findIndex(p => p === null);
                 if (emptyIdx !== -1) {
                     const newPicks = [...teamPicks];
-                    // Create a visual pick object
                     const player = team.roster.find(p => p.포지션 === champ.role) || { 이름: 'Unknown' };
                     newPicks[emptyIdx] = { champName: champ.name, playerName: player.이름, tier: champ.tier };
                     if (side === 'BLUE') newState.bluePicks = newPicks;
@@ -301,7 +305,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             return newState;
         });
 
-        // Update Logical Picks (For Game Engine)
+        // Update Logical Picks (For Engine)
         if (stepInfo.type === 'PICK') {
             setManualPicks(prev => ({
                 ...prev,
@@ -310,29 +314,29 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         }
 
         setDraftStep(prev => prev + 1);
-        setDraftTimer(25); // Reset Timer
+        setDraftTimer(25); 
     };
 
     const finalizeManualDraft = () => {
-        // Construct the full picks arrays required by runGameTickEngine
+        // [FIX] Correctly map picks and include PLAYERDATA to prevent crashes
         const mapToEngineFormat = (sidePicks, roster) => {
             return ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(pos => {
                 const c = sidePicks[pos];
-                // Fallback if something went wrong and a role is missing (shouldn't happen)
-                if (!c) return null; 
+                if (!c) return null; // Safety check
                 
                 const p = roster.find(pl => pl.포지션 === pos);
+                const pData = p || { 이름: 'Unknown', 포지션: pos, 종합: 75, 상세: { 안정성: 50 } };
+
                 return {
                     champName: c.name,
                     tier: c.tier,
-                    // Manual mode doesn't track mastery score yet, use default 0 or 50
                     mastery: { games: 0, winRate: 50, kda: 3.0 }, 
-                    playerName: p ? p.이름 : 'Unknown',
-                    playerOvr: p ? p.종합 : 75,
+                    playerName: pData.이름,
+                    playerOvr: pData.종합,
                     role: pos,
-                    // Data needed for simulation
-                    ...c,
-                    classType: c.class // simplified
+                    ...c, // Spread champion stats
+                    classType: c.class,
+                    playerData: pData // <--- CRITICAL FIX: Engine needs this object
                 };
             }).filter(Boolean);
         };
@@ -340,39 +344,46 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         const picksBlueDetailed = mapToEngineFormat(manualPicks.blue, manualTeams.blue.roster);
         const picksRedDetailed = mapToEngineFormat(manualPicks.red, manualTeams.red.roster);
 
-        // Run Engine
-        const result = runGameTickEngine(manualTeams.blue, manualTeams.red, picksBlueDetailed, picksRedDetailed, simOptions);
-        
-        // Finalize Data
-        const enrichPlayer = (p, teamRoster, side) => {
-            const rosterData = teamRoster.find(r => r.이름 === p.playerName);
-            return { ...p, side, playerData: rosterData };
-        };
+        try {
+            // Run Engine
+            const result = runGameTickEngine(manualTeams.blue, manualTeams.red, picksBlueDetailed, picksRedDetailed, simOptions);
+            
+            // Enrich for UI Stats
+            const enrichPlayer = (p, teamRoster, side) => {
+                const rosterData = teamRoster.find(r => r.이름 === p.playerName);
+                return { ...p, side, playerData: rosterData };
+            };
 
-        const initPlayers = [
-            ...picksBlueDetailed.map(p => enrichPlayer(p, manualTeams.blue.roster, 'BLUE')),
-            ...picksRedDetailed.map(p => enrichPlayer(p, manualTeams.red.roster, 'RED'))
-        ];
+            const initPlayers = [
+                ...picksBlueDetailed.map(p => enrichPlayer(p, manualTeams.blue.roster, 'BLUE')),
+                ...picksRedDetailed.map(p => enrichPlayer(p, manualTeams.red.roster, 'RED'))
+            ];
 
-        setSimulationData({
-            winnerName: result.winnerName,
-            gameResult: result,
-            logs: result.logs,
-            blueTeam: manualTeams.blue,
-            redTeam: manualTeams.red,
-            totalSeconds: result.totalSeconds
-        });
+            setSimulationData({
+                winnerName: result.winnerName,
+                gameResult: result,
+                logs: result.logs,
+                blueTeam: manualTeams.blue,
+                redTeam: manualTeams.red,
+                totalSeconds: result.totalSeconds
+            });
 
-        setLiveStats({
-            kills: { BLUE: 0, RED: 0 },
-            gold: { BLUE: 2500, RED: 2500 },
-            towers: { BLUE: 0, RED: 0 },
-            players: initPlayers
-        });
+            setLiveStats({
+                kills: { BLUE: 0, RED: 0 },
+                gold: { BLUE: 2500, RED: 2500 },
+                towers: { BLUE: 0, RED: 0 },
+                players: initPlayers
+            });
 
-        setGameTime(0);
-        setDisplayLogs([]);
-        setPhase('GAME');
+            setGameTime(0);
+            setDisplayLogs([]);
+            setPhase('GAME');
+
+        } catch (error) {
+            console.error("Engine Crash in Manual Mode:", error);
+            alert("게임 시뮬레이션 중 오류가 발생했습니다. 다시 시도해주세요.");
+            onClose();
+        }
     };
 
     // --- AUTO MODE HELPER ---
@@ -406,12 +417,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         });
     };
 
-    // Skip Draft Helper
     const skipDraft = () => {
-        if (isManualMode) {
-            alert("수동 모드에서는 스킵할 수 없습니다.");
-            return;
-        }
+        if (isManualMode) return;
         setPhase('GAME');
     };
 
@@ -509,7 +516,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     }, [phase, simulationData, playbackSpeed]);
   
     // Render Loading
-    if ((!simulationData && !isManualMode && phase !== 'SET_RESULT') || (isManualMode && !manualTeams.blue)) {
+    // [FIX] Ensure manualTeams are ready before rendering
+    if ((!simulationData && !isManualMode && phase !== 'SET_RESULT') || (isManualMode && (!manualTeams.blue || !manualTeams.red))) {
         return <div className="fixed inset-0 bg-black text-white flex items-center justify-center z-[200] font-bold text-3xl">경기 로딩 중...</div>;
     }
   
@@ -524,7 +532,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         ((currentStepInfo.side === 'BLUE' && manualTeams.blue.name === simOptions.playerTeamName) ||
          (currentStepInfo.side === 'RED' && manualTeams.red.name === simOptions.playerTeamName));
     
-    // Recommended Champion Logic
+    // Recommended Champion
     let recommendedChamp = null;
     if (isManualMode && isUserTurn) {
         const available = championList.filter(c => !manualLockedChamps.has(c.name));
@@ -556,7 +564,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                    </div>
               </div>
   
-              {/* Center: Score or Bans (Depending on Phase) */}
+              {/* Center: Score or Bans */}
               <div className="flex flex-col items-center justify-center w-1/3 relative">
                   {phase === 'DRAFT' ? (
                       <div className="flex flex-col items-center w-full">
@@ -619,10 +627,9 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             </div>
         </div>
   
-        {/* Main Content Area */}
+        {/* Rest of UI (Picks, Grid, Game View) matches previous steps */}
         {phase === 'DRAFT' ? (
              <div className="flex-1 flex bg-gray-900 p-8 gap-8 items-center justify-center relative overflow-hidden">
-                 {/* Background Effect */}
                  <div className="absolute inset-0 bg-gradient-to-r from-blue-900/20 to-red-900/20 pointer-events-none"></div>
 
                  {/* Blue Picks Column */}
@@ -644,7 +651,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                      ))}
                  </div>
 
-                 {/* Center Area: Manual UI or Splash Art */}
+                 {/* Center: Manual UI or Splash */}
                  <div className="flex-1 flex flex-col items-center justify-center z-20 h-full relative">
                      {isUserTurn ? (
                          <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-700 w-full max-w-4xl h-[600px] flex flex-col overflow-hidden">
@@ -687,7 +694,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                              {/* Champion Grid */}
                              <div className="flex-1 overflow-y-auto p-4 grid grid-cols-5 gap-3 content-start">
                                  {championList
-                                    .filter(c => c.role === (filterRole === 'SUP' ? 'SUP' : filterRole)) // Strict role filter for user simplicity
+                                    .filter(c => c.role === (filterRole === 'SUP' ? 'SUP' : filterRole))
                                     .sort((a,b) => a.tier - b.tier)
                                     .map(champ => {
                                         const isLocked = manualLockedChamps.has(champ.name);
@@ -754,6 +761,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                  </div>
              </div>
         ) : (
+            // ... (Existing Game View Code) ...
             <div className="flex-1 flex overflow-hidden">
                {/* GAME UI: Left (Blue) */}
                <div className="w-80 bg-gray-900 border-r border-gray-800 flex flex-col pt-2">
@@ -832,7 +840,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             </div>
         )}
   
-        {/* 3. Result Overlay */}
+        {/* 3. Result Overlay (Same as before) */}
         {phase === 'SET_RESULT' && (
            <div className="absolute inset-0 bg-black/90 z-50 flex flex-col items-center justify-center animate-fade-in">
                <h1 className="text-6xl font-black mb-4 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-red-400">
