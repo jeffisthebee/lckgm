@@ -242,7 +242,11 @@ export function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChamp
     bans: { A: blueBans, B: redBans },
     draftLogs: logs,
     fearlessBans: Array.isArray(fearlessBans) ? [...fearlessBans] : (fearlessBans ? [fearlessBans] : []),
-    usedChamps: Array.from(localBans).filter(c => !fearlessBans.includes(c))
+    
+    // [FIX] Change this line:
+    // Old: usedChamps: Array.from(localBans).filter(c => !fearlessBans.includes(c))
+    // New: Only collect the picks from both sides
+    usedChamps: [...Object.values(picks.BLUE), ...Object.values(picks.RED)].map(c => c.name)
   };
 }
 

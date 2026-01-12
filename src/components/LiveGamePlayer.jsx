@@ -404,7 +404,10 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             totalSeconds: result.totalSeconds,
             picks: { A: picksBlueDetailed, B: picksRedDetailed },
             bans: { A: draftState.blueBans, B: draftState.redBans },
-            usedChamps: Array.from(manualLockedChamps)
+            
+            // [FIX] Only add the PICKED champions to the Fearless Ban list
+            // Previously: Array.from(manualLockedChamps) <--- Included bans
+            usedChamps: [...picksBlueDetailed, ...picksRedDetailed].map(p => p.champName) 
         });
     
         // Initialize Live Stats
