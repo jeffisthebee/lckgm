@@ -1,6 +1,21 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { calculateIndividualIncome, simulateSet } from '../engine/simEngine'; 
+import React, { useState, useEffect, useCallback } from 'react';
+import { calculateIndividualIncome, simulateSet, runGameTickEngine } from '../engine/simEngine'; 
 import { DRAFT_SEQUENCE, championList } from '../data/constants'; 
+
+// --- HELPER: Simple Scoring for Recommendation (Frontend Version) ---
+const getRecommendedChampion = (role, currentChamps, availableChamps) => {
+    // Filter by Role
+    const roleChamps = availableChamps.filter(c => c.role === (role === 'SUP' ? 'SUP' : role));
+    if (roleChamps.length === 0) return availableChamps[0];
+
+    // Sort by Tier (1 is best) -> Stats Sum
+    return roleChamps.sort((a, b) => {
+        if (a.tier !== b.tier) return a.tier - b.tier; // Lower tier # is better
+        const sumA = Object.values(a.stats).reduce((acc, v) => acc + v, 0);
+        const sumB = Object.values(b.stats).reduce((acc, v) => acc + v, 0);
+        return sumB - sumA;
+    })[0];
+};
 
 export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onClose, externalGlobalBans = [], isManualMode = false }) {
     const [currentSet, setCurrentSet] = useState(1);
@@ -14,24 +29,25 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     const [displayLogs, setDisplayLogs] = useState([]);
     const [resultProcessed, setResultProcessed] = useState(false);
     
+    // --- MANUAL MODE STATE ---
+    const [manualTeams, setManualTeams] = useState({ blue: null, red: null });
+    const [manualPicks, setManualPicks] = useState({ blue: {}, red: {} }); // Store pick objects by role
+    const [manualLockedChamps, setManualLockedChamps] = useState(new Set()); // For disabling in UI
+    const [selectedChampion, setSelectedChampion] = useState(null);
+    const [filterRole, setFilterRole] = useState('TOP');
+    const [draftLogs, setDraftLogs] = useState([]);
+    // -------------------------
+
     // --- DRAFT STATE ---
     const [draftStep, setDraftStep] = useState(0); // 0 to 20
-    const [draftTimer, setDraftTimer] = useState(isManualMode ? 25 : 15);
+    const [draftTimer, setDraftTimer] = useState(15);
     const [draftState, setDraftState] = useState({
         blueBans: [],
         redBans: [],
         bluePicks: Array(5).fill(null),
         redPicks: Array(5).fill(null),
-        currentAction: '밴픽 준비 중...'
+        currentAction: 'Starting Draft...'
     });
-
-    // Manual Mode Specifics
-    const [manualMySide, setManualMySide] = useState('BLUE'); // 'BLUE' or 'RED'
-    const [selectedChamp, setSelectedChamp] = useState(null);
-    const [filterRole, setFilterRole] = useState('TOP'); // TOP, JGL, MID, ADC, SUP
-    const [manualDraftFinished, setManualDraftFinished] = useState(false);
-
-    // -------------------
 
     // Real-time stats for UI
     const [gameTime, setGameTime] = useState(0);
@@ -47,22 +63,29 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     const [matchHistory, setMatchHistory] = useState([]);
     const targetWins = match.format === 'BO5' ? 3 : 2;
   
-    // Determine Sides and Initialize
+    // 1. Initialize Set Simulation or Manual Setup
     const startSet = useCallback(() => {
       setPhase('LOADING');
       setResultProcessed(false);
       setDraftStep(0);
       setDraftTimer(isManualMode ? 25 : 15);
-      setManualDraftFinished(false);
+      setDraftLogs([]);
+      
+      // Reset Visual State
       setDraftState({
           blueBans: [], redBans: [],
           bluePicks: Array(5).fill(null), redPicks: Array(5).fill(null),
           currentAction: '밴픽 준비 중...'
       });
-      
+
+      // Reset Manual State
+      setManualPicks({ blue: {}, red: {} });
+      setManualLockedChamps(new Set(globalBanList)); // Start with Fearless Bans
+      setSelectedChampion(null);
+
       setTimeout(() => {
           try {
-              // Side Selection Logic
+              // --- Side Selection Logic ---
               let blueTeam, redTeam;
               if (currentSet === 1) {
                   blueTeam = teamA; redTeam = teamB;
@@ -85,19 +108,12 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                   }
               }
 
-              // Determine My Side for Manual Mode
               if (isManualMode) {
-                  const myTeamName = simOptions.playerTeamName;
-                  setManualMySide(blueTeam.name === myTeamName ? 'BLUE' : 'RED');
-              }
-
-              if (isManualMode) {
-                  // In Manual Mode, we initialize basic data but DON'T run simulateSet yet.
-                  // We just set up the teams and start the Draft Phase.
-                  setSimulationData({ blueTeam, redTeam, logs: [] }); // Placeholder
+                  // MANUAL: Just setup teams and go to DRAFT
+                  setManualTeams({ blue: blueTeam, red: redTeam });
                   setPhase('DRAFT');
               } else {
-                  // Auto Mode: Pre-calculate everything
+                  // AUTO: Run Full Simulation Upfront
                   const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
                   if (!result || !result.picks) throw new Error("Draft failed");
       
@@ -121,6 +137,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                       towers: { BLUE: 0, RED: 0 },
                       players: initPlayers
                   });
+                  
                   setGameTime(0);
                   setDisplayLogs([]);
                   setPhase('DRAFT'); 
@@ -137,208 +154,270 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
       if (phase === 'READY') startSet();
     }, [phase, startSet]);
 
-    // --- MANUAL DRAFT LOGIC ---
-    // Helper to get unavailable champions
-    const getUnavailableChampions = () => {
-        const picked = [...draftState.bluePicks, ...draftState.redPicks].filter(Boolean).map(p => p.champName);
-        const banned = [...draftState.blueBans, ...draftState.redBans];
-        return new Set([...globalBanList, ...picked, ...banned]);
-    };
-
-    // Helper to get Recommended Champion
-    const getRecommendedChampion = (role, unavailableSet) => {
-        const pool = championList.filter(c => c.role === role && !unavailableSet.has(c.name));
-        if (pool.length === 0) return null;
-        // Simple recommendation based on Tier (lower is better) and Stats
-        return pool.sort((a, b) => {
-            if (a.tier !== b.tier) return a.tier - b.tier;
-            const statA = Object.values(a.stats).reduce((s, v) => s + v, 0);
-            const statB = Object.values(b.stats).reduce((s, v) => s + v, 0);
-            return statB - statA;
-        })[0];
-    };
-
-    // Handle Manual Step Tick
+    // --- DRAFT PHASE LOGIC (Unified Timer) ---
     useEffect(() => {
-        if (phase !== 'DRAFT' || !isManualMode || manualDraftFinished) return;
+        if (phase !== 'DRAFT') return;
 
-        // Draft Finished Check
+        // Draft Finished?
         if (draftStep >= DRAFT_SEQUENCE.length) {
-            setManualDraftFinished(true);
-            handleManualDraftCompletion();
+            if (isManualMode) {
+                finalizeManualDraft();
+            } else {
+                setTimeout(() => setPhase('GAME'), 1000);
+            }
             return;
         }
 
-        const currentStep = DRAFT_SEQUENCE[draftStep];
-        const isMyTurn = currentStep.side === manualMySide;
+        // --- MANUAL MODE CPU TURN HANDLING ---
+        if (isManualMode) {
+            const stepInfo = DRAFT_SEQUENCE[draftStep];
+            const actingTeamSide = stepInfo.side; // 'BLUE' or 'RED'
+            const actingTeamObj = actingTeamSide === 'BLUE' ? manualTeams.blue : manualTeams.red;
+            const isPlayerTurn = actingTeamObj.name === simOptions.playerTeamName;
 
-        // Auto-set filter to the appropriate role for picks
-        if (isMyTurn && currentStep.type === 'PICK') {
-            // Determine role based on pick order index logic or simplified assumptions
-            // For simplicity in this UI, we default to TOP but user can switch.
-            // Or better, infer role if possible.
-        }
+            // Auto-filter role for player convenience
+            if (isPlayerTurn && stepInfo.type === 'PICK') {
+                // Find next open role for my team
+                const myPicks = actingTeamSide === 'BLUE' ? manualPicks.blue : manualPicks.red;
+                const roles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
+                const neededRole = roles.find(r => !myPicks[r]);
+                if (neededRole && neededRole !== filterRole) setFilterRole(neededRole);
+            }
 
-        const timer = setInterval(() => {
-            setDraftTimer(prev => {
-                if (prev <= 1) {
-                    // Time runs out
-                    if (isMyTurn) {
-                        // Auto pick random/recommended
-                        const unavailable = getUnavailableChampions();
-                        const randomChamp = championList.find(c => !unavailable.has(c.name));
-                        if (randomChamp) handleManualAction(randomChamp);
-                    } else {
-                        // CPU Move
-                        performCpuMove();
+            if (!isPlayerTurn) {
+                // CPU TURN
+                const triggerTime = 22; // CPU acts fast in manual mode (at 22s remaining)
+                
+                const timer = setInterval(() => {
+                    setDraftTimer(prev => {
+                        if (prev <= triggerTime) {
+                            clearInterval(timer);
+                            handleCpuTurn(stepInfo, actingTeamObj, actingTeamSide);
+                            return 25;
+                        }
+                        return prev - 1;
+                    });
+                }, 1000);
+                return () => clearInterval(timer);
+            } else {
+                // PLAYER TURN: Just tick down
+                const timer = setInterval(() => {
+                    setDraftTimer(prev => {
+                        if (prev <= 0) {
+                            // Auto-pick random if time runs out
+                            clearInterval(timer);
+                            handleCpuTurn(stepInfo, actingTeamObj, actingTeamSide); // Treat as CPU pick for randomness
+                            return 25;
+                        }
+                        return prev - 1;
+                    });
+                }, 1000);
+                return () => clearInterval(timer);
+            }
+        } 
+        
+        // --- AUTO MODE LOGIC (Original) ---
+        else if (simulationData) {
+            const triggerTime = Math.floor(Math.random() * 12) + 1; 
+            const timer = setInterval(() => {
+                setDraftTimer(prev => {
+                    if (prev <= triggerTime) {
+                        const stepInfo = DRAFT_SEQUENCE[draftStep];
+                        const logEntry = simulationData.logs.find(l => l.startsWith(`[${stepInfo.order}]`));
+                        
+                        if (logEntry) {
+                            processDraftStepLog(stepInfo, logEntry);
+                        }
+                        setDraftStep(s => s + 1);
+                        return 15; 
                     }
-                    return 25;
-                }
-                return prev - 1;
-            });
-        }, 1000);
-
-        // If CPU turn, trigger move with random delay (visual only, real logic at 0 or trigger)
-        // Ideally we want CPU to act fast, not wait for 25s.
-        if (!isMyTurn && draftTimer > 23) { // Small buffer
-             const cpuThinkTime = Math.floor(Math.random() * 3000) + 1000;
-             setTimeout(() => performCpuMove(), cpuThinkTime);
+                    return prev - 1;
+                });
+            }, 1000); 
+            return () => clearInterval(timer);
         }
 
-        return () => clearInterval(timer);
-    }, [phase, draftStep, isManualMode, draftTimer, manualDraftFinished]);
+    }, [phase, draftStep, simulationData, isManualMode, manualTeams, manualPicks]);
 
-    const performCpuMove = () => {
-        // Simplified CPU Logic for UI
-        const unavailable = getUnavailableChampions();
-        const pool = championList.filter(c => !unavailable.has(c.name));
-        if (pool.length > 0) {
-            const randomPick = pool[Math.floor(Math.random() * pool.length)];
-            handleManualAction(randomPick);
+    // --- MANUAL MODE HELPER FUNCTIONS ---
+    const handleCpuTurn = (stepInfo, team, side) => {
+        const availableChamps = championList.filter(c => !manualLockedChamps.has(c.name));
+        let selectedChamp = null;
+
+        if (stepInfo.type === 'BAN') {
+            // Simple Random Ban
+            const idx = Math.floor(Math.random() * Math.min(10, availableChamps.length));
+            selectedChamp = availableChamps[idx];
+        } else {
+            // Pick based on missing roles
+            const currentPicks = side === 'BLUE' ? manualPicks.blue : manualPicks.red;
+            const roles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
+            const neededRole = roles.find(r => !currentPicks[r]);
+            selectedChamp = getRecommendedChampion(neededRole || 'MID', [], availableChamps);
+        }
+
+        if (selectedChamp) {
+            commitDraftAction(stepInfo, selectedChamp, team, side);
         }
     };
 
-    const handleManualAction = (champion) => {
-        if (!champion) return;
+    const handlePlayerLockIn = () => {
+        if (!selectedChampion) return;
         const stepInfo = DRAFT_SEQUENCE[draftStep];
-        const isBan = stepInfo.type === 'BAN';
-        const teamSide = stepInfo.side;
+        const side = stepInfo.side;
+        const team = side === 'BLUE' ? manualTeams.blue : manualTeams.red;
+        
+        commitDraftAction(stepInfo, selectedChampion, team, side);
+        setSelectedChampion(null);
+    };
 
+    const commitDraftAction = (stepInfo, champ, team, side) => {
+        const actionLabel = stepInfo.type === 'BAN' ? '🚫' : '✅';
+        const logMsg = `[${stepInfo.order}] ${stepInfo.label}: ${actionLabel} ${champ.name}`;
+        
+        // Update Logs
+        setDraftLogs(prev => [...prev, logMsg]);
+        setManualLockedChamps(prev => new Set([...prev, champ.name]));
+
+        // Update State
         setDraftState(prev => {
-            const newState = { ...prev, currentAction: `${stepInfo.label} 완료` };
-            if (isBan) {
-                if (teamSide === 'BLUE') newState.blueBans = [...prev.blueBans, champion.name];
-                else newState.redBans = [...prev.redBans, champion.name];
+            const newState = { ...prev, currentAction: logMsg.split(']')[1] };
+            if (stepInfo.type === 'BAN') {
+                if (side === 'BLUE') newState.blueBans = [...prev.blueBans, champ.name];
+                else newState.redBans = [...prev.redBans, champ.name];
             } else {
-                const currentPicks = teamSide === 'BLUE' ? prev.bluePicks : prev.redPicks;
-                const emptyIdx = currentPicks.findIndex(p => p === null);
-                
-                // Need to find player for this pick
-                const teamObj = teamSide === 'BLUE' ? simulationData.blueTeam : simulationData.redTeam;
-                // For simplicity, assign to roster in order 0-4
-                const player = teamObj.roster[emptyIdx] || { 이름: 'Unknown' };
-                
-                const pickObj = {
-                    champName: champion.name,
-                    playerName: player.이름,
-                    tier: champion.tier,
-                    ...champion
-                };
-
-                const newPicks = [...currentPicks];
-                newPicks[emptyIdx] = pickObj;
-                
-                if (teamSide === 'BLUE') newState.bluePicks = newPicks;
-                else newState.redPicks = newPicks;
+                // For Visuals, just push to array (logic handled in manualPicks for engine)
+                const teamPicks = side === 'BLUE' ? prev.bluePicks : prev.redPicks;
+                const emptyIdx = teamPicks.findIndex(p => p === null);
+                if (emptyIdx !== -1) {
+                    const newPicks = [...teamPicks];
+                    // Create a visual pick object
+                    const player = team.roster.find(p => p.포지션 === champ.role) || { 이름: 'Unknown' };
+                    newPicks[emptyIdx] = { champName: champ.name, playerName: player.이름, tier: champ.tier };
+                    if (side === 'BLUE') newState.bluePicks = newPicks;
+                    else newState.redPicks = newPicks;
+                }
             }
             return newState;
         });
 
-        setSelectedChamp(null);
-        setDraftStep(s => s + 1);
-        setDraftTimer(25);
-    };
-
-    const handleManualDraftCompletion = () => {
-        // Here we would normally call simulateSet with forced picks.
-        // For this step, we just transition to GAME visually or show a message.
-        // Since we need to run the engine with these picks:
-        // We can't fully run the engine without 'simulateSet' refactoring.
-        // For now, we will simulate a dummy loading into game.
-        setTimeout(() => setPhase('GAME'), 2000);
-        // NOTE: In Step 3 you will connect this to actual engine.
-    };
-
-    // --- AUTO DRAFT PHASE LOGIC (Replay) ---
-    useEffect(() => {
-        if (phase !== 'DRAFT' || isManualMode || !simulationData) return;
-
-        if (draftStep >= DRAFT_SEQUENCE.length) {
-            setTimeout(() => setPhase('GAME'), 1000);
-            return;
+        // Update Logical Picks (For Game Engine)
+        if (stepInfo.type === 'PICK') {
+            setManualPicks(prev => ({
+                ...prev,
+                [side.toLowerCase()]: { ...prev[side.toLowerCase()], [champ.role]: champ }
+            }));
         }
 
-        const triggerTime = Math.floor(Math.random() * 12) + 1; 
+        setDraftStep(prev => prev + 1);
+        setDraftTimer(25); // Reset Timer
+    };
 
-        const timer = setInterval(() => {
-            setDraftTimer(prev => {
-                if (prev <= triggerTime) {
-                    const stepInfo = DRAFT_SEQUENCE[draftStep];
-                    const logs = simulationData.logs;
-                    const logEntry = logs.find(l => l.startsWith(`[${stepInfo.order}]`));
-                    
-                    if (logEntry) {
-                        const isBan = stepInfo.type === 'BAN';
-                        let champName = 'Unknown';
-                        
-                        if (logEntry.includes('🚫')) {
-                            champName = logEntry.split('🚫')[1].trim();
-                        } else if (logEntry.includes('✅')) {
-                            champName = logEntry.split('✅')[1].split('(')[0].trim();
-                        }
+    const finalizeManualDraft = () => {
+        // Construct the full picks arrays required by runGameTickEngine
+        const mapToEngineFormat = (sidePicks, roster) => {
+            return ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(pos => {
+                const c = sidePicks[pos];
+                // Fallback if something went wrong and a role is missing (shouldn't happen)
+                if (!c) return null; 
+                
+                const p = roster.find(pl => pl.포지션 === pos);
+                return {
+                    champName: c.name,
+                    tier: c.tier,
+                    // Manual mode doesn't track mastery score yet, use default 0 or 50
+                    mastery: { games: 0, winRate: 50, kda: 3.0 }, 
+                    playerName: p ? p.이름 : 'Unknown',
+                    playerOvr: p ? p.종합 : 75,
+                    role: pos,
+                    // Data needed for simulation
+                    ...c,
+                    classType: c.class // simplified
+                };
+            }).filter(Boolean);
+        };
 
-                        setDraftState(prev => {
-                            const newState = { ...prev, currentAction: logEntry.split(']')[1] };
-                            if (isBan) {
-                                if (stepInfo.side === 'BLUE') newState.blueBans = [...prev.blueBans, champName];
-                                else newState.redBans = [...prev.redBans, champName];
-                            } else {
-                                const currentPicks = stepInfo.side === 'BLUE' ? prev.bluePicks : prev.redPicks;
-                                const teamPicks = stepInfo.side === 'BLUE' ? simulationData.picks.A : simulationData.picks.B;
-                                const pickData = teamPicks.find(p => p.champName === champName);
-                                const emptyIdx = currentPicks.findIndex(p => p === null);
-                                if (emptyIdx !== -1 && pickData) {
-                                    const newPicks = [...currentPicks];
-                                    newPicks[emptyIdx] = pickData;
-                                    if (stepInfo.side === 'BLUE') newState.bluePicks = newPicks;
-                                    else newState.redPicks = newPicks;
-                                }
-                            }
-                            return newState;
-                        });
-                    }
-                    setDraftStep(s => s + 1);
-                    return 15; 
+        const picksBlueDetailed = mapToEngineFormat(manualPicks.blue, manualTeams.blue.roster);
+        const picksRedDetailed = mapToEngineFormat(manualPicks.red, manualTeams.red.roster);
+
+        // Run Engine
+        const result = runGameTickEngine(manualTeams.blue, manualTeams.red, picksBlueDetailed, picksRedDetailed, simOptions);
+        
+        // Finalize Data
+        const enrichPlayer = (p, teamRoster, side) => {
+            const rosterData = teamRoster.find(r => r.이름 === p.playerName);
+            return { ...p, side, playerData: rosterData };
+        };
+
+        const initPlayers = [
+            ...picksBlueDetailed.map(p => enrichPlayer(p, manualTeams.blue.roster, 'BLUE')),
+            ...picksRedDetailed.map(p => enrichPlayer(p, manualTeams.red.roster, 'RED'))
+        ];
+
+        setSimulationData({
+            winnerName: result.winnerName,
+            gameResult: result,
+            logs: result.logs,
+            blueTeam: manualTeams.blue,
+            redTeam: manualTeams.red,
+            totalSeconds: result.totalSeconds
+        });
+
+        setLiveStats({
+            kills: { BLUE: 0, RED: 0 },
+            gold: { BLUE: 2500, RED: 2500 },
+            towers: { BLUE: 0, RED: 0 },
+            players: initPlayers
+        });
+
+        setGameTime(0);
+        setDisplayLogs([]);
+        setPhase('GAME');
+    };
+
+    // --- AUTO MODE HELPER ---
+    const processDraftStepLog = (stepInfo, logEntry) => {
+        let champName = 'Unknown';
+        if (logEntry.includes('🚫')) {
+            champName = logEntry.split('🚫')[1].trim();
+        } else if (logEntry.includes('✅')) {
+            champName = logEntry.split('✅')[1].split('(')[0].trim();
+        }
+
+        setDraftState(prev => {
+            const newState = { ...prev, currentAction: logEntry.split(']')[1] };
+            if (stepInfo.type === 'BAN') {
+                if (stepInfo.side === 'BLUE') newState.blueBans = [...prev.blueBans, champName];
+                else newState.redBans = [...prev.redBans, champName];
+            } else {
+                const currentPicks = stepInfo.side === 'BLUE' ? prev.bluePicks : prev.redPicks;
+                const teamPicks = stepInfo.side === 'BLUE' ? simulationData.picks.A : simulationData.picks.B;
+                const pickData = teamPicks.find(p => p.champName === champName);
+                
+                const emptyIdx = currentPicks.findIndex(p => p === null);
+                if (emptyIdx !== -1 && pickData) {
+                    const newPicks = [...currentPicks];
+                    newPicks[emptyIdx] = pickData;
+                    if (stepInfo.side === 'BLUE') newState.bluePicks = newPicks;
+                    else newState.redPicks = newPicks;
                 }
-                return prev - 1;
-            });
-        }, 1000); 
+            }
+            return newState;
+        });
+    };
 
-        return () => clearInterval(timer);
-    }, [phase, draftStep, simulationData, isManualMode]);
-
+    // Skip Draft Helper
     const skipDraft = () => {
+        if (isManualMode) {
+            alert("수동 모드에서는 스킵할 수 없습니다.");
+            return;
+        }
         setPhase('GAME');
     };
 
     // ... (Keep existing GAME phase useEffect unchanged) ...
     useEffect(() => {
       if (phase !== 'GAME' || !simulationData || playbackSpeed === 0) return;
-      if (isManualMode && !simulationData.logs?.length) {
-          // Fallback if manual mode entered game without simulation data
-          // This prevents crash in Step 2. In Step 3 this will be real data.
-          return; 
-      }
       
       const finalSec = Number(simulationData.totalSeconds);
       const intervalMs = 1000 / Math.max(0.1, playbackSpeed);
@@ -348,39 +427,72 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
           const nextTime = prevTime + 1;
           const currentMinute = Math.floor(nextTime / 60) + 1; 
   
-          // Log Processing Logic
+          // A. Process Logs
           const currentLogs = simulationData.logs.filter(l => {
                const m = l.match(/^\s*\[(\d+):(\d{1,2})\]/);
                return m && ((parseInt(m[1])*60 + parseInt(m[2])) === nextTime);
           });
   
+          // B. Update Stats
           setLiveStats(prevStats => {
-            const nextStats = { ...prevStats, kills: { ...prevStats.kills }, towers: { ...prevStats.towers }, players: prevStats.players.map(p => ({...p})) };
+            const nextStats = { 
+                ...prevStats, 
+                kills: { ...prevStats.kills },
+                towers: { ...prevStats.towers },
+                players: prevStats.players.map(p => ({...p})) 
+            };
+    
             if (currentLogs.length > 0) {
                 setDisplayLogs(prevLogs => [...prevLogs, ...currentLogs].slice(-15));
-                // Basic Stat Updates from Logs
+                // Log Parsing logic
                 currentLogs.forEach(l => {
-                    if (l.includes('⚔️')) {
-                        const parts = l.split('➜');
-                        if (parts.length >= 2) {
+                    if (l.includes('⚔️') || l.includes('🛡️')) {
+                        try {
+                            const parts = l.split('➜');
+                            if (parts.length < 2) return;
                             const extractName = (str) => {
-                                const open = str.indexOf('('); if (open === -1) return null;
-                                const pre = str.substring(0, open); const last = pre.lastIndexOf(']');
-                                return pre.substring(last + 1).trim();
+                                const openParenIndex = str.indexOf('(');
+                                if (openParenIndex === -1) return null;
+                                const preParen = str.substring(0, openParenIndex); 
+                                const lastBracketIndex = preParen.lastIndexOf(']');
+                                if (lastBracketIndex === -1) return null;
+                                return preParen.substring(lastBracketIndex + 1).trim();
                             };
-                            const kName = extractName(parts[0]);
-                            const vName = extractName(parts[1]);
-                            if (kName && vName) {
-                                const killer = nextStats.players.find(p => p.playerName === kName);
-                                const victim = nextStats.players.find(p => p.playerName === vName);
-                                if (killer && victim) {
-                                    killer.k++; nextStats.kills[killer.side]++; killer.currentGold += 300; victim.d++;
+                            const killerName = extractName(parts[0]);
+                            const victimName = extractName(parts[1]);
+
+                            if (killerName && victimName) {
+                                const killer = nextStats.players.find(p => p.playerName === killerName);
+                                const victim = nextStats.players.find(p => p.playerName === victimName);
+                                if (killer && victim && killer.side !== victim.side) {
+                                    killer.k++; nextStats.kills[killer.side]++; killer.currentGold += 300; victim.d++; killer.xp += 100 + (victim.lvl * 25);
+                                    if (l.includes('assists:')) {
+                                        const assistStr = l.split('assists:')[1].trim();
+                                        const rawAssisters = assistStr.split(',').map(s => s.split('[')[0].split('(')[0].trim());
+                                        rawAssisters.forEach(aName => {
+                                            const assister = nextStats.players.find(p => p.playerName === aName && p.side === killer.side);
+                                            if (assister) { assister.a++; assister.currentGold += 150; assister.xp += 50 + (victim.lvl * 10); }
+                                        });
+                                    }
                                 }
                             }
-                        }
+                        } catch (err) { console.warn(err); }
+                    }
+                    if (l.includes('포탑') || l.includes('억제기')) {
+                        if (l.includes(simulationData.blueTeam.name)) { nextStats.towers.BLUE++; nextStats.players.filter(p => p.side === 'BLUE').forEach(p => p.currentGold += 100); } 
+                        else if (l.includes(simulationData.redTeam.name)) { nextStats.towers.RED++; nextStats.players.filter(p => p.side === 'RED').forEach(p => p.currentGold += 100); }
                     }
                 });
             }
+            // Passive Income
+            nextStats.players.forEach(p => {
+                const income = calculateIndividualIncome(p, currentMinute, 1.0); 
+                if (income.gold > 0) p.currentGold += (income.gold / 60);
+                if (income.xp > 0) p.xp += (income.xp / 60);
+                if (p.lvl < 18) { const reqXp = 180 + (p.lvl * 100); if (p.xp >= reqXp) { p.xp -= reqXp; p.lvl++; } }
+            });
+            nextStats.gold.BLUE = Math.floor(nextStats.players.filter(p=>p.side==='BLUE').reduce((a,b)=>a+b.currentGold,0));
+            nextStats.gold.RED = Math.floor(nextStats.players.filter(p=>p.side==='RED').reduce((a,b)=>a+b.currentGold,0));
             return nextStats;
           });
   
@@ -394,20 +506,30 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         });
       }, intervalMs);
       return () => clearInterval(timer);
-    }, [phase, simulationData, playbackSpeed, isManualMode]);
+    }, [phase, simulationData, playbackSpeed]);
   
-    if (!simulationData && phase !== 'SET_RESULT' && !isManualMode) return <div className="fixed inset-0 bg-black text-white flex items-center justify-center z-[200] font-bold text-3xl">경기 로딩 중...</div>;
+    // Render Loading
+    if ((!simulationData && !isManualMode && phase !== 'SET_RESULT') || (isManualMode && !manualTeams.blue)) {
+        return <div className="fixed inset-0 bg-black text-white flex items-center justify-center z-[200] font-bold text-3xl">경기 로딩 중...</div>;
+    }
   
-    const { blueTeam, redTeam } = simulationData || { blueTeam: teamA, redTeam: teamB };
+    const { blueTeam, redTeam } = isManualMode ? manualTeams : (simulationData || {});
     const isBlueTeamA = blueTeam?.name === teamA.name;
     const blueTeamWins = isBlueTeamA ? winsA : winsB;
     const redTeamWins = isBlueTeamA ? winsB : winsA;
-
-    // --- RENDER HELPERS ---
-    const currentStepInfo = DRAFT_SEQUENCE[draftStep] || { label: '완료', side: 'NONE' };
-    const isUserTurn = isManualMode && !manualDraftFinished && currentStepInfo.side === manualMySide;
-    const unavailableSet = getUnavailableChampions();
-    const recommendedChamp = isUserTurn ? getRecommendedChampion(filterRole, unavailableSet) : null;
+  
+    // Manual Mode Helpers
+    const currentStepInfo = isManualMode ? DRAFT_SEQUENCE[draftStep] : null;
+    const isUserTurn = isManualMode && currentStepInfo && 
+        ((currentStepInfo.side === 'BLUE' && manualTeams.blue.name === simOptions.playerTeamName) ||
+         (currentStepInfo.side === 'RED' && manualTeams.red.name === simOptions.playerTeamName));
+    
+    // Recommended Champion Logic
+    let recommendedChamp = null;
+    if (isManualMode && isUserTurn) {
+        const available = championList.filter(c => !manualLockedChamps.has(c.name));
+        recommendedChamp = getRecommendedChampion(filterRole, [], available);
+    }
 
     return (
       <div className="fixed inset-0 bg-gray-900 z-[200] flex flex-col text-white font-sans">
@@ -449,7 +571,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                       </div>
                                   ))}
                               </div>
-                              <div className={`text-3xl font-black w-16 text-center ${draftTimer <= 5 ? 'text-red-500 animate-pulse' : 'text-yellow-400'}`}>{Math.ceil(draftTimer)}</div>
+                              <div className="text-2xl font-black text-yellow-400 w-12 text-center">{Math.ceil(draftTimer)}</div>
                               <div className="flex gap-1">
                                   {[0,1,2,3,4].map(i => (
                                       <div key={i} className="w-10 h-10 bg-gray-800 border border-gray-600 rounded flex items-center justify-center">
@@ -471,6 +593,13 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                   {Math.floor(gameTime/60)}:{String(gameTime%60).padStart(2,'0')}
                               </div>
                               <span className="text-5xl font-black text-red-400">{liveStats.kills.RED}</span>
+                          </div>
+                          <div className="flex gap-8 text-xs font-bold text-gray-500 mt-1">
+                              <span>💰 {(liveStats.gold.BLUE/1000).toFixed(1)}k</span>
+                              <span>🔥 {liveStats.towers.BLUE}</span>
+                              <span>VS</span>
+                              <span>🔥 {liveStats.towers.RED}</span>
+                              <span>💰 {(liveStats.gold.RED/1000).toFixed(1)}k</span>
                           </div>
                       </>
                   )}
@@ -497,126 +626,129 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                  <div className="absolute inset-0 bg-gradient-to-r from-blue-900/20 to-red-900/20 pointer-events-none"></div>
 
                  {/* Blue Picks Column */}
-                 <div className="w-64 space-y-4 z-10">
+                 <div className="w-1/4 space-y-4 z-10">
                      {draftState.bluePicks.map((pick, i) => (
-                         <div key={i} className={`h-20 border-l-4 ${pick ? 'border-blue-500 bg-blue-900/30' : 'border-gray-700 bg-gray-800/50'} rounded-r-lg flex items-center p-3 transition-all duration-300`}>
+                         <div key={i} className={`h-24 border-l-4 ${pick ? 'border-blue-500 bg-blue-900/30' : 'border-gray-700 bg-gray-800/50'} rounded-r-lg flex items-center p-4 transition-all duration-500`}>
                              {pick ? (
                                  <>
-                                    <div className="w-12 h-12 rounded border border-blue-400 flex items-center justify-center bg-black overflow-hidden shrink-0">
-                                        <div className="font-bold text-[10px] text-center">{pick.champName}</div>
+                                    <div className="w-16 h-16 rounded border border-blue-400 flex items-center justify-center bg-black overflow-hidden">
+                                        <div className="font-bold text-xs text-center">{pick.champName}</div>
                                     </div>
-                                    <div className="ml-3 overflow-hidden">
-                                        <div className="text-lg font-black text-white truncate">{pick.champName}</div>
-                                        <div className="text-xs text-blue-300 font-bold truncate">{pick.playerName}</div>
+                                    <div className="ml-4">
+                                        <div className="text-2xl font-black text-white">{pick.champName}</div>
+                                        <div className="text-sm text-blue-300 font-bold">{pick.playerName}</div>
                                     </div>
                                  </>
-                             ) : <div className="text-gray-600 font-bold text-sm">Pick {i+1}</div>}
+                             ) : <div className="text-gray-600 font-bold text-lg">Pick {i+1}</div>}
                          </div>
                      ))}
                  </div>
 
-                 {/* CENTER: User Interaction Area or Splash */}
-                 <div className="flex-1 flex flex-col items-center justify-center h-full relative z-20">
+                 {/* Center Area: Manual UI or Splash Art */}
+                 <div className="flex-1 flex flex-col items-center justify-center z-20 h-full relative">
                      {isUserTurn ? (
-                         <div className="w-full max-w-4xl h-full flex flex-col bg-gray-900/90 border border-gray-700 rounded-xl shadow-2xl overflow-hidden backdrop-blur-sm animate-fade-in-up">
-                             {/* Tabs */}
-                             <div className="flex border-b border-gray-700 bg-black/40">
-                                 {['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(role => (
-                                     <button 
-                                        key={role} 
-                                        onClick={() => setFilterRole(role)}
-                                        className={`flex-1 py-3 font-bold text-sm transition hover:bg-gray-800 ${filterRole === role ? 'text-white bg-gray-800 border-b-2 border-yellow-500' : 'text-gray-500'}`}
-                                     >
-                                         {role}
-                                     </button>
-                                 ))}
+                         <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-700 w-full max-w-4xl h-[600px] flex flex-col overflow-hidden">
+                             {/* Header & Filter */}
+                             <div className="p-4 bg-gray-900 border-b border-gray-700 flex justify-between items-center">
+                                 <div className="flex gap-2">
+                                     {['TOP','JGL','MID','ADC','SUP'].map(r => (
+                                         <button 
+                                            key={r} 
+                                            onClick={() => setFilterRole(r)}
+                                            className={`px-4 py-2 rounded font-bold text-sm transition ${filterRole === r ? 'bg-yellow-500 text-black' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}
+                                         >
+                                             {r}
+                                         </button>
+                                     ))}
+                                 </div>
+                                 <div className="text-yellow-400 font-bold animate-pulse text-lg">
+                                     {currentStepInfo.type === 'BAN' ? '🚫 챔피언 금지' : '✅ 챔피언 선택'}
+                                 </div>
                              </div>
 
-                             {/* Recommendation Bar */}
+                             {/* Recommendation */}
                              {recommendedChamp && (
-                                 <div className="bg-gradient-to-r from-yellow-900/40 to-black p-3 flex items-center justify-between border-b border-yellow-800/30">
-                                     <div className="flex items-center gap-3">
-                                         <span className="text-yellow-400 font-black text-sm uppercase tracking-wider">⭐ Recommended</span>
-                                         <span className="font-bold text-white">{recommendedChamp.name}</span>
-                                         <span className="text-xs text-gray-400">{recommendedChamp.tier} Tier</span>
-                                     </div>
-                                     <button 
-                                        onClick={() => setSelectedChamp(recommendedChamp)}
-                                        className="text-xs bg-yellow-600 hover:bg-yellow-500 text-black px-3 py-1 rounded font-bold transition"
-                                     >
-                                         선택
-                                     </button>
-                                 </div>
+                                <div className="bg-blue-900/30 p-2 px-4 flex items-center gap-4 border-b border-blue-800">
+                                    <span className="text-xs font-bold text-blue-300 uppercase">Recommended</span>
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-8 h-8 bg-black rounded border border-blue-500 flex items-center justify-center text-[10px]">{recommendedChamp.name}</div>
+                                        <span className="font-bold text-sm text-white">{recommendedChamp.name}</span>
+                                        <span className="text-xs text-blue-200">({recommendedChamp.tier}티어)</span>
+                                    </div>
+                                    <button 
+                                        onClick={() => setSelectedChampion(recommendedChamp)}
+                                        className="ml-auto text-xs bg-blue-600 px-3 py-1 rounded hover:bg-blue-500"
+                                    >
+                                        선택
+                                    </button>
+                                </div>
                              )}
 
                              {/* Champion Grid */}
-                             <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-                                 <div className="grid grid-cols-6 gap-2">
-                                     {championList
-                                        .filter(c => c.role === filterRole)
-                                        .sort((a,b) => a.tier - b.tier)
-                                        .map(c => {
-                                            const isBanned = unavailableSet.has(c.name);
-                                            const isSelected = selectedChamp?.id === c.id;
-                                            return (
-                                                <button 
-                                                    key={c.id}
-                                                    disabled={isBanned}
-                                                    onClick={() => setSelectedChamp(c)}
-                                                    className={`aspect-square relative group rounded-lg overflow-hidden border-2 transition ${
-                                                        isBanned ? 'opacity-30 grayscale cursor-not-allowed border-transparent' : 
-                                                        isSelected ? 'border-yellow-400 ring-2 ring-yellow-400/50 scale-105 z-10' : 
-                                                        'border-gray-700 hover:border-gray-400 hover:scale-105'
-                                                    }`}
-                                                >
-                                                    <div className="absolute inset-0 bg-gray-800 flex items-center justify-center">
-                                                        {/* Placeholder for Image */}
-                                                        <span className="text-xs font-bold text-center px-1">{c.name}</span>
-                                                    </div>
-                                                    <div className="absolute top-1 left-1 bg-black/60 px-1.5 rounded text-[10px] font-bold text-white border border-gray-600">
-                                                        {c.tier}티어
-                                                    </div>
-                                                    {isBanned && <div className="absolute inset-0 flex items-center justify-center bg-black/60"><span className="text-red-500 text-2xl font-black">✕</span></div>}
-                                                </button>
-                                            );
-                                        })}
-                                 </div>
+                             <div className="flex-1 overflow-y-auto p-4 grid grid-cols-5 gap-3 content-start">
+                                 {championList
+                                    .filter(c => c.role === (filterRole === 'SUP' ? 'SUP' : filterRole)) // Strict role filter for user simplicity
+                                    .sort((a,b) => a.tier - b.tier)
+                                    .map(champ => {
+                                        const isLocked = manualLockedChamps.has(champ.name);
+                                        const isSelected = selectedChampion?.name === champ.name;
+                                        
+                                        return (
+                                            <button 
+                                                key={champ.id}
+                                                disabled={isLocked}
+                                                onClick={() => setSelectedChampion(champ)}
+                                                className={`relative group flex flex-col items-center p-2 rounded border transition ${
+                                                    isLocked ? 'opacity-30 grayscale cursor-not-allowed border-transparent' : 
+                                                    isSelected ? 'bg-yellow-500/20 border-yellow-500' : 
+                                                    'bg-gray-700/50 border-gray-600 hover:bg-gray-600 hover:border-gray-400'
+                                                }`}
+                                            >
+                                                <div className="w-16 h-16 bg-black rounded mb-2 flex items-center justify-center text-xs text-gray-400 font-bold overflow-hidden">
+                                                    {champ.name}
+                                                </div>
+                                                <div className="text-xs font-bold text-center w-full truncate">{champ.name}</div>
+                                                <div className={`absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold border ${champ.tier === 1 ? 'bg-purple-600 border-purple-400 text-white' : 'bg-gray-800 border-gray-500 text-gray-400'}`}>
+                                                    {champ.tier}
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
                              </div>
 
-                             {/* Action Footer */}
-                             <div className="p-4 bg-black/60 border-t border-gray-700 flex justify-center">
+                             {/* Footer */}
+                             <div className="p-4 bg-gray-900 border-t border-gray-700 flex justify-center">
                                  <button 
-                                    disabled={!selectedChamp}
-                                    onClick={() => handleManualAction(selectedChamp)}
-                                    className={`w-full max-w-md py-3 rounded-lg font-black text-xl transition transform ${selectedChamp ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg hover:scale-105' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`}
+                                    onClick={handlePlayerLockIn}
+                                    disabled={!selectedChampion}
+                                    className={`px-12 py-3 rounded text-xl font-black uppercase tracking-widest transition ${
+                                        selectedChampion ? 'bg-yellow-500 text-black hover:bg-yellow-400 hover:scale-105 shadow-lg shadow-yellow-500/20' : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                                    }`}
                                  >
-                                     {currentStepInfo.type === 'BAN' ? '🚫 밴 확정 (BAN)' : '✅ 픽 확정 (LOCK IN)'}
+                                     LOCK IN
                                  </button>
                              </div>
                          </div>
                      ) : (
-                         <div className="text-center opacity-50 animate-pulse">
-                             <div className="text-9xl font-black text-white mb-4">VS</div>
-                             <div className="text-xl font-bold text-gray-400">{isManualMode ? "상대방이 선택 중입니다..." : ""}</div>
-                         </div>
+                         <div className="text-9xl font-black text-white opacity-30 select-none">VS</div>
                      )}
                  </div>
 
                  {/* Red Picks Column */}
-                 <div className="w-64 space-y-4 z-10">
+                 <div className="w-1/4 space-y-4 z-10">
                      {draftState.redPicks.map((pick, i) => (
-                         <div key={i} className={`h-20 border-r-4 ${pick ? 'border-red-500 bg-red-900/30' : 'border-gray-700 bg-gray-800/50'} rounded-l-lg flex flex-row-reverse items-center p-3 transition-all duration-300`}>
+                         <div key={i} className={`h-24 border-r-4 ${pick ? 'border-red-500 bg-red-900/30' : 'border-gray-700 bg-gray-800/50'} rounded-l-lg flex flex-row-reverse items-center p-4 transition-all duration-500`}>
                              {pick ? (
                                  <>
-                                    <div className="w-12 h-12 rounded border border-red-400 flex items-center justify-center bg-black overflow-hidden shrink-0">
-                                        <div className="font-bold text-[10px] text-center">{pick.champName}</div>
+                                    <div className="w-16 h-16 rounded border border-red-400 flex items-center justify-center bg-black overflow-hidden">
+                                        <div className="font-bold text-xs text-center">{pick.champName}</div>
                                     </div>
-                                    <div className="mr-3 text-right overflow-hidden">
-                                        <div className="text-lg font-black text-white truncate">{pick.champName}</div>
-                                        <div className="text-xs text-red-300 font-bold truncate">{pick.playerName}</div>
+                                    <div className="mr-4 text-right">
+                                        <div className="text-2xl font-black text-white">{pick.champName}</div>
+                                        <div className="text-sm text-red-300 font-bold">{pick.playerName}</div>
                                     </div>
                                  </>
-                             ) : <div className="text-gray-600 font-bold text-sm">Pick {i+1}</div>}
+                             ) : <div className="text-gray-600 font-bold text-lg">Pick {i+1}</div>}
                          </div>
                      ))}
                  </div>
