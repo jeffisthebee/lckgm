@@ -126,18 +126,22 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             return;
         }
 
+        // Randomly determine when the action happens for THIS specific step
+        // The action will trigger when the timer counts down to 'triggerTime'
+        // (e.g., if triggerTime is 10, the pick happens after 5 seconds of waiting)
+        const triggerTime = Math.floor(Math.random() * 12) + 1; // Action happens when timer shows 1s ~ 12s
+
         const timer = setInterval(() => {
             setDraftTimer(prev => {
-                if (prev <= 1) {
+                // If timer reaches the random trigger threshold, execute the step
+                if (prev <= triggerTime) {
                     // Execute Step
                     const stepInfo = DRAFT_SEQUENCE[draftStep];
                     const logs = simulationData.logs;
                     
-                    // Parse the log for this specific step order (e.g., "[1] 블루 1밴: ...")
                     const logEntry = logs.find(l => l.startsWith(`[${stepInfo.order}]`));
                     
                     if (logEntry) {
-                        // Extract Info
                         const isBan = stepInfo.type === 'BAN';
                         let champName = 'Unknown';
                         
@@ -154,15 +158,10 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                 if (stepInfo.side === 'BLUE') newState.blueBans = [...prev.blueBans, champName];
                                 else newState.redBans = [...prev.redBans, champName];
                             } else {
-                                // For Picks, find the actual player object from simulationData
-                                // We need to find which 'index' this pick corresponds to visually.
-                                // We'll just push them into the first available slot for that team for now
-                                // or try to match position if available.
+                                const currentPicks = stepInfo.side === 'BLUE' ? prev.bluePicks : prev.redPicks;
                                 const teamPicks = stepInfo.side === 'BLUE' ? simulationData.picks.A : simulationData.picks.B;
                                 const pickData = teamPicks.find(p => p.champName === champName);
                                 
-                                // Find first empty slot index
-                                const currentPicks = stepInfo.side === 'BLUE' ? prev.bluePicks : prev.redPicks;
                                 const emptyIdx = currentPicks.findIndex(p => p === null);
                                 
                                 if (emptyIdx !== -1 && pickData) {
@@ -177,11 +176,11 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                     }
 
                     setDraftStep(s => s + 1);
-                    return 15; // Reset timer
+                    return 15; // Reset timer to 15 for the NEXT step
                 }
                 return prev - 1;
             });
-        }, 1000); // Fast tick for smooth UI, but logic based on seconds
+        }, 1000); // Ticks every 1 second (Real time)
 
         return () => clearInterval(timer);
     }, [phase, draftStep, simulationData]);
