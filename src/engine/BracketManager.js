@@ -68,45 +68,66 @@ export const calculateGroupScore = (groupType) => {
     }).reduce((acc, m) => acc + (m.type === 'super' ? 2 : 1), 0);
   };
 
-  export const computeFinalStandings = (league) => {
-    // Check if Grand Final (Round 5) is finished
-    const grandFinal = league.matches.find(m => m.type === 'playoff' && m.round === 5);
-    const isSeasonOver = grandFinal && grandFinal.status === 'finished';
-
+ export const getFinalStandings = () => {
     if (!isSeasonOver) return [];
     
-    // Helpers for ID safety
+    // Helper: Handle String vs Number ID mismatch
     const safeId = (id) => (id && typeof id === 'object' ? id.id : Number(id));
-    const getWinnerId = (m) => (m && m.status === 'finished' ? teams.find(t => t.name === m.result.winner)?.id : null);
+
     const getLoserId = (m) => {
         if (!m || m.status !== 'finished' || !m.result) return null;
-        const wId = getWinnerId(m);
+        const winnerName = m.result.winner;
+        
+        // Safely get IDs
         const t1Id = safeId(m.t1);
         const t2Id = safeId(m.t2);
-        return t1Id === wId ? t2Id : t1Id;
+        
+        // Find team object to check name
+        const t1Obj = teams.find(t => safeId(t.id) === t1Id);
+        if (!t1Obj) return t2Id; // Safety fallback
+
+        return t1Obj.name === winnerName ? t2Id : t1Id;
+    };
+
+    const getWinnerId = (m) => {
+        if (!m || m.status !== 'finished') return null;
+        return teams.find(t => t.name === m.result.winner)?.id;
     };
 
     const findMatch = (type, round) => league.matches.find(m => m.type === type && m.round === round);
     
-    // 1. Determine IDs for every rank
-    const winnerId = getWinnerId(grandFinal);
-    const runnerUpId = getLoserId(grandFinal);
-    const thirdId = getLoserId(findMatch('playoff', 4));
-    const fourthId = getLoserId(findMatch('playoff', 3.1));
-    const fifthId = getLoserId(findMatch('playoff', 2.2));
-    const sixthId = getLoserId(findMatch('playoff', 2.1));
-    const seventhId = getLoserId(findMatch('playin', 3));
+    // --- Logic to find IDs for each rank ---
+    const finalMatch = findMatch('playoff', 5);
+    const winnerId = getWinnerId(finalMatch);
+    const runnerUpId = getLoserId(finalMatch);
 
-    // 8th & 9th: Play-In Round 1 Losers (Sorted by Seed)
+    const r4Match = findMatch('playoff', 4);
+    const thirdId = getLoserId(r4Match);
+
+    const r3_1Match = findMatch('playoff', 3.1);
+    const fourthId = getLoserId(r3_1Match);
+
+    const r2_2Match = findMatch('playoff', 2.2);
+    const fifthId = getLoserId(r2_2Match);
+
+    const r2_1Match = findMatch('playoff', 2.1);
+    const sixthId = getLoserId(r2_1Match);
+
+    const piFinalMatch = findMatch('playin', 3);
+    const seventhId = getLoserId(piFinalMatch);
+
+    // 8th & 9th: Play-In Round 1 Losers
     const piR1Matches = league.matches.filter(m => m.type === 'playin' && m.round === 1);
     const piR1Losers = piR1Matches.map(m => getLoserId(m)).filter(id => id !== null);
-    
+
+    // Sort 8th/9th by Play-In Seed
     piR1Losers.sort((a, b) => {
-        const seedA = league.playInSeeds?.find(s => s.id === a)?.seed || 99;
-        const seedB = league.playInSeeds?.find(s => s.id === b)?.seed || 99;
+        const seedA = getTeamSeed(a, 'playin') || 99;
+        const seedB = getTeamSeed(b, 'playin') || 99;
         return seedA - seedB;
     });
 
+    // 10th: Group Stage Eliminated
     const tenthId = league.seasonSummary?.eliminated;
 
     const rankIds = [
@@ -114,11 +135,13 @@ export const calculateGroupScore = (groupType) => {
         piR1Losers[0], piR1Losers[1], tenthId
     ];
 
-    // 2. Map IDs to Team Objects
+    // --- CRASH PREVENTION MAPPING ---
     return rankIds.map((id, index) => {
         if (!id) return null;
+        // Use safeId to find the team ensuring Number vs Number comparison
         const t = teams.find(team => safeId(team.id) === safeId(id));
-        if (!t) return null;
+        
+        if (!t) return null; // If team not found, skip (Prevents "undefined" crash)
         return { rank: index + 1, team: t };
     }).filter(item => item !== null);
-};
+  };
