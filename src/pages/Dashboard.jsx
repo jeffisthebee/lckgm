@@ -7,7 +7,7 @@ import { simulateMatch, getTeamRoster, generateSchedule } from '../engine/simEng
 import LiveGamePlayer from '../components/LiveGamePlayer';
 import DetailedMatchResultModal from '../components/DetailedMatchResultModal';
 import playerList from '../data/players.json';
-import {updateLeague, getLeagueById, getOvrBadgeStyle, getPotBadgeStyle} from '../utils/leagueUtils';
+import { getLeagues, updateLeague, getLeagueById, getOvrBadgeStyle, getPotBadgeStyle} from '../utils/leagueUtils';
 
 
   export default function Dashboard() {
