@@ -181,7 +181,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 }
                 return prev - 1;
             });
-        }, 100); // Fast tick for smooth UI, but logic based on seconds
+        }, 1000); // Fast tick for smooth UI, but logic based on seconds
 
         return () => clearInterval(timer);
     }, [phase, draftStep, simulationData]);

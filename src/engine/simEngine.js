@@ -115,44 +115,50 @@ function selectPickFromTop3(player, availableChampions) {
   return top3[0];
 }
 
-function selectBanFromProbabilities(opponentTeam, availableChampions) {
-    let candidates = [];
-    opponentTeam.roster.forEach(player => {
-        const playerData = MASTERY_MAP[player.이름];
-        const roleChamps = availableChampions.filter(c => c.role === player.포지션);
-        const scored = roleChamps.map(c => {
-             const mastery = playerData?.pool?.find(m => m.name === c.name);
-             return { 
-                 champ: c, 
-                 score: calculateChampionScore(player, c, mastery),
-                 player: player
-             };
-        });
-        scored.sort((a,b) => b.score - a.score);
-        const top3 = scored.slice(0, 3);
-        candidates.push(...top3);
-    });
+// In src/engine/simEngine.js
 
-    if (candidates.length === 0) return null;
+function selectBanFromProbabilities(opponentTeam, availableChampions, targetRoles) {
+  let candidates = [];
+  
+  // [FIX] Filter the roster to only include players whose roles are still open (in targetRoles)
+  const targetPlayers = opponentTeam.roster.filter(p => targetRoles.includes(p.포지션));
 
-    const totalChampScore = candidates.reduce((acc, c) => acc + c.score, 0);
-    const totalTeamOvr = opponentTeam.roster.reduce((acc, p) => acc + p.종합, 0);
+  targetPlayers.forEach(player => {
+      const playerData = MASTERY_MAP[player.이름];
+      const roleChamps = availableChampions.filter(c => c.role === player.포지션);
+      const scored = roleChamps.map(c => {
+           const mastery = playerData?.pool?.find(m => m.name === c.name);
+           return { 
+               champ: c, 
+               score: calculateChampionScore(player, c, mastery),
+               player: player
+           };
+      });
+      scored.sort((a,b) => b.score - a.score);
+      const top3 = scored.slice(0, 3);
+      candidates.push(...top3);
+  });
 
-    let weightedCandidates = candidates.map(item => {
-        const champRatio = item.score / totalChampScore;
-        const playerRatio = item.player.종합 / totalTeamOvr;
-        const weight = champRatio + playerRatio;
-        return { ...item, weight: weight };
-    });
+  if (candidates.length === 0) return null;
 
-    const totalWeight = weightedCandidates.reduce((acc, c) => acc + c.weight, 0);
-    let r = Math.random() * totalWeight;
+  const totalChampScore = candidates.reduce((acc, c) => acc + c.score, 0);
+  const totalTeamOvr = opponentTeam.roster.reduce((acc, p) => acc + p.종합, 0);
 
-    for (const item of weightedCandidates) {
-        if (r < item.weight) return item.champ;
-        r -= item.weight;
-    }
-    return weightedCandidates[0].champ;
+  let weightedCandidates = candidates.map(item => {
+      const champRatio = item.score / totalChampScore;
+      const playerRatio = item.player.종합 / totalTeamOvr;
+      const weight = champRatio + playerRatio;
+      return { ...item, weight: weight };
+  });
+
+  const totalWeight = weightedCandidates.reduce((acc, c) => acc + c.weight, 0);
+  let r = Math.random() * totalWeight;
+
+  for (const item of weightedCandidates) {
+      if (r < item.weight) return item.champ;
+      r -= item.weight;
+  }
+  return weightedCandidates[0].champ;
 }
 
 export function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChampionList) {
@@ -173,7 +179,12 @@ export function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChamp
     const availableChamps = currentChampionList.filter(c => !localBans.has(c.name));
 
     if (step.type === 'BAN') {
-      const banCandidate = selectBanFromProbabilities(opponentTeam, availableChamps);
+      // [FIX] Identify Opponent's Side and their Open Roles
+      const opponentSide = step.side === 'BLUE' ? 'RED' : 'BLUE';
+      const opponentOpenRoles = remainingRoles[opponentSide];
+
+      // [FIX] Pass open roles to the ban function
+      const banCandidate = selectBanFromProbabilities(opponentTeam, availableChamps, opponentOpenRoles);
       
       if (banCandidate) {
         localBans.add(banCandidate.name);
