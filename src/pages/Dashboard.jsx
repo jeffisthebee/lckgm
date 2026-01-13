@@ -497,8 +497,8 @@ const getOvrBadgeStyle = (ovr) => {
     };
     
     // [수정됨] Dashboard 내부 로직 통합 (여기서부터 복사하세요)
-    // ==========================================
-  // [FIX] Ensure Play-In and Playoff matches are processable via the Blue Button
+    // =========================================
+
   const handleProceedNextMatch = () => {
     try {
       if (!nextGlobalMatch) return;
