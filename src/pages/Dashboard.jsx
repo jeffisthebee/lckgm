@@ -7,7 +7,8 @@ import { simulateMatch, getTeamRoster, generateSchedule } from '../engine/simEng
 import LiveGamePlayer from '../components/LiveGamePlayer';
 import DetailedMatchResultModal from '../components/DetailedMatchResultModal';
 import playerList from '../data/players.json';
-import { computeStandings, calculateFinalStandings } from '../engine/BracketManager';
+import { computeStandings, calculateFinalStandings, calculateGroupPoints, sortGroupByStandings } from '../engine/BracketManager';
+
 
 // Helper functions (Paste getLeagues, updateLeague, etc here if they aren't used elsewhere)
 const getLeagues = () => { const s = localStorage.getItem('lckgm_leagues'); return s ? JSON.parse(s) : []; };
@@ -722,32 +723,10 @@ const getOvrBadgeStyle = (ovr) => {
     const myRecord = computedStandings[myTeam.id] || { w: 0, l: 0, diff: 0 };
     const finance = teamFinanceData[viewingTeam.name] || { total_expenditure: 0, cap_expenditure: 0, luxury_tax: 0 };
   
-    const getSortedGroup = (groupIds) => {
-      return groupIds.sort((a, b) => {
-        const recA = computedStandings[a] || { w: 0, diff: 0 };
-        const recB = computedStandings[b] || { w: 0, diff: 0 };
-        if (recA.w !== recB.w) return recB.w - recA.w;
-        return recB.diff - recA.diff;
-      });
-    };
-  
-    const calculateGroupScore = (groupType) => {
-      if (!league.groups || !league.groups[groupType]) return 0;
-      const groupIds = league.groups[groupType];
-      
-      return league.matches.filter(m => {
-          if (m.status !== 'finished') return false;
-          // [CRITICAL FIX] Ensure only Regular and Super matches count for Group Scores
-          if (m.type !== 'regular' && m.type !== 'super') return false;
-          
-          const winnerTeam = teams.find(t => t.name === m.result.winner);
-          if (!winnerTeam) return false;
-          return groupIds.includes(winnerTeam.id);
-      }).reduce((acc, m) => acc + (m.type === 'super' ? 2 : 1), 0);
-    };
     
-    const baronTotalWins = calculateGroupScore('baron');
-    const elderTotalWins = calculateGroupScore('elder');
+    
+    const baronTotalWins = calculateGroupPoints(league, 'baron');
+    const elderTotalWins = calculateGroupPoints(league, 'elder');
   
     const updateChampionMeta = (currentChamps) => {
       // Probabilities for shifting tiers
@@ -896,8 +875,8 @@ const getOvrBadgeStyle = (ovr) => {
           }
         }
         
-        const baronSorted = getSortedGroup([...league.groups.baron]);
-        const elderSorted = getSortedGroup([...league.groups.elder]);
+        const baronSorted = sortGroupByStandings([...league.groups.baron], computedStandings);
+        const elderSorted = sortGroupByStandings([...league.groups.elder], computedStandings);
   
         const seasonSummary = {
             winnerGroup: isBaronWinner ? 'Baron' : 'Elder',
@@ -1474,7 +1453,7 @@ const getOvrBadgeStyle = (ovr) => {
                                                       <tr><th className="p-2 text-center w-8">#</th><th className="p-2 text-left">팀</th><th className="p-2 text-center w-12">W-L</th><th className="p-2 text-center w-10">득실</th></tr>
                                                   </thead>
                                                   <tbody>
-                                                      {getSortedGroup(league.groups[group.id] || []).map((id, idx) => {
+                                                  {sortGroupByStandings(league.groups[group.id] || [], computedStandings).map((id, idx) => {
                                                           const t = teams.find(team => team.id === id);
                                                           const isMyTeam = myTeam.id === id;
                                                           const rec = computedStandings[id] || {w:0, l:0, diff:0};
@@ -1588,7 +1567,7 @@ const getOvrBadgeStyle = (ovr) => {
                                           </tr>
                                           </thead>
                                           <tbody className="divide-y divide-gray-100">
-                                          {getSortedGroup(league.groups[group.id]).map((id, idx) => {
+                                          {sortGroupByStandings(league.groups[group.id] || [], computedStandings).map((id, idx) => {
                                               const t = teams.find(team => team.id === id);
                                               const isMyTeam = myTeam.id === id;
                                               const rec = computedStandings[id] || {w:0, l:0, diff:0};

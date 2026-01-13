@@ -132,3 +132,42 @@ export const calculateFinalStandings = (league) => {
         return { rank: index + 1, team: t };
     }).filter(item => item !== null);
 };
+
+export const calculateGroupPoints = (league, groupType) => {
+    if (!league || !league.groups || !league.groups[groupType]) return 0;
+    const groupIds = league.groups[groupType];
+    
+    // Safety check for matches
+    if (!league.matches) return 0;
+
+    return league.matches.filter(m => {
+        if (m.status !== 'finished' || !m.result) return false;
+        // Only Regular and Super matches count for Group Scores
+        if (m.type !== 'regular' && m.type !== 'super') return false;
+        
+        // Find winner ID
+        const winnerTeam = teams.find(t => t.name === m.result.winner);
+        if (!winnerTeam) return false;
+        
+        // Check if winner belongs to this group
+        // (Handle both string/number ID types safely)
+        return groupIds.some(id => String(id) === String(winnerTeam.id));
+    }).reduce((acc, m) => acc + (m.type === 'super' ? 2 : 1), 0);
+};
+
+// [NEW] Sort a list of team IDs based on standings (Wins > Diff)
+export const sortGroupByStandings = (groupIds, standings) => {
+    if (!groupIds) return [];
+    
+    // Create a copy to avoid mutating the original array
+    return [...groupIds].sort((a, b) => {
+        const recA = standings[a] || { w: 0, diff: 0 };
+        const recB = standings[b] || { w: 0, diff: 0 };
+        
+        // 1. Sort by Wins (Higher is better)
+        if (recA.w !== recB.w) return recB.w - recA.w;
+        
+        // 2. Sort by Score Difference (Higher is better)
+        return recB.diff - recA.diff;
+    });
+};
