@@ -8,7 +8,7 @@ import LiveGamePlayer from '../components/LiveGamePlayer';
 import DetailedMatchResultModal from '../components/DetailedMatchResultModal';
 import playerList from '../data/players.json';
 import { computeStandings, calculateFinalStandings, calculateGroupPoints, sortGroupByStandings, createPlayInBracket } from '../engine/BracketManager';
-
+import { updateChampionMeta, generateSuperWeekMatches } from '../engine/SeasonManager';
 
 // Helper functions (Paste getLeagues, updateLeague, etc here if they aren't used elsewhere)
 const getLeagues = () => { const s = localStorage.getItem('lckgm_leagues'); return s ? JSON.parse(s) : []; };
@@ -739,120 +739,34 @@ const getOvrBadgeStyle = (ovr) => {
     const baronTotalWins = calculateGroupPoints(league, 'baron');
     const elderTotalWins = calculateGroupPoints(league, 'elder');
   
-    const updateChampionMeta = (currentChamps) => {
-      // Probabilities for shifting tiers
-      const probabilities = {
-          1: { 1: 0.40, 2: 0.40, 3: 0.15, 4: 0.04, 5: 0.01 },
-          2: { 1: 0.25, 2: 0.40, 3: 0.25, 4: 0.08, 5: 0.02 },
-          3: { 1: 0.07, 2: 0.23, 3: 0.40, 4: 0.23, 5: 0.07 },
-          4: { 1: 0.02, 2: 0.08, 3: 0.25, 4: 0.40, 5: 0.25 },
-          5: { 1: 0.01, 2: 0.04, 3: 0.15, 4: 0.25, 5: 0.55 },
-      };
-  
-      const getNewTier = (currentTier) => {
-          // Ensure tier is treated as a number for lookup
-          const tierNum = parseInt(currentTier, 10) || 3;
-          
-          if (!probabilities[tierNum]) return tierNum;
-  
-          const rand = Math.random();
-          let cumulative = 0;
-          const chances = probabilities[tierNum];
-          
-          // Use explicit array order to guarantee deterministic logic
-          const order = [1, 2, 3, 4, 5];
-          
-          for (const t of order) {
-              if (chances[t] !== undefined) {
-                  cumulative += chances[t];
-                  if (rand < cumulative) {
-                      return t;
-                  }
-              }
-          }
-          return tierNum; 
-      };
-  
-      if (!Array.isArray(currentChamps)) return [];
-      
-      return currentChamps.map(champ => {
-          let newTier = getNewTier(champ.tier);
-          return { ...champ, tier: newTier };
-      });
-    };
-  
+    
+    // REPLACE the old "handleGenerateSuperWeek" with THIS:
+
     const handleGenerateSuperWeek = () => {
       const newMetaVersion = '16.02';
       
-      // Safety Check: If already updated, stop.
       if (league.metaVersion === newMetaVersion) {
           alert("이미 16.02 메타 패치가 적용되어 있습니다.");
           return;
       }
 
-      // 1. Get Source List
+      // 1. Update Meta (Delegated to SeasonManager)
       const sourceList = (league.currentChampionList && league.currentChampionList.length > 0) 
-          ? league.currentChampionList 
-          : championList;
+          ? league.currentChampionList : championList;
+      
+      const newChampionList = updateChampionMeta(sourceList);
   
-      // 2. Generate New Meta List
-      let newChampionList = [];
-      try {
-          const listClone = JSON.parse(JSON.stringify(sourceList));
-          newChampionList = updateChampionMeta(listClone);
-      } catch (e) {
-          console.error("Meta update failed:", e);
-          newChampionList = sourceList;
-      }
+      // 2. Generate Schedule (Delegated to SeasonManager)
+      const newMatches = generateSuperWeekMatches(league);
+      
+      // 3. Merge & Sort
+      const cleanMatches = league.matches ? league.matches.filter(m => m.type !== 'tbd') : [];
+      const updatedMatches = [...cleanMatches, ...newMatches].sort((a, b) => {
+          const parse = (d) => parseFloat(d.split(' ')[0]);
+          return parse(a.date) - parse(b.date);
+      });
   
-      // 3. Prepare Super Week Matches (ONLY generate if they don't exist yet)
-      const existingSuperMatches = league.matches ? league.matches.filter(m => m.type === 'super') : [];
-      let updatedMatches = league.matches || [];
-
-      if (existingSuperMatches.length === 0) {
-          const baronDraftOrder = league.groups?.baron || []; 
-          const elderDraftOrder = league.groups?.elder || [];
-          
-          let newMatches = [];
-          const days = ['1.28 (수)', '1.29 (목)', '1.30 (금)', '1.31 (토)', '2.1 (일)']; 
-      
-          let pairs = [];
-          for(let i=0; i<5; i++) {
-              if (baronDraftOrder[i] && elderDraftOrder[i]) {
-                  pairs.push({ 
-                      t1: baronDraftOrder[i], 
-                      t2: elderDraftOrder[i], 
-                      orderIndex: i 
-                  });
-              }
-          }
-          
-          pairs.sort(() => Math.random() - 0.5); // Shuffle
-      
-          const cleanMatches = league.matches ? league.matches.filter(m => m.type !== 'tbd') : [];
-      
-          pairs.forEach((pair, idx) => {
-              newMatches.push({
-                  id: Date.now() + idx,
-                  t1: pair.t1,
-                  t2: pair.t2,
-                  date: days[idx] || '2.1 (일)', 
-                  time: '17:00',
-                  type: 'super', 
-                  format: 'BO5', 
-                  status: 'pending'
-              });
-          });
-      
-          updatedMatches = [...cleanMatches, ...newMatches];
-          updatedMatches.sort((a, b) => {
-              const dayA = parseFloat(a.date.split(' ')[0]);
-              const dayB = parseFloat(b.date.split(' ')[0]);
-              return dayA - dayB;
-          });
-      }
-  
-      // 4. Update State & DB
+      // 4. Update State
       const newLeagueState = { 
           matches: updatedMatches,
           currentChampionList: newChampionList,
