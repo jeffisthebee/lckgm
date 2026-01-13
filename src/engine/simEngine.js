@@ -349,7 +349,7 @@ export function resolveCombat(powerA, powerB) {
   
   let winChanceA = avgPowerA / totalAvgPower;
   const diff = avgPowerA - avgPowerB;
-  winChanceA += (diff * 0.01); 
+  winChanceA += (diff * 0.018); 
   if (winChanceA < 0) winChanceA = 0;
   if (winChanceA > 1) winChanceA = 1;
 
@@ -1401,4 +1401,153 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
         // Simple float comparison for dates like 1.14 vs 1.25
         return parseFloat(dateA) - parseFloat(dateB) || (a.time > b.time ? 1 : -1);
     });
+};
+
+
+
+// src/engine/simEngine.js
+
+// [NEW] Quick Sim with 0.018 BALANCE (Strong Team Dominance)
+export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampionList = []) => {
+  // 1. Safety & Setup
+  const safeChampList = (currentChampionList && currentChampionList.length > 0) 
+      ? currentChampionList 
+      : championList; 
+
+  const targetWins = format === 'BO5' ? 3 : 2;
+  let winsA = 0;
+  let winsB = 0;
+  let matchHistory = [];
+  let currentSet = 1;
+
+  while (winsA < targetWins && winsB < targetWins) {
+      // ------------------------------------------------------------------
+      // STEP 1: RUN THE DRAFT
+      // ------------------------------------------------------------------
+      const draftResult = runDraftSimulation(teamA, teamB, [], safeChampList);
+      const picksA = draftResult.picks.A;
+      const picksB = draftResult.picks.B;
+
+      // ------------------------------------------------------------------
+      // STEP 2: CHECK POWER AT 3 PHASES
+      // ------------------------------------------------------------------
+      const mockBuffs = { dragonStacks: { infernal: 0 }, grubs: 0, herald: false, baron: false, elder: false, soul: null };
+      
+      // Check power at 15m, 25m, 35m
+      const pA_15 = calculateTeamPower(picksToFullObj(picksA, teamA), 15, mockBuffs, 0, [], 900);
+      const pB_15 = calculateTeamPower(picksToFullObj(picksB, teamB), 15, mockBuffs, 0, [], 900);
+
+      const pA_25 = calculateTeamPower(picksToFullObj(picksA, teamA), 25, mockBuffs, 0, [], 1500);
+      const pB_25 = calculateTeamPower(picksToFullObj(picksB, teamB), 25, mockBuffs, 0, [], 1500);
+
+      const pA_35 = calculateTeamPower(picksToFullObj(picksA, teamA), 35, mockBuffs, 0, [], 2100);
+      const pB_35 = calculateTeamPower(picksToFullObj(picksB, teamB), 35, mockBuffs, 0, [], 2100);
+
+      // ------------------------------------------------------------------
+      // STEP 3: CALCULATE WIN PROBABILITY (0.018 Tune)
+      // ------------------------------------------------------------------
+      const totalScoreA = (pA_15 * 0.25) + (pA_25 * 0.40) + (pA_35 * 0.35);
+      const totalScoreB = (pB_15 * 0.25) + (pB_25 * 0.40) + (pB_35 * 0.35);
+
+      const avgPowerA = totalScoreA / 5;
+      const avgPowerB = totalScoreB / 5;
+      const totalAvgPower = avgPowerA + avgPowerB;
+      
+      // 1. Base Ratio
+      let winChanceA = avgPowerA / totalAvgPower;
+      
+      // 2. The Difference Multiplier (TUNED TO 0.018)
+      const diff = avgPowerA - avgPowerB;
+      
+      // [ADJUSTED] 0.018 = 1.8% per point.
+      winChanceA += (diff * 0.018); 
+
+      // 3. Low Volatility
+      const volatility = 0.03; 
+      const randomNoise = (Math.random() * (volatility * 2)) - volatility;
+      let finalChanceA = winChanceA + randomNoise;
+
+      // Clamp 1% - 99%
+      finalChanceA = Math.max(0.01, Math.min(0.99, finalChanceA));
+
+      // ------------------------------------------------------------------
+      // STEP 4: DECIDE WINNER
+      // ------------------------------------------------------------------
+      const isWinA = Math.random() < finalChanceA;
+      const winner = isWinA ? teamA : teamB;
+      
+      if (isWinA) winsA++; else winsB++;
+
+      // Generate History
+      const gameTime = 26 + (Math.random() * 12); 
+      
+      matchHistory.push({
+          setNumber: currentSet,
+          winner: winner.name,
+          picks: { 
+              A: generatePostGameStats(teamA, isWinA, picksA, gameTime), 
+              B: generatePostGameStats(teamB, !isWinA, picksB, gameTime) 
+          },
+          bans: draftResult.bans, 
+          logs: [`[SIM] Set ${currentSet} - Winner: ${winner.name} (Diff: ${diff.toFixed(1)}, Chance: ${(finalChanceA*100).toFixed(1)}%)`],
+          resultSummary: `Winner: ${winner.name}`
+      });
+
+      currentSet++;
+  }
+
+  return {
+      winner: winsA > winsB ? teamA.name : teamB.name,
+      scoreString: `${winsA}:${winsB}`,
+      scoreA: winsA,
+      scoreB: winsB,
+      history: matchHistory
+  };
+};
+
+// --- HELPERS (Keep these at the bottom of the file) ---
+
+const picksToFullObj = (simplePicks, team) => {
+  return simplePicks.map(p => {
+      const player = team.roster.find(r => r.이름 === p.playerName);
+      return {
+          playerData: player,
+          role: player ? player.포지션 : 'MID',
+          tier: p.tier,
+          mastery: p.mastery, 
+          currentGold: 5000, 
+          level: 9,
+          classType: '전사', 
+          dmgType: 'AD'
+      };
+  });
+};
+
+const generatePostGameStats = (team, isWinner, picks, gameTime) => {
+  return picks.map(p => {
+      const playerObj = team.roster.find(r => r.이름 === p.playerName) || { 포지션: 'MID', 상세: {} };
+      const pickObj = { playerData: playerObj, currentGold: 0 }; 
+      
+      const resources = calculateIndividualIncome(pickObj, gameTime, isWinner ? 1.0 : 0.9);
+      
+      const isCarry = ['MID', 'ADC', 'TOP'].includes(playerObj.포지션);
+      let k=0, d=0, a=0;
+      
+      if (isWinner) {
+          k = isCarry ? Math.floor(Math.random() * 8) + 3 : Math.floor(Math.random() * 3) + 1;
+          d = Math.floor(Math.random() * 3);
+          a = Math.floor(Math.random() * 10) + 5;
+      } else {
+          k = isCarry ? Math.floor(Math.random() * 4) : 0;
+          d = Math.floor(Math.random() * 6) + 3;
+          a = Math.floor(Math.random() * 6) + 2;
+      }
+
+      return {
+          ...p, 
+          k, d, a,
+          currentGold: resources.gold,
+          lvl: Math.min(18, Math.floor(resources.xp / 1000) + 6)
+      };
+  });
 };

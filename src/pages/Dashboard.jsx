@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { teams, teamFinanceData } from '../data/teams';
 import { championList, difficulties } from '../data/constants';
-import { simulateMatch, getTeamRoster, generateSchedule } from '../engine/simEngine';
+import { simulateMatch, getTeamRoster, generateSchedule, quickSimulateMatch } from '../engine/simEngine';
 import LiveGamePlayer from '../components/LiveGamePlayer';
 import DetailedMatchResultModal from '../components/DetailedMatchResultModal';
 import playerList from '../data/players.json';
@@ -442,13 +442,29 @@ const getOvrBadgeStyle = (ovr) => {
         const t1Obj = teams.find(t => Number(t.id) === t1Id);
         const t2Obj = teams.find(t => Number(t.id) === t2Id);
     
-        if (!t1Obj || !t2Obj) {
-          throw new Error(`Teams not found for Match ID: ${match.id}`);
-        }
+        if (!t1Obj || !t2Obj) throw new Error(`Teams not found for Match ID: ${match.id}`);
     
         const t1Roster = getTeamRoster(t1Obj.name);
         const t2Roster = getTeamRoster(t2Obj.name);
-    
+        const format = match.format || 'BO3';
+
+        // --- 1. QUICK SIM (CPU Matches) ---
+        if (!isPlayerMatch) {
+            const result = quickSimulateMatch(
+                { ...t1Obj, roster: t1Roster }, 
+                { ...t2Obj, roster: t2Roster }, 
+                format
+            );
+            
+            // MAP VARIABLES: instant sim returns 'winner', dashboard wants 'winnerName'
+            return {
+                winnerName: result.winner,     // <--- The Critical Fix
+                scoreString: result.scoreString,
+                history: result.history        // Save history for box scores
+            };
+        }
+
+        // --- 2. HEAVY SIM (Player Matches) ---
         const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0) 
             ? league.currentChampionList 
             : championList;
@@ -459,8 +475,6 @@ const getOvrBadgeStyle = (ovr) => {
           playerTeamName: isPlayerMatch ? myTeam.name : undefined
         };
         
-        // Changed from simulateSet to simulateMatch to get Set Scores (2:0, 2:1)
-        const format = match.format || 'BO3';
         const result = simulateMatch(
           { ...t1Obj, roster: t1Roster },
           { ...t2Obj, roster: t2Roster },
@@ -470,10 +484,10 @@ const getOvrBadgeStyle = (ovr) => {
     
         if (!result) throw new Error("Simulation returned null result");
     
-        // Result from simulateMatch already contains { scoreString: "2:0", winner: "Name" }
         return {
             winnerName: result.winner,
-            scoreString: result.scoreString
+            scoreString: result.scoreString,
+            history: result.history
         };
   
       } catch (err) {
@@ -482,18 +496,14 @@ const getOvrBadgeStyle = (ovr) => {
       }
     };
     
-  // ==========================================
     // [수정됨] Dashboard 내부 로직 통합 (여기서부터 복사하세요)
     // ==========================================
-  // [FIX] 1. Missing Function for Blue Button
-  // [REPLACE FUNCTION handleProceedNextMatch]
-  // [REPLACE] Function: handleProceedNextMatch inside Dashboard component
   // [FIX] Ensure Play-In and Playoff matches are processable via the Blue Button
   const handleProceedNextMatch = () => {
     try {
       if (!nextGlobalMatch) return;
   
-      // [FIX] Use safe ID check for button logic
+      // Safe ID check
       const getID = (val) => (val && typeof val === 'object' && val.id) ? val.id : val;
       const myId = String(myTeam.id);
       
@@ -502,27 +512,28 @@ const getOvrBadgeStyle = (ovr) => {
         String(getID(nextGlobalMatch.t2)) === myId;
   
       if (!isPlayerMatch) {
-        // For Play-In/Playoffs, the object structure might differ slightly (e.g. format field)
-        // but runSimulationForMatch handles ID resolution.
+        // Run the sim (this now calls the fast Quick Sim)
         const result = runSimulationForMatch(nextGlobalMatch, false);
   
         if (!result) throw new Error("Simulation returned null");
   
-        // [FIX] Improved Score Parsing for various match formats
+        // Standardize Score String
         let scoreStr = "2:0"; 
         if (result.scoreString) {
             scoreStr = result.scoreString;
         } else if (result.score) {
-            // If score is an object { TeamA: '2', TeamB: '1' }
             const values = Object.values(result.score);
             if (values.length >= 2) scoreStr = `${values[0]}:${values[1]}`;
         }
   
+        // Construct Final Result Object
         const finalResult = { 
-            winner: result.winnerName, 
-            score: scoreStr 
+            winner: result.winnerName, // Used for Standings
+            score: scoreStr,           // Used for Display
+            history: result.history    // Used for Box Score Modal (NEW)
         };
   
+        // Update League State
         const updatedMatches = league.matches.map(m => 
             m.id === nextGlobalMatch.id ? { ...m, status: 'finished', result: finalResult } : m
         );
@@ -531,16 +542,16 @@ const getOvrBadgeStyle = (ovr) => {
         
         updateLeague(league.id, updatedLeague);
         setLeague(updatedLeague);
-        recalculateStandings(updatedLeague); // Update standings immediately
+        recalculateStandings(updatedLeague); 
   
-        // [IMPORTANT] Trigger next round generation checks immediately after simulation
+        // Trigger Next Round Checks
         checkAndGenerateNextPlayInRound(updatedMatches);
         checkAndGenerateNextPlayoffRound(updatedMatches);
   
         return;
       }
   
-      // If it is player match, navigate to match view
+      // If player match, navigate to game
       navigate(`/match/${nextGlobalMatch.id}`);
     } catch (err) {
       console.error("Next Match Error:", err);
