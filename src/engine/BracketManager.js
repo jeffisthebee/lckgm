@@ -171,3 +171,95 @@ export const sortGroupByStandings = (groupIds, standings) => {
         return recB.diff - recA.diff;
     });
 };
+
+export const createPlayInBracket = (league, standings, teams, baronWins, elderWins) => {
+    // 1. Determine Winning Group
+    let isBaronWinner;
+    
+    if (baronWins > elderWins) {
+        isBaronWinner = true;
+    } else if (baronWins < elderWins) {
+        isBaronWinner = false;
+    } else {
+        // Tie-breaker 1: Score Difference
+        const getDiff = (groupIds) => (groupIds || []).reduce((s, id) => s + ((standings[id]?.diff) || 0), 0);
+        const baronDiff = getDiff(league.groups.baron);
+        const elderDiff = getDiff(league.groups.elder);
+
+        if (baronDiff > elderDiff) isBaronWinner = true;
+        else if (baronDiff < elderDiff) isBaronWinner = false;
+        else {
+            // Tie-breaker 2: Total Team Power (Stat)
+            const getPower = (groupIds) => (groupIds || []).reduce((s, id) => s + ((teams.find(t => t.id === id)?.power) || 0), 0);
+            const baronPower = getPower(league.groups.baron);
+            const elderPower = getPower(league.groups.elder);
+            
+            if (baronPower > elderPower) isBaronWinner = true;
+            else if (baronPower < elderPower) isBaronWinner = false;
+            else isBaronWinner = Math.random() < 0.5; // Tie-breaker 3: Coin Flip
+        }
+    }
+
+    // 2. Sort Groups
+    const baronSorted = sortGroupByStandings([...league.groups.baron], standings);
+    const elderSorted = sortGroupByStandings([...league.groups.elder], standings);
+
+    const seasonSummary = {
+        winnerGroup: isBaronWinner ? 'Baron' : 'Elder',
+        poTeams: [],
+        playInTeams: [],
+        eliminated: null
+    };
+
+    let playInIds = [];
+
+    // 3. Assign Seeds based on Winner
+    if (isBaronWinner) {
+        // Winner Group: 1st/2nd -> Playoffs, 3rd/4th/5th -> Play-In
+        seasonSummary.poTeams.push({ id: baronSorted[0], seed: 1 });
+        seasonSummary.poTeams.push({ id: baronSorted[1], seed: 2 });
+        playInIds.push(baronSorted[2], baronSorted[3], baronSorted[4]);
+
+        // Loser Group: 1st -> Playoffs (Seed 3), 2nd/3rd/4th -> Play-In
+        seasonSummary.poTeams.push({ id: elderSorted[0], seed: 3 });
+        playInIds.push(elderSorted[1], elderSorted[2], elderSorted[3]);
+        
+        // Loser Group 5th -> Eliminated
+        seasonSummary.eliminated = elderSorted[4];
+    } else {
+        // (Same logic reversed for Elder win)
+        seasonSummary.poTeams.push({ id: elderSorted[0], seed: 1 });
+        seasonSummary.poTeams.push({ id: elderSorted[1], seed: 2 });
+        playInIds.push(elderSorted[2], elderSorted[3], elderSorted[4]);
+
+        seasonSummary.poTeams.push({ id: baronSorted[0], seed: 3 });
+        playInIds.push(baronSorted[1], baronSorted[2], baronSorted[3]);
+        seasonSummary.eliminated = baronSorted[4];
+    }
+
+    // 4. Sort Play-In Teams (Seeds 1-6 for Play-In)
+    playInIds.sort((a, b) => {
+        const recA = standings[a] || { w: 0, diff: 0 };
+        const recB = standings[b] || { w: 0, diff: 0 };
+        if (recA.w !== recB.w) return recB.w - recA.w;
+        if (recA.diff !== recB.diff) return recB.diff - recA.diff;
+        return 0;
+    });
+
+    const playInSeeds = playInIds.map((tid, idx) => ({ id: tid, seed: idx + 1 }));
+    seasonSummary.playInTeams = playInSeeds;
+
+    // 5. Generate Round 1 Matches (Seed 3 vs 6, Seed 4 vs 5)
+    // (Seeds 1 and 2 get a bye)
+    const seed3 = playInSeeds[2].id;
+    const seed6 = playInSeeds[5].id;
+    const seed4 = playInSeeds[3].id;
+    const seed5 = playInSeeds[4].id;
+
+    const newMatches = [
+        { id: Date.now() + 1, t1: seed3, t2: seed6, date: '2.6 (금)', time: '17:00', type: 'playin', format: 'BO3', status: 'pending', round: 1, label: '플레이-인 1라운드' },
+        { id: Date.now() + 2, t1: seed4, t2: seed5, date: '2.6 (금)', time: '19:30', type: 'playin', format: 'BO3', status: 'pending', round: 1, label: '플레이-인 1라운드' }
+    ];
+
+    return { newMatches, playInSeeds, seasonSummary };
+};

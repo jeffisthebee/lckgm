@@ -7,7 +7,7 @@ import { simulateMatch, getTeamRoster, generateSchedule } from '../engine/simEng
 import LiveGamePlayer from '../components/LiveGamePlayer';
 import DetailedMatchResultModal from '../components/DetailedMatchResultModal';
 import playerList from '../data/players.json';
-import { computeStandings, calculateFinalStandings, calculateGroupPoints, sortGroupByStandings } from '../engine/BracketManager';
+import { computeStandings, calculateFinalStandings, calculateGroupPoints, sortGroupByStandings, createPlayInBracket } from '../engine/BracketManager';
 
 
 // Helper functions (Paste getLeagues, updateLeague, etc here if they aren't used elsewhere)
@@ -855,84 +855,29 @@ const getOvrBadgeStyle = (ovr) => {
     };
 
     const handleGeneratePlayIn = () => {
-        let isBaronWinner;
-        if (baronTotalWins > elderTotalWins) {
-          isBaronWinner = true;
-        } else if (baronTotalWins < elderTotalWins) {
-          isBaronWinner = false;
-        } else {
-          const baronDiffTotal = (league.groups?.baron || []).reduce((s, id) => s + ((computedStandings[id]?.diff) || 0), 0);
-          const elderDiffTotal = (league.groups?.elder || []).reduce((s, id) => s + ((computedStandings[id]?.diff) || 0), 0);
-  
-          if (baronDiffTotal > elderDiffTotal) isBaronWinner = true;
-          else if (baronDiffTotal < elderDiffTotal) isBaronWinner = false;
-          else {
-            const baronPower = (league.groups?.baron || []).reduce((s, id) => s + ((teams.find(t => t.id === id)?.power) || 0), 0);
-            const elderPower = (league.groups?.elder || []).reduce((s, id) => s + ((teams.find(t => t.id === id)?.power) || 0), 0);
-            if (baronPower > elderPower) isBaronWinner = true;
-            else if (baronPower < elderPower) isBaronWinner = false;
-            else isBaronWinner = Math.random() < 0.5;
-          }
-        }
-        
-        const baronSorted = sortGroupByStandings([...league.groups.baron], computedStandings);
-        const elderSorted = sortGroupByStandings([...league.groups.elder], computedStandings);
-  
-        const seasonSummary = {
-            winnerGroup: isBaronWinner ? 'Baron' : 'Elder',
-            poTeams: [],
-            playInTeams: [],
-            eliminated: null
-        };
-  
-        let playInTeams = [];
-        
-        if (isBaronWinner) {
-            seasonSummary.poTeams.push({ id: baronSorted[0], seed: 1 });
-            seasonSummary.poTeams.push({ id: baronSorted[1], seed: 2 });
-            playInTeams.push(baronSorted[2], baronSorted[3], baronSorted[4]);
-  
-            seasonSummary.poTeams.push({ id: elderSorted[0], seed: 3 });
-            playInTeams.push(elderSorted[1], elderSorted[2], elderSorted[3]);
-            seasonSummary.eliminated = elderSorted[4];
-        } else {
-            seasonSummary.poTeams.push({ id: elderSorted[0], seed: 1 });
-            seasonSummary.poTeams.push({ id: elderSorted[1], seed: 2 });
-            playInTeams.push(elderSorted[2], elderSorted[3], elderSorted[4]);
-  
-            seasonSummary.poTeams.push({ id: baronSorted[0], seed: 3 });
-            playInTeams.push(baronSorted[1], baronSorted[2], baronSorted[3]);
-            seasonSummary.eliminated = baronSorted[4];
-        }
-  
-        playInTeams.sort((a, b) => {
-            const recA = computedStandings[a];
-            const recB = computedStandings[b];
-            if (recA.w !== recB.w) return recB.w - recA.w;
-            if (recA.diff !== recB.diff) return recB.diff - recA.diff;
-            return Math.random() - 0.5;
-        });
-  
-        const seededTeams = playInTeams.map((tid, idx) => ({ id: tid, seed: idx + 1 }));
-        seasonSummary.playInTeams = seededTeams;
-        
-        const seed3 = seededTeams[2].id;
-        const seed6 = seededTeams[5].id;
-        const seed4 = seededTeams[3].id;
-        const seed5 = seededTeams[4].id;
-  
-        const newMatches = [
-            { id: Date.now() + 1, t1: seed3, t2: seed6, date: '2.6 (금)', time: '17:00', type: 'playin', format: 'BO3', status: 'pending', round: 1, label: '플레이-인 1라운드' },
-            { id: Date.now() + 2, t1: seed4, t2: seed5, date: '2.6 (금)', time: '19:30', type: 'playin', format: 'BO3', status: 'pending', round: 1, label: '플레이-인 1라운드' }
-        ];
-  
-        const updatedMatches = [...league.matches, ...newMatches];
-        
-        updateLeague(league.id, { matches: updatedMatches, playInSeeds: seededTeams, seasonSummary }); 
-        setLeague(prev => ({ ...prev, matches: updatedMatches, playInSeeds: seededTeams, seasonSummary }));
-        setShowPlayInBracket(true);
-        alert('🛡️ 플레이-인 대진이 생성되었습니다! (1,2시드 2라운드 직행)');
-    };
+      // 1. Calculate inputs
+      const bWins = calculateGroupPoints(league, 'baron');
+      const eWins = calculateGroupPoints(league, 'elder');
+
+      // 2. Delegate logic to Manager
+      const { newMatches, playInSeeds, seasonSummary } = createPlayInBracket(
+          league, 
+          computedStandings, 
+          teams, 
+          bWins, 
+          eWins
+      );
+
+      // 3. Update State
+      const updatedMatches = [...league.matches, ...newMatches];
+      const updateData = { matches: updatedMatches, playInSeeds, seasonSummary };
+      
+      updateLeague(league.id, updateData); 
+      setLeague(prev => ({ ...prev, ...updateData }));
+      
+      setShowPlayInBracket(true);
+      alert('🛡️ 플레이-인 대진이 생성되었습니다! (1,2시드 2라운드 직행)');
+  };
     
     const isRegularSeasonFinished = league.matches 
       ? league.matches.filter(m => m.type === 'regular').every(m => m.status === 'finished') 
