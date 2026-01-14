@@ -15,7 +15,6 @@ const PlayoffTab = ({
         return <div className="p-10 text-center text-gray-500">데이터를 불러오는 중입니다...</div>;
     }
 
-    // Helper: Column Layout
     const BracketColumn = ({ title, children, className }) => (
         <div className={`flex flex-col items-center justify-start w-52 space-y-6 ${className}`}>
             <h4 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-2">{title}</h4>
@@ -39,7 +38,6 @@ const PlayoffTab = ({
             if (!m || m.status !== 'finished' || !m.result || !m.result.winner) return null;
             const winnerId = getWinner(m);
             if (!winnerId) return null;
-            // Return the ID that is NOT the winner
             return m.t1 === winnerId ? m.t2 : m.t1;
         };
 
@@ -61,14 +59,13 @@ const PlayoffTab = ({
         const r4m1_actual = findMatch(4, 1);
         const final_actual = findMatch(5, 1);
 
-        // --- SEED LOOKUP ---
+        // --- SAFE SEED LOOKUP (Prevents Crash) ---
         const getSeedId = (seedNum) => {
-            if (!league.playoffSeeds) return null;
+            if (!league.playoffSeeds) return null; // <--- THIS FIXES THE CRASH
             const s = league.playoffSeeds.find(item => item.seed === seedNum);
             return s ? s.id : null;
         };
 
-        // --- PENDING MATCH GENERATOR ---
         const pendingMatch = (t1, t2) => ({
             t1: t1 || null, 
             t2: t2 || null, 
@@ -76,19 +73,14 @@ const PlayoffTab = ({
             type: 'playoff'
         });
 
-        // --- SEED SORTING FOR LOSERS BRACKET ---
         const getHigherSeedLoser = (matchA, matchB) => {
             const loserA = getLoser(matchA);
             const loserB = getLoser(matchB);
-            
-            // If one match isn't done, return the other (or null)
             if (!loserA) return loserB;
             if (!loserB) return loserA;
 
             const seedA = league.playoffSeeds?.find(s => s.id === loserA)?.seed || 99;
             const seedB = league.playoffSeeds?.find(s => s.id === loserB)?.seed || 99;
-
-            // Lower number = Higher seed (e.g. Seed 1 < Seed 4)
             return seedA < seedB ? loserA : loserB;
         };
 
@@ -134,18 +126,10 @@ const PlayoffTab = ({
                                 <MatchupBox match={r2lm1_actual || pendingMatch(getLoser(r1m1), getLoser(r1m2))} onClick={handleMatchClick} formatTeamName={formatTeamName} />
                             </BracketColumn>
                             <BracketColumn title="패자조 2R">
-                                <MatchupBox 
-                                    match={r2lm2_actual || pendingMatch(getHigherSeedLoser(r2m1_actual, r2m2_actual), getWinner(r2lm1_actual))} 
-                                    onClick={handleMatchClick} 
-                                    formatTeamName={formatTeamName} 
-                                />
+                                <MatchupBox match={r2lm2_actual || pendingMatch(getHigherSeedLoser(r2m1_actual, r2m2_actual), getWinner(r2lm1_actual))} onClick={handleMatchClick} formatTeamName={formatTeamName} />
                             </BracketColumn>
                             <BracketColumn title="패자조 3R">
-                                <MatchupBox 
-                                    match={r3lm1_actual || pendingMatch(getLowerSeedLoser(r2m1_actual, r2m2_actual), getWinner(r2lm2_actual))} 
-                                    onClick={handleMatchClick} 
-                                    formatTeamName={formatTeamName} 
-                                />
+                                <MatchupBox match={r3lm1_actual || pendingMatch(getLowerSeedLoser(r2m1_actual, r2m2_actual), getWinner(r2lm2_actual))} onClick={handleMatchClick} formatTeamName={formatTeamName} />
                             </BracketColumn>
                             <BracketColumn title="결승 진출전">
                                 <MatchupBox match={r4m1_actual || pendingMatch(getLoser(r3m1_actual), getWinner(r3lm1_actual))} onClick={handleMatchClick} formatTeamName={formatTeamName} />
