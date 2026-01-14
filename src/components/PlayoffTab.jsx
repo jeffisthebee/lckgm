@@ -1,6 +1,6 @@
 // src/components/PlayoffTab.jsx
 import React from 'react';
-import MatchupBox from './MatchupBox'; // Ensure this imports correctly from the same folder
+import MatchupBox from './MatchupBox'; 
 
 const PlayoffTab = ({ 
     league, 
@@ -10,7 +10,12 @@ const PlayoffTab = ({
     formatTeamName 
 }) => {
     
-    // Internal Helper Component for columns
+    // SAFETY CHECK: If critical data is missing, render error instead of crashing
+    if (!league || !teams) {
+        return <div className="p-10 text-center text-gray-500">데이터를 불러오는 중입니다...</div>;
+    }
+
+    // Helper: Column Layout
     const BracketColumn = ({ title, children, className }) => (
         <div className={`flex flex-col items-center justify-start w-52 space-y-6 ${className}`}>
             <h4 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-2">{title}</h4>
@@ -20,20 +25,27 @@ const PlayoffTab = ({
         </div>
     );
 
-    // Render logic for the bracket
     const renderBracket = () => {
-        const poMatches = league.matches.filter(m => m.type === 'playoff');
+        const poMatches = league.matches ? league.matches.filter(m => m.type === 'playoff') : [];
         
-        // Helpers for logic inside the tab
-        const getWinner = m => m && m.status === 'finished' ? teams.find(t => t.name === m.result.winner)?.id : null;
-        const getLoser = m => {
-            if (!m || m.status !== 'finished') return null;
+        // --- SAFE HELPERS ---
+        const getWinner = (m) => {
+            if (!m || m.status !== 'finished' || !m.result || !m.result.winner) return null;
+            const team = teams.find(t => t.name === m.result.winner);
+            return team ? team.id : null;
+        };
+
+        const getLoser = (m) => {
+            if (!m || m.status !== 'finished' || !m.result || !m.result.winner) return null;
             const winnerId = getWinner(m);
+            if (!winnerId) return null;
+            // Return the ID that is NOT the winner
             return m.t1 === winnerId ? m.t2 : m.t1;
         };
-        const findMatch = (round, match) => poMatches.find(m => m.round === round && m.match === match);
 
-        // Find specific matches
+        const findMatch = (round, matchNum) => poMatches.find(m => m.round === round && m.match === matchNum);
+
+        // --- MATCH LOOKUPS ---
         const r1m1 = findMatch(1, 1);
         const r1m2 = findMatch(1, 2);
         
@@ -49,10 +61,42 @@ const PlayoffTab = ({
         const r4m1_actual = findMatch(4, 1);
         const final_actual = findMatch(5, 1);
 
-        // Helper to generate "Pending" placeholder props
+        // --- SEED LOOKUP ---
+        const getSeedId = (seedNum) => {
+            if (!league.playoffSeeds) return null;
+            const s = league.playoffSeeds.find(item => item.seed === seedNum);
+            return s ? s.id : null;
+        };
+
+        // --- PENDING MATCH GENERATOR ---
         const pendingMatch = (t1, t2) => ({
-            t1, t2, status: 'pending', type: 'playoff'
+            t1: t1 || null, 
+            t2: t2 || null, 
+            status: 'pending', 
+            type: 'playoff'
         });
+
+        // --- SEED SORTING FOR LOSERS BRACKET ---
+        const getHigherSeedLoser = (matchA, matchB) => {
+            const loserA = getLoser(matchA);
+            const loserB = getLoser(matchB);
+            
+            // If one match isn't done, return the other (or null)
+            if (!loserA) return loserB;
+            if (!loserB) return loserA;
+
+            const seedA = league.playoffSeeds?.find(s => s.id === loserA)?.seed || 99;
+            const seedB = league.playoffSeeds?.find(s => s.id === loserB)?.seed || 99;
+
+            // Lower number = Higher seed (e.g. Seed 1 < Seed 4)
+            return seedA < seedB ? loserA : loserB;
+        };
+
+        const getLowerSeedLoser = (matchA, matchB) => {
+            const higher = getHigherSeedLoser(matchA, matchB);
+            const loserA = getLoser(matchA);
+            return (loserA === higher) ? getLoser(matchB) : loserA;
+        };
 
         return (
             <div className="flex-1 overflow-x-auto pb-8">
@@ -69,8 +113,8 @@ const PlayoffTab = ({
                             </BracketColumn>
                             <BracketColumn title="승자조 2R">
                                 <div className="flex flex-col justify-around space-y-32 h-[300px]">
-                                    <MatchupBox match={r2m1_actual || pendingMatch(league.playoffSeeds?.find(s => s.seed === 1)?.id, getWinner(r1m1))} onClick={handleMatchClick} formatTeamName={formatTeamName} />
-                                    <MatchupBox match={r2m2_actual || pendingMatch(league.playoffSeeds?.find(s => s.seed === 2)?.id, getWinner(r1m2))} onClick={handleMatchClick} formatTeamName={formatTeamName} />
+                                    <MatchupBox match={r2m1_actual || pendingMatch(getSeedId(1), getWinner(r1m1))} onClick={handleMatchClick} formatTeamName={formatTeamName} />
+                                    <MatchupBox match={r2m2_actual || pendingMatch(getSeedId(2), getWinner(r1m2))} onClick={handleMatchClick} formatTeamName={formatTeamName} />
                                 </div>
                             </BracketColumn>
                             <BracketColumn title="승자조 결승">
@@ -91,20 +135,14 @@ const PlayoffTab = ({
                             </BracketColumn>
                             <BracketColumn title="패자조 2R">
                                 <MatchupBox 
-                                    match={r2lm2_actual || pendingMatch(
-                                        [getLoser(r2m1_actual), getLoser(r2m2_actual)].sort((a,b) => (league.playoffSeeds?.find(s=>s.id===b)?.seed || 99) - (league.playoffSeeds?.find(s=>s.id===a)?.seed || 99))[0], 
-                                        getWinner(r2lm1_actual)
-                                    )} 
+                                    match={r2lm2_actual || pendingMatch(getHigherSeedLoser(r2m1_actual, r2m2_actual), getWinner(r2lm1_actual))} 
                                     onClick={handleMatchClick} 
                                     formatTeamName={formatTeamName} 
                                 />
                             </BracketColumn>
                             <BracketColumn title="패자조 3R">
                                 <MatchupBox 
-                                    match={r3lm1_actual || pendingMatch(
-                                        [getLoser(r2m1_actual), getLoser(r2m2_actual)].sort((a,b) => (league.playoffSeeds?.find(s=>s.id===a)?.seed || 99) - (league.playoffSeeds?.find(s=>s.id===b)?.seed || 99))[0], 
-                                        getWinner(r2lm2_actual)
-                                    )} 
+                                    match={r3lm1_actual || pendingMatch(getLowerSeedLoser(r2m1_actual, r2m2_actual), getWinner(r2lm2_actual))} 
                                     onClick={handleMatchClick} 
                                     formatTeamName={formatTeamName} 
                                 />
