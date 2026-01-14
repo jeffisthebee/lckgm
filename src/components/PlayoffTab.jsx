@@ -10,9 +10,9 @@ const PlayoffTab = ({
     formatTeamName 
 }) => {
     
-    // SAFETY CHECK: If critical data is missing, render error instead of crashing
+    // SAFETY CHECK 1: Basic Data
     if (!league || !teams) {
-        return <div className="p-10 text-center text-gray-500">데이터를 불러오는 중입니다...</div>;
+        return <div className="p-10 text-center text-gray-500">데이터 로딩 중...</div>;
     }
 
     const BracketColumn = ({ title, children, className }) => (
@@ -59,19 +59,14 @@ const PlayoffTab = ({
         const r4m1_actual = findMatch(4, 1);
         const final_actual = findMatch(5, 1);
 
-        // --- SAFE SEED LOOKUP (Prevents Crash) ---
+        // --- SAFETY CHECK 2: SEEDS (CRITICAL FIX) ---
         const getSeedId = (seedNum) => {
-            if (!league.playoffSeeds) return null; // <--- THIS FIXES THE CRASH
+            if (!league.playoffSeeds) return null; // <--- Prevents the crash!
             const s = league.playoffSeeds.find(item => item.seed === seedNum);
             return s ? s.id : null;
         };
 
-        const pendingMatch = (t1, t2) => ({
-            t1: t1 || null, 
-            t2: t2 || null, 
-            status: 'pending', 
-            type: 'playoff'
-        });
+        const pendingMatch = (t1, t2) => ({ t1: t1 || null, t2: t2 || null, status: 'pending', type: 'playoff' });
 
         const getHigherSeedLoser = (matchA, matchB) => {
             const loserA = getLoser(matchA);
@@ -93,7 +88,7 @@ const PlayoffTab = ({
         return (
             <div className="flex-1 overflow-x-auto pb-8">
                 <div className="flex flex-col space-y-24 min-w-[1400px] relative pt-12">
-                    {/* --- 승자조 --- */}
+                    {/* Winner's Bracket */}
                     <div className="relative border-b-2 border-dashed pb-16">
                         <h3 className="text-lg font-black text-blue-600 mb-8 absolute -top-2">승자조 (Winner's Bracket)</h3>
                         <div className="flex justify-between items-center mt-8">
@@ -118,7 +113,7 @@ const PlayoffTab = ({
                         </div>
                     </div>
 
-                    {/* --- 패자조 --- */}
+                    {/* Loser's Bracket */}
                     <div className="relative pt-8">
                         <h3 className="text-lg font-black text-red-600 mb-8 absolute -top-2">패자조 (Loser's Bracket)</h3>
                         <div className="flex justify-start items-center space-x-24 mt-8">
