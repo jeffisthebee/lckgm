@@ -15,6 +15,8 @@ import RosterTab from '../components/RosterTab';
 import StandingsTab from '../components/StandingsTab';
 import MetaTab from '../components/MetaTab';
 import FinanceTab from '../components/FinanceTab';
+import ScheduleTab from '../components/ScheduleTab';
+import PlayoffTab from '../components/PlayoffTab';
 
 // Helper functions (Paste getLeagues, updateLeague, etc here if they aren't used elsewhere)
 const getLeagues = () => { const s = localStorage.getItem('lckgm_leagues'); return s ? JSON.parse(s) : []; };
@@ -1321,100 +1323,13 @@ const getOvrBadgeStyle = (ovr) => {
                       )}
               
               {activeTab === 'playoffs' && (
-                <div className="bg-white rounded-lg border shadow-sm p-6 min-h-[800px] flex flex-col">
-                    <h2 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-2">👑 2026 LCK 컵 플레이오프</h2>
-                    {hasPlayoffsGenerated ? (() => {
-                        const poMatches = league.matches.filter(m => m.type === 'playoff');
-                        const getWinner = m => m && m.status === 'finished' ? teams.find(t => t.name === m.result.winner)?.id : null;
-                        const getLoser = m => {
-                            if (!m || m.status !== 'finished') return null;
-                            const winnerId = getWinner(m);
-                            return m.t1 === winnerId ? m.t2 : m.t1;
-                        };
-
-                        const findMatch = (round, match) => poMatches.find(m => m.round === round && m.match === match);
-                        
-                        const r1m1 = findMatch(1, 1);
-                        const r1m2 = findMatch(1, 2);
-                        
-                        const r2m1_actual = findMatch(2, 1);
-                        const r2m2_actual = findMatch(2, 2);
-                        
-                        const r2lm1_actual = findMatch(2.1, 1);
-                        const r2lm2_actual = findMatch(2.2, 1);
-                        
-                        const r3m1_actual = findMatch(3, 1);
-                        const r3lm1_actual = findMatch(3.1, 1);
-
-                        const r4m1_actual = findMatch(4, 1);
-                        const final_actual = findMatch(5, 1);
-
-                        const BracketColumn = ({ title, children, className }) => (
-                          <div className={`flex flex-col items-center justify-start w-52 space-y-6 ${className}`}>
-                            <h4 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-2">{title}</h4>
-                            <div className="w-full flex flex-col items-center">
-                              {children}
-                            </div>
-                          </div>
-                        );
-                        
-                        return (
-                            <div className="flex-1 overflow-x-auto pb-8">
-                                <div className="flex flex-col space-y-24 min-w-[1400px] relative pt-12">
-                                    {/* --- 승자조 --- */}
-                                    <div className="relative border-b-2 border-dashed pb-16">
-                                        <h3 className="text-lg font-black text-blue-600 mb-8 absolute -top-2">승자조 (Winner's Bracket)</h3>
-                                        <div className="flex justify-between items-center mt-8">
-                                            <BracketColumn title="1라운드">
-                                                <div className="flex flex-col justify-around space-y-32 h-[300px]">
-                                                    <MatchupBox match={r1m1} onClick={handleMatchClick} formatTeamName={formatTeamName} />
-                                                    <MatchupBox match={r1m2} onClick={handleMatchClick} formatTeamName={formatTeamName} />
-                                                </div>
-                                            </BracketColumn>
-                                            <BracketColumn title="승자조 2R">
-                                                <div className="flex flex-col justify-around space-y-32 h-[300px]">
-                                                    <MatchupBox match={r2m1_actual || { t1: league.playoffSeeds.find(s => s.seed === 1)?.id, t2: getWinner(r1m1), status: 'pending', type: 'playoff' }} onClick={handleMatchClick} formatTeamName={formatTeamName} />
-                                                    <MatchupBox match={r2m2_actual || { t1: league.playoffSeeds.find(s => s.seed === 2)?.id, t2: getWinner(r1m2), status: 'pending', type: 'playoff' }} onClick={handleMatchClick} formatTeamName={formatTeamName} />
-                                                </div>
-                                            </BracketColumn>
-                                            <BracketColumn title="승자조 결승">
-                                                <MatchupBox match={r3m1_actual || { t1: getWinner(r2m1_actual), t2: getWinner(r2m2_actual), status: 'pending', type: 'playoff' }} onClick={handleMatchClick} formatTeamName={formatTeamName} />
-                                            </BracketColumn>
-                                            <BracketColumn title="결승전">
-                                                <MatchupBox match={final_actual || { t1: getWinner(r3m1_actual), t2: getWinner(r4m1_actual), status: 'pending', type: 'playoff' }} onClick={handleMatchClick} formatTeamName={formatTeamName} />
-                                            </BracketColumn>
-                                        </div>
-                                    </div>
-
-                                    {/* --- 패자조 --- */}
-                                    <div className="relative pt-8">
-                                        <h3 className="text-lg font-black text-red-600 mb-8 absolute -top-2">패자조 (Loser's Bracket)</h3>
-                                        <div className="flex justify-start items-center space-x-24 mt-8">
-                                            <BracketColumn title="패자조 1R">
-                                                <MatchupBox match={r2lm1_actual || { t1: getLoser(r1m1), t2: getLoser(r1m2), status: 'pending', type: 'playoff' }} onClick={handleMatchClick} formatTeamName={formatTeamName} />
-                                            </BracketColumn>
-                                            <BracketColumn title="패자조 2R">
-                                                <MatchupBox match={r2lm2_actual || { t1: [getLoser(r2m1_actual), getLoser(r2m2_actual)].sort((a,b) => (league.playoffSeeds.find(s=>s.id===b)?.seed || 99) - (league.playoffSeeds.find(s=>s.id===a)?.seed || 99))[0], t2: getWinner(r2lm1_actual), status: 'pending', type: 'playoff' }} onClick={handleMatchClick} formatTeamName={formatTeamName} />
-                                            </BracketColumn>
-                                            <BracketColumn title="패자조 3R">
-                                                <MatchupBox match={r3lm1_actual || { t1: [getLoser(r2m1_actual), getLoser(r2m2_actual)].sort((a,b) => (league.playoffSeeds.find(s=>s.id===a)?.seed || 99) - (league.playoffSeeds.find(s=>s.id===b)?.seed || 99))[0], t2: getWinner(r2lm2_actual), status: 'pending', type: 'playoff' }} onClick={handleMatchClick} formatTeamName={formatTeamName} />
-                                            </BracketColumn>
-                                            <BracketColumn title="결승 진출전">
-                                                <MatchupBox match={r4m1_actual || { t1: getLoser(r3m1_actual), t2: getWinner(r3lm1_actual), status: 'pending', type: 'playoff' }} onClick={handleMatchClick} formatTeamName={formatTeamName} />
-                                            </BracketColumn>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        );
-                    })() : (
-                        <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-                            <div className="text-4xl mb-4">🛡️</div>
-                            <div className="text-xl font-bold">플레이오프가 아직 시작되지 않았습니다</div>
-                            <p className="mt-2">정규 시즌과 플레이-인을 모두 마친 후 대진이 생성됩니다.</p>
-                        </div>
-                    )}
-                </div>
+                <PlayoffTab 
+                    league={league}
+                    teams={teams}
+                    hasPlayoffsGenerated={hasPlayoffsGenerated}
+                    handleMatchClick={handleMatchClick}
+                    formatTeamName={formatTeamName}
+                />
             )}
   
               {/* 재정 탭 */}
@@ -1445,59 +1360,16 @@ const getOvrBadgeStyle = (ovr) => {
                 />
             )}
   
-              {(activeTab === 'schedule' || activeTab === 'team_schedule') && (
-                <div className="bg-white rounded-lg border shadow-sm p-8 min-h-[600px] flex flex-col">
-                  <h2 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-2">
-                    📅 {activeTab === 'team_schedule' ? `${myTeam.name} 경기 일정` : '2026 LCK 컵 전체 일정'}
-                  </h2>
-                  {hasDrafted ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto">
-                      {league.matches
-                        .filter(m => activeTab === 'schedule' || (m.t1 === myTeam.id || m.t2 === myTeam.id))
-                        .map((m, i) => {
-                        const t1 = m.t1 ? teams.find(t => t.id === m.t1) : { name: 'TBD' };
-                        const t2 = m.t2 ? teams.find(t => t.id === m.t2) : { name: 'TBD' };
-                        const isMyMatch = myTeam.id === m.t1 || myTeam.id === m.t2;
-                        const isFinished = m.status === 'finished';
-                        
-                        const t1Name = formatTeamName(m.t1, m.type);
-                        const t2Name = formatTeamName(m.t2, m.type);
-                        
-  
-                        return (
-                          <div key={i} className={`p-4 rounded-lg border flex flex-col gap-2 ${isMyMatch ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-200' : 'bg-white border-gray-200'}`}>
-                            <div className="flex justify-between text-xs font-bold text-gray-500">
-                              <span>{m.date} {m.time}</span>
-                              <span className={`font-bold ${m.type === 'playoff' ? 'text-yellow-600' : (m.type === 'super' ? 'text-purple-600' : (m.type === 'playin' ? 'text-indigo-600' : 'text-gray-500'))}`}>
-                                  {m.label || (m.type === 'super' ? '🔥 슈퍼위크' : '정규시즌')}
-                              </span>
-                            </div>
-                            <div className="flex justify-between items-center mt-2">
-                              <div className="flex flex-col items-center w-1/3">
-                                  <span className={`font-bold ${isMyMatch && myTeam.id === m.t1 ? 'text-blue-600' : 'text-gray-800'}`}>{t1Name}</span>
-                                  {isFinished && m.result.winner === t1.name && <span className="text-xs text-blue-500 font-bold">WIN</span>}
-                              </div>
-                              <div className="text-center font-bold">
-                                  {isFinished ? (
-                                      <span className="text-xl text-gray-800">{m.result.score}</span>
-                                  ) : (
-                                      <span className="text-gray-400">VS</span>
-                                  )}
-                              </div>
-                              <div className="flex flex-col items-center w-1/3">
-                                  <span className={`font-bold ${isMyMatch && myTeam.id === m.t2 ? 'text-blue-600' : 'text-gray-800'}`}>{t2Name}</span>
-                                  {isFinished && m.result.winner === t2.name && <span className="text-xs text-blue-500 font-bold">WIN</span>}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center text-gray-400"><div className="text-4xl mb-4">🗳️</div><div className="text-xl font-bold">일정이 생성되지 않았습니다</div><p className="mt-2">먼저 조 추첨을 진행해주세요.</p></div>
-                  )}
-                </div>
-              )}
+            {(activeTab === 'schedule' || activeTab === 'team_schedule') && (
+                <ScheduleTab 
+                    activeTab={activeTab}
+                    league={league}
+                    teams={teams}
+                    myTeam={myTeam}
+                    hasDrafted={hasDrafted}
+                    formatTeamName={formatTeamName}
+                />
+            )}
   
             </div>
           </main>
