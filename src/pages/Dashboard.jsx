@@ -141,8 +141,25 @@ const getOvrBadgeStyle = (ovr) => {
       }
     }, [league]); // Removed 'myTeam.id' to prevent ReferenceError
   
-    // Fix 1: 순위표 재계산 함수 (전체 매치 기록 기반)
-    // [수정 1] 순위표 계산 함수 (플레이오프/플레이인 제외 로직 강화)
+  // [FIX] Add this missing function back!
+  const handleMatchClick = (match) => {
+    if (!match || match.status !== 'finished' || !match.result) return;
+    
+    // Helper to safely get ID
+    const getID = (id) => (typeof id === 'object' ? id.id : Number(id));
+    
+    const t1Id = getID(match.t1);
+    const t2Id = getID(match.t2);
+    
+    const teamA = teams.find(t => t.id === t1Id);
+    const teamB = teams.find(t => t.id === t2Id);
+
+    setMyMatchResult({
+        resultData: match.result, 
+        teamA: teamA,
+        teamB: teamB
+    });
+};
   
     const handleMenuClick = (tabId) => {
       setActiveTab(tabId);
