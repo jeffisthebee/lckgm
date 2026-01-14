@@ -10,6 +10,7 @@ import playerList from '../data/players.json';
 import { computeStandings, calculateFinalStandings, calculateGroupPoints, sortGroupByStandings, createPlayInBracket } from '../engine/BracketManager';
 import { updateChampionMeta, generateSuperWeekMatches } from '../engine/SeasonManager';
 import FinalStandingsModal from '../components/FinalStandingsModal';
+import MatchupBox from '../components/MatchupBox';
 
 // Helper functions (Paste getLeagues, updateLeague, etc here if they aren't used elsewhere)
 const getLeagues = () => { const s = localStorage.getItem('lckgm_leagues'); return s ? JSON.parse(s) : []; };
@@ -930,38 +931,6 @@ const getOvrBadgeStyle = (ovr) => {
       return name;
     };
   
-    const MatchupBox = ({ match, showScore = true }) => {
-      if (!match || (!match.t1 && !match.t2)) {
-          return <div className="h-16 border-2 border-dashed rounded-lg flex items-center justify-center text-gray-400 text-sm w-full">TBD</div>;
-      }
-      const t1 = teams.find(t => t.id === match.t1);
-      const t2 = teams.find(t => t.id === match.t2);
-      const winnerId = match.status === 'finished' ? teams.find(t => t.name === match.result.winner)?.id : null;
-  
-      const team1Name = t1 ? formatTeamName(t1.id, match.type) : 'TBD';
-      const team2Name = t2 ? formatTeamName(t2.id, match.type) : 'TBD';
-
-      // --- FINAL STANDINGS LOGIC ---
-  
-      return (
-          <div className={`bg-white border-2 rounded-lg shadow-sm w-full ${match.status === 'pending' ? 'border-gray-300' : 'border-gray-400'}`}>
-              <div className={`flex justify-between items-center p-2 rounded-t-md ${winnerId === t1?.id ? 'bg-blue-100' : 'bg-gray-50'}`}>
-                  <span className={`font-bold text-sm ${winnerId === t1?.id ? 'text-blue-700' : 'text-gray-800'}`}>{team1Name}</span>
-                  {showScore && <span className={`font-black text-sm ${winnerId === t1?.id ? 'text-blue-700' : 'text-gray-500'}`}>{match.status === 'finished' ? match.result.score.split(':')[0] : ''}</span>}
-              </div>
-              <div className={`flex justify-between items-center p-2 rounded-b-md ${winnerId === t2?.id ? 'bg-blue-100' : 'bg-gray-50'}`}>
-                  <span className={`font-bold text-sm ${winnerId === t2?.id ? 'text-blue-700' : 'text-gray-800'}`}>{team2Name}</span>
-                  {showScore && <span className={`font-black text-sm ${winnerId === t2?.id ? 'text-blue-700' : 'text-gray-500'}`}>{match.status === 'finished' ? match.result.score.split(':')[1] : ''}</span>}
-              </div>
-          </div>
-      );
-    };
-  
-    // ==========================================
-  // --- FINAL STANDINGS LOGIC (Paste in the gap) ---
-  
-    
-  
     return (
       <div className="flex h-screen bg-gray-100 overflow-hidden font-sans relative">
         
@@ -1090,6 +1059,8 @@ const getOvrBadgeStyle = (ovr) => {
                  <span>🏆</span> 최종 순위 보기
              </button>
             )}
+
+            
 
             {/* [2] Super Week & Meta Check Button (Purple) */}
             {/* Logic: Shows if regular season is done AND (Super Week not generated OR Meta is outdated) */}
@@ -1405,101 +1376,101 @@ const getOvrBadgeStyle = (ovr) => {
               )}
               
               {activeTab === 'playoffs' && (
-                  <div className="bg-white rounded-lg border shadow-sm p-6 min-h-[800px] flex flex-col">
-                      <h2 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-2">👑 2026 LCK 컵 플레이오프</h2>
-                      {hasPlayoffsGenerated ? (() => {
-                          const poMatches = league.matches.filter(m => m.type === 'playoff');
-                          const getWinner = m => m && m.status === 'finished' ? teams.find(t => t.name === m.result.winner)?.id : null;
-                          const getLoser = m => {
-                              if (!m || m.status !== 'finished') return null;
-                              const winnerId = getWinner(m);
-                              return m.t1 === winnerId ? m.t2 : m.t1;
-                          };
-  
-                          const findMatch = (round, match) => poMatches.find(m => m.round === round && m.match === match);
-                          
-                          const r1m1 = findMatch(1, 1);
-                          const r1m2 = findMatch(1, 2);
-                          
-                          const r2m1_actual = findMatch(2, 1);
-                          const r2m2_actual = findMatch(2, 2);
-                          
-                          const r2lm1_actual = findMatch(2.1, 1);
-                          const r2lm2_actual = findMatch(2.2, 1);
-                          
-                          const r3m1_actual = findMatch(3, 1);
-                          const r3lm1_actual = findMatch(3.1, 1);
-  
-                          const r4m1_actual = findMatch(4, 1);
-                          const final_actual = findMatch(5, 1);
-  
-                          const BracketColumn = ({ title, children, className }) => (
-                            <div className={`flex flex-col items-center justify-start w-52 space-y-6 ${className}`}>
-                              <h4 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-2">{title}</h4>
-                              <div className="w-full flex flex-col items-center">
-                                {children}
-                              </div>
+                <div className="bg-white rounded-lg border shadow-sm p-6 min-h-[800px] flex flex-col">
+                    <h2 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-2">👑 2026 LCK 컵 플레이오프</h2>
+                    {hasPlayoffsGenerated ? (() => {
+                        const poMatches = league.matches.filter(m => m.type === 'playoff');
+                        const getWinner = m => m && m.status === 'finished' ? teams.find(t => t.name === m.result.winner)?.id : null;
+                        const getLoser = m => {
+                            if (!m || m.status !== 'finished') return null;
+                            const winnerId = getWinner(m);
+                            return m.t1 === winnerId ? m.t2 : m.t1;
+                        };
+
+                        const findMatch = (round, match) => poMatches.find(m => m.round === round && m.match === match);
+                        
+                        const r1m1 = findMatch(1, 1);
+                        const r1m2 = findMatch(1, 2);
+                        
+                        const r2m1_actual = findMatch(2, 1);
+                        const r2m2_actual = findMatch(2, 2);
+                        
+                        const r2lm1_actual = findMatch(2.1, 1);
+                        const r2lm2_actual = findMatch(2.2, 1);
+                        
+                        const r3m1_actual = findMatch(3, 1);
+                        const r3lm1_actual = findMatch(3.1, 1);
+
+                        const r4m1_actual = findMatch(4, 1);
+                        const final_actual = findMatch(5, 1);
+
+                        const BracketColumn = ({ title, children, className }) => (
+                          <div className={`flex flex-col items-center justify-start w-52 space-y-6 ${className}`}>
+                            <h4 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-2">{title}</h4>
+                            <div className="w-full flex flex-col items-center">
+                              {children}
                             </div>
-                          );
-                          
-                          return (
-                              <div className="flex-1 overflow-x-auto pb-8">
-                                  <div className="flex flex-col space-y-24 min-w-[1400px] relative pt-12">
-                                      {/* --- 승자조 --- */}
-                                      <div className="relative border-b-2 border-dashed pb-16">
-                                          <h3 className="text-lg font-black text-blue-600 mb-8 absolute -top-2">승자조 (Winner's Bracket)</h3>
-                                          <div className="flex justify-between items-center mt-8">
-                                              <BracketColumn title="1라운드">
-                                                  <div className="flex flex-col justify-around space-y-32 h-[300px]">
-                                                      <MatchupBox match={r1m1} />
-                                                      <MatchupBox match={r1m2} />
-                                                  </div>
-                                              </BracketColumn>
-                                              <BracketColumn title="승자조 2R">
-                                                  <div className="flex flex-col justify-around space-y-32 h-[300px]">
-                                                      <MatchupBox match={r2m1_actual || { t1: league.playoffSeeds.find(s => s.seed === 1)?.id, t2: getWinner(r1m1), status: 'pending', type: 'playoff' }} />
-                                                      <MatchupBox match={r2m2_actual || { t1: league.playoffSeeds.find(s => s.seed === 2)?.id, t2: getWinner(r1m2), status: 'pending', type: 'playoff' }} />
-                                                  </div>
-                                              </BracketColumn>
-                                              <BracketColumn title="승자조 결승">
-                                                  <MatchupBox match={r3m1_actual || { t1: getWinner(r2m1_actual), t2: getWinner(r2m2_actual), status: 'pending', type: 'playoff' }} />
-                                              </BracketColumn>
-                                              <BracketColumn title="결승전">
-                                                  <MatchupBox match={final_actual || { t1: getWinner(r3m1_actual), t2: getWinner(r4m1_actual), status: 'pending', type: 'playoff' }} />
-                                              </BracketColumn>
-                                          </div>
-                                      </div>
-  
-                                      {/* --- 패자조 --- */}
-                                      <div className="relative pt-8">
-                                          <h3 className="text-lg font-black text-red-600 mb-8 absolute -top-2">패자조 (Loser's Bracket)</h3>
-                                          <div className="flex justify-start items-center space-x-24 mt-8">
-                                              <BracketColumn title="패자조 1R">
-                                                  <MatchupBox match={r2lm1_actual || { t1: getLoser(r1m1), t2: getLoser(r1m2), status: 'pending', type: 'playoff' }} />
-                                              </BracketColumn>
-                                              <BracketColumn title="패자조 2R">
-                                                  <MatchupBox match={r2lm2_actual || { t1: [getLoser(r2m1_actual), getLoser(r2m2_actual)].sort((a,b) => (league.playoffSeeds.find(s=>s.id===b)?.seed || 99) - (league.playoffSeeds.find(s=>s.id===a)?.seed || 99))[0], t2: getWinner(r2lm1_actual), status: 'pending', type: 'playoff' }} />
-                                              </BracketColumn>
-                                              <BracketColumn title="패자조 3R">
-                                                  <MatchupBox match={r3lm1_actual || { t1: [getLoser(r2m1_actual), getLoser(r2m2_actual)].sort((a,b) => (league.playoffSeeds.find(s=>s.id===a)?.seed || 99) - (league.playoffSeeds.find(s=>s.id===b)?.seed || 99))[0], t2: getWinner(r2lm2_actual), status: 'pending', type: 'playoff' }} />
-                                              </BracketColumn>
-                                              <BracketColumn title="결승 진출전">
-                                                  <MatchupBox match={r4m1_actual || { t1: getLoser(r3m1_actual), t2: getWinner(r3lm1_actual), status: 'pending', type: 'playoff' }} />
-                                              </BracketColumn>
-                                          </div>
-                                      </div>
-                                  </div>
-                              </div>
-                          );
-                      })() : (
-                          <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-                              <div className="text-4xl mb-4">🛡️</div>
-                              <div className="text-xl font-bold">플레이오프가 아직 시작되지 않았습니다</div>
-                              <p className="mt-2">정규 시즌과 플레이-인을 모두 마친 후 대진이 생성됩니다.</p>
                           </div>
-                      )}
-                  </div>
-              )}
+                        );
+                        
+                        return (
+                            <div className="flex-1 overflow-x-auto pb-8">
+                                <div className="flex flex-col space-y-24 min-w-[1400px] relative pt-12">
+                                    {/* --- 승자조 --- */}
+                                    <div className="relative border-b-2 border-dashed pb-16">
+                                        <h3 className="text-lg font-black text-blue-600 mb-8 absolute -top-2">승자조 (Winner's Bracket)</h3>
+                                        <div className="flex justify-between items-center mt-8">
+                                            <BracketColumn title="1라운드">
+                                                <div className="flex flex-col justify-around space-y-32 h-[300px]">
+                                                    <MatchupBox match={r1m1} onClick={handleMatchClick} formatTeamName={formatTeamName} />
+                                                    <MatchupBox match={r1m2} onClick={handleMatchClick} formatTeamName={formatTeamName} />
+                                                </div>
+                                            </BracketColumn>
+                                            <BracketColumn title="승자조 2R">
+                                                <div className="flex flex-col justify-around space-y-32 h-[300px]">
+                                                    <MatchupBox match={r2m1_actual || { t1: league.playoffSeeds.find(s => s.seed === 1)?.id, t2: getWinner(r1m1), status: 'pending', type: 'playoff' }} onClick={handleMatchClick} formatTeamName={formatTeamName} />
+                                                    <MatchupBox match={r2m2_actual || { t1: league.playoffSeeds.find(s => s.seed === 2)?.id, t2: getWinner(r1m2), status: 'pending', type: 'playoff' }} onClick={handleMatchClick} formatTeamName={formatTeamName} />
+                                                </div>
+                                            </BracketColumn>
+                                            <BracketColumn title="승자조 결승">
+                                                <MatchupBox match={r3m1_actual || { t1: getWinner(r2m1_actual), t2: getWinner(r2m2_actual), status: 'pending', type: 'playoff' }} onClick={handleMatchClick} formatTeamName={formatTeamName} />
+                                            </BracketColumn>
+                                            <BracketColumn title="결승전">
+                                                <MatchupBox match={final_actual || { t1: getWinner(r3m1_actual), t2: getWinner(r4m1_actual), status: 'pending', type: 'playoff' }} onClick={handleMatchClick} formatTeamName={formatTeamName} />
+                                            </BracketColumn>
+                                        </div>
+                                    </div>
+
+                                    {/* --- 패자조 --- */}
+                                    <div className="relative pt-8">
+                                        <h3 className="text-lg font-black text-red-600 mb-8 absolute -top-2">패자조 (Loser's Bracket)</h3>
+                                        <div className="flex justify-start items-center space-x-24 mt-8">
+                                            <BracketColumn title="패자조 1R">
+                                                <MatchupBox match={r2lm1_actual || { t1: getLoser(r1m1), t2: getLoser(r1m2), status: 'pending', type: 'playoff' }} onClick={handleMatchClick} formatTeamName={formatTeamName} />
+                                            </BracketColumn>
+                                            <BracketColumn title="패자조 2R">
+                                                <MatchupBox match={r2lm2_actual || { t1: [getLoser(r2m1_actual), getLoser(r2m2_actual)].sort((a,b) => (league.playoffSeeds.find(s=>s.id===b)?.seed || 99) - (league.playoffSeeds.find(s=>s.id===a)?.seed || 99))[0], t2: getWinner(r2lm1_actual), status: 'pending', type: 'playoff' }} onClick={handleMatchClick} formatTeamName={formatTeamName} />
+                                            </BracketColumn>
+                                            <BracketColumn title="패자조 3R">
+                                                <MatchupBox match={r3lm1_actual || { t1: [getLoser(r2m1_actual), getLoser(r2m2_actual)].sort((a,b) => (league.playoffSeeds.find(s=>s.id===a)?.seed || 99) - (league.playoffSeeds.find(s=>s.id===b)?.seed || 99))[0], t2: getWinner(r2lm2_actual), status: 'pending', type: 'playoff' }} onClick={handleMatchClick} formatTeamName={formatTeamName} />
+                                            </BracketColumn>
+                                            <BracketColumn title="결승 진출전">
+                                                <MatchupBox match={r4m1_actual || { t1: getLoser(r3m1_actual), t2: getWinner(r3lm1_actual), status: 'pending', type: 'playoff' }} onClick={handleMatchClick} formatTeamName={formatTeamName} />
+                                            </BracketColumn>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })() : (
+                        <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
+                            <div className="text-4xl mb-4">🛡️</div>
+                            <div className="text-xl font-bold">플레이오프가 아직 시작되지 않았습니다</div>
+                            <p className="mt-2">정규 시즌과 플레이-인을 모두 마친 후 대진이 생성됩니다.</p>
+                        </div>
+                    )}
+                </div>
+            )}
   
               {/* 재정 탭 */}
               {activeTab === 'finance' && (
