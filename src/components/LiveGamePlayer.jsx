@@ -1033,61 +1033,68 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                </div>
                
                <button 
-                  onClick={() => {
-                    if (resultProcessed) return;
-                    setResultProcessed(true);
-  
-                    const winnerIsA = simulationData.winnerName === teamA.name;
-                    const newA = winsA + (winnerIsA ? 1 : 0);
-                    const newB = winsB + (!winnerIsA ? 1 : 0);
-                    
-                    setWinsA(newA); 
-                    setWinsB(newB);
-                    
-                    // [UPDATED] Save POG to history
-                    const histItem = { 
-                        set: currentSet, 
-                        winner: simulationData.winnerName, 
-                        picks: simulationData.picks, 
-                        bans: simulationData.bans, 
-                        logs: simulationData.logs,
-                        pogPlayer: simulationData.pogPlayer, // Save POG here
-                        // [FIX] Save Game Time here!
-                        gameTime: simulationData.gameTime || "30분 00초",
-                        totalMinutes: simulationData.totalMinutes || 30
-                    };
+    onClick={() => {
+        if (resultProcessed) return;
+        setResultProcessed(true);
 
-                    const newHist = [...matchHistory, histItem];
-                    setMatchHistory(newHist);
-                    setGlobalBanList(prev => [...prev, ...(simulationData.usedChamps||[])]);
-                    
-                    if(newA >= targetWins || newB >= targetWins) {
-                        const winnerName = newA > newB ? teamA.name : teamB.name;
-                        
-                        // Calculate POS Final
-                        let posData = null;
-                        if (match.format === 'BO5') {
-                            posData = calculatePOS(matchHistory, simulationData, winnerName);
-                        }
+        const winnerIsA = simulationData.winnerName === teamA.name;
+        const newA = winsA + (winnerIsA ? 1 : 0);
+        const newB = winsB + (!winnerIsA ? 1 : 0);
+        
+        setWinsA(newA); 
+        setWinsB(newB);
+        
+        // [FIX] Calculate Kill Scores for History
+        // We need to map BLUE/RED kills to Team A/Team B
+        const isBlueA = simulationData.blueTeam.name === teamA.name;
+        const killsA = isBlueA ? liveStats.kills.BLUE : liveStats.kills.RED;
+        const killsB = isBlueA ? liveStats.kills.RED : liveStats.kills.BLUE;
 
-                        onMatchComplete(match, { 
-                            winner: winnerName, 
-                            scoreString: `${newA}:${newB}`, 
-                            history: newHist,
-                            posPlayer: posData // Save POS here
-                        });
-                    } else {
-                        setCurrentSet(s => s+1);
-                        setPhase('READY'); 
-                    }
-               }} 
-               className="px-12 py-5 bg-white text-black rounded-full font-black text-2xl hover:scale-105 transition shadow-xl"
-               >
-                   {(winsA + (simulationData.winnerName === teamA.name ? 1 : 0) >= targetWins) || 
-                    (winsB + (simulationData.winnerName === teamB.name ? 1 : 0) >= targetWins)
-                      ? '매치 종료 (Finish Match)' 
-                      : '다음 세트 (Next Set)'}
-               </button>
+        // [UPDATED] Save History Item
+        const histItem = { 
+            set: currentSet, 
+            winner: simulationData.winnerName, 
+            picks: simulationData.picks, 
+            bans: simulationData.bans, 
+            logs: simulationData.logs,
+            pogPlayer: simulationData.pogPlayer,
+            gameTime: simulationData.gameTime || "30분 00초",
+            totalMinutes: simulationData.totalMinutes || 30,
+            
+            // [FIX] Save the Kill Scores here!
+            scores: { A: killsA, B: killsB } 
+        };
+
+        const newHist = [...matchHistory, histItem];
+        setMatchHistory(newHist);
+        setGlobalBanList(prev => [...prev, ...(simulationData.usedChamps||[])]);
+        
+        if(newA >= targetWins || newB >= targetWins) {
+            const winnerName = newA > newB ? teamA.name : teamB.name;
+            
+            let posData = null;
+            if (match.format === 'BO5') {
+                posData = calculatePOS(matchHistory, simulationData, winnerName);
+            }
+
+            onMatchComplete(match, { 
+                winner: winnerName, 
+                scoreString: `${newA}:${newB}`, 
+                history: newHist,
+                posPlayer: posData
+            });
+        } else {
+            setCurrentSet(s => s+1);
+            setPhase('READY'); 
+        }
+    }} 
+    className="px-12 py-5 bg-white text-black rounded-full font-black text-2xl hover:scale-105 transition shadow-xl"
+>
+    {(winsA + (simulationData.winnerName === teamA.name ? 1 : 0) >= targetWins) || 
+    (winsB + (simulationData.winnerName === teamB.name ? 1 : 0) >= targetWins)
+        ? '매치 종료 (Finish Match)' 
+        : '다음 세트 (Next Set)'}
+</button>
            </div>
         )}
       </div>
