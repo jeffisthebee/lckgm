@@ -1,10 +1,44 @@
-// src/engine/gameEngine.js
+// src/engine/gameLogic.js
 import { GAME_RULES, SIDES, MAP_LANES, championList, SIM_CONSTANTS } from '../data/constants';
 import { runDraftSimulation } from './draftLogic';
 import { 
   calculateTeamPower, resolveCombat, calculateIndividualIncome, 
   calculateDeathTimer, getChampionClass 
 } from './mechanics';
+
+// --- NEW HELPER: Standardized POG Calculation ---
+function calculatePog(winningPicks, gameMinutes) {
+    // Determine the MVP based on KDA, Damage, Gold, and Role bias
+    const candidates = winningPicks.map(p => {
+        // Handle data structure differences (Simulated vs Quick)
+        const stats = p.stats || {};
+        const k = stats.kills !== undefined ? stats.kills : (p.k || 0);
+        const d = stats.deaths !== undefined ? stats.deaths : (p.d || 0);
+        const a = stats.assists !== undefined ? stats.assists : (p.a || 0);
+        const dmg = stats.damage !== undefined ? stats.damage : (p.damage || 0);
+        
+        // Safety check for deaths to avoid divide by zero
+        const safeD = d === 0 ? 1 : d;
+        const kda = (k + a) / safeD;
+        
+        // DPM (Damage Per Minute)
+        const dpm = dmg / (gameMinutes || 1); 
+        
+        // Score Formula
+        let pogScore = (kda * 3) + (dpm / 100) + (p.currentGold / 1000) + (a * 1);
+        
+        // Role Bias (Junglers/Supports often have lower stats, so give them a boost)
+        const role = p.playerData?.포지션 || 'MID';
+        if (['JGL', '정글', 'SUP', '서포터'].includes(role)) {
+            pogScore *= 1.15;
+        }
+
+        return { ...p, kdaVal: kda, pogScore: pogScore, dpm: dpm };
+    });
+
+    candidates.sort((a, b) => b.pogScore - a.pogScore);
+    return candidates[0]; // The winner
+}
 
 // --- GAME LOGIC ---
 export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
@@ -86,20 +120,6 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
     const VAR_RANGE_LOCAL = Math.min(SIM_CONSTANTS.VAR_RANGE, 0.06);
     const PLAYER_DIFFICULTY_MULTIPLIERS = { easy: 1.1, normal: 1.0, hard: 0.95, insane: 0.90 };
   
-    const dragonTypes = ['화염', '대지', '바람', '바다', '마법공학', '화학공학'];
-    const shuffledDragons = dragonTypes.sort(() => Math.random() - 0.5);
-    const firstDragonType = shuffledDragons[0];
-    const secondDragonType = shuffledDragons[1];
-    const mapElementType = shuffledDragons[2];
-    let dragonSpawnCount = 0;
-  
-    const initLane = () => ({
-        tier1: { hp: 100, plates: 6, destroyed: false },
-        tier2: { hp: 100, destroyed: false },
-        tier3: { hp: 100, destroyed: false },
-        inhib: { respawnTime: 0, destroyed: false }
-    });
-  
     let state = {
       gold: { 'BLUE': GAME_RULES.GOLD.START * 5, 'RED': GAME_RULES.GOLD.START * 5 },
       kills: { 'BLUE': 0, 'RED': 0 },
@@ -117,6 +137,15 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
       nextBaronTimeAbs: GAME_RULES.OBJECTIVES.BARON.spawn * 60,        
       nextElderTimeAbs: Infinity,
     };
+
+    function initLane() {
+        return {
+            tier1: { hp: 100, plates: 6, destroyed: false },
+            tier2: { hp: 100, destroyed: false },
+            tier3: { hp: 100, destroyed: false },
+            inhib: { respawnTime: 0, destroyed: false }
+        };
+    }
   
     const formatTime = (m, s) => `[${m}:${s < 10 ? '0' + s : s}]`;
      
@@ -503,18 +532,10 @@ export function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptio
     const usedChamps = [...draftResult.picks.A.map(p => p.champName), ...draftResult.picks.B.map(p => p.champName)];
     const scoreBlue = gameResult.finalKills[SIDES.BLUE];
     const scoreRed = gameResult.finalKills[SIDES.RED];
+    
+    // [POG UPDATE] Calculate POG using the helper
     const winningPicks = gameResult.winnerSide === SIDES.BLUE ? picksBlue_detailed : picksRed_detailed;
-     
-    const candidates = winningPicks.map(p => {
-        const k = p.stats.kills; const d = p.stats.deaths === 0 ? 1 : p.stats.deaths; const a = p.stats.assists;
-        const kda = (k + a) / d;
-        const dpm = p.stats.damage / (gameResult.totalMinutes || 1); 
-        let pogScore = (kda * 3) + (dpm / 100) + (p.currentGold / 1000) + (a * 1);
-        if (['JGL', '정글', 'SUP', '서포터'].includes(p.playerData.포지션)) pogScore *= 1.15;
-        return { ...p, kdaVal: kda, pogScore: pogScore, dpm: dpm };
-    });
-    candidates.sort((a, b) => b.pogScore - a.pogScore);
-    const pogPlayer = candidates[0];
+    const pogPlayer = calculatePog(winningPicks, gameResult.totalMinutes);
   
     const resultSummary = `⏱️ ${gameResult.gameTime} | ⚔️ ${teamBlue.name} ${scoreBlue} : ${scoreRed} ${teamRed.name} | 🏆 승리: ${gameResult.winnerName}`;
     const pogText = pogPlayer ? `🏅 POG: [${pogPlayer.playerData.포지션}] ${pogPlayer.playerName} (${pogPlayer.champName}) - Score: ${pogPlayer.pogScore.toFixed(1)}` : 'POG 선정 실패';
@@ -524,6 +545,8 @@ export function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptio
   
     return {
       winnerName: gameResult.winnerName, resultSummary: resultSummary + ' ' + pogText,
+      // [EXPOSE POG] We explicitly return the POG object now
+      pogPlayer: pogPlayer, 
       picks: draftResult.picks, bans: draftResult.bans, logs: finalLogs, usedChamps: usedChamps,
       score: { [teamBlue.name]: String(scoreBlue), [teamRed.name]: String(scoreRed) },
       gameResult, totalMinutes: gameResult.totalMinutes, totalSeconds: gameResult.totalSeconds,
@@ -556,6 +579,8 @@ export function simulateMatch(teamA, teamB, format = 'BO3', simOptions) {
         setNumber: currentSet, winner: setResult.winnerName,
         picks: blueTeam.name === teamA.name ? setResult.picks : { A: setResult.picks.B, B: setResult.picks.A },
         bans: blueTeam.name === teamA.name ? setResult.bans : { A: setResult.bans.B, B: setResult.bans.A },
+        // [EXPOSE POG] Pass the POG up to the match history
+        pogPlayer: setResult.pogPlayer,
         fearlessBans: currentFearlessBans, logs: setResult.logs, resultSummary: setResult.resultSummary,
         scores: { A: setResult.score[teamA.name], B: setResult.score[teamB.name] }
       });
@@ -573,16 +598,36 @@ const picksToFullObj = (simplePicks, team) => {
       return { playerData: player, role: player ? player.포지션 : 'MID', tier: p.tier, mastery: p.mastery, currentGold: 5000, level: 9, classType: '전사', dmgType: 'AD' };
   });
 };
+
 const generatePostGameStats = (team, isWinner, picks, gameTime) => {
   return picks.map(p => {
       const playerObj = team.roster.find(r => r.이름 === p.playerName) || { 포지션: 'MID', 상세: {} };
       const pickObj = { playerData: playerObj, currentGold: 0 }; 
       const resources = calculateIndividualIncome(pickObj, gameTime, isWinner ? 1.0 : 0.9);
       const isCarry = ['MID', 'ADC', 'TOP'].includes(playerObj.포지션);
-      let k=0, d=0, a=0;
-      if (isWinner) { k = isCarry ? Math.floor(Math.random() * 8) + 3 : Math.floor(Math.random() * 3) + 1; d = Math.floor(Math.random() * 3); a = Math.floor(Math.random() * 10) + 5; } 
-      else { k = isCarry ? Math.floor(Math.random() * 4) : 0; d = Math.floor(Math.random() * 6) + 3; a = Math.floor(Math.random() * 6) + 2; }
-      return { ...p, k, d, a, currentGold: resources.gold, lvl: Math.min(18, Math.floor(resources.xp / 1000) + 6) };
+      let k=0, d=0, a=0, damage=0;
+      
+      if (isWinner) { 
+          k = isCarry ? Math.floor(Math.random() * 8) + 3 : Math.floor(Math.random() * 3) + 1; 
+          d = Math.floor(Math.random() * 3); 
+          a = Math.floor(Math.random() * 10) + 5; 
+      } else { 
+          k = isCarry ? Math.floor(Math.random() * 4) : 0; 
+          d = Math.floor(Math.random() * 6) + 3; 
+          a = Math.floor(Math.random() * 6) + 2; 
+      }
+      
+      // [NEW] Generate fake damage for POG calculation in Quick Sim
+      damage = isCarry ? (Math.random() * 20000 + 15000) : (Math.random() * 10000 + 5000);
+      if (gameTime > 35) damage *= 1.3;
+
+      return { 
+          ...p, k, d, a, damage,
+          currentGold: resources.gold, 
+          lvl: Math.min(18, Math.floor(resources.xp / 1000) + 6),
+          // Add this structure so calculatePog helper can read it
+          stats: { kills: k, deaths: d, assists: a, damage: Math.floor(damage) }
+      };
   });
 };
 
@@ -618,10 +663,23 @@ export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampion
       if (isWinA) winsA++; else winsB++;
 
       const gameTime = 26 + (Math.random() * 12); 
+      
+      // [NEW] Generate Stats & Calculate POG
+      const statsA = generatePostGameStats(teamA, isWinA, picksA, gameTime);
+      const statsB = generatePostGameStats(teamB, !isWinA, picksB, gameTime);
+      const winningPicks = isWinA ? statsA : statsB;
+      
+      const pogPlayer = calculatePog(winningPicks, gameTime);
+      const pogText = pogPlayer ? `🏅 POG: ${pogPlayer.playerName} (${pogPlayer.champName})` : '';
+
       matchHistory.push({
           setNumber: currentSet, winner: winner.name,
-          picks: { A: generatePostGameStats(teamA, isWinA, picksA, gameTime), B: generatePostGameStats(teamB, !isWinA, picksB, gameTime) },
-          bans: draftResult.bans, logs: [`[SIM] Set ${currentSet} - Winner: ${winner.name}`], resultSummary: `Winner: ${winner.name}`
+          picks: { A: statsA, B: statsB },
+          bans: draftResult.bans, 
+          // [EXPOSE POG] Pass the POG up to the match history
+          pogPlayer: pogPlayer,
+          logs: [`[SIM] Set ${currentSet} - Winner: ${winner.name}`, pogText], 
+          resultSummary: `Winner: ${winner.name}`
       });
       currentSet++;
   }
