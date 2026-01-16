@@ -643,7 +643,10 @@ const getOvrBadgeStyle = (ovr) => {
                   status: 'finished',
                   result: {
                       winner: resultData.winner,
-                      score: resultData.scoreString
+                      score: resultData.scoreString,
+                      // [FIX] THIS WAS MISSING! Save the detailed history (POG, Stats, Time)
+                      history: resultData.history,
+                      posPlayer: resultData.posPlayer // Save Series MVP if exists
                   }
               };
           }
@@ -656,15 +659,14 @@ const getOvrBadgeStyle = (ovr) => {
       setLeague(updatedLeague);
       recalculateStandings(updatedLeague);
   
-      // 3. 다음 라운드 생성 체크 (플레이인/플레이오프)
+      // 3. 다음 라운드 생성 체크
       checkAndGenerateNextPlayInRound(updatedMatches);
       checkAndGenerateNextPlayoffRound(updatedMatches);
   
-      // 4. 모달 닫기 및 데이터 초기화
+      // 4. 모달 닫기
       setIsLiveGameMode(false);
       setLiveMatchData(null);
       
-      // 5. 알림
       setTimeout(() => alert(`경기 종료! 승리: ${resultData.winner}`), 100);
     };
   

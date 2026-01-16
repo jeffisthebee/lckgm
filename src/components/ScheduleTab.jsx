@@ -48,20 +48,20 @@ const ScheduleTab = ({
                                             {isFinished && m.result.winner === t1.name && <span className="text-xs text-blue-500 font-bold">WIN</span>}
                                         </div>
                                         <div className="text-center font-bold flex flex-col items-center">
-                                            {isFinished ? (
-                                                <>
-                                                    <span className="text-xl text-gray-800">{m.result.score}</span>
-                                                    {/* [NEW] View Details Button */}
-                                                    <button 
-                                                        onClick={() => onMatchClick && onMatchClick(m)}
-                                                        className="mt-1 text-[10px] bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 px-2 py-0.5 rounded transition flex items-center gap-1"
-                                                    >
-                                                        <span>📊</span> 상세보기
-                                                    </button>
-                                                </>
-                                            ) : (
-                                                <span className="text-gray-400">VS</span>
-                                            )}
+                                        {isFinished ? (
+    <div className="flex flex-col items-center">
+        <span className="text-xl text-gray-800">{m.result.score}</span>
+        {/* VIEW DETAILS BUTTON */}
+        <button 
+            onClick={() => onMatchClick && onMatchClick(m)}
+            className="mt-1 text-[10px] bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 px-2 py-0.5 rounded transition flex items-center gap-1"
+        >
+            <span>📊</span> 상세보기
+        </button>
+    </div>
+) : (
+    <span className="text-gray-400">VS</span>
+)}
                                         </div>
                                         <div className="flex flex-col items-center w-1/3">
                                             <span className={`font-bold ${isMyMatch && myTeam.id === m.t2 ? 'text-blue-600' : 'text-gray-800'}`}>{t2Name}</span>

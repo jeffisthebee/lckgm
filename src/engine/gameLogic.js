@@ -604,37 +604,38 @@ const picksToFullObj = (simplePicks, team) => {
   });
 };
 
-const generatePostGameStats = (team, isWinner, picks, gameTime) => {
-  return picks.map(p => {
-      const playerObj = team.roster.find(r => r.이름 === p.playerName) || { 포지션: 'MID', 상세: {} };
-      const pickObj = { playerData: playerObj, currentGold: 0 }; 
-      const resources = calculateIndividualIncome(pickObj, gameTime, isWinner ? 1.0 : 0.9);
-      const isCarry = ['MID', 'ADC', 'TOP'].includes(playerObj.포지션);
-      let k=0, d=0, a=0, damage=0;
-      
-      if (isWinner) { 
-          k = isCarry ? Math.floor(Math.random() * 8) + 3 : Math.floor(Math.random() * 3) + 1; 
-          d = Math.floor(Math.random() * 3); 
-          a = Math.floor(Math.random() * 10) + 5; 
-      } else { 
-          k = isCarry ? Math.floor(Math.random() * 4) : 0; 
-          d = Math.floor(Math.random() * 6) + 3; 
-          a = Math.floor(Math.random() * 6) + 2; 
-      }
-      
-      // [NEW] Generate fake damage for POG calculation in Quick Sim
-      damage = isCarry ? (Math.random() * 20000 + 15000) : (Math.random() * 10000 + 5000);
-      if (gameTime > 35) damage *= 1.3;
+// src/engine/gameLogic.js (Update this function)
 
-      return { 
-          ...p, k, d, a, damage,
-          currentGold: resources.gold, 
-          lvl: Math.min(18, Math.floor(resources.xp / 1000) + 6),
-          // Add this structure so calculatePog helper can read it
-          stats: { kills: k, deaths: d, assists: a, damage: Math.floor(damage) }
-      };
-  });
-};
+const generatePostGameStats = (team, isWinner, picks, gameTime) => {
+    return picks.map(p => {
+        const playerObj = team.roster.find(r => r.이름 === p.playerName) || { 포지션: 'MID', 상세: {} };
+        const pickObj = { playerData: playerObj, currentGold: 0 }; 
+        const resources = calculateIndividualIncome(pickObj, gameTime, isWinner ? 1.0 : 0.9);
+        const isCarry = ['MID', 'ADC', 'TOP'].includes(playerObj.포지션);
+        let k=0, d=0, a=0, damage=0;
+        
+        if (isWinner) { 
+            k = isCarry ? Math.floor(Math.random() * 8) + 3 : Math.floor(Math.random() * 3) + 1; 
+            d = Math.floor(Math.random() * 3); 
+            a = Math.floor(Math.random() * 10) + 5; 
+        } else { 
+            k = isCarry ? Math.floor(Math.random() * 4) : 0; 
+            d = Math.floor(Math.random() * 6) + 3; 
+            a = Math.floor(Math.random() * 6) + 2; 
+        }
+        
+        damage = isCarry ? (Math.random() * 20000 + 15000) : (Math.random() * 10000 + 5000);
+        if (gameTime > 35) damage *= 1.3;
+  
+        return { 
+            ...p, k, d, a, damage,
+            // [FIX] Multiply 'resources.gold' (GPM) by 'gameTime' to get TOTAL GOLD
+            currentGold: Math.floor(resources.gold * gameTime) + 500, 
+            lvl: Math.min(18, Math.floor(resources.xp / 1000) + 6),
+            stats: { kills: k, deaths: d, assists: a, damage: Math.floor(damage) }
+        };
+    });
+  };
 
 export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampionList = []) => {
   const safeChampList = (currentChampionList && currentChampionList.length > 0) ? currentChampionList : championList; 
