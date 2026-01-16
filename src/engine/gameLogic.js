@@ -6,14 +6,14 @@ import {
   calculateDeathTimer, getChampionClass 
 } from './mechanics';
 
-// --- HELPER: Standardized POG Calculation ---
+// --- HELPER: POG Calculation ---
 function calculatePog(winningPicks, gameMinutes) {
     const candidates = winningPicks.map(p => {
         const stats = p.stats || {};
-        const k = stats.kills !== undefined ? stats.kills : (p.k || 0);
-        const d = stats.deaths !== undefined ? stats.deaths : (p.d || 0);
-        const a = stats.assists !== undefined ? stats.assists : (p.a || 0);
-        const dmg = stats.damage !== undefined ? stats.damage : (p.damage || 0);
+        const k = stats.kills || 0;
+        const d = stats.deaths || 0;
+        const a = stats.assists || 0;
+        const dmg = stats.damage || 0;
         
         const safeD = d === 0 ? 1 : d;
         const kda = (k + a) / safeD;
@@ -33,7 +33,90 @@ function calculatePog(winningPicks, gameMinutes) {
     return candidates[0]; 
 }
 
-// --- GAME LOGIC ---
+// --- HELPER: Distribute Totals to Players (Top-Down) ---
+const distributeTeamStats = (team, picks, totalKills, totalDeaths, totalAssists, gameTime, isWinner) => {
+    // 1. Define Weights for Roles (Who gets kills/deaths?)
+    const ROLE_WEIGHTS = {
+        KILLS: { 'TOP': 20, 'JGL': 15, 'MID': 30, 'ADC': 32, 'SUP': 3 },
+        DEATHS: { 'TOP': 20, 'JGL': 20, 'MID': 15, 'ADC': 15, 'SUP': 30 }, // Support/Jungle die for team
+        ASSISTS: { 'TOP': 15, 'JGL': 25, 'MID': 15, 'ADC': 10, 'SUP': 35 }
+    };
+
+    // 2. Initialize Player Objects
+    const players = picks.map(p => {
+        const playerObj = team.roster.find(r => r.이름 === p.playerName) || { 포지션: 'MID', 상세: {} };
+        const role = ['MID', 'ADC', 'TOP', 'JGL', 'SUP'].includes(playerObj.포지션) ? playerObj.포지션 : 'MID';
+        
+        // Base Resources (Income)
+        const incomeMod = isWinner ? 1.05 : 0.95;
+        const resources = calculateIndividualIncome({ playerData: playerObj }, gameTime, incomeMod);
+        
+        return {
+            ...p,
+            playerData: playerObj,
+            role: role,
+            k: 0, d: 0, a: 0, damage: 0,
+            currentGold: Math.floor(resources.gold * gameTime) + 500,
+            lvl: Math.min(18, Math.floor(resources.xp / 1000) + 6),
+            roleWeights: {
+                k: ROLE_WEIGHTS.KILLS[role] || 10,
+                d: ROLE_WEIGHTS.DEATHS[role] || 10,
+                a: ROLE_WEIGHTS.ASSISTS[role] || 10
+            }
+        };
+    });
+
+    // 3. Distribute Kills (Randomly based on weight)
+    for (let i = 0; i < totalKills; i++) {
+        const lottery = [];
+        players.forEach((p, idx) => {
+            // Add index to lottery N times based on weight
+            for(let w=0; w<p.roleWeights.k; w++) lottery.push(idx);
+        });
+        const winnerIdx = lottery[Math.floor(Math.random() * lottery.length)];
+        players[winnerIdx].k++;
+        players[winnerIdx].currentGold += 300; // Kill Gold
+    }
+
+    // 4. Distribute Deaths
+    for (let i = 0; i < totalDeaths; i++) {
+        const lottery = [];
+        players.forEach((p, idx) => {
+            for(let w=0; w<p.roleWeights.d; w++) lottery.push(idx);
+        });
+        const victimIdx = lottery[Math.floor(Math.random() * lottery.length)];
+        players[victimIdx].d++;
+    }
+
+    // 5. Distribute Assists
+    for (let i = 0; i < totalAssists; i++) {
+        const lottery = [];
+        players.forEach((p, idx) => {
+            for(let w=0; w<p.roleWeights.a; w++) lottery.push(idx);
+        });
+        const assistIdx = lottery[Math.floor(Math.random() * lottery.length)];
+        players[assistIdx].a++;
+        players[assistIdx].currentGold += 100; // Assist Gold
+    }
+
+    // 6. Finalize Stats
+    return players.map(p => {
+        // Damage calc (Carries do more, scaling with time)
+        const isCarry = ['MID', 'ADC', 'TOP'].includes(p.role);
+        let dmg = isCarry ? (Math.random() * 15000 + 10000) : (Math.random() * 8000 + 4000);
+        dmg *= (gameTime / 25);
+        if (totalKills > 25) dmg *= 1.3; // More kills = more fighting = more damage
+
+        return {
+            ...p,
+            damage: Math.floor(dmg),
+            stats: { kills: p.k, deaths: p.d, assists: p.a, damage: Math.floor(dmg) }
+        };
+    });
+};
+
+// --- GAME LOGIC EXPORTS ---
+
 export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions = {}) {
     let time = 0; 
     let logs = [];
@@ -489,9 +572,16 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
     logs.sort((a, b) => a.abs - b.abs);
   
     return {
-      winnerName: winnerName, winnerSide: winnerSide, gameTime: `${totalMinutes}분 ${totalSeconds % 60}초`,
-      totalMinutes: totalMinutes, totalSeconds, endSecond: totalSeconds % 60, gameOver, finalTimeStr,
-      logs: logs.map(l => l.message), finalKills: state.kills,
+      winnerName: winnerName, resultSummary: `Winner: ${winnerName}`,
+      // [EXPOSE POG] We explicitly return the POG object now
+      pogPlayer: null, // Placeholder, calculated later if needed for full sim
+      picks: { A: picksBlue, B: picksRed }, bans: { A: [], B: [] }, logs: logs.map(l => l.message), usedChamps: [],
+      score: { [teamBlue.name]: String(state.kills.BLUE), [teamRed.name]: String(state.kills.RED) },
+      gameResult: { finalKills: state.kills }, totalMinutes: totalMinutes, totalSeconds: totalSeconds,
+      endSecond: totalSeconds % 60, gameOver: gameOver, finalTimeStr: finalTimeStr,
+      // [FIX] Ensure gameTime is passed up for consistency
+      gameTime: finalTimeStr,
+      playersLevelProgress: [], fearlessBans: []
     };
 }
 
@@ -604,90 +694,6 @@ const picksToFullObj = (simplePicks, team) => {
   });
 };
 
-// src/engine/gameLogic.js (Update this function)
-
-const distributeKillsToPlayers = (totalKills, picks) => {
-    const roleWeights = { 'ADC': 35, 'MID': 30, 'TOP': 20, 'JGL': 15, 'SUP': 5 };
-    const playerKills = new Array(5).fill(0);
-    
-    for (let i = 0; i < totalKills; i++) {
-        // Create a weighted lottery pool
-        let pool = [];
-        picks.forEach((p, idx) => {
-            const role = p.playerData?.포지션 || 'MID';
-            // Increase weight slightly if player has high offensive stats
-            const aggression = (p.playerData?.상세?.무력 || 50) / 10;
-            const weight = (roleWeights[role] || 10) + aggression;
-            
-            // Add index to pool 'weight' times (simple weighted random)
-            for(let w=0; w < weight; w++) pool.push(idx);
-        });
-        
-        // Pick a winner for this kill
-        if (pool.length > 0) {
-            const winnerIdx = pool[Math.floor(Math.random() * pool.length)];
-            playerKills[winnerIdx]++;
-        }
-    }
-    return playerKills;
-};
-
-// [FIXED] Updated Stats Generator using "Top-Down" distribution
-const generatePostGameStats = (team, isWinner, picks, gameTime, varianceType, teamTotalKills) => {
-    // 1. Distribute the pre-calculated total kills
-    const distributedKills = distributeKillsToPlayers(teamTotalKills, picks);
-
-    return picks.map((p, idx) => {
-        const playerObj = team.roster.find(r => r.이름 === p.playerName) || { 포지션: 'MID', 상세: {} };
-        const pickObj = { playerData: playerObj, currentGold: 0 }; 
-        
-        const incomeMod = isWinner ? 1.05 : 0.95;
-        const resources = calculateIndividualIncome(pickObj, gameTime, incomeMod);
-        const isCarry = ['MID', 'ADC', 'TOP'].includes(playerObj.포지션);
-        
-        // 2. Assign Kills from distribution
-        let k = distributedKills[idx];
-        
-        // 3. Generate Deaths (Logic: Losers die more, but capped to be realistic)
-        let d = 0;
-        if (!isWinner) {
-            // Loser deaths roughly correlate to enemy kills, but spread out
-            // Stomp loser: high deaths. Close loser: moderate deaths.
-            const baseDeath = varianceType === 'STOMP' ? 5 : 3;
-            d = Math.floor(Math.random() * 4) + baseDeath; 
-            if (['SUP', 'JGL'].includes(playerObj.포지션)) d += 1; // Sup/Jgl sacrifice more
-        } else {
-            // Winner deaths
-            d = Math.floor(Math.random() * 3); // 0 to 2 deaths usually
-            if (varianceType === 'FIESTA') d += 2; // More deaths in fiesta
-        }
-
-        // 4. Generate Assists (Correlates to Team Kills)
-        // A player participates in 40-80% of team kills
-        const killParticipation = 0.4 + (Math.random() * 0.4);
-        let a = Math.floor(teamTotalKills * killParticipation);
-        if (a > teamTotalKills) a = teamTotalKills; // Can't assist more than total kills
-        if (a < 0) a = 0;
-        // Self-correction: Can't assist your own kills? Actually in LoL stats you can't, but simple logic is fine. 
-        // Let's refine: assists = (Total Team Kills - My Kills) * Participation
-        const teammatesKills = Math.max(0, teamTotalKills - k);
-        a = Math.floor(teammatesKills * killParticipation);
-
-        // 5. Damage Calculation
-        let damage = isCarry ? (Math.random() * 15000 + 10000) : (Math.random() * 8000 + 4000);
-        damage *= (gameTime / 25); 
-        if (varianceType === 'FIESTA') damage *= 1.4;
-
-        return { 
-            ...p, k, d, a, damage,
-            // Gold = Farm + (Kills * 300) + (Assists * 150)
-            currentGold: Math.floor(resources.gold * gameTime) + 500 + (k * 300) + (a * 150), 
-            lvl: Math.min(18, Math.floor(resources.xp / 1000) + 6),
-            stats: { kills: k, deaths: d, assists: a, damage: Math.floor(damage) }
-        };
-    });
-};
-
 export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampionList = []) => {
   const safeChampList = (currentChampionList && currentChampionList.length > 0) ? currentChampionList : championList; 
   const targetWins = format === 'BO5' ? 3 : 2;
@@ -701,57 +707,75 @@ export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampion
       const picksA = draftResult.picks.A; const picksB = draftResult.picks.B;
       const mockBuffs = { dragonStacks: { infernal: 0 }, grubs: 0, herald: false, baron: false, elder: false, soul: null };
       
-      // Calculate Power to decide winner
-      const pA = calculateTeamPower(picksToFullObj(picksA, teamA), 25, mockBuffs, 0, [], 1500);
-      const pB = calculateTeamPower(picksToFullObj(picksB, teamB), 25, mockBuffs, 0, [], 1500);
+      // Calculate Power
+      const pA_25 = calculateTeamPower(picksToFullObj(picksA, teamA), 25, mockBuffs, 0, [], 1500);
+      const pB_25 = calculateTeamPower(picksToFullObj(picksB, teamB), 25, mockBuffs, 0, [], 1500);
       
-      const avgPowerA = pA / 5; 
-      const avgPowerB = pB / 5;
+      // Determine Winner (Power + Random Upset Chance)
+      const avgPowerA = pA_25 / 5; 
+      const avgPowerB = pB_25 / 5;
       let winChanceA = avgPowerA / (avgPowerA + avgPowerB);
-      winChanceA += (Math.random() * 0.10 - 0.05); // Upset chance
+      
+      // Add slight randomness (Upsets happen!)
+      winChanceA += (Math.random() * 0.10 - 0.05); 
       
       const isWinA = Math.random() < winChanceA;
       const winner = isWinA ? teamA : teamB;
       if (isWinA) winsA++; else winsB++;
 
-      // [FIX 1] Determine Game Variance & TOTAL KILLS First (Capped at 35)
+      // [FIX] Determine Game Type (Stomp, Close, Fiesta)
       const powerDiff = Math.abs(avgPowerA - avgPowerB);
       let varianceType = 'CLOSE';
-      let scoreWinner = 0;
-      let scoreLoser = 0;
-
       const roll = Math.random();
-      if (powerDiff > 15 && roll > 0.3) varianceType = 'STOMP'; 
-      else if (roll > 0.85) varianceType = 'FIESTA'; 
+      
+      if (powerDiff > 10 && roll > 0.3) varianceType = 'STOMP'; // Big gap = likely stomp
+      else if (roll > 0.8) varianceType = 'FIESTA'; // 20% chance of a bloodbath
+      else if (roll > 0.5) varianceType = 'STOMP';  // Random stomps happen
       else varianceType = 'CLOSE';
 
+      // Randomize Time based on Game Type
+      let baseTime = 30;
+      if (varianceType === 'STOMP') baseTime = 24 + Math.random() * 5;
+      else if (varianceType === 'FIESTA') baseTime = 35 + Math.random() * 10;
+      else baseTime = 28 + Math.random() * 12;
+      
+      const gameTime = baseTime; 
+      
+      // [FIX] Top-Down Score Generation (Ensures Kills < 35 & K=D consistency)
+      let winnerKills = 0;
+      let loserKills = 0;
+
       if (varianceType === 'STOMP') {
-          scoreWinner = 18 + Math.floor(Math.random() * 12); // 18 - 30
-          scoreLoser = 1 + Math.floor(Math.random() * 6);    // 1 - 7
+          winnerKills = 15 + Math.floor(Math.random() * 10); // 15-25 (Max 25)
+          loserKills = Math.floor(Math.random() * 5); // 0-4
       } else if (varianceType === 'FIESTA') {
-          scoreWinner = 20 + Math.floor(Math.random() * 15); // 20 - 35
-          scoreLoser = 15 + Math.floor(Math.random() * 15);  // 15 - 30
+          winnerKills = 20 + Math.floor(Math.random() * 15); // 20-35
+          loserKills = 10 + Math.floor(Math.random() * 15); // 10-25
       } else { // CLOSE
-          scoreWinner = 10 + Math.floor(Math.random() * 12); // 10 - 22
-          scoreLoser = scoreWinner - (2 + Math.floor(Math.random() * 5)); // Close gap
+          winnerKills = 10 + Math.floor(Math.random() * 10); // 10-20
+          loserKills = winnerKills - (1 + Math.floor(Math.random() * 5)); // Slightly less
+          if (loserKills < 0) loserKills = 0;
       }
 
-      // [FIX 2] Apply Hard Cap (35 +- 1)
-      scoreWinner = Math.min(36, Math.max(5, scoreWinner));
-      scoreLoser = Math.min(scoreWinner - 1, Math.max(0, scoreLoser));
+      // Hard Cap at 36 (User requested max 35 +-1)
+      if (winnerKills > 36) winnerKills = 36;
+      if (loserKills > 36) loserKills = 36;
 
-      // Randomize Time
-      let gameTime = 30;
-      if (varianceType === 'STOMP') gameTime = 23 + Math.random() * 5;
-      else if (varianceType === 'FIESTA') gameTime = 32 + Math.random() * 10;
-      else gameTime = 28 + Math.random() * 8;
+      // Distribute Stats
+      // Winner gets winnerKills, deals death to Loser
+      // Loser gets loserKills, deals death to Winner
+      // Assist Total is usually Kills * 1.5 to 2.5
+      const winnerAssists = Math.floor(winnerKills * (1.5 + Math.random()));
+      const loserAssists = Math.floor(loserKills * (1.5 + Math.random()));
 
-      // [FIX 3] Pass total kills to generator
-      const totalKillsA = isWinA ? scoreWinner : scoreLoser;
-      const totalKillsB = isWinA ? scoreLoser : scoreWinner;
+      const statsA = isWinA 
+          ? distributeTeamStats(teamA, picksA, winnerKills, loserKills, winnerAssists, gameTime, true)
+          : distributeTeamStats(teamA, picksA, loserKills, winnerKills, loserAssists, gameTime, false);
+      
+      const statsB = !isWinA 
+          ? distributeTeamStats(teamB, picksB, winnerKills, loserKills, winnerAssists, gameTime, true)
+          : distributeTeamStats(teamB, picksB, loserKills, winnerKills, loserAssists, gameTime, false);
 
-      const statsA = generatePostGameStats(teamA, isWinA, picksA, gameTime, varianceType, totalKillsA);
-      const statsB = generatePostGameStats(teamB, !isWinA, picksB, gameTime, varianceType, totalKillsB);
       const winningPicks = isWinA ? statsA : statsB;
       
       if (draftResult.usedChamps) {
@@ -761,6 +785,11 @@ export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampion
       const pogPlayer = calculatePog(winningPicks, gameTime);
       const pogText = pogPlayer ? `🏅 POG: ${pogPlayer.playerName} (${pogPlayer.champName})` : '';
 
+      // [PRESERVED FIX] Calculate Total Kills for Scoreboard
+      // Now simpler: it's just the totals we generated!
+      const totalKillsA = isWinA ? winnerKills : loserKills;
+      const totalKillsB = !isWinA ? winnerKills : loserKills;
+
       matchHistory.push({
           setNumber: currentSet, winner: winner.name,
           picks: { A: statsA, B: statsB },
@@ -768,10 +797,7 @@ export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampion
           pogPlayer: pogPlayer,
           gameTime: `${Math.floor(gameTime)}분 ${Math.floor((gameTime % 1) * 60)}초`,
           totalMinutes: Math.floor(gameTime),
-          
-          // These now perfectly match the sum of stats because we distributed them!
           scores: { A: totalKillsA, B: totalKillsB },
-          
           fearlessBans: currentFearlessBans,
           logs: [`[SIM] Set ${currentSet} - Winner: ${winner.name}`, `Game Pace: ${varianceType}`, pogText], 
           resultSummary: `Winner: ${winner.name}`
