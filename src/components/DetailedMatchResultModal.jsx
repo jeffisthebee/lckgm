@@ -3,8 +3,22 @@ import React, { useState } from 'react';
 export default function DetailedMatchResultModal({ result, onClose, teamA, teamB }) {
     const [activeSet, setActiveSet] = useState(0); 
     
-    // Safety check in case history is empty
+    // Safety check
     if (!result || !result.history || result.history.length === 0) return null;
+
+    // [FIX 1] Parse Match Score (e.g. "2:1") correctly
+    // The dashboard saves 'score' as a string "2:1", so we need to split it.
+    let matchScoreA = 0;
+    let matchScoreB = 0;
+    if (result.score && typeof result.score === 'string' && result.score.includes(':')) {
+        const parts = result.score.split(':');
+        matchScoreA = parts[0];
+        matchScoreB = parts[1];
+    } else {
+        // Fallback if saved as separate numbers
+        matchScoreA = result.scoreA || 0;
+        matchScoreB = result.scoreB || 0;
+    }
 
     const currentSetData = result.history[activeSet];
     const picksBlue = currentSetData.picks.A || [];
@@ -13,31 +27,35 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
     const bansRed = currentSetData.bans.B || [];
     const fearlessBans = currentSetData.fearlessBans || [];
     
-    // [NEW] Extract POG and POS
     const pogPlayer = currentSetData.pogPlayer; 
-    const posPlayer = result.posPlayer; // Passed from LiveGamePlayer on match completion
+    const posPlayer = result.posPlayer; 
     
-    // Helper to format Game Time if available
     const gameTimeStr = currentSetData.gameTime || 
         (currentSetData.totalMinutes ? `${currentSetData.totalMinutes}분` : 'Unknown Time');
+
+    // [FIX 2] Get Kill Scores for this specific Set
+    // gameLogic.js saves this as { A: "12", B: "5" } in 'scores'
+    const killScoreA = currentSetData.scores?.A || 0;
+    const killScoreB = currentSetData.scores?.B || 0;
 
     return (
       <div className="fixed inset-0 z-[100] bg-gray-900 bg-opacity-95 flex items-center justify-center p-4">
         <div className="bg-gray-100 rounded-2xl w-full max-w-6xl h-[90vh] flex flex-col shadow-2xl overflow-hidden relative">
           
-          {/* === HEADER === */}
+          {/* === HEADER (MATCH SCORE) === */}
           <div className="bg-black text-white p-6 shrink-0 relative overflow-hidden">
             <div className="flex justify-between items-center relative z-10">
                 <div className="flex items-center gap-6">
-                  <div className="text-4xl font-black text-blue-500">{result.scoreA || 0}</div>
+                  {/* [FIXED] Display parsed scores */}
+                  <div className="text-5xl font-black text-blue-500">{matchScoreA}</div>
                   <div className="flex flex-col items-center">
                     <span className="text-xs text-gray-400 font-bold tracking-widest">FINAL SCORE</span>
-                    <span className="text-2xl font-black italic">VS</span>
+                    <span className="text-2xl font-black italic text-white">VS</span>
                   </div>
-                  <div className="text-4xl font-black text-red-500">{result.scoreB || 0}</div>
+                  <div className="text-5xl font-black text-red-500">{matchScoreB}</div>
                 </div>
 
-                {/* [NEW] POS DISPLAY (Series MVP) */}
+                {/* POS DISPLAY (Series MVP) */}
                 {posPlayer && (
                     <div className="flex items-center gap-4 bg-purple-900/80 border border-purple-500 px-6 py-2 rounded-xl shadow-[0_0_15px_rgba(168,85,247,0.4)]">
                         <div className="flex flex-col items-end">
@@ -83,18 +101,33 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
           {/* === CONTENT === */}
           <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
             
-            {/* GAME INFO BAR */}
-            <div className="flex justify-between items-center mb-6">
-                 <div className="flex gap-2">
-                     <span className="bg-gray-800 text-white px-3 py-1 rounded text-xs font-bold">
-                        ⏱ {gameTimeStr}
+            {/* [NEW] GAME INFO BAR (WITH KILL SCORE) */}
+            <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                 <div className="flex items-center gap-6">
+                     {/* Game Time Badge */}
+                     <span className="bg-gray-800 text-white px-3 py-1 rounded text-xs font-bold flex items-center gap-1">
+                        <span>⏱</span> {gameTimeStr}
                      </span>
+                     
+                     {/* [NEW] SET KILL SCORE DISPLAY */}
+                     <div className="flex items-center gap-3 bg-gray-100 px-4 py-1 rounded-full border border-gray-300">
+                        <span className="text-sm font-black text-blue-600">{teamA.name}</span>
+                        <div className="flex items-center gap-1 text-xl font-black text-gray-800">
+                            <span>{killScoreA}</span>
+                            <span className="text-gray-400 text-sm">:</span>
+                            <span>{killScoreB}</span>
+                        </div>
+                        <span className="text-sm font-black text-red-600">{teamB.name}</span>
+                        <span className="text-[10px] text-gray-500 font-bold ml-2 uppercase">Kills</span>
+                     </div>
+
+                     {/* Winner Badge */}
                      <span className={`px-3 py-1 rounded text-xs font-bold ${currentSetData.winner === teamA.name ? 'bg-blue-100 text-blue-800' : 'bg-red-100 text-red-800'}`}>
-                        🏆 WINNER: {currentSetData.winner}
+                        🏆 SET WINNER: {currentSetData.winner}
                      </span>
                  </div>
 
-                 {/* [NEW] POG CARD (Small Version) */}
+                 {/* POG CARD (Small Version) */}
                  {pogPlayer && (
                      <div className="flex items-center gap-3 bg-yellow-100 border border-yellow-300 px-4 py-1 rounded-full shadow-sm">
                          <span className="text-[10px] font-bold text-yellow-800 bg-yellow-300 px-2 rounded">POG</span>
@@ -161,7 +194,7 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                               <div className="text-[10px] text-gray-500">{p.tier}티어 {p.classType}</div>
                             </div>
 
-                            {/* [UPDATED] Stats & Name */}
+                            {/* Stats & Name */}
                             <div className="text-right z-10 flex flex-col items-end">
                               <div className="font-bold text-gray-900 text-sm">{p.playerName}</div>
                               <div className="text-xs font-mono font-bold text-gray-600">
@@ -202,7 +235,7 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                               <div className="text-[10px] text-gray-500">{p.tier}티어 {p.classType}</div>
                             </div>
 
-                            {/* [UPDATED] Stats & Name */}
+                            {/* Stats & Name */}
                             <div className="text-left z-10 flex flex-col items-start mr-3">
                               <div className="font-bold text-gray-900 text-sm">{p.playerName}</div>
                               <div className="text-xs font-mono font-bold text-gray-600">
