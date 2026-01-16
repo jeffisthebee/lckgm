@@ -8,26 +8,19 @@ import {
 
 // --- NEW HELPER: Standardized POG Calculation ---
 function calculatePog(winningPicks, gameMinutes) {
-    // Determine the MVP based on KDA, Damage, Gold, and Role bias
     const candidates = winningPicks.map(p => {
-        // Handle data structure differences (Simulated vs Quick)
         const stats = p.stats || {};
         const k = stats.kills !== undefined ? stats.kills : (p.k || 0);
         const d = stats.deaths !== undefined ? stats.deaths : (p.d || 0);
         const a = stats.assists !== undefined ? stats.assists : (p.a || 0);
         const dmg = stats.damage !== undefined ? stats.damage : (p.damage || 0);
         
-        // Safety check for deaths to avoid divide by zero
         const safeD = d === 0 ? 1 : d;
         const kda = (k + a) / safeD;
-        
-        // DPM (Damage Per Minute)
         const dpm = dmg / (gameMinutes || 1); 
         
-        // Score Formula
         let pogScore = (kda * 3) + (dpm / 100) + (p.currentGold / 1000) + (a * 1);
         
-        // Role Bias (Junglers/Supports often have lower stats, so give them a boost)
         const role = p.playerData?.포지션 || 'MID';
         if (['JGL', '정글', 'SUP', '서포터'].includes(role)) {
             pogScore *= 1.15;
@@ -37,14 +30,16 @@ function calculatePog(winningPicks, gameMinutes) {
     });
 
     candidates.sort((a, b) => b.pogScore - a.pogScore);
-    return candidates[0]; // The winner
+    return candidates[0]; 
 }
 
 // --- GAME LOGIC ---
-export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions) {
+// [FIX] Added default "simOptions = {}" to prevent crash
+export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions = {}) {
     let time = 0; 
     let logs = [];
-    const { difficulty, playerTeamName } = simOptions;
+    // [FIX] Added default values for difficulty
+    const { difficulty = 'normal', playerTeamName = '' } = simOptions;
     let gameOver = false;
     let endAbsSecond = 0;
   
@@ -146,6 +141,13 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
             inhib: { respawnTime: 0, destroyed: false }
         };
     }
+
+    const dragonTypes = ['화염', '대지', '바람', '바다', '마법공학', '화학공학'];
+    const shuffledDragons = dragonTypes.sort(() => Math.random() - 0.5);
+    const firstDragonType = shuffledDragons[0];
+    const secondDragonType = shuffledDragons[1];
+    const mapElementType = shuffledDragons[2];
+    let dragonSpawnCount = 0;
   
     const formatTime = (m, s) => `[${m}:${s < 10 ? '0' + s : s}]`;
      

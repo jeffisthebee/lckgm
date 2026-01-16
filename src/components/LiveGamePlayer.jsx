@@ -399,10 +399,21 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     // =========================================================================
     // FINALIZE MANUAL DRAFT
     // =========================================================================
+    // =========================================================================
+    // FINALIZE MANUAL DRAFT (SAFE VERSION)
+    // =========================================================================
     const finalizeManualDraft = () => {
+        // 1. Validate Teams
+        if (!manualTeams.blue || !manualTeams.red) {
+            console.error("Critical Error: Teams not initialized");
+            alert("Error: Teams not initialized. Please restart.");
+            return;
+        }
+
         const mapToEngineFormat = (sidePicks, roster, teamSide) => {
             return ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(pos => {
                 const c = sidePicks[pos];
+                // Safe fallback if no champion selected
                 const safeChamp = c || activeChampionList.find(ch => ch.role === pos) || activeChampionList[0];
                 const p = roster.find(pl => pl.포지션 === pos);
                 
@@ -414,8 +425,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 };
 
                 return {
-                    champName: safeChamp.name,
-                    tier: safeChamp.tier,
+                    champName: safeChamp.name || 'Unknown',
+                    tier: safeChamp.tier || 3,
                     role: pos,
                     side: teamSide,
                     classType: safeChamp.class || '전사',
@@ -435,60 +446,65 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             }).filter(Boolean);
         };
     
-        const picksBlueDetailed = mapToEngineFormat(manualPicks.blue, manualTeams.blue.roster, 'BLUE');
-        const picksRedDetailed = mapToEngineFormat(manualPicks.red, manualTeams.red.roster, 'RED');
-    
-        if (picksBlueDetailed.length < 5 || picksRedDetailed.length < 5) {
-            alert('Draft Error: Incomplete teams.');
-            return;
-        }
-    
-        // Call the extracted engine function
-        const result = runGameTickEngine(manualTeams.blue, manualTeams.red, picksBlueDetailed, picksRedDetailed, simOptions);
+        try {
+            const picksBlueDetailed = mapToEngineFormat(manualPicks.blue, manualTeams.blue.roster, 'BLUE');
+            const picksRedDetailed = mapToEngineFormat(manualPicks.red, manualTeams.red.roster, 'RED');
         
-        // [NEW] Calculate POG for Manual Game (Since engine doesn't do it automatically for runGameTickEngine)
-        const pogPlayer = calculateManualPog(
-            result.gameResult ? result.gameResult.picks?.A || picksBlueDetailed : picksBlueDetailed, // Fallback logic
-            result.gameResult ? result.gameResult.picks?.B || picksRedDetailed : picksRedDetailed,
-            result.winnerSide,
-            result.totalMinutes
-        );
-
-        // Setup Simulation Data for Playback
-        setSimulationData({
-            winnerName: result.winnerName,
-            gameResult: result,
-            logs: [
-                `========== [ MANUAL DRAFT ] ==========`,
-                ...draftLogs,
-                `========== [ GAME START ] ==========`,
-                ...result.logs
-            ],
-            blueTeam: manualTeams.blue,
-            redTeam: manualTeams.red,
-            totalSeconds: result.totalSeconds,
-            picks: { A: picksBlueDetailed, B: picksRedDetailed },
-            bans: { A: draftState.blueBans, B: draftState.redBans },
+            if (picksBlueDetailed.length < 5 || picksRedDetailed.length < 5) {
+                alert('Draft Error: Incomplete teams (Must pick 5 champions).');
+                return;
+            }
+        
+            // 2. [FIX] Safe Engine Call with Manual Options
+            // This ensures your Difficulty and Team Name settings are respected
+            const safeOptions = simOptions || { difficulty: 'normal', playerTeamName: '' };
+            const result = runGameTickEngine(manualTeams.blue, manualTeams.red, picksBlueDetailed, picksRedDetailed, safeOptions);
             
-            // [NEW] Attach POG
-            pogPlayer: pogPlayer,
+            // 3. Calculate POG
+            const pogPlayer = calculateManualPog(
+                result.gameResult ? result.gameResult.picks?.A || picksBlueDetailed : picksBlueDetailed, 
+                result.gameResult ? result.gameResult.picks?.B || picksRedDetailed : picksRedDetailed,
+                result.winnerSide,
+                result.totalMinutes || 30
+            );
 
-            usedChamps: [...picksBlueDetailed, ...picksRedDetailed].map(p => p.champName) 
-        });
-    
-        setLiveStats({
-            kills: { BLUE: 0, RED: 0 },
-            gold: { BLUE: 2500, RED: 2500 },
-            towers: { BLUE: 0, RED: 0 },
-            players: [...picksBlueDetailed, ...picksRedDetailed].map(p => ({
-                ...p,
-                k: 0, d: 0, a: 0, lvl: 1, xp: 0, currentGold: 500
-            }))
-        });
-    
-        setGameTime(0);
-        setDisplayLogs([]);
-        setPhase('GAME');
+            // 4. Set Data
+            setSimulationData({
+                winnerName: result.winnerName,
+                gameResult: result,
+                logs: [
+                    `========== [ MANUAL DRAFT ] ==========`,
+                    ...draftLogs,
+                    `========== [ GAME START ] ==========`,
+                    ...result.logs
+                ],
+                blueTeam: manualTeams.blue,
+                redTeam: manualTeams.red,
+                totalSeconds: result.totalSeconds,
+                picks: { A: picksBlueDetailed, B: picksRedDetailed },
+                bans: { A: draftState.blueBans, B: draftState.redBans },
+                pogPlayer: pogPlayer,
+                usedChamps: [...picksBlueDetailed, ...picksRedDetailed].map(p => p.champName) 
+            });
+        
+            setLiveStats({
+                kills: { BLUE: 0, RED: 0 },
+                gold: { BLUE: 2500, RED: 2500 },
+                towers: { BLUE: 0, RED: 0 },
+                players: [...picksBlueDetailed, ...picksRedDetailed].map(p => ({
+                    ...p,
+                    k: 0, d: 0, a: 0, lvl: 1, xp: 0, currentGold: 500
+                }))
+            });
+        
+            setGameTime(0);
+            setDisplayLogs([]);
+            setPhase('GAME');
+
+        } catch (error) {
+            console.error("CRITICAL SIMULATION ERROR:", error);
+            alert(`Simulation Failed: ${error.message}`);
+        }
     };
 
     const processDraftStepLog = (stepInfo, logEntry) => {
