@@ -606,81 +606,116 @@ const picksToFullObj = (simplePicks, team) => {
 
 // src/engine/gameLogic.js (Update this function)
 
-const generatePostGameStats = (team, isWinner, picks, gameTime) => {
+const generatePostGameStats = (team, isWinner, picks, gameTime, varianceType) => {
     return picks.map(p => {
         const playerObj = team.roster.find(r => r.이름 === p.playerName) || { 포지션: 'MID', 상세: {} };
         const pickObj = { playerData: playerObj, currentGold: 0 }; 
-        const resources = calculateIndividualIncome(pickObj, gameTime, isWinner ? 1.0 : 0.9);
+        
+        // Winner gets slightly more resources naturally
+        const incomeMod = isWinner ? 1.05 : 0.95;
+        const resources = calculateIndividualIncome(pickObj, gameTime, incomeMod);
         const isCarry = ['MID', 'ADC', 'TOP'].includes(playerObj.포지션);
+        
         let k=0, d=0, a=0, damage=0;
         
-        if (isWinner) { 
-            k = isCarry ? Math.floor(Math.random() * 8) + 3 : Math.floor(Math.random() * 3) + 1; 
-            d = Math.floor(Math.random() * 3); 
-            a = Math.floor(Math.random() * 10) + 5; 
-        } else { 
-            k = isCarry ? Math.floor(Math.random() * 4) : 0; 
-            d = Math.floor(Math.random() * 6) + 3; 
-            a = Math.floor(Math.random() * 6) + 2; 
+        // --- LOGIC: Based on Game Variance Type ---
+        if (varianceType === 'STOMP') {
+            // One-sided: Winner kills a lot, Loser dies a lot
+            if (isWinner) {
+                k = isCarry ? Math.floor(Math.random() * 7) + 4 : Math.floor(Math.random() * 3) + 1;
+                d = Math.floor(Math.random() * 2); 
+                a = Math.floor(Math.random() * 8) + 4;
+            } else {
+                k = isCarry ? Math.floor(Math.random() * 3) : 0;
+                d = Math.floor(Math.random() * 6) + 3;
+                a = Math.floor(Math.random() * 4) + 1;
+            }
+        } else if (varianceType === 'FIESTA') {
+            // Bloody Game: High Kills/Deaths for EVERYONE
+            const killBase = isWinner ? 6 : 4;
+            k = Math.floor(Math.random() * 6) + killBase; 
+            d = Math.floor(Math.random() * 5) + 3; 
+            a = Math.floor(Math.random() * 10) + 5;
+        } else {
+            // CLOSE Game: Balanced stats
+            if (isWinner) {
+                k = Math.floor(Math.random() * 5) + 2;
+                d = Math.floor(Math.random() * 4) + 1; 
+                a = Math.floor(Math.random() * 6) + 4;
+            } else {
+                k = Math.floor(Math.random() * 4) + 1; // Losers still get kills
+                d = Math.floor(Math.random() * 4) + 2; 
+                a = Math.floor(Math.random() * 6) + 3;
+            }
         }
-        
-        damage = isCarry ? (Math.random() * 20000 + 15000) : (Math.random() * 10000 + 5000);
-        if (gameTime > 35) damage *= 1.3;
+  
+        // Damage calculation (Carries do more)
+        damage = isCarry ? (Math.random() * 15000 + 10000) : (Math.random() * 8000 + 4000);
+        damage *= (gameTime / 25); // Scale with time
+        if (varianceType === 'FIESTA') damage *= 1.4; // More fighting = more damage
   
         return { 
             ...p, k, d, a, damage,
-            // [FIX] Multiply 'resources.gold' (GPM) by 'gameTime' to get TOTAL GOLD
-            currentGold: Math.floor(resources.gold * gameTime) + 500, 
+            // Calculate Total Gold (Income * Minutes + Base + Kills/Assists Bonus)
+            currentGold: Math.floor(resources.gold * gameTime) + 500 + (k * 300) + (a * 100), 
             lvl: Math.min(18, Math.floor(resources.xp / 1000) + 6),
             stats: { kills: k, deaths: d, assists: a, damage: Math.floor(damage) }
         };
     });
   };
-
-export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampionList = []) => {
+  
+  export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampionList = []) => {
     const safeChampList = (currentChampionList && currentChampionList.length > 0) ? currentChampionList : championList; 
     const targetWins = format === 'BO5' ? 3 : 2;
     let winsA = 0; let winsB = 0; let matchHistory = []; let currentSet = 1;
-    
-    // [FIX 1] Initialize Global Ban List for Fearless Draft
     let globalBanList = []; 
   
     while (winsA < targetWins && winsB < targetWins) {
-        // [FIX 2] Use the global list instead of empty array []
         const currentFearlessBans = [...globalBanList];
         const draftResult = runDraftSimulation(teamA, teamB, currentFearlessBans, safeChampList);
         
         const picksA = draftResult.picks.A; const picksB = draftResult.picks.B;
         const mockBuffs = { dragonStacks: { infernal: 0 }, grubs: 0, herald: false, baron: false, elder: false, soul: null };
         
-        const pA_15 = calculateTeamPower(picksToFullObj(picksA, teamA), 15, mockBuffs, 0, [], 900);
-        const pB_15 = calculateTeamPower(picksToFullObj(picksB, teamB), 15, mockBuffs, 0, [], 900);
+        // Calculate Power
         const pA_25 = calculateTeamPower(picksToFullObj(picksA, teamA), 25, mockBuffs, 0, [], 1500);
         const pB_25 = calculateTeamPower(picksToFullObj(picksB, teamB), 25, mockBuffs, 0, [], 1500);
-        const pA_35 = calculateTeamPower(picksToFullObj(picksA, teamA), 35, mockBuffs, 0, [], 2100);
-        const pB_35 = calculateTeamPower(picksToFullObj(picksB, teamB), 35, mockBuffs, 0, [], 2100);
-  
-        const totalScoreA = (pA_15 * 0.25) + (pA_25 * 0.40) + (pA_35 * 0.35);
-        const totalScoreB = (pB_15 * 0.25) + (pB_25 * 0.40) + (pB_35 * 0.35);
-        const avgPowerA = totalScoreA / 5; const avgPowerB = totalScoreB / 5;
-        const totalAvgPower = avgPowerA + avgPowerB;
         
-        let winChanceA = avgPowerA / totalAvgPower;
-        const diff = avgPowerA - avgPowerB;
-        winChanceA += (diff * 0.018); 
-        let finalChanceA = Math.max(0.01, Math.min(0.99, winChanceA + (Math.random() * 0.06 - 0.03)));
-  
-        const isWinA = Math.random() < finalChanceA;
+        // Determine Winner (Power + Random Upset Chance)
+        const avgPowerA = pA_25 / 5; 
+        const avgPowerB = pB_25 / 5;
+        let winChanceA = avgPowerA / (avgPowerA + avgPowerB);
+        
+        // Add slight randomness (Upsets happen!)
+        winChanceA += (Math.random() * 0.10 - 0.05); 
+        
+        const isWinA = Math.random() < winChanceA;
         const winner = isWinA ? teamA : teamB;
         if (isWinA) winsA++; else winsB++;
   
-        const gameTime = 26 + (Math.random() * 12); 
+        // [FIX] Determine Game Type (Stomp, Close, Fiesta)
+        const powerDiff = Math.abs(avgPowerA - avgPowerB);
+        let varianceType = 'CLOSE';
+        const roll = Math.random();
         
-        const statsA = generatePostGameStats(teamA, isWinA, picksA, gameTime);
-        const statsB = generatePostGameStats(teamB, !isWinA, picksB, gameTime);
+        if (powerDiff > 10 && roll > 0.3) varianceType = 'STOMP'; // Big gap = likely stomp
+        else if (roll > 0.8) varianceType = 'FIESTA'; // 20% chance of a bloodbath
+        else if (roll > 0.5) varianceType = 'STOMP';  // Random stomps happen
+        else varianceType = 'CLOSE';
+  
+        // Randomize Time based on Game Type
+        let baseTime = 30;
+        if (varianceType === 'STOMP') baseTime = 24 + Math.random() * 5;
+        else if (varianceType === 'FIESTA') baseTime = 35 + Math.random() * 10;
+        else baseTime = 28 + Math.random() * 12;
+        
+        const gameTime = baseTime; 
+        
+        // Generate Stats using the new Variance Type
+        const statsA = generatePostGameStats(teamA, isWinA, picksA, gameTime, varianceType);
+        const statsB = generatePostGameStats(teamB, !isWinA, picksB, gameTime, varianceType);
         const winningPicks = isWinA ? statsA : statsB;
         
-        // [FIX 3] Update Global Ban List with used champs from this set
         if (draftResult.usedChamps) {
             globalBanList = [...globalBanList, ...draftResult.usedChamps];
         }
@@ -688,7 +723,6 @@ export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampion
         const pogPlayer = calculatePog(winningPicks, gameTime);
         const pogText = pogPlayer ? `🏅 POG: ${pogPlayer.playerName} (${pogPlayer.champName})` : '';
   
-        // [PRESERVED FIX] Calculate Total Kills
         const totalKillsA = statsA.reduce((sum, p) => sum + (p.stats.kills || 0), 0);
         const totalKillsB = statsB.reduce((sum, p) => sum + (p.stats.kills || 0), 0);
   
@@ -699,13 +733,9 @@ export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampion
             pogPlayer: pogPlayer,
             gameTime: `${Math.floor(gameTime)}분 ${Math.floor((gameTime % 1) * 60)}초`,
             totalMinutes: Math.floor(gameTime),
-            
             scores: { A: totalKillsA, B: totalKillsB },
-            
-            // [FIX 4] Save fearless bans to history so modal can show them
             fearlessBans: currentFearlessBans,
-  
-            logs: [`[SIM] Set ${currentSet} - Winner: ${winner.name}`, pogText], 
+            logs: [`[SIM] Set ${currentSet} - Winner: ${winner.name}`, `Game Pace: ${varianceType}`, pogText], 
             resultSummary: `Winner: ${winner.name}`
         });
         currentSet++;
