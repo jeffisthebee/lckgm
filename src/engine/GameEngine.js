@@ -1,6 +1,6 @@
 // src/engine/gameEngine.js
 import { GAME_RULES, SIDES, MAP_LANES, championList, SIM_CONSTANTS } from '../data/constants';
-import { runDraftSimulation } from './draftEngine';
+import { runDraftSimulation } from './draftLogic';
 import { 
   calculateTeamPower, resolveCombat, calculateIndividualIncome, 
   calculateDeathTimer, getChampionClass 
