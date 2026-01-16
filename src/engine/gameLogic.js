@@ -637,13 +637,19 @@ const generatePostGameStats = (team, isWinner, picks, gameTime) => {
     });
   };
 
-  export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampionList = []) => {
+export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampionList = []) => {
     const safeChampList = (currentChampionList && currentChampionList.length > 0) ? currentChampionList : championList; 
     const targetWins = format === 'BO5' ? 3 : 2;
     let winsA = 0; let winsB = 0; let matchHistory = []; let currentSet = 1;
+    
+    // [FIX 1] Initialize Global Ban List for Fearless Draft
+    let globalBanList = []; 
   
     while (winsA < targetWins && winsB < targetWins) {
-        const draftResult = runDraftSimulation(teamA, teamB, [], safeChampList);
+        // [FIX 2] Use the global list instead of empty array []
+        const currentFearlessBans = [...globalBanList];
+        const draftResult = runDraftSimulation(teamA, teamB, currentFearlessBans, safeChampList);
+        
         const picksA = draftResult.picks.A; const picksB = draftResult.picks.B;
         const mockBuffs = { dragonStacks: { infernal: 0 }, grubs: 0, herald: false, baron: false, elder: false, soul: null };
         
@@ -670,15 +676,19 @@ const generatePostGameStats = (team, isWinner, picks, gameTime) => {
   
         const gameTime = 26 + (Math.random() * 12); 
         
-        // Generate Stats & POG
         const statsA = generatePostGameStats(teamA, isWinA, picksA, gameTime);
         const statsB = generatePostGameStats(teamB, !isWinA, picksB, gameTime);
         const winningPicks = isWinA ? statsA : statsB;
         
+        // [FIX 3] Update Global Ban List with used champs from this set
+        if (draftResult.usedChamps) {
+            globalBanList = [...globalBanList, ...draftResult.usedChamps];
+        }
+        
         const pogPlayer = calculatePog(winningPicks, gameTime);
         const pogText = pogPlayer ? `🏅 POG: ${pogPlayer.playerName} (${pogPlayer.champName})` : '';
   
-        // [FIX] Calculate Total Kills for the Scoreboard
+        // [PRESERVED FIX] Calculate Total Kills
         const totalKillsA = statsA.reduce((sum, p) => sum + (p.stats.kills || 0), 0);
         const totalKillsB = statsB.reduce((sum, p) => sum + (p.stats.kills || 0), 0);
   
@@ -690,8 +700,10 @@ const generatePostGameStats = (team, isWinner, picks, gameTime) => {
             gameTime: `${Math.floor(gameTime)}분 ${Math.floor((gameTime % 1) * 60)}초`,
             totalMinutes: Math.floor(gameTime),
             
-            // [FIX] Save the calculated scores here!
             scores: { A: totalKillsA, B: totalKillsB },
+            
+            // [FIX 4] Save fearless bans to history so modal can show them
+            fearlessBans: currentFearlessBans,
   
             logs: [`[SIM] Set ${currentSet} - Winner: ${winner.name}`, pogText], 
             resultSummary: `Winner: ${winner.name}`
