@@ -7,7 +7,8 @@ const ScheduleTab = ({
     teams, 
     myTeam, 
     hasDrafted, 
-    formatTeamName 
+    formatTeamName,
+    onMatchClick // <--- [NEW] Accept the function
 }) => {
     return (
         <div className="bg-white rounded-lg border shadow-sm p-8 min-h-[600px] flex flex-col">
@@ -19,19 +20,14 @@ const ScheduleTab = ({
                     {league.matches
                         .filter(m => activeTab === 'schedule' || (m.t1 === myTeam.id || m.t2 === myTeam.id))
                         .map((m, i) => {
-                            // Safe lookups
                             const t1 = m.t1 ? teams.find(t => t.id === m.t1) : { name: 'TBD' };
                             const t2 = m.t2 ? teams.find(t => t.id === m.t2) : { name: 'TBD' };
-                            
-                            // Check if it involves user's team
                             const isMyMatch = myTeam.id === m.t1 || myTeam.id === m.t2;
                             const isFinished = m.status === 'finished';
                             
-                            // Use the passed formatting function
                             const t1Name = formatTeamName ? formatTeamName(m.t1, m.type) : t1.name;
                             const t2Name = formatTeamName ? formatTeamName(m.t2, m.type) : t2.name;
 
-                            // Badge Color Logic
                             let badgeColor = 'text-gray-500';
                             let badgeText = '정규시즌';
                             if (m.type === 'super') { badgeColor = 'text-purple-600'; badgeText = '🔥 슈퍼위크'; }
@@ -51,9 +47,18 @@ const ScheduleTab = ({
                                             <span className={`font-bold ${isMyMatch && myTeam.id === m.t1 ? 'text-blue-600' : 'text-gray-800'}`}>{t1Name}</span>
                                             {isFinished && m.result.winner === t1.name && <span className="text-xs text-blue-500 font-bold">WIN</span>}
                                         </div>
-                                        <div className="text-center font-bold">
+                                        <div className="text-center font-bold flex flex-col items-center">
                                             {isFinished ? (
-                                                <span className="text-xl text-gray-800">{m.result.score}</span>
+                                                <>
+                                                    <span className="text-xl text-gray-800">{m.result.score}</span>
+                                                    {/* [NEW] View Details Button */}
+                                                    <button 
+                                                        onClick={() => onMatchClick && onMatchClick(m)}
+                                                        className="mt-1 text-[10px] bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 px-2 py-0.5 rounded transition flex items-center gap-1"
+                                                    >
+                                                        <span>📊</span> 상세보기
+                                                    </button>
+                                                </>
                                             ) : (
                                                 <span className="text-gray-400">VS</span>
                                             )}

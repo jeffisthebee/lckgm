@@ -1377,7 +1377,7 @@ const getOvrBadgeStyle = (ovr) => {
                 />
             )}
   
-            {(activeTab === 'schedule' || activeTab === 'team_schedule') && (
+               {(activeTab === 'schedule' || activeTab === 'team_schedule') && (
                 <ScheduleTab 
                     activeTab={activeTab}
                     league={league}
@@ -1385,8 +1385,9 @@ const getOvrBadgeStyle = (ovr) => {
                     myTeam={myTeam}
                     hasDrafted={hasDrafted}
                     formatTeamName={formatTeamName}
+                    onMatchClick={handleMatchClick} // <--- [ADD THIS LINE]
                 />
-            )}
+            )} 
   
             </div>
           </main>
