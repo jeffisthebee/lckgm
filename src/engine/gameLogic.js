@@ -637,61 +637,66 @@ const generatePostGameStats = (team, isWinner, picks, gameTime) => {
     });
   };
 
-export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampionList = []) => {
-  const safeChampList = (currentChampionList && currentChampionList.length > 0) ? currentChampionList : championList; 
-  const targetWins = format === 'BO5' ? 3 : 2;
-  let winsA = 0; let winsB = 0; let matchHistory = []; let currentSet = 1;
-
-  while (winsA < targetWins && winsB < targetWins) {
-      const draftResult = runDraftSimulation(teamA, teamB, [], safeChampList);
-      const picksA = draftResult.picks.A; const picksB = draftResult.picks.B;
-      const mockBuffs = { dragonStacks: { infernal: 0 }, grubs: 0, herald: false, baron: false, elder: false, soul: null };
-      
-      const pA_15 = calculateTeamPower(picksToFullObj(picksA, teamA), 15, mockBuffs, 0, [], 900);
-      const pB_15 = calculateTeamPower(picksToFullObj(picksB, teamB), 15, mockBuffs, 0, [], 900);
-      const pA_25 = calculateTeamPower(picksToFullObj(picksA, teamA), 25, mockBuffs, 0, [], 1500);
-      const pB_25 = calculateTeamPower(picksToFullObj(picksB, teamB), 25, mockBuffs, 0, [], 1500);
-      const pA_35 = calculateTeamPower(picksToFullObj(picksA, teamA), 35, mockBuffs, 0, [], 2100);
-      const pB_35 = calculateTeamPower(picksToFullObj(picksB, teamB), 35, mockBuffs, 0, [], 2100);
-
-      const totalScoreA = (pA_15 * 0.25) + (pA_25 * 0.40) + (pA_35 * 0.35);
-      const totalScoreB = (pB_15 * 0.25) + (pB_25 * 0.40) + (pB_35 * 0.35);
-      const avgPowerA = totalScoreA / 5; const avgPowerB = totalScoreB / 5;
-      const totalAvgPower = avgPowerA + avgPowerB;
-      
-      let winChanceA = avgPowerA / totalAvgPower;
-      const diff = avgPowerA - avgPowerB;
-      winChanceA += (diff * 0.018); 
-      let finalChanceA = Math.max(0.01, Math.min(0.99, winChanceA + (Math.random() * 0.06 - 0.03)));
-
-      const isWinA = Math.random() < finalChanceA;
-      const winner = isWinA ? teamA : teamB;
-      if (isWinA) winsA++; else winsB++;
-
-      const gameTime = 26 + (Math.random() * 12); 
-      
-      // [NEW] Generate Stats & Calculate POG
-      const statsA = generatePostGameStats(teamA, isWinA, picksA, gameTime);
-      const statsB = generatePostGameStats(teamB, !isWinA, picksB, gameTime);
-      const winningPicks = isWinA ? statsA : statsB;
-      
-      const pogPlayer = calculatePog(winningPicks, gameTime);
-      const pogText = pogPlayer ? `🏅 POG: ${pogPlayer.playerName} (${pogPlayer.champName})` : '';
-
-      matchHistory.push({
-          setNumber: currentSet, winner: winner.name,
-          picks: { A: statsA, B: statsB },
-          bans: draftResult.bans, 
-          // [EXPOSE POG] Pass the POG up to the match history
-          pogPlayer: pogPlayer,
-          // [FIX] Save Game Time (Formatted) for the Modal
-          gameTime: `${Math.floor(gameTime)}분 ${Math.floor((gameTime % 1) * 60)}초`,
-          totalMinutes: Math.floor(gameTime),
-          
-          logs: [`[SIM] Set ${currentSet} - Winner: ${winner.name}`, pogText], 
-          resultSummary: `Winner: ${winner.name}`
-      });
-      currentSet++;
-  }
-  return { winner: winsA > winsB ? teamA.name : teamB.name, scoreString: `${winsA}:${winsB}`, scoreA: winsA, scoreB: winsB, history: matchHistory };
-};
+  export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampionList = []) => {
+    const safeChampList = (currentChampionList && currentChampionList.length > 0) ? currentChampionList : championList; 
+    const targetWins = format === 'BO5' ? 3 : 2;
+    let winsA = 0; let winsB = 0; let matchHistory = []; let currentSet = 1;
+  
+    while (winsA < targetWins && winsB < targetWins) {
+        const draftResult = runDraftSimulation(teamA, teamB, [], safeChampList);
+        const picksA = draftResult.picks.A; const picksB = draftResult.picks.B;
+        const mockBuffs = { dragonStacks: { infernal: 0 }, grubs: 0, herald: false, baron: false, elder: false, soul: null };
+        
+        const pA_15 = calculateTeamPower(picksToFullObj(picksA, teamA), 15, mockBuffs, 0, [], 900);
+        const pB_15 = calculateTeamPower(picksToFullObj(picksB, teamB), 15, mockBuffs, 0, [], 900);
+        const pA_25 = calculateTeamPower(picksToFullObj(picksA, teamA), 25, mockBuffs, 0, [], 1500);
+        const pB_25 = calculateTeamPower(picksToFullObj(picksB, teamB), 25, mockBuffs, 0, [], 1500);
+        const pA_35 = calculateTeamPower(picksToFullObj(picksA, teamA), 35, mockBuffs, 0, [], 2100);
+        const pB_35 = calculateTeamPower(picksToFullObj(picksB, teamB), 35, mockBuffs, 0, [], 2100);
+  
+        const totalScoreA = (pA_15 * 0.25) + (pA_25 * 0.40) + (pA_35 * 0.35);
+        const totalScoreB = (pB_15 * 0.25) + (pB_25 * 0.40) + (pB_35 * 0.35);
+        const avgPowerA = totalScoreA / 5; const avgPowerB = totalScoreB / 5;
+        const totalAvgPower = avgPowerA + avgPowerB;
+        
+        let winChanceA = avgPowerA / totalAvgPower;
+        const diff = avgPowerA - avgPowerB;
+        winChanceA += (diff * 0.018); 
+        let finalChanceA = Math.max(0.01, Math.min(0.99, winChanceA + (Math.random() * 0.06 - 0.03)));
+  
+        const isWinA = Math.random() < finalChanceA;
+        const winner = isWinA ? teamA : teamB;
+        if (isWinA) winsA++; else winsB++;
+  
+        const gameTime = 26 + (Math.random() * 12); 
+        
+        // Generate Stats & POG
+        const statsA = generatePostGameStats(teamA, isWinA, picksA, gameTime);
+        const statsB = generatePostGameStats(teamB, !isWinA, picksB, gameTime);
+        const winningPicks = isWinA ? statsA : statsB;
+        
+        const pogPlayer = calculatePog(winningPicks, gameTime);
+        const pogText = pogPlayer ? `🏅 POG: ${pogPlayer.playerName} (${pogPlayer.champName})` : '';
+  
+        // [FIX] Calculate Total Kills for the Scoreboard
+        const totalKillsA = statsA.reduce((sum, p) => sum + (p.stats.kills || 0), 0);
+        const totalKillsB = statsB.reduce((sum, p) => sum + (p.stats.kills || 0), 0);
+  
+        matchHistory.push({
+            setNumber: currentSet, winner: winner.name,
+            picks: { A: statsA, B: statsB },
+            bans: draftResult.bans, 
+            pogPlayer: pogPlayer,
+            gameTime: `${Math.floor(gameTime)}분 ${Math.floor((gameTime % 1) * 60)}초`,
+            totalMinutes: Math.floor(gameTime),
+            
+            // [FIX] Save the calculated scores here!
+            scores: { A: totalKillsA, B: totalKillsB },
+  
+            logs: [`[SIM] Set ${currentSet} - Winner: ${winner.name}`, pogText], 
+            resultSummary: `Winner: ${winner.name}`
+        });
+        currentSet++;
+    }
+    return { winner: winsA > winsB ? teamA.name : teamB.name, scoreString: `${winsA}:${winsB}`, scoreA: winsA, scoreB: winsB, history: matchHistory };
+  };
