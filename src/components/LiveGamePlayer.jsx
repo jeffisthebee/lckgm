@@ -397,9 +397,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     };
 
     // =========================================================================
-    // FINALIZE MANUAL DRAFT
-    // =========================================================================
-    // =========================================================================
     // FINALIZE MANUAL DRAFT (SAFE VERSION)
     // =========================================================================
     const finalizeManualDraft = () => {
@@ -456,7 +453,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             }
         
             // 2. [FIX] Safe Engine Call with Manual Options
-            // This ensures your Difficulty and Team Name settings are respected
             const safeOptions = simOptions || { difficulty: 'normal', playerTeamName: '' };
             const result = runGameTickEngine(manualTeams.blue, manualTeams.red, picksBlueDetailed, picksRedDetailed, safeOptions);
             
@@ -481,6 +477,9 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 blueTeam: manualTeams.blue,
                 redTeam: manualTeams.red,
                 totalSeconds: result.totalSeconds,
+                // [FIX] Save Game Time here for consistency in history
+                gameTime: result.finalTimeStr || `${result.totalMinutes}분 00초`,
+                
                 picks: { A: picksBlueDetailed, B: picksRedDetailed },
                 bans: { A: draftState.blueBans, B: draftState.redBans },
                 pogPlayer: pogPlayer,
@@ -1052,7 +1051,10 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                         picks: simulationData.picks, 
                         bans: simulationData.bans, 
                         logs: simulationData.logs,
-                        pogPlayer: simulationData.pogPlayer // Save POG here
+                        pogPlayer: simulationData.pogPlayer, // Save POG here
+                        // [FIX] Save Game Time here!
+                        gameTime: simulationData.gameTime || "30분 00초",
+                        totalMinutes: simulationData.totalMinutes || 30
                     };
 
                     const newHist = [...matchHistory, histItem];

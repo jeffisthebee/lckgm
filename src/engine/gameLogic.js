@@ -6,7 +6,7 @@ import {
   calculateDeathTimer, getChampionClass 
 } from './mechanics';
 
-// --- NEW HELPER: Standardized POG Calculation ---
+// --- HELPER: Standardized POG Calculation ---
 function calculatePog(winningPicks, gameMinutes) {
     const candidates = winningPicks.map(p => {
         const stats = p.stats || {};
@@ -34,11 +34,9 @@ function calculatePog(winningPicks, gameMinutes) {
 }
 
 // --- GAME LOGIC ---
-// [FIX] Added default "simOptions = {}" to prevent crash
 export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions = {}) {
     let time = 0; 
     let logs = [];
-    // [FIX] Added default values for difficulty
     const { difficulty = 'normal', playerTeamName = '' } = simOptions;
     let gameOver = false;
     let endAbsSecond = 0;
@@ -553,6 +551,8 @@ export function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptio
       score: { [teamBlue.name]: String(scoreBlue), [teamRed.name]: String(scoreRed) },
       gameResult, totalMinutes: gameResult.totalMinutes, totalSeconds: gameResult.totalSeconds,
       endSecond: gameResult.endSecond, gameOver: gameResult.gameOver, finalTimeStr: gameResult.finalTimeStr,
+      // [FIX] Ensure gameTime is passed up for consistency
+      gameTime: gameResult.gameTime,
       playersLevelProgress, fearlessBans: draftResult.fearlessBans || (Array.isArray(fearlessBans) ? [...fearlessBans] : (fearlessBans ? [fearlessBans] : []))
     };
 }
@@ -583,6 +583,9 @@ export function simulateMatch(teamA, teamB, format = 'BO3', simOptions) {
         bans: blueTeam.name === teamA.name ? setResult.bans : { A: setResult.bans.B, B: setResult.bans.A },
         // [EXPOSE POG] Pass the POG up to the match history
         pogPlayer: setResult.pogPlayer,
+        // [FIX] Save Game Time
+        gameTime: setResult.gameTime,
+        totalMinutes: setResult.totalMinutes,
         fearlessBans: currentFearlessBans, logs: setResult.logs, resultSummary: setResult.resultSummary,
         scores: { A: setResult.score[teamA.name], B: setResult.score[teamB.name] }
       });
@@ -680,6 +683,10 @@ export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampion
           bans: draftResult.bans, 
           // [EXPOSE POG] Pass the POG up to the match history
           pogPlayer: pogPlayer,
+          // [FIX] Save Game Time (Formatted) for the Modal
+          gameTime: `${Math.floor(gameTime)}분 ${Math.floor((gameTime % 1) * 60)}초`,
+          totalMinutes: Math.floor(gameTime),
+          
           logs: [`[SIM] Set ${currentSet} - Winner: ${winner.name}`, pogText], 
           resultSummary: `Winner: ${winner.name}`
       });
