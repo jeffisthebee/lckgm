@@ -1,34 +1,13 @@
 // src/engine/gameLogic.js
-import { GAME_RULES, MAP_LANES, championList, SIM_CONSTANTS } from '../data/constants';
-
-// [FIX] Define SIDES locally to prevent "Cannot read properties of undefined (reading 'BLUE')"
-// caused by import issues.
-const SIDES = { BLUE: 'BLUE', RED: 'RED' };
-
+import { GAME_RULES, SIDES, MAP_LANES, championList, SIM_CONSTANTS } from '../data/constants';
+import { runDraftSimulation } from './draftLogic';
 import { 
-    runDraftSimulation, 
-    selectPickFromTop3,        
-    selectBanFromProbabilities 
-} from './draftLogic';
-
-import { 
-  calculateTeamPower, 
-  resolveCombat, 
-  calculateIndividualIncome, 
-  calculateDeathTimer, 
-  getChampionClass 
+  calculateTeamPower, resolveCombat, calculateIndividualIncome, 
+  calculateDeathTimer, getChampionClass 
 } from './mechanics';
-
-export { 
-    calculateIndividualIncome, 
-    selectPickFromTop3, 
-    selectBanFromProbabilities 
-};
 
 // --- HELPER: POG Calculation ---
 function calculatePog(winningPicks, gameMinutes) {
-    if (!winningPicks || winningPicks.length === 0) return null; // [FIX] Safety Check
-
     const candidates = winningPicks.map(p => {
         const stats = p.stats || {};
         const k = stats.kills || 0;
@@ -38,9 +17,9 @@ function calculatePog(winningPicks, gameMinutes) {
         
         const safeD = d === 0 ? 1 : d;
         const kda = (k + a) / safeD;
-        const dpm = dmg / (Math.max(1, gameMinutes)); // [FIX] Prevent divide by zero
+        const dpm = dmg / (gameMinutes || 1); 
         
-        let pogScore = (kda * 3) + (dpm / 100) + ((p.currentGold || 0) / 1000) + (a * 1);
+        let pogScore = (kda * 3) + (dpm / 100) + (p.currentGold / 1000) + (a * 1);
         
         const role = p.playerData?.포지션 || 'MID';
         if (['JGL', '정글', 'SUP', '서포터'].includes(role)) {
@@ -56,16 +35,19 @@ function calculatePog(winningPicks, gameMinutes) {
 
 // --- HELPER: Distribute Totals to Players (Top-Down) ---
 const distributeTeamStats = (team, picks, totalKills, totalDeaths, totalAssists, gameTime, isWinner) => {
+    // 1. Define Weights for Roles (Who gets kills/deaths?)
     const ROLE_WEIGHTS = {
         KILLS: { 'TOP': 20, 'JGL': 15, 'MID': 30, 'ADC': 32, 'SUP': 3 },
-        DEATHS: { 'TOP': 20, 'JGL': 20, 'MID': 15, 'ADC': 15, 'SUP': 30 },
+        DEATHS: { 'TOP': 20, 'JGL': 20, 'MID': 15, 'ADC': 15, 'SUP': 30 }, // Support/Jungle die for team
         ASSISTS: { 'TOP': 15, 'JGL': 25, 'MID': 15, 'ADC': 10, 'SUP': 35 }
     };
 
+    // 2. Initialize Player Objects
     const players = picks.map(p => {
         const playerObj = team.roster.find(r => r.이름 === p.playerName) || { 포지션: 'MID', 상세: {} };
         const role = ['MID', 'ADC', 'TOP', 'JGL', 'SUP'].includes(playerObj.포지션) ? playerObj.포지션 : 'MID';
         
+        // Base Resources (Income)
         const incomeMod = isWinner ? 1.05 : 0.95;
         const resources = calculateIndividualIncome({ playerData: playerObj }, gameTime, incomeMod);
         
@@ -84,16 +66,19 @@ const distributeTeamStats = (team, picks, totalKills, totalDeaths, totalAssists,
         };
     });
 
+    // 3. Distribute Kills (Randomly based on weight)
     for (let i = 0; i < totalKills; i++) {
         const lottery = [];
         players.forEach((p, idx) => {
+            // Add index to lottery N times based on weight
             for(let w=0; w<p.roleWeights.k; w++) lottery.push(idx);
         });
         const winnerIdx = lottery[Math.floor(Math.random() * lottery.length)];
         players[winnerIdx].k++;
-        players[winnerIdx].currentGold += 300;
+        players[winnerIdx].currentGold += 300; // Kill Gold
     }
 
+    // 4. Distribute Deaths
     for (let i = 0; i < totalDeaths; i++) {
         const lottery = [];
         players.forEach((p, idx) => {
@@ -103,6 +88,7 @@ const distributeTeamStats = (team, picks, totalKills, totalDeaths, totalAssists,
         players[victimIdx].d++;
     }
 
+    // 5. Distribute Assists
     for (let i = 0; i < totalAssists; i++) {
         const lottery = [];
         players.forEach((p, idx) => {
@@ -110,14 +96,16 @@ const distributeTeamStats = (team, picks, totalKills, totalDeaths, totalAssists,
         });
         const assistIdx = lottery[Math.floor(Math.random() * lottery.length)];
         players[assistIdx].a++;
-        players[assistIdx].currentGold += 100;
+        players[assistIdx].currentGold += 100; // Assist Gold
     }
 
+    // 6. Finalize Stats
     return players.map(p => {
+        // Damage calc (Carries do more, scaling with time)
         const isCarry = ['MID', 'ADC', 'TOP'].includes(p.role);
         let dmg = isCarry ? (Math.random() * 15000 + 10000) : (Math.random() * 8000 + 4000);
         dmg *= (gameTime / 25);
-        if (totalKills > 25) dmg *= 1.3;
+        if (totalKills > 25) dmg *= 1.3; // More kills = more fighting = more damage
 
         return {
             ...p,
@@ -127,6 +115,8 @@ const distributeTeamStats = (team, picks, totalKills, totalDeaths, totalAssists,
     });
 };
 
+// --- GAME LOGIC EXPORTS ---
+
 export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOptions = {}) {
     let time = 0; 
     let logs = [];
@@ -134,12 +124,13 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
     let gameOver = false;
     let endAbsSecond = 0;
   
+    // Initialize Players
     picksBlue.forEach(p => {
-        p.side = 'BLUE'; p.currentGold = (GAME_RULES?.GOLD?.START || 500); p.level = 1; p.xp = 0; p.deadUntil = 0;
+        p.side = 'BLUE'; p.currentGold = GAME_RULES.GOLD.START; p.level = 1; p.xp = 0; p.deadUntil = 0;
         p.stats = { kills: 0, deaths: 0, assists: 0, damage: 0, takenDamage: 0 }; p.flashEndTime = 0;
     });
     picksRed.forEach(p => {
-        p.side = 'RED'; p.currentGold = (GAME_RULES?.GOLD?.START || 500); p.level = 1; p.xp = 0; p.deadUntil = 0;
+        p.side = 'RED'; p.currentGold = GAME_RULES.GOLD.START; p.level = 1; p.xp = 0; p.deadUntil = 0;
         p.stats = { kills: 0, deaths: 0, assists: 0, damage: 0, takenDamage: 0 }; p.flashEndTime = 0;
     });
   
@@ -202,11 +193,11 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
         return candidates[0];
     };
   
-    const VAR_RANGE_LOCAL = Math.min(SIM_CONSTANTS?.VAR_RANGE || 0.05, 0.06);
+    const VAR_RANGE_LOCAL = Math.min(SIM_CONSTANTS.VAR_RANGE, 0.06);
     const PLAYER_DIFFICULTY_MULTIPLIERS = { easy: 1.1, normal: 1.0, hard: 0.95, insane: 0.90 };
   
     let state = {
-      gold: { 'BLUE': (GAME_RULES?.GOLD?.START || 500) * 5, 'RED': (GAME_RULES?.GOLD?.START || 500) * 5 },
+      gold: { 'BLUE': GAME_RULES.GOLD.START * 5, 'RED': GAME_RULES.GOLD.START * 5 },
       kills: { 'BLUE': 0, 'RED': 0 },
       structures: {
           'BLUE': { TOP: initLane(), MID: initLane(), BOT: initLane() },
@@ -218,8 +209,8 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
       soul: null,
       baronBuff: { side: null, endTime: 0 },
       elderBuff: { side: null, endTime: 0 },
-      nextDragonTimeAbs: (GAME_RULES?.OBJECTIVES?.DRAGON?.initial_spawn || 5) * 60, 
-      nextBaronTimeAbs: (GAME_RULES?.OBJECTIVES?.BARON?.spawn || 20) * 60,        
+      nextDragonTimeAbs: GAME_RULES.OBJECTIVES.DRAGON.initial_spawn * 60, 
+      nextBaronTimeAbs: GAME_RULES.OBJECTIVES.BARON.spawn * 60,        
       nextElderTimeAbs: Infinity,
     };
 
@@ -330,16 +321,16 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
       powerRed *= (1 + (Math.random() * VAR_RANGE_LOCAL * 2 - VAR_RANGE_LOCAL));
   
       // --- Objectives ---
-      if (time === (GAME_RULES?.OBJECTIVES?.GRUBS?.time || 5)) {
+      if (time === GAME_RULES.OBJECTIVES.GRUBS.time) {
         const winner = resolveCombat(powerBlue, powerRed);
-        state.grubs[winner] += (GAME_RULES?.OBJECTIVES?.GRUBS?.count || 3);
-        grantTeamGold(winner, (GAME_RULES?.OBJECTIVES?.GRUBS?.gold || 100) / 5); 
+        state.grubs[winner] += GAME_RULES.OBJECTIVES.GRUBS.count;
+        grantTeamGold(winner, GAME_RULES.OBJECTIVES.GRUBS.gold / 5); 
         simulateDamage(winner, powerBlue, powerRed, minuteStartAbs + 5);
         addEvent(5, `🐛 ${winner === 'BLUE' ? teamBlue.name : teamRed.name} 공허 유충 처치`);
       }
-      if (time === (GAME_RULES?.OBJECTIVES?.HERALD?.time || 14)) {
+      if (time === GAME_RULES.OBJECTIVES.HERALD.time) {
         const winner = resolveCombat(powerBlue, powerRed);
-        grantTeamGold(winner, (GAME_RULES?.OBJECTIVES?.HERALD?.gold || 200) / 5);
+        grantTeamGold(winner, GAME_RULES.OBJECTIVES.HERALD.gold / 5);
         simulateDamage(winner, powerBlue, powerRed, minuteStartAbs + 0);
         addEvent(0, `👁️ ${winner === 'BLUE' ? teamBlue.name : teamRed.name} 전령 획득`);
       }
@@ -360,16 +351,16 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
           else currentDragonName = mapElementType;
   
           state.dragons[winner].push(currentDragonName);
-          grantTeamGold(winner, (GAME_RULES?.OBJECTIVES?.DRAGON?.gold || 100) / 5);
+          grantTeamGold(winner, GAME_RULES.OBJECTIVES.DRAGON.gold / 5);
           dragonSpawnCount++;
           let msg = `🐉 ${winner === 'BLUE' ? teamBlue.name : teamRed.name}, ${currentDragonName} 용 처치`;
           if (state.dragons[winner].length === 4) {
               state.soul = { side: winner, type: mapElementType };
               state.nextDragonTimeAbs = Infinity;
-              state.nextElderTimeAbs = eventAbsTime + ((GAME_RULES?.OBJECTIVES?.ELDER?.spawn_after_soul || 5) * 60);
+              state.nextElderTimeAbs = eventAbsTime + (GAME_RULES.OBJECTIVES.ELDER.spawn_after_soul * 60);
               msg += ` (👑 ${mapElementType} 영혼 획득!)`;
           } else {
-              state.nextDragonTimeAbs = eventAbsTime + ((GAME_RULES?.OBJECTIVES?.DRAGON?.respawn || 5) * 60);
+              state.nextDragonTimeAbs = eventAbsTime + (GAME_RULES.OBJECTIVES.DRAGON.respawn * 60);
           }
           addEvent(eventSec, msg);
       }
@@ -384,9 +375,9 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
           const pRedObj = calculateTeamPower(picksRed, time, getActiveBuffs('RED'), 0, picksBlue, eventAbsTime);
           const winner = resolveCombat(pBlueObj * 0.9, pRedObj * 0.9);
           simulateDamage(winner, pBlueObj, pRedObj, eventAbsTime);
-          state.baronBuff = { side: winner, endTime: time + (GAME_RULES?.OBJECTIVES?.BARON?.duration || 3) };
-          grantTeamGold(winner, (GAME_RULES?.OBJECTIVES?.BARON?.gold || 300) / 5);
-          state.nextBaronTimeAbs = eventAbsTime + ((GAME_RULES?.OBJECTIVES?.DRAGON?.respawn || 6) * 60); 
+          state.baronBuff = { side: winner, endTime: time + GAME_RULES.OBJECTIVES.BARON.duration };
+          grantTeamGold(winner, GAME_RULES.OBJECTIVES.BARON.gold / 5);
+          state.nextBaronTimeAbs = eventAbsTime + (GAME_RULES.OBJECTIVES.DRAGON.respawn * 60); 
           addEvent(eventSec, `🟣 ${winner === 'BLUE' ? teamBlue.name : teamRed.name} 내셔 남작 처치!`);
         }
       }
@@ -399,8 +390,8 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
           const pRedObj = calculateTeamPower(picksRed, time, getActiveBuffs('RED'), 0, picksBlue, eventAbsTime);
           const winner = resolveCombat(pBlueObj, pRedObj);
           simulateDamage(winner, pBlueObj, pRedObj, eventAbsTime);
-          state.elderBuff = { side: winner, endTime: time + (GAME_RULES?.OBJECTIVES?.ELDER?.duration || 3) };
-          state.nextElderTimeAbs = eventAbsTime + ((GAME_RULES?.OBJECTIVES?.ELDER?.spawn_after_soul || 6) * 60); 
+          state.elderBuff = { side: winner, endTime: time + GAME_RULES.OBJECTIVES.ELDER.duration };
+          state.nextElderTimeAbs = eventAbsTime + (GAME_RULES.OBJECTIVES.ELDER.spawn_after_soul * 60); 
           addEvent(eventSec, `🐲 ${winner === 'BLUE' ? teamBlue.name : teamRed.name} 장로 드래곤 처치!`);
       }
   
@@ -454,7 +445,7 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
             if (victim) {
                 killCount++; state.kills[winner]++; killer.stats.kills++; victim.stats.deaths++;
                 victim.deadUntil = combatAbsTime + calculateDeathTimer(victim.level, time);
-                grantGoldToPlayer(winner, winningTeamPicks.indexOf(killer), (GAME_RULES?.GOLD?.KILL || 300));
+                grantGoldToPlayer(winner, winningTeamPicks.indexOf(killer), GAME_RULES.GOLD.KILL);
                 let assistCount = Math.floor(Math.random() * 3) + 1; 
                 const assistCandidates = getAlivePlayers(winningTeamPicks).filter(p => p.playerName !== killer.playerName && p.side === killer.side);
                 const assistNames = [];
@@ -462,7 +453,7 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
                     const assister = getWeightedPlayer(assistCandidates, 'ASSIST');
                     if (assister && !assistNames.includes(assister.playerName)) {
                         assister.stats.assists++;
-                        grantGoldToPlayer(winner, (winningTeamPicks.indexOf(assister)), (GAME_RULES?.GOLD?.ASSIST || 150));
+                        grantGoldToPlayer(winner, (winningTeamPicks.indexOf(assister)), GAME_RULES.GOLD.ASSIST);
                         assistNames.push(assister.playerName);
                     }
                 }
@@ -490,7 +481,7 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
                 if (counterKiller && counterVictim) {
                     state.kills[loser] += 1; counterKiller.stats.kills += 1; counterVictim.stats.deaths += 1;
                     counterVictim.deadUntil = combatAbsTime + calculateDeathTimer(counterVictim.level, time);
-                    grantGoldToPlayer(loser, losingTeamPicks.indexOf(counterKiller), (GAME_RULES?.GOLD?.KILL || 300) + (GAME_RULES?.GOLD?.ASSIST || 150));
+                    grantGoldToPlayer(loser, losingTeamPicks.indexOf(counterKiller), GAME_RULES.GOLD.KILL + GAME_RULES.GOLD.ASSIST);
                     const ckillerChamp = counterKiller.champName || 'Unknown';
                     const cvictimChamp = counterVictim.champName || 'Unknown';
                     const counterMsg = `🛡️ [${counterKiller.playerData.포지션}] ${counterKiller.playerName} (${ckillerChamp}) ➜ ☠️ [${counterVictim.playerData.포지션}] ${counterVictim.playerName} (${cvictimChamp}) (반격)`;
@@ -515,21 +506,19 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
               let lanerIdx = 0; if (lane === 'MID') lanerIdx = 2; if (lane === 'BOT') lanerIdx = 3; 
   
               if (!enemyLane.tier1.destroyed) {
-                  const plateStart = GAME_RULES?.OBJECTIVES?.PLATES?.start_time || 0;
-                  const plateEnd = GAME_RULES?.OBJECTIVES?.PLATES?.end_time || 14;
-                  if (time >= plateStart && time < plateEnd) {
+                  if (time >= GAME_RULES.OBJECTIVES.PLATES.start_time && time < GAME_RULES.OBJECTIVES.PLATES.end_time) {
                       if (Math.random() < 0.4 * pushPower) {
                            if (enemyLane.tier1.plates > 0) {
                                enemyLane.tier1.plates--;
-                               grantGoldToPlayer(winner, lanerIdx, (GAME_RULES?.GOLD?.TURRET?.OUTER_PLATE?.local || 100));
-                               grantTeamGold(winner, (GAME_RULES?.GOLD?.TURRET?.OUTER_PLATE?.team || 20));
+                               grantGoldToPlayer(winner, lanerIdx, GAME_RULES.GOLD.TURRET.OUTER_PLATE.local);
+                               grantTeamGold(winner, GAME_RULES.GOLD.TURRET.OUTER_PLATE.team);
                                const plateCount = 6 - enemyLane.tier1.plates;
                                let plateMsg = `💰 ${winnerName}, ${lane} 포탑 방패 채굴 (${plateCount}/6)`;
                                if (enemyLane.tier1.plates === 0) { enemyLane.tier1.destroyed = true; plateMsg = `💥 ${winnerName}, ${lane} 1차 포탑 파괴 (모든 방패 파괴)`; }
                                addEvent(currentPushSec, plateMsg);
                            }
                       }
-                  } else if (time >= plateEnd) {
+                  } else if (time >= GAME_RULES.OBJECTIVES.PLATES.end_time) {
                       if (Math.random() < 0.3 * pushPower) {
                           enemyLane.tier1.destroyed = true; grantGoldToPlayer(winner, lanerIdx, 300); grantTeamGold(winner, 50);
                           addEvent(currentPushSec, `💥 ${winnerName}, ${lane} 1차 포탑 파괴`);
@@ -538,15 +527,15 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
               } else if (!enemyLane.tier2.destroyed) {
                   if (Math.random() < 0.25 * pushPower) {
                       enemyLane.tier2.destroyed = true;
-                      let localG = lane === 'MID' ? (GAME_RULES?.GOLD?.TURRET?.INNER_MID?.local || 400) : (GAME_RULES?.GOLD?.TURRET?.INNER_SIDE?.local || 400);
-                      let teamG = lane === 'MID' ? (GAME_RULES?.GOLD?.TURRET?.INNER_MID?.team || 50) : (GAME_RULES?.GOLD?.TURRET?.INNER_SIDE?.team || 50);
+                      let localG = lane === 'MID' ? GAME_RULES.GOLD.TURRET.INNER_MID.local : GAME_RULES.GOLD.TURRET.INNER_SIDE.local;
+                      let teamG = lane === 'MID' ? GAME_RULES.GOLD.TURRET.INNER_MID.team : GAME_RULES.GOLD.TURRET.INNER_SIDE.team;
                       grantGoldToPlayer(winner, lanerIdx, localG); grantTeamGold(winner, teamG);
                       addEvent(currentPushSec, `💥 ${winnerName}, ${lane} 2차 포탑 파괴`);
                   }
               } else if (!enemyLane.tier3.destroyed) {
                   if (Math.random() < 0.2 * pushPower) {
                       enemyLane.tier3.destroyed = true;
-                      grantGoldToPlayer(winner, lanerIdx, (GAME_RULES?.GOLD?.TURRET?.INHIB_TURRET?.local || 400)); grantTeamGold(winner, (GAME_RULES?.GOLD?.TURRET?.INHIB_TURRET?.team || 50));
+                      grantGoldToPlayer(winner, lanerIdx, GAME_RULES.GOLD.TURRET.INHIB_TURRET.local); grantTeamGold(winner, GAME_RULES.GOLD.TURRET.INHIB_TURRET.team);
                       addEvent(currentPushSec, `🚨 ${winnerName}, ${lane} 3차(억제기) 포탑 파괴`);
                   }
               } else if (!enemyLane.inhib.destroyed) {
@@ -584,11 +573,13 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
   
     return {
       winnerName: winnerName, resultSummary: `Winner: ${winnerName}`,
-      pogPlayer: null, 
+      // [EXPOSE POG] We explicitly return the POG object now
+      pogPlayer: null, // Placeholder, calculated later if needed for full sim
       picks: { A: picksBlue, B: picksRed }, bans: { A: [], B: [] }, logs: logs.map(l => l.message), usedChamps: [],
       score: { [teamBlue.name]: String(state.kills.BLUE), [teamRed.name]: String(state.kills.RED) },
       gameResult: { finalKills: state.kills }, totalMinutes: totalMinutes, totalSeconds: totalSeconds,
       endSecond: totalSeconds % 60, gameOver: gameOver, finalTimeStr: finalTimeStr,
+      // [FIX] Ensure gameTime is passed up for consistency
       gameTime: finalTimeStr,
       playersLevelProgress: [], fearlessBans: []
     };
@@ -611,8 +602,7 @@ export function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptio
   
     const addPlayerData = (picks, roster) => {
         return picks.map(p => {
-            const playerData = (roster || []).find(player => player && player.이름 === p.playerName);
-            
+            const playerData = roster.find(player => player && player.이름 === p.playerName);
             const champData = (currentChampionList || championList).find(c => c.name === p.champName);
             if (!playerData || !champData) {
               return { ...p, dmgType: 'AD', classType: '전사', playerData: playerData || { 이름: p.playerName, 포지션: 'TOP', 상세: { 안정성: 50 }, 종합: 70 }, conditionModifier: 1.0, stats: { kills: 0, deaths: 0, assists: 0, damage: 0, takenDamage: 0 }, currentGold: 500, level: 1 };
@@ -633,7 +623,8 @@ export function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptio
     const scoreBlue = gameResult.finalKills[SIDES.BLUE];
     const scoreRed = gameResult.finalKills[SIDES.RED];
     
-    const winningPicks = gameResult.winnerName === teamBlue.name ? picksBlue_detailed : picksRed_detailed;
+    // [POG UPDATE] Calculate POG using the helper
+    const winningPicks = gameResult.winnerSide === SIDES.BLUE ? picksBlue_detailed : picksRed_detailed;
     const pogPlayer = calculatePog(winningPicks, gameResult.totalMinutes);
   
     const resultSummary = `⏱️ ${gameResult.gameTime} | ⚔️ ${teamBlue.name} ${scoreBlue} : ${scoreRed} ${teamRed.name} | 🏆 승리: ${gameResult.winnerName}`;
@@ -644,11 +635,13 @@ export function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptio
   
     return {
       winnerName: gameResult.winnerName, resultSummary: resultSummary + ' ' + pogText,
+      // [EXPOSE POG] We explicitly return the POG object now
       pogPlayer: pogPlayer, 
       picks: draftResult.picks, bans: draftResult.bans, logs: finalLogs, usedChamps: usedChamps,
       score: { [teamBlue.name]: String(scoreBlue), [teamRed.name]: String(scoreRed) },
       gameResult, totalMinutes: gameResult.totalMinutes, totalSeconds: gameResult.totalSeconds,
       endSecond: gameResult.endSecond, gameOver: gameResult.gameOver, finalTimeStr: gameResult.finalTimeStr,
+      // [FIX] Ensure gameTime is passed up for consistency
       gameTime: gameResult.gameTime,
       playersLevelProgress, fearlessBans: draftResult.fearlessBans || (Array.isArray(fearlessBans) ? [...fearlessBans] : (fearlessBans ? [fearlessBans] : []))
     };
@@ -678,7 +671,9 @@ export function simulateMatch(teamA, teamB, format = 'BO3', simOptions) {
         setNumber: currentSet, winner: setResult.winnerName,
         picks: blueTeam.name === teamA.name ? setResult.picks : { A: setResult.picks.B, B: setResult.picks.A },
         bans: blueTeam.name === teamA.name ? setResult.bans : { A: setResult.bans.B, B: setResult.bans.A },
+        // [EXPOSE POG] Pass the POG up to the match history
         pogPlayer: setResult.pogPlayer,
+        // [FIX] Save Game Time
         gameTime: setResult.gameTime,
         totalMinutes: setResult.totalMinutes,
         fearlessBans: currentFearlessBans, logs: setResult.logs, resultSummary: setResult.resultSummary,
@@ -712,28 +707,33 @@ export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampion
       const picksA = draftResult.picks.A; const picksB = draftResult.picks.B;
       const mockBuffs = { dragonStacks: { infernal: 0 }, grubs: 0, herald: false, baron: false, elder: false, soul: null };
       
+      // Calculate Power
       const pA_25 = calculateTeamPower(picksToFullObj(picksA, teamA), 25, mockBuffs, 0, [], 1500);
       const pB_25 = calculateTeamPower(picksToFullObj(picksB, teamB), 25, mockBuffs, 0, [], 1500);
       
+      // Determine Winner (Power + Random Upset Chance)
       const avgPowerA = pA_25 / 5; 
       const avgPowerB = pB_25 / 5;
       let winChanceA = avgPowerA / (avgPowerA + avgPowerB);
       
+      // Add slight randomness (Upsets happen!)
       winChanceA += (Math.random() * 0.10 - 0.05); 
       
       const isWinA = Math.random() < winChanceA;
       const winner = isWinA ? teamA : teamB;
       if (isWinA) winsA++; else winsB++;
 
+      // [FIX] Determine Game Type (Stomp, Close, Fiesta)
       const powerDiff = Math.abs(avgPowerA - avgPowerB);
       let varianceType = 'CLOSE';
       const roll = Math.random();
       
-      if (powerDiff > 10 && roll > 0.3) varianceType = 'STOMP'; 
-      else if (roll > 0.8) varianceType = 'FIESTA'; 
-      else if (roll > 0.5) varianceType = 'STOMP';  
+      if (powerDiff > 10 && roll > 0.3) varianceType = 'STOMP'; // Big gap = likely stomp
+      else if (roll > 0.8) varianceType = 'FIESTA'; // 20% chance of a bloodbath
+      else if (roll > 0.5) varianceType = 'STOMP';  // Random stomps happen
       else varianceType = 'CLOSE';
 
+      // Randomize Time based on Game Type
       let baseTime = 30;
       if (varianceType === 'STOMP') baseTime = 24 + Math.random() * 5;
       else if (varianceType === 'FIESTA') baseTime = 35 + Math.random() * 10;
@@ -741,24 +741,30 @@ export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampion
       
       const gameTime = baseTime; 
       
+      // [FIX] Top-Down Score Generation (Ensures Kills < 35 & K=D consistency)
       let winnerKills = 0;
       let loserKills = 0;
 
       if (varianceType === 'STOMP') {
-          winnerKills = 15 + Math.floor(Math.random() * 10);
-          loserKills = Math.floor(Math.random() * 5); 
+          winnerKills = 15 + Math.floor(Math.random() * 10); // 15-25 (Max 25)
+          loserKills = Math.floor(Math.random() * 5); // 0-4
       } else if (varianceType === 'FIESTA') {
-          winnerKills = 20 + Math.floor(Math.random() * 15);
-          loserKills = 10 + Math.floor(Math.random() * 15); 
-      } else { 
-          winnerKills = 10 + Math.floor(Math.random() * 10);
-          loserKills = winnerKills - (1 + Math.floor(Math.random() * 5));
+          winnerKills = 20 + Math.floor(Math.random() * 15); // 20-35
+          loserKills = 10 + Math.floor(Math.random() * 15); // 10-25
+      } else { // CLOSE
+          winnerKills = 10 + Math.floor(Math.random() * 10); // 10-20
+          loserKills = winnerKills - (1 + Math.floor(Math.random() * 5)); // Slightly less
           if (loserKills < 0) loserKills = 0;
       }
 
+      // Hard Cap at 36 (User requested max 35 +-1)
       if (winnerKills > 36) winnerKills = 36;
       if (loserKills > 36) loserKills = 36;
 
+      // Distribute Stats
+      // Winner gets winnerKills, deals death to Loser
+      // Loser gets loserKills, deals death to Winner
+      // Assist Total is usually Kills * 1.5 to 2.5
       const winnerAssists = Math.floor(winnerKills * (1.5 + Math.random()));
       const loserAssists = Math.floor(loserKills * (1.5 + Math.random()));
 
@@ -779,6 +785,8 @@ export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampion
       const pogPlayer = calculatePog(winningPicks, gameTime);
       const pogText = pogPlayer ? `🏅 POG: ${pogPlayer.playerName} (${pogPlayer.champName})` : '';
 
+      // [PRESERVED FIX] Calculate Total Kills for Scoreboard
+      // Now simpler: it's just the totals we generated!
       const totalKillsA = isWinA ? winnerKills : loserKills;
       const totalKillsB = !isWinA ? winnerKills : loserKills;
 
