@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { calculateIndividualIncome, simulateSet, runGameTickEngine, selectPickFromTop3, selectBanFromProbabilities } from '../engine/simEngine';
 import { DRAFT_SEQUENCE, championList } from '../data/constants'; 
 
-
 // --- HELPER: Simple Scoring for Recommendation (Frontend Version) ---
 const getRecommendedChampion = (role, currentChamps, availableChamps) => {
     // Filter by Role
@@ -63,29 +62,36 @@ const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
     });
 
     const sorted = Object.values(playerScores).sort((a, b) => b.totalScore - a.totalScore);
-    return sorted[0] || null; // [FIX] Return null if no players
+    return sorted[0]; 
 };
 
 // --- [NEW] HELPER: Manual POG Calculation ---
 const calculateManualPog = (picksBlue, picksRed, winnerSide, gameMinutes) => {
     const winningPicks = winnerSide === 'BLUE' ? picksBlue : picksRed;
-    if (winningPicks.length === 0) return null; // [FIX] Early return if no picks
+    if (!winningPicks || winningPicks.length === 0) return null;
 
     const candidates = winningPicks.map(p => {
-        const k = p.stats?.kills || 0; 
-        const d = p.stats?.deaths === 0 ? 1 : (p.stats?.deaths || 1); 
-        const a = p.stats?.assists || 0;
+        const k = p.k || p.stats?.kills || 0; 
+        const d = (p.d || p.stats?.deaths) === 0 ? 1 : (p.d || p.stats?.deaths || 1); 
+        const a = p.a || p.stats?.assists || 0;
         const damage = p.stats?.damage || 0;
+        const currentGold = p.currentGold || 0;
         
         // DPM
-        const dpm = damage / (gameMinutes || 1);
+        const dpm = damage / (Math.max(1, gameMinutes));
         
-        let score = ((k + a) / d * 3) + (dpm / 100) + (p.currentGold / 1000) + (a * 1);
+        let score = ((k + a) / d * 3) + (dpm / 100) + (currentGold / 1000) + (a * 1);
         
         const role = p.playerData?.포지션;
         if (['JGL', '정글', 'SUP', '서포터'].includes(role)) score *= 1.15;
         
-        return { ...p, pogScore: score, kdaVal: (k+a)/d, dpm };
+        return { 
+            ...p, 
+            pogScore: score, 
+            kdaVal: (k+a)/d, 
+            dpm: dpm,
+            stats: { kills: k, deaths: p.d || p.stats?.deaths || 0, assists: a, damage: damage }
+        };
     });
     candidates.sort((a, b) => b.pogScore - a.pogScore);
     return candidates[0];
@@ -187,8 +193,16 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                   setPhase('DRAFT');
               } else {
                   // AUTO: Run Full Simulation Upfront
+                  if (typeof simulateSet !== 'function') {
+                    throw new Error("Game Engine (simulateSet) is not loaded correctly.");
+                  }
+
                   const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
-                  if (!result || !result.picks) throw new Error("Draft failed");
+                  
+                  // [FIX] Validation for AI Mode
+                  if (!result || !result.picks || !result.picks.A || !result.picks.B) {
+                      throw new Error("AI Simulation produced invalid result (Draft Failed)");
+                  }
       
                   const enrichPlayer = (p, teamRoster, side) => {
                       const rosterData = teamRoster.find(r => r.이름 === p.playerName);
@@ -203,7 +217,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                       ...result.picks.B.map(p => enrichPlayer(p, redTeam.roster, 'RED'))
                   ];
       
-                  setSimulationData({ ...result, blueTeam, redTeam, totalSeconds: result.totalMinutes * 60 }); // [FIX] Add totalSeconds explicitly
+                  setSimulationData({ ...result, blueTeam, redTeam }); // result now includes pogPlayer from engine
                   setLiveStats({
                       kills: { BLUE: 0, RED: 0 },
                       gold: { BLUE: 2500, RED: 2500 },
@@ -218,11 +232,13 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
   
           } catch (e) {
               console.error("Simulation Error:", e);
-              onClose(); 
+              alert(`경기 시작 오류: ${e.message}\n(엔진 파일을 확인해주세요)`);
+              // Do NOT close immediately so user sees the error
+              // onClose(); 
           }
       }, 500);
     }, [currentSet, teamA, teamB, globalBanList, simOptions, onClose, matchHistory, isManualMode]);
-
+  
     useEffect(() => {
       if (phase === 'READY') startSet();
     }, [phase, startSet]);
@@ -459,15 +475,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             const safeOptions = simOptions || { difficulty: 'normal', playerTeamName: '' };
             const result = runGameTickEngine(manualTeams.blue, manualTeams.red, picksBlueDetailed, picksRedDetailed, safeOptions);
             
-            // 3. Calculate POG
-            const pogPlayer = calculateManualPog(
-                result.gameResult ? result.gameResult.picks?.A || picksBlueDetailed : picksBlueDetailed, 
-                result.gameResult ? result.gameResult.picks?.B || picksRedDetailed : picksRedDetailed,
-                result.winnerSide,
-                result.totalMinutes || 30
-            );
-
-            // 4. Set Data
+            // 3. Set Data (Note: pogPlayer is calculated at END of game based on real stats)
             setSimulationData({
                 winnerName: result.winnerName,
                 gameResult: result,
@@ -479,21 +487,25 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 ],
                 blueTeam: manualTeams.blue,
                 redTeam: manualTeams.red,
-                totalSeconds: result.totalMinutes * 60, // [FIX] Ensure totalSeconds
+                totalSeconds: result.totalSeconds,
                 // [FIX] Save Game Time here for consistency in history
                 gameTime: result.finalTimeStr || `${result.totalMinutes}분 00초`,
-                totalMinutes: result.totalMinutes,
                 
-                picks: result.gameResult?.picks || { A: picksBlueDetailed, B: picksRedDetailed }, // [FIX] Use updated picks with stats
+                picks: { A: picksBlueDetailed, B: picksRedDetailed },
                 bans: { A: draftState.blueBans, B: draftState.redBans },
-                pogPlayer: pogPlayer,
+                pogPlayer: null, // calculated when game ends
                 usedChamps: [...picksBlueDetailed, ...picksRedDetailed].map(p => p.champName) 
             });
         
-            setLiveStats(prev => ({
-                ...prev,
-                kills: result.gameResult?.finalKills || { BLUE: 0, RED: 0 } // [FIX] Update kills for consistency
-            }));
+            setLiveStats({
+                kills: { BLUE: 0, RED: 0 },
+                gold: { BLUE: 2500, RED: 2500 },
+                towers: { BLUE: 0, RED: 0 },
+                players: [...picksBlueDetailed, ...picksRedDetailed].map(p => ({
+                    ...p,
+                    k: 0, d: 0, a: 0, lvl: 1, xp: 0, currentGold: 500
+                }))
+            });
         
             setGameTime(0);
             setDisplayLogs([]);
@@ -631,9 +643,9 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
   
           if (nextTime >= finalSec) {
               setGameTime(finalSec);
-              setLiveStats(st => ({ ...st, kills: simulationData.gameResult?.finalKills || st.kills }));
+              setLiveStats(st => ({ ...st, kills: simulationData.gameResult.finalKills }));
               
-              // [NEW] If Manual Mode, Ensure POG is final based on observed stats
+              // [FIX] Calculate Manual POG Here before changing phase
               if (isManualMode && !simulationData.pogPlayer) {
                    const manualPog = calculateManualPog(
                        liveStats.players.filter(p => p.side === 'BLUE'),
@@ -644,7 +656,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                    setSimulationData(prev => ({ ...prev, pogPlayer: manualPog }));
               }
               
-              setTimeout(() => setPhase('SET_RESULT'), 1000);
+              setTimeout(() => setPhase('SET_RESULT'), 500);
               return finalSec;
           }
           return nextTime;
@@ -652,7 +664,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
       }, intervalMs);
       return () => clearInterval(timer);
     }, [phase, simulationData, playbackSpeed]);
-
+  
     if ((!simulationData && !isManualMode && phase !== 'SET_RESULT') || (isManualMode && !manualTeams.blue)) {
         return <div className="fixed inset-0 bg-black text-white flex items-center justify-center z-[200] font-bold text-3xl">경기 로딩 중...</div>;
     }
@@ -963,7 +975,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             </div>
         )}
   
-        {/* 3. [UPDATED] Result Overlay with POG/POS */}
+        {/* 3. [UPDATED] Result Overlay with POG/POS & Safe Guard */}
         {phase === 'SET_RESULT' && (
            <div className="absolute inset-0 bg-black/90 z-50 flex flex-col items-center justify-center animate-fade-in p-8">
                <h1 className="text-6xl font-black mb-4 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-red-400">
@@ -971,34 +983,42 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                </h1>
                
                <div className="flex gap-8 w-full max-w-4xl justify-center items-stretch mb-8">
-                   {/* POG CARD */}
-                   {simulationData.pogPlayer && (
-                       <div className="bg-gradient-to-br from-gray-800 to-gray-900 border border-yellow-500/50 p-6 rounded-2xl shadow-2xl w-1/3 flex flex-col items-center relative overflow-hidden group">
-                           <div className="absolute top-0 left-0 bg-yellow-500 text-black font-bold px-3 py-1 text-xs rounded-br-lg z-10">
-                               SET {currentSet} POG
-                           </div>
-                           <div className="w-24 h-24 rounded-full bg-gray-700 border-2 border-yellow-400 mb-4 flex items-center justify-center overflow-hidden">
-                               <span className="text-3xl">👤</span>
-                           </div>
-                           <div className="text-xl font-bold text-yellow-400">{simulationData.pogPlayer?.playerName || 'Unknown'}</div>
-                           <div className="text-sm text-gray-400 mb-2">{simulationData.pogPlayer?.champName}</div>
-                           
-                           <div className="w-full space-y-2 mt-2 bg-black/30 p-3 rounded-lg">
-                               <div className="flex justify-between text-sm">
-                                   <span className="text-gray-400">KDA</span>
-                                   <span className="font-mono font-bold text-white">
-                                       {simulationData.pogPlayer?.stats?.kills || simulationData.pogPlayer?.k || 0}/
-                                       {simulationData.pogPlayer?.stats?.deaths || simulationData.pogPlayer?.d || 0}/
-                                       {simulationData.pogPlayer?.stats?.assists || simulationData.pogPlayer?.a || 0}
-                                   </span>
-                               </div>
-                               <div className="flex justify-between text-sm">
-                                   <span className="text-gray-400">Score</span>
-                                   <span className="font-mono text-yellow-500">{simulationData.pogPlayer?.pogScore?.toFixed(1) || 'N/A'}</span>
-                               </div>
-                           </div>
-                      </div>
-                   )}
+                   {/* POG CARD - [FIX] ADD SAFE GUARD HERE */}
+                   <div className="bg-gradient-to-br from-gray-800 to-gray-900 border border-yellow-500/50 p-6 rounded-2xl shadow-2xl w-1/3 flex flex-col items-center relative overflow-hidden group">
+                        <div className="absolute top-0 left-0 bg-yellow-500 text-black font-bold px-3 py-1 text-xs rounded-br-lg z-10">
+                            SET {currentSet} POG
+                        </div>
+                        
+                        {simulationData.pogPlayer ? (
+                            <>
+                                <div className="w-24 h-24 rounded-full bg-gray-700 border-2 border-yellow-400 mb-4 flex items-center justify-center overflow-hidden">
+                                    <span className="text-3xl">👤</span>
+                                </div>
+                                <div className="text-xl font-bold text-yellow-400">{simulationData.pogPlayer.playerName}</div>
+                                <div className="text-sm text-gray-400 mb-2">{simulationData.pogPlayer.champName}</div>
+                                
+                                <div className="w-full space-y-2 mt-2 bg-black/30 p-3 rounded-lg">
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-gray-400">KDA</span>
+                                        <span className="font-mono font-bold text-white">
+                                            {simulationData.pogPlayer.stats?.kills || simulationData.pogPlayer.k || 0}/
+                                            {simulationData.pogPlayer.stats?.deaths || simulationData.pogPlayer.d || 0}/
+                                            {simulationData.pogPlayer.stats?.assists || simulationData.pogPlayer.a || 0}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-gray-400">Score</span>
+                                        <span className="font-mono text-yellow-500">{simulationData.pogPlayer.pogScore?.toFixed(1) || 'N/A'}</span>
+                                    </div>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="flex flex-col items-center justify-center h-full">
+                                <div className="animate-spin h-8 w-8 border-4 border-yellow-500 rounded-full border-t-transparent mb-2"></div>
+                                <span className="text-gray-400 text-sm">Calculating...</span>
+                            </div>
+                        )}
+                   </div>
 
                    {/* POS CARD (Only if Series Ends & BO5) */}
                    {match.format === 'BO5' && 
@@ -1013,7 +1033,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                             {(() => {
                                 const winnerName = (winsA + (simulationData.winnerName === teamA.name ? 1 : 0) >= targetWins) ? teamA.name : teamB.name;
                                 const posPlayer = calculatePOS(matchHistory, simulationData, winnerName);
-                                if (!posPlayer) return null; // [FIX] Skip if no POS
                                 return (
                                     <>
                                         <div className="w-24 h-24 rounded-full bg-purple-800 border-2 border-purple-300 mb-4 flex items-center justify-center shadow-[0_0_15px_rgba(168,85,247,0.5)]">
@@ -1047,7 +1066,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         setWinsB(newB);
         
         // [FIX] Calculate Kill Scores for History
-        // We need to map BLUE/RED kills to Team A/Team B
         const isBlueA = simulationData.blueTeam.name === teamA.name;
         const killsA = isBlueA ? liveStats.kills.BLUE : liveStats.kills.RED;
         const killsB = isBlueA ? liveStats.kills.RED : liveStats.kills.BLUE;

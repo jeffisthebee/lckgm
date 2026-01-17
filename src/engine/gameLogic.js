@@ -28,7 +28,7 @@ export {
 
 // --- HELPER: POG Calculation ---
 function calculatePog(winningPicks, gameMinutes) {
-    if (!winningPicks || winningPicks.length === 0) return null; // [FIX] Safety
+    if (!winningPicks || winningPicks.length === 0) return null;
 
     const candidates = winningPicks.map(p => {
         const stats = p.stats || {};
@@ -57,8 +57,6 @@ function calculatePog(winningPicks, gameMinutes) {
 
 // --- HELPER: Distribute Totals to Players (Top-Down) ---
 const distributeTeamStats = (team, picks, totalKills, totalDeaths, totalAssists, gameTime, isWinner) => {
-    if (!picks || picks.length === 0) return []; // [FIX] Safety
-
     const ROLE_WEIGHTS = {
         KILLS: { 'TOP': 20, 'JGL': 15, 'MID': 30, 'ADC': 32, 'SUP': 3 },
         DEATHS: { 'TOP': 20, 'JGL': 20, 'MID': 15, 'ADC': 15, 'SUP': 30 },
@@ -90,24 +88,30 @@ const distributeTeamStats = (team, picks, totalKills, totalDeaths, totalAssists,
     for (let i = 0; i < totalKills; i++) {
         const lottery = [];
         players.forEach((p, idx) => { for(let w=0; w<p.roleWeights.k; w++) lottery.push(idx); });
-        const winnerIdx = lottery[Math.floor(Math.random() * lottery.length)];
-        players[winnerIdx].k++;
-        players[winnerIdx].currentGold += 300; 
+        if (lottery.length > 0) {
+            const winnerIdx = lottery[Math.floor(Math.random() * lottery.length)];
+            players[winnerIdx].k++;
+            players[winnerIdx].currentGold += 300; 
+        }
     }
 
     for (let i = 0; i < totalDeaths; i++) {
         const lottery = [];
         players.forEach((p, idx) => { for(let w=0; w<p.roleWeights.d; w++) lottery.push(idx); });
-        const victimIdx = lottery[Math.floor(Math.random() * lottery.length)];
-        players[victimIdx].d++;
+        if (lottery.length > 0) {
+             const victimIdx = lottery[Math.floor(Math.random() * lottery.length)];
+             players[victimIdx].d++;
+        }
     }
 
     for (let i = 0; i < totalAssists; i++) {
         const lottery = [];
         players.forEach((p, idx) => { for(let w=0; w<p.roleWeights.a; w++) lottery.push(idx); });
-        const assistIdx = lottery[Math.floor(Math.random() * lottery.length)];
-        players[assistIdx].a++;
-        players[assistIdx].currentGold += 100;
+        if (lottery.length > 0) {
+            const assistIdx = lottery[Math.floor(Math.random() * lottery.length)];
+            players[assistIdx].a++;
+            players[assistIdx].currentGold += 100;
+        }
     }
 
     return players.map(p => {
@@ -567,8 +571,8 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
           });
       }
       minuteEvents.sort((a, b) => a.abs - b.abs);
-      if (gameOver) { minuteEvents = minuteEvents.filter(e => e.abs <= endAbsSecond); minuteEvents.forEach(evt => logs.push(evt.message)); break; }
-      minuteEvents.forEach(evt => logs.push(evt.message));
+      if (gameOver) { minuteEvents = minuteEvents.filter(e => e.abs <= endAbsSecond); minuteEvents.forEach(evt => logs.push(evt)); break; }
+      minuteEvents.forEach(evt => logs.push(evt));
     }
   
     const winnerSide = state.nexusHealth['BLUE'] > state.nexusHealth['RED'] ? 'BLUE' : 'RED';
@@ -578,14 +582,11 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
     const finalTimeStr = formatTime(totalMinutes, totalSeconds % 60);
     logs.sort((a, b) => a.abs - b.abs);
   
-    // [FIX] Calculate POG here!
-    const winningPicks = winnerSide === 'BLUE' ? picksBlue : picksRed;
-    const pogPlayer = calculatePog(winningPicks, totalMinutes);
-
     return {
       winnerName: winnerName, resultSummary: `Winner: ${winnerName}`,
-      pogPlayer: pogPlayer, // [EXPOSE POG] Now calculated!
-      picks: { A: picksBlue, B: picksRed }, bans: { A: [], B: [] }, logs: logs, usedChamps: [],
+      // [EXPOSE POG] We explicitly return the POG object now
+      pogPlayer: null, // Placeholder, calculated later if needed for full sim
+      picks: { A: picksBlue, B: picksRed }, bans: { A: [], B: [] }, logs: logs.map(l => l.message), usedChamps: [],
       score: { [teamBlue.name]: String(state.kills.BLUE), [teamRed.name]: String(state.kills.RED) },
       gameResult: { finalKills: state.kills }, totalMinutes: totalMinutes, totalSeconds: totalSeconds,
       endSecond: totalSeconds % 60, gameOver: gameOver, finalTimeStr: finalTimeStr,
@@ -597,6 +598,13 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
 
 export function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions) {
     const { currentChampionList } = simOptions;
+    
+    // [FIX] Check if draft logic is available
+    if (typeof runDraftSimulation !== 'function') {
+        console.error("Critical Error: runDraftSimulation is not a function.");
+        return { gameOver: true, winnerName: null, resultSummary: 'Engine Error: Draft Logic Missing', picks: { A: [], B: [] }, bans: { A: [], B: [] }, logs: [] };
+    }
+
     const draftResult = runDraftSimulation(teamBlue, teamRed, fearlessBans || [], currentChampionList || championList);
   
     if (!draftResult || !draftResult.picks || draftResult.picks.A.length < 5) {
@@ -698,7 +706,6 @@ export function simulateMatch(teamA, teamB, format = 'BO3', simOptions) {
 
 // --- HELPERS ---
 const picksToFullObj = (simplePicks, team) => {
-  if (!simplePicks) return [];
   return simplePicks.map(p => {
       const player = team.roster.find(r => r.이름 === p.playerName);
       return { playerData: player, role: player ? player.포지션 : 'MID', tier: p.tier, mastery: p.mastery, currentGold: 5000, level: 9, classType: '전사', dmgType: 'AD' };
