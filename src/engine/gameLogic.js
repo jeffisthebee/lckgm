@@ -1,18 +1,21 @@
 // src/engine/gameLogic.js
-import { GAME_RULES, SIDES, MAP_LANES, championList, SIM_CONSTANTS } from '../data/constants';
+import { GAME_RULES, MAP_LANES, championList, SIM_CONSTANTS } from '../data/constants';
+
+// [FIX] Define SIDES locally to prevent Import Errors
+const SIDES = { BLUE: 'BLUE', RED: 'RED' };
 
 // [FIX] Import Draft Helpers so we can re-export them
 import { 
     runDraftSimulation, 
-    selectPickFromTop3,        // <--- Added import
-    selectBanFromProbabilities // <--- Added import
+    selectPickFromTop3,        
+    selectBanFromProbabilities 
 } from './draftLogic';
 
 // [FIX] Import Mechanics Helpers so we can re-export them
 import { 
   calculateTeamPower, 
   resolveCombat, 
-  calculateIndividualIncome, // <--- Added import
+  calculateIndividualIncome, 
   calculateDeathTimer, 
   getChampionClass 
 } from './mechanics';
@@ -638,11 +641,13 @@ export function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptio
     const gameResult = runGameTickEngine(teamBlue, teamRed, picksBlue_detailed, picksRed_detailed, simOptions);
   
     const usedChamps = [...draftResult.picks.A.map(p => p.champName), ...draftResult.picks.B.map(p => p.champName)];
-    const scoreBlue = gameResult.finalKills[SIDES.BLUE];
-    const scoreRed = gameResult.finalKills[SIDES.RED];
+    
+    // [FIX] Use String Literals instead of SIDES import to prevent undefined error
+    const scoreBlue = gameResult.finalKills['BLUE'];
+    const scoreRed = gameResult.finalKills['RED'];
     
     // [POG UPDATE] Calculate POG using the helper
-    const winningPicks = gameResult.winnerSide === SIDES.BLUE ? picksBlue_detailed : picksRed_detailed;
+    const winningPicks = gameResult.winnerSide === 'BLUE' ? picksBlue_detailed : picksRed_detailed;
     const pogPlayer = calculatePog(winningPicks, gameResult.totalMinutes);
   
     const resultSummary = `⏱️ ${gameResult.gameTime} | ⚔️ ${teamBlue.name} ${scoreBlue} : ${scoreRed} ${teamRed.name} | 🏆 승리: ${gameResult.winnerName}`;

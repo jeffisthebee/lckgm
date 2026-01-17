@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { calculateIndividualIncome, simulateSet, runGameTickEngine, selectPickFromTop3, selectBanFromProbabilities } from '../engine/simEngine';
+// [FIX] Ensure you are importing from the CORRECT file path for gameLogic
+import { calculateIndividualIncome, simulateSet, runGameTickEngine, selectPickFromTop3, selectBanFromProbabilities } from '../engine/gameLogic';
 import { DRAFT_SEQUENCE, championList } from '../data/constants'; 
+
 
 // --- HELPER: Simple Scoring for Recommendation (Frontend Version) ---
 const getRecommendedChampion = (role, currentChamps, availableChamps) => {
