@@ -28,6 +28,8 @@ export {
 
 // --- HELPER: POG Calculation ---
 function calculatePog(winningPicks, gameMinutes) {
+    if (!winningPicks || winningPicks.length === 0) return null; // [FIX] Safety
+
     const candidates = winningPicks.map(p => {
         const stats = p.stats || {};
         const k = stats.kills || 0;
@@ -55,6 +57,8 @@ function calculatePog(winningPicks, gameMinutes) {
 
 // --- HELPER: Distribute Totals to Players (Top-Down) ---
 const distributeTeamStats = (team, picks, totalKills, totalDeaths, totalAssists, gameTime, isWinner) => {
+    if (!picks || picks.length === 0) return []; // [FIX] Safety
+
     const ROLE_WEIGHTS = {
         KILLS: { 'TOP': 20, 'JGL': 15, 'MID': 30, 'ADC': 32, 'SUP': 3 },
         DEATHS: { 'TOP': 20, 'JGL': 20, 'MID': 15, 'ADC': 15, 'SUP': 30 },
@@ -563,8 +567,8 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
           });
       }
       minuteEvents.sort((a, b) => a.abs - b.abs);
-      if (gameOver) { minuteEvents = minuteEvents.filter(e => e.abs <= endAbsSecond); minuteEvents.forEach(evt => logs.push(evt)); break; }
-      minuteEvents.forEach(evt => logs.push(evt));
+      if (gameOver) { minuteEvents = minuteEvents.filter(e => e.abs <= endAbsSecond); minuteEvents.forEach(evt => logs.push(evt.message)); break; }
+      minuteEvents.forEach(evt => logs.push(evt.message));
     }
   
     const winnerSide = state.nexusHealth['BLUE'] > state.nexusHealth['RED'] ? 'BLUE' : 'RED';
@@ -574,11 +578,14 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
     const finalTimeStr = formatTime(totalMinutes, totalSeconds % 60);
     logs.sort((a, b) => a.abs - b.abs);
   
+    // [FIX] Calculate POG here!
+    const winningPicks = winnerSide === 'BLUE' ? picksBlue : picksRed;
+    const pogPlayer = calculatePog(winningPicks, totalMinutes);
+
     return {
       winnerName: winnerName, resultSummary: `Winner: ${winnerName}`,
-      // [EXPOSE POG] We explicitly return the POG object now
-      pogPlayer: null, // Placeholder, calculated later if needed for full sim
-      picks: { A: picksBlue, B: picksRed }, bans: { A: [], B: [] }, logs: logs.map(l => l.message), usedChamps: [],
+      pogPlayer: pogPlayer, // [EXPOSE POG] Now calculated!
+      picks: { A: picksBlue, B: picksRed }, bans: { A: [], B: [] }, logs: logs, usedChamps: [],
       score: { [teamBlue.name]: String(state.kills.BLUE), [teamRed.name]: String(state.kills.RED) },
       gameResult: { finalKills: state.kills }, totalMinutes: totalMinutes, totalSeconds: totalSeconds,
       endSecond: totalSeconds % 60, gameOver: gameOver, finalTimeStr: finalTimeStr,
@@ -691,6 +698,7 @@ export function simulateMatch(teamA, teamB, format = 'BO3', simOptions) {
 
 // --- HELPERS ---
 const picksToFullObj = (simplePicks, team) => {
+  if (!simplePicks) return [];
   return simplePicks.map(p => {
       const player = team.roster.find(r => r.이름 === p.playerName);
       return { playerData: player, role: player ? player.포지션 : 'MID', tier: p.tier, mastery: p.mastery, currentGold: 5000, level: 9, classType: '전사', dmgType: 'AD' };
