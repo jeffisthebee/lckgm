@@ -17,48 +17,59 @@ const getRecommendedChampion = (role, currentChamps, availableChamps) => {
 
 // --- HELPER: Calculate POS (Player of the Series) ---
 const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
-    const allGames = [...matchHistory];
-    if (currentSetData) {
-        allGames.push({
-            winner: currentSetData.winnerName,
-            picks: currentSetData.picks 
+    try {
+        const allGames = [...(matchHistory || [])];
+        if (currentSetData) {
+            allGames.push({
+                winner: currentSetData.winnerName,
+                picks: currentSetData.picks 
+            });
+        }
+
+        const playerScores = {};
+
+        allGames.forEach(game => {
+            if (!game || !game.picks) return;
+            const picksA = game.picks.A || [];
+            const picksB = game.picks.B || [];
+            
+            // Safety check for team name logic
+            const firstPlayerA = picksA[0];
+            const teamAName = firstPlayerA?.playerData?.팀 || 'TeamA';
+            const isTeamA = teamAName === winningTeamName; 
+            const winningPicks = isTeamA ? picksA : picksB;
+
+            if (!winningPicks) return;
+
+            winningPicks.forEach(p => {
+                if (!p) return;
+                const pName = p.playerName || 'Unknown';
+                if (!playerScores[pName]) playerScores[pName] = { ...p, totalScore: 0, games: 0 };
+                
+                const stats = p.stats || {};
+                let k = p.k ?? stats.kills ?? 0;
+                let d = p.d ?? stats.deaths ?? 0;
+                let a = p.a ?? stats.assists ?? 0;
+                let gold = p.currentGold || 0;
+                let safeD = d === 0 ? 1 : d;
+                let damage = p.damage ?? stats.damage ?? 0;
+                
+                let score = ((k + a) / safeD * 3) + (damage / 3000) + (gold / 1000) + (a * 1);
+                
+                const role = p.playerData?.포지션 || 'MID';
+                if (['JGL', '정글', 'SUP', '서포터'].includes(role)) score *= 1.15;
+
+                playerScores[pName].totalScore += score;
+                playerScores[pName].games += 1;
+            });
         });
+
+        const sorted = Object.values(playerScores).sort((a, b) => b.totalScore - a.totalScore);
+        return sorted[0]; 
+    } catch (e) {
+        console.error("Calculate POS Error:", e);
+        return null;
     }
-
-    const playerScores = {};
-
-    allGames.forEach(game => {
-        if (!game || !game.picks) return;
-        const picksA = game.picks.A || [];
-        const picksB = game.picks.B || [];
-        // Helper to safely get team name
-        const teamAName = picksA[0]?.playerData?.팀 || 'TeamA';
-        const isTeamA = teamAName === winningTeamName; 
-        const winningPicks = isTeamA ? picksA : picksB;
-
-        winningPicks.forEach(p => {
-            if (!playerScores[p.playerName]) playerScores[p.playerName] = { ...p, totalScore: 0, games: 0 };
-            
-            const stats = p.stats || {};
-            let k = p.k ?? stats.kills ?? 0;
-            let d = p.d ?? stats.deaths ?? 0;
-            let a = p.a ?? stats.assists ?? 0;
-            let gold = p.currentGold || 0;
-            let safeD = d === 0 ? 1 : d;
-            let damage = p.damage ?? stats.damage ?? 0;
-            
-            let score = ((k + a) / safeD * 3) + (damage / 3000) + (gold / 1000) + (a * 1);
-            
-            const role = p.playerData?.포지션 || 'MID';
-            if (['JGL', '정글', 'SUP', '서포터'].includes(role)) score *= 1.15;
-
-            playerScores[p.playerName].totalScore += score;
-            playerScores[p.playerName].games += 1;
-        });
-    });
-
-    const sorted = Object.values(playerScores).sort((a, b) => b.totalScore - a.totalScore);
-    return sorted[0]; 
 };
 
 // --- [FIXED] Manual POG Calculation with Sanitizer ---
@@ -197,7 +208,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                       return { 
                           ...p, side: side, k: 0, d: 0, a: 0, currentGold: 500, lvl: 1, xp: 0, 
                           playerData: safeData, 
-                          // [FIX 2] Initialize stats object here to prevent Manual Mode crash later
+                          // [FIX] Added Team for Consistency
+                          팀: side === 'BLUE' ? blueTeam.name : redTeam.name,
                           stats: { kills: 0, deaths: 0, assists: 0, damage: 0 }
                       };
                   };
@@ -222,8 +234,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
   
           } catch (e) {
               console.error("Simulation Error:", e);
-              alert(`Simulation Error: ${e.message}`); // [UPDATED] Alert error to see what's wrong
-              // onClose(); // [UPDATED] Commented out to prevent closing on error
+              alert(`Simulation Error: ${e.message}`);
           }
       }, 500);
     }, [currentSet, teamA, teamB, globalBanList, simOptions, onClose, matchHistory, isManualMode]);
@@ -501,7 +512,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 return;
             }
         
-            const safeOptions = simOptions || { difficulty: 'normal', playerTeamName: '' };
+            const safeOptions = simOptions || { difficulty: 'normal', playerTeamName: '', currentChampionList: championList }; // [FIX] Added default list
             const result = runGameTickEngine(manualTeams.blue, manualTeams.red, picksBlueDetailed, picksRedDetailed, safeOptions);
             
             setSimulationData({
@@ -1024,22 +1035,27 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                 SERIES MVP
                             </div>
                             
-                            {/* Calculate POS on the fly */}
+                            {/* Calculate POS on the fly with safety */}
                             {(() => {
                                 const winnerName = (winsA + (simulationData.winnerName === teamA.name ? 1 : 0) >= targetWins) ? teamA.name : teamB.name;
                                 const posPlayer = calculatePOS(matchHistory, simulationData, winnerName);
+                                
+                                if (!posPlayer) return (
+                                    <div className="text-white">Calculating MVP...</div>
+                                );
+
                                 return (
                                     <>
                                         <div className="w-24 h-24 rounded-full bg-purple-800 border-2 border-purple-300 mb-4 flex items-center justify-center shadow-[0_0_15px_rgba(168,85,247,0.5)]">
                                             <span className="text-3xl">👑</span>
                                         </div>
-                                        <div className="text-2xl font-black text-white">{posPlayer?.playerName}</div>
-                                        <div className="text-sm text-purple-300 mb-2">{posPlayer?.playerData?.포지션 || 'Player'}</div>
+                                        <div className="text-2xl font-black text-white">{posPlayer.playerName}</div>
+                                        <div className="text-sm text-purple-300 mb-2">{posPlayer.playerData?.포지션 || 'Player'}</div>
                                         <div className="mt-2 text-center text-gray-300 text-sm italic">
                                             "Series MVP"
                                         </div>
                                         <div className="mt-4 bg-black/40 px-4 py-2 rounded text-purple-200 font-mono text-sm">
-                                            Score: {posPlayer?.totalScore?.toFixed(1)}
+                                            Score: {posPlayer.totalScore?.toFixed(1) || '0.0'}
                                         </div>
                                     </>
                                 );
