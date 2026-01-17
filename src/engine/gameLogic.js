@@ -1,10 +1,28 @@
 // src/engine/gameLogic.js
 import { GAME_RULES, SIDES, MAP_LANES, championList, SIM_CONSTANTS } from '../data/constants';
-import { runDraftSimulation } from './draftLogic';
+
+// [FIX] Import Draft Helpers so we can re-export them
 import { 
-  calculateTeamPower, resolveCombat, calculateIndividualIncome, 
-  calculateDeathTimer, getChampionClass 
+    runDraftSimulation, 
+    selectPickFromTop3,        // <--- Added
+    selectBanFromProbabilities // <--- Added
+} from './draftLogic';
+
+// [FIX] Import Mechanics Helpers so we can re-export them
+import { 
+  calculateTeamPower, 
+  resolveCombat, 
+  calculateIndividualIncome, // <--- Added
+  calculateDeathTimer, 
+  getChampionClass 
 } from './mechanics';
+
+// [FIX] Re-export these so LiveGamePlayer.jsx can use them
+export { 
+    calculateIndividualIncome, 
+    selectPickFromTop3, 
+    selectBanFromProbabilities 
+};
 
 // --- HELPER: POG Calculation ---
 function calculatePog(winningPicks, gameMinutes) {
@@ -35,19 +53,16 @@ function calculatePog(winningPicks, gameMinutes) {
 
 // --- HELPER: Distribute Totals to Players (Top-Down) ---
 const distributeTeamStats = (team, picks, totalKills, totalDeaths, totalAssists, gameTime, isWinner) => {
-    // 1. Define Weights for Roles (Who gets kills/deaths?)
     const ROLE_WEIGHTS = {
         KILLS: { 'TOP': 20, 'JGL': 15, 'MID': 30, 'ADC': 32, 'SUP': 3 },
-        DEATHS: { 'TOP': 20, 'JGL': 20, 'MID': 15, 'ADC': 15, 'SUP': 30 }, // Support/Jungle die for team
+        DEATHS: { 'TOP': 20, 'JGL': 20, 'MID': 15, 'ADC': 15, 'SUP': 30 },
         ASSISTS: { 'TOP': 15, 'JGL': 25, 'MID': 15, 'ADC': 10, 'SUP': 35 }
     };
 
-    // 2. Initialize Player Objects
     const players = picks.map(p => {
         const playerObj = team.roster.find(r => r.이름 === p.playerName) || { 포지션: 'MID', 상세: {} };
         const role = ['MID', 'ADC', 'TOP', 'JGL', 'SUP'].includes(playerObj.포지션) ? playerObj.포지션 : 'MID';
         
-        // Base Resources (Income)
         const incomeMod = isWinner ? 1.05 : 0.95;
         const resources = calculateIndividualIncome({ playerData: playerObj }, gameTime, incomeMod);
         
@@ -66,46 +81,34 @@ const distributeTeamStats = (team, picks, totalKills, totalDeaths, totalAssists,
         };
     });
 
-    // 3. Distribute Kills (Randomly based on weight)
     for (let i = 0; i < totalKills; i++) {
         const lottery = [];
-        players.forEach((p, idx) => {
-            // Add index to lottery N times based on weight
-            for(let w=0; w<p.roleWeights.k; w++) lottery.push(idx);
-        });
+        players.forEach((p, idx) => { for(let w=0; w<p.roleWeights.k; w++) lottery.push(idx); });
         const winnerIdx = lottery[Math.floor(Math.random() * lottery.length)];
         players[winnerIdx].k++;
-        players[winnerIdx].currentGold += 300; // Kill Gold
+        players[winnerIdx].currentGold += 300; 
     }
 
-    // 4. Distribute Deaths
     for (let i = 0; i < totalDeaths; i++) {
         const lottery = [];
-        players.forEach((p, idx) => {
-            for(let w=0; w<p.roleWeights.d; w++) lottery.push(idx);
-        });
+        players.forEach((p, idx) => { for(let w=0; w<p.roleWeights.d; w++) lottery.push(idx); });
         const victimIdx = lottery[Math.floor(Math.random() * lottery.length)];
         players[victimIdx].d++;
     }
 
-    // 5. Distribute Assists
     for (let i = 0; i < totalAssists; i++) {
         const lottery = [];
-        players.forEach((p, idx) => {
-            for(let w=0; w<p.roleWeights.a; w++) lottery.push(idx);
-        });
+        players.forEach((p, idx) => { for(let w=0; w<p.roleWeights.a; w++) lottery.push(idx); });
         const assistIdx = lottery[Math.floor(Math.random() * lottery.length)];
         players[assistIdx].a++;
-        players[assistIdx].currentGold += 100; // Assist Gold
+        players[assistIdx].currentGold += 100;
     }
 
-    // 6. Finalize Stats
     return players.map(p => {
-        // Damage calc (Carries do more, scaling with time)
         const isCarry = ['MID', 'ADC', 'TOP'].includes(p.role);
         let dmg = isCarry ? (Math.random() * 15000 + 10000) : (Math.random() * 8000 + 4000);
         dmg *= (gameTime / 25);
-        if (totalKills > 25) dmg *= 1.3; // More kills = more fighting = more damage
+        if (totalKills > 25) dmg *= 1.3; 
 
         return {
             ...p,
@@ -124,7 +127,6 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
     let gameOver = false;
     let endAbsSecond = 0;
   
-    // Initialize Players
     picksBlue.forEach(p => {
         p.side = 'BLUE'; p.currentGold = GAME_RULES.GOLD.START; p.level = 1; p.xp = 0; p.deadUntil = 0;
         p.stats = { kills: 0, deaths: 0, assists: 0, damage: 0, takenDamage: 0 }; p.flashEndTime = 0;
