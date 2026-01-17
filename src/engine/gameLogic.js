@@ -4,15 +4,15 @@ import { GAME_RULES, SIDES, MAP_LANES, championList, SIM_CONSTANTS } from '../da
 // [FIX] Import Draft Helpers so we can re-export them
 import { 
     runDraftSimulation, 
-    selectPickFromTop3,        // <--- Added
-    selectBanFromProbabilities // <--- Added
+    selectPickFromTop3,        
+    selectBanFromProbabilities 
 } from './draftLogic';
 
 // [FIX] Import Mechanics Helpers so we can re-export them
 import { 
   calculateTeamPower, 
   resolveCombat, 
-  calculateIndividualIncome, // <--- Added
+  calculateIndividualIncome, 
   calculateDeathTimer, 
   getChampionClass 
 } from './mechanics';
@@ -620,9 +620,12 @@ export function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptio
   
     const addPlayerData = (picks, roster) => {
         return picks.map(p => {
-            const playerData = roster.find(player => player && player.이름 === p.playerName);
+            // [FIX] Robust access to roster.find
+            const playerData = (roster || []).find(player => player && player.이름 === p.playerName);
+            
             const champData = (currentChampionList || championList).find(c => c.name === p.champName);
             if (!playerData || !champData) {
+              // [FIX] Use safe fallback if playerData is missing
               return { ...p, dmgType: 'AD', classType: '전사', playerData: playerData || { 이름: p.playerName, 포지션: 'TOP', 상세: { 안정성: 50 }, 종합: 70 }, conditionModifier: 1.0, stats: { kills: 0, deaths: 0, assists: 0, damage: 0, takenDamage: 0 }, currentGold: 500, level: 1 };
             }
             return {

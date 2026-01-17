@@ -222,7 +222,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
   
           } catch (e) {
               console.error("Simulation Error:", e);
-              onClose(); 
+              alert(`Simulation Error: ${e.message}`); // [UPDATED] Alert error to see what's wrong
+              // onClose(); // [UPDATED] Commented out to prevent closing on error
           }
       }, 500);
     }, [currentSet, teamA, teamB, globalBanList, simOptions, onClose, matchHistory, isManualMode]);
@@ -462,6 +463,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 const safePlayerData = p || { 
                     이름: 'Unknown', 
                     포지션: pos, 
+                    // [UPDATED] Added Team Property for POS Calculation safety
+                    팀: teamSide === 'BLUE' ? manualTeams.blue.name : manualTeams.red.name,
                     종합: 75, 
                     상세: { 라인전: 75, 무력: 75, 한타: 75, 성장: 75, 안정성: 75, 운영: 75 } 
                 };
@@ -516,7 +519,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 gameTime: result.finalTimeStr || `${result.totalMinutes}분 00초`,
                 picks: { A: picksBlueDetailed, B: picksRedDetailed },
                 bans: { A: draftState.blueBans, B: draftState.redBans },
-                pogPlayer: null, 
+                pogPlayer: undefined, // [UPDATED] Initialize as undefined to prevent infinite loop
                 usedChamps: [...picksBlueDetailed, ...picksRedDetailed].map(p => p.champName) 
             });
         
@@ -645,8 +648,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
               setGameTime(finalSec);
               setLiveStats(st => ({ ...st, kills: simulationData.gameResult.finalKills }));
               
-              if (isManualMode && !simulationData.pogPlayer) {
-                   // [FIX 5] Use Ref for POG Calculation - This fixes the Manual Mode Crash!
+              // [UPDATED] Check for undefined to prevent loop
+              if (isManualMode && simulationData.pogPlayer === undefined) {
                    const finalStats = liveStatsRef.current; 
                    const manualPog = calculateManualPog(
                        finalStats.players.filter(p => p.side === 'BLUE'),
@@ -654,7 +657,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                        simulationData.winnerName === manualTeams.blue.name ? 'BLUE' : 'RED',
                        Math.floor(finalSec / 60)
                    );
-                   setSimulationData(prev => ({ ...prev, pogPlayer: manualPog }));
+                   // [UPDATED] Set to manualPog OR null (so it's no longer undefined)
+                   setSimulationData(prev => ({ ...prev, pogPlayer: manualPog || null }));
               }
               
               setTimeout(() => setPhase('SET_RESULT'), 1000);
