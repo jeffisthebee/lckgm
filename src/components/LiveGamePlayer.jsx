@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { calculateIndividualIncome, simulateSet, runGameTickEngine, selectPickFromTop3, selectBanFromProbabilities } from '../engine/gameLogic';
+import { calculateIndividualIncome, simulateSet, runGameTickEngine, selectPickFromTop3, selectBanFromProbabilities } from '../engine/simEngine';
 import { DRAFT_SEQUENCE, championList } from '../data/constants'; 
 
 
@@ -35,7 +35,9 @@ const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
         // Identify which set of picks belongs to the winning team
         const picksA = game.picks.A || [];
         const picksB = game.picks.B || [];
+        
         // Heuristic: check if the first player of A belongs to the winning team
+        // [NOTE] This relies on 'playerData.팀' being present!
         const isTeamA = picksA[0]?.playerData?.팀 === winningTeamName; 
         const winningPicks = isTeamA ? picksA : picksB;
 
@@ -216,7 +218,9 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
   
           } catch (e) {
               console.error("Simulation Error:", e);
-              onClose(); 
+              // [FIX] Removed onClose() to prevent silent failures.
+              // Now we alert the error so you can see why it failed.
+              alert(`Simulation Failed: ${e.message}`);
           }
       }, 500);
     }, [currentSet, teamA, teamB, globalBanList, simOptions, onClose, matchHistory, isManualMode]);
@@ -408,19 +412,26 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             return;
         }
 
-        const mapToEngineFormat = (sidePicks, roster, teamSide) => {
+        // [FIX] Added teamName parameter to inject Team Name into playerData
+        const mapToEngineFormat = (sidePicks, roster, teamSide, teamName) => {
             return ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(pos => {
                 const c = sidePicks[pos];
                 // Safe fallback if no champion selected
                 const safeChamp = c || activeChampionList.find(ch => ch.role === pos) || activeChampionList[0];
                 const p = roster.find(pl => pl.포지션 === pos);
                 
-                const safePlayerData = p || { 
+                // Clone playerData to allow modification without side effects
+                const safePlayerData = p ? { ...p } : { 
                     이름: 'Unknown', 
                     포지션: pos, 
                     종합: 75, 
                     상세: { 라인전: 75, 무력: 75, 한타: 75, 성장: 75, 안정성: 75, 운영: 75 } 
                 };
+
+                // [FIX] Explicitly set the Team Name for POS Calculation
+                if (!safePlayerData.팀) {
+                    safePlayerData.팀 = teamName;
+                }
 
                 return {
                     champName: safeChamp.name || 'Unknown',
@@ -445,15 +456,16 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         };
     
         try {
-            const picksBlueDetailed = mapToEngineFormat(manualPicks.blue, manualTeams.blue.roster, 'BLUE');
-            const picksRedDetailed = mapToEngineFormat(manualPicks.red, manualTeams.red.roster, 'RED');
+            // [FIX] Pass the team name (manualTeams.blue.name / red.name)
+            const picksBlueDetailed = mapToEngineFormat(manualPicks.blue, manualTeams.blue.roster, 'BLUE', manualTeams.blue.name);
+            const picksRedDetailed = mapToEngineFormat(manualPicks.red, manualTeams.red.roster, 'RED', manualTeams.red.name);
         
             if (picksBlueDetailed.length < 5 || picksRedDetailed.length < 5) {
                 alert('Draft Error: Incomplete teams (Must pick 5 champions).');
                 return;
             }
         
-            // 2. [FIX] Safe Engine Call with Manual Options
+            // 2. Safe Engine Call with Manual Options
             const safeOptions = simOptions || { difficulty: 'normal', playerTeamName: '' };
             const result = runGameTickEngine(manualTeams.blue, manualTeams.red, picksBlueDetailed, picksRedDetailed, safeOptions);
             
@@ -478,7 +490,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 blueTeam: manualTeams.blue,
                 redTeam: manualTeams.red,
                 totalSeconds: result.totalSeconds,
-                // [FIX] Save Game Time here for consistency in history
+                // Save Game Time here for consistency in history
                 gameTime: result.finalTimeStr || `${result.totalMinutes}분 00초`,
                 
                 picks: { A: picksBlueDetailed, B: picksRedDetailed },
