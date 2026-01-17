@@ -3,8 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { teams, teamFinanceData } from '../data/teams';
 import { championList, difficulties } from '../data/constants';
-// [FIX] Changed import from '../engine/simEngine' to '../engine/gameLogic'
-import { simulateMatch, getTeamRoster, generateSchedule, quickSimulateMatch } from '../engine/gameLogic';
+import { simulateMatch, getTeamRoster, generateSchedule, quickSimulateMatch } from '../engine/simEngine';
 import LiveGamePlayer from '../components/LiveGamePlayer';
 import DetailedMatchResultModal from '../components/DetailedMatchResultModal';
 import playerList from '../data/players.json';

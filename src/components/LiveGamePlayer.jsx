@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-// [FIX 1] Changed import from '../engine/simEngine' to '../engine/gameLogic'
-import { calculateIndividualIncome, simulateSet, runGameTickEngine, selectPickFromTop3, selectBanFromProbabilities } from '../engine/gameLogic';
+import { calculateIndividualIncome, simulateSet, runGameTickEngine, selectPickFromTop3, selectBanFromProbabilities } from '../engine/simEngine';
 import { DRAFT_SEQUENCE, championList } from '../data/constants'; 
 
 // --- HELPER: Simple Scoring for Recommendation (Frontend Version) ---
@@ -457,14 +456,11 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             const safeOptions = simOptions || { difficulty: 'normal', playerTeamName: '' };
             const result = runGameTickEngine(manualTeams.blue, manualTeams.red, picksBlueDetailed, picksRedDetailed, safeOptions);
             
-            // 3. [FIX] Calculate Winner Side & POG
-            // Since gameLogic doesn't return 'winnerSide', we calculate it here based on name
-            const realWinnerSide = result.winnerName === manualTeams.blue.name ? 'BLUE' : 'RED';
-
+            // 3. Calculate POG
             const pogPlayer = calculateManualPog(
-                result.picks?.A || picksBlueDetailed, // Picks are at root, not inside gameResult
-                result.picks?.B || picksRedDetailed,
-                realWinnerSide, // Use the manually calculated winner side
+                result.gameResult ? result.gameResult.picks?.A || picksBlueDetailed : picksBlueDetailed, 
+                result.gameResult ? result.gameResult.picks?.B || picksRedDetailed : picksRedDetailed,
+                result.winnerSide,
                 result.totalMinutes || 30
             );
 

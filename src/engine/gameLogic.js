@@ -1,10 +1,27 @@
 // src/engine/gameLogic.js
 import { GAME_RULES, SIDES, MAP_LANES, championList, SIM_CONSTANTS } from '../data/constants';
-import { runDraftSimulation } from './draftLogic';
+
+// [FIX] Import these so we can export them to the frontend
 import { 
-  calculateTeamPower, resolveCombat, calculateIndividualIncome, 
-  calculateDeathTimer, getChampionClass 
+    runDraftSimulation,
+    selectPickFromTop3,        // <--- Added
+    selectBanFromProbabilities // <--- Added
+} from './draftLogic';
+
+import { 
+  calculateTeamPower, 
+  resolveCombat, 
+  calculateIndividualIncome, 
+  calculateDeathTimer, 
+  getChampionClass 
 } from './mechanics';
+
+// [FIX] EXPORT these functions so LiveGamePlayer.jsx can use them
+export { 
+    calculateIndividualIncome, 
+    selectPickFromTop3, 
+    selectBanFromProbabilities 
+};
 
 // --- HELPER: POG Calculation ---
 function calculatePog(winningPicks, gameMinutes) {
