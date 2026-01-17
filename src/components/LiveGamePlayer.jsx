@@ -18,6 +18,8 @@ const getRecommendedChampion = (role, currentChamps, availableChamps) => {
 // --- HELPER: Calculate POS (Player of the Series) ---
 const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
     const allGames = [...matchHistory];
+    
+    // [FIX] Ensure we don't crash if currentSetData is partial or missing stats
     if (currentSetData) {
         allGames.push({
             winner: currentSetData.winnerName,
@@ -28,14 +30,23 @@ const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
     const playerScores = {};
 
     allGames.forEach(game => {
-        const picksA = game.picks.A || [];
-        const picksB = game.picks.B || [];
-        const isTeamA = picksA[0]?.playerData?.팀 === winningTeamName; 
+        const picksA = game.picks?.A || [];
+        const picksB = game.picks?.B || [];
+        
+        // [FIX] Safe navigation for nested properties to prevent crash
+        const firstPick = picksA[0];
+        const teamNameA = firstPick?.playerData?.팀 || firstPick?.side || 'Unknown'; 
+        
+        // If team names match, A is the winner. Otherwise B.
+        // Note: This relies on team name matching. In manual mode, we ensure playerData has '팀' now.
+        const isTeamA = teamNameA === winningTeamName; 
         const winningPicks = isTeamA ? picksA : picksB;
 
         winningPicks.forEach(p => {
+            if (!p) return;
             if (!playerScores[p.playerName]) playerScores[p.playerName] = { ...p, totalScore: 0, games: 0 };
             
+            // [FIX] Use safe fallbacks for all stats to prevent NaN
             const stats = p.stats || {};
             let k = p.k ?? stats.kills ?? 0;
             let d = p.d ?? stats.deaths ?? 0;
@@ -49,16 +60,18 @@ const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
             const role = p.playerData?.포지션 || 'MID';
             if (['JGL', '정글', 'SUP', '서포터'].includes(role)) score *= 1.15;
 
-            playerScores[p.playerName].totalScore += score;
+            if (!isNaN(score)) {
+                playerScores[p.playerName].totalScore += score;
+            }
             playerScores[p.playerName].games += 1;
         });
     });
 
     const sorted = Object.values(playerScores).sort((a, b) => b.totalScore - a.totalScore);
-    return sorted[0]; 
+    return sorted[0] || null; // Return null if no players found
 };
 
-// --- [FIXED] Manual POG Calculation with Sanitizer ---
+// --- HELPER: Manual POG Calculation ---
 const calculateManualPog = (picksBlue, picksRed, winnerSide, gameMinutes) => {
     const winningPicks = winnerSide === 'BLUE' ? picksBlue : picksRed;
     
@@ -67,14 +80,13 @@ const calculateManualPog = (picksBlue, picksRed, winnerSide, gameMinutes) => {
     const candidates = winningPicks.map(p => {
         const safeStats = p.stats || { kills: 0, deaths: 0, assists: 0, damage: 0 };
         
-        // Prioritize Live 'k' values, fallback to 'stats.kills'
         const k = p.k ?? safeStats.kills ?? 0;
         const d = p.d ?? safeStats.deaths ?? 0;
         const a = p.a ?? safeStats.assists ?? 0;
         const damage = p.damage ?? safeStats.damage ?? 0;
         const gold = p.currentGold || 5000;
         
-        const dpm = damage / (Math.max(1, gameMinutes)); // Prevent division by zero
+        const dpm = damage / (Math.max(1, gameMinutes));
         const safeD = d === 0 ? 1 : d;
         
         let score = ((k + a) / safeD * 3) + (dpm / 100) + (gold / 1000) + (a * 1);
@@ -126,7 +138,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
       players: [] 
     });
 
-    // [FIX] Use Ref to track liveStats for the interval closure
+    // [FIX] Ref to track live stats for intervals (POG calculation)
     const liveStatsRef = useRef(liveStats);
     useEffect(() => {
         liveStatsRef.current = liveStats;
@@ -186,7 +198,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
       
                   const enrichPlayer = (p, teamRoster, side) => {
                       const rosterData = teamRoster.find(r => r.이름 === p.playerName);
-                      const safeData = rosterData || { 이름: p.playerName, 포지션: 'TOP', 상세: { 성장: 50, 라인전: 50, 무력: 50, 안정성: 50, 운영: 50, 한타: 50 } };
+                      const safeData = rosterData || { 이름: p.playerName, 포지션: 'TOP', 팀: side === 'BLUE' ? blueTeam.name : redTeam.name, 상세: { 성장: 50, 라인전: 50, 무력: 50, 안정성: 50, 운영: 50, 한타: 50 } };
                       return { 
                           ...p, side: side, k: 0, d: 0, a: 0, currentGold: 500, lvl: 1, xp: 0, 
                           playerData: safeData, 
@@ -278,14 +290,16 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 return () => clearInterval(timer);
             }
         } 
-        // --- AUTO MODE (FIXED) ---
-        else if (simulationData && simulationData.bans && simulationData.picks) {
+        // --- AUTO MODE (FIXED: RELAXED CHECKS) ---
+        else if (simulationData) {
+            // [FIX] Randomize timing but ensure it triggers
             const triggerTime = Math.floor(Math.random() * 8) + 1; 
             
             const timer = setInterval(() => {
                 setDraftTimer(prev => {
                     if (prev <= triggerTime) {
-                        // [FIX] Calculate Array Index Safely
+                        // [FIX] Count index based on type/side.
+                        // If simulationData missing this item, we skip gracefully instead of stalling.
                         let arrayIndex = 0;
                         for (let i = 0; i < draftStep; i++) {
                             if (DRAFT_SEQUENCE[i].side === stepInfo.side && DRAFT_SEQUENCE[i].type === stepInfo.type) {
@@ -295,15 +309,22 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
 
                         let champName = null;
                         if (stepInfo.type === 'BAN') {
-                            const bans = stepInfo.side === 'BLUE' ? simulationData.bans.A : simulationData.bans.B;
+                            const bans = stepInfo.side === 'BLUE' ? simulationData.bans?.A : simulationData.bans?.B;
                             if (bans && bans[arrayIndex]) champName = bans[arrayIndex];
                         } else {
-                            const picks = stepInfo.side === 'BLUE' ? simulationData.picks.A : simulationData.picks.B;
+                            const picks = stepInfo.side === 'BLUE' ? simulationData.picks?.A : simulationData.picks?.B;
                             if (picks && picks[arrayIndex]) champName = picks[arrayIndex].champName;
                         }
 
                         if (champName) {
                             processDraftStep(stepInfo, champName);
+                        } else {
+                            // [FIX] If no data found for this step, just log placeholder and move on.
+                            // This prevents "freezing" if simData is incomplete.
+                            setDraftState(prev => ({
+                                ...prev, 
+                                currentAction: `[${stepInfo.order}] ${stepInfo.side} ${stepInfo.type}: (Skipped)`
+                            }));
                         }
                         
                         setDraftStep(s => s + 1);
@@ -327,8 +348,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 else newState.redBans = [...prev.redBans, champName];
             } else {
                 const currentPicks = stepInfo.side === 'BLUE' ? prev.bluePicks : prev.redPicks;
-                const teamPicks = stepInfo.side === 'BLUE' ? simulationData.picks.A : simulationData.picks.B;
-                const pickData = teamPicks.find(p => p.champName === champName);
+                const teamPicks = stepInfo.side === 'BLUE' ? simulationData.picks?.A : simulationData.picks?.B;
+                const pickData = teamPicks?.find(p => p.champName === champName);
                 
                 const emptyIdx = currentPicks.findIndex(p => p === null);
                 if (emptyIdx !== -1 && pickData) {
@@ -450,12 +471,17 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 const safeChamp = c || activeChampionList.find(ch => ch.role === pos) || activeChampionList[0];
                 const p = roster.find(pl => pl.포지션 === pos);
                 
-                const safePlayerData = p || { 
-                    이름: 'Unknown', 
-                    포지션: pos, 
-                    종합: 75, 
-                    상세: { 라인전: 75, 무력: 75, 한타: 75, 성장: 75, 안정성: 75, 운영: 75 } 
-                };
+                // [FIX] Ensure playerData has '팀' property for POS calculation later
+                const teamName = teamSide === 'BLUE' ? manualTeams.blue.name : manualTeams.red.name;
+                const safePlayerData = p 
+                    ? { ...p, 팀: teamName }
+                    : { 
+                        이름: 'Unknown', 
+                        포지션: pos, 
+                        팀: teamName,
+                        종합: 75, 
+                        상세: { 라인전: 75, 무력: 75, 한타: 75, 성장: 75, 안정성: 75, 운영: 75 } 
+                    };
 
                 return {
                     champName: safeChamp.name || 'Unknown',
@@ -636,9 +662,9 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
               setGameTime(finalSec);
               setLiveStats(st => ({ ...st, kills: simulationData.gameResult.finalKills }));
               
-              // [FIX] Calculate POG using liveStatsRef (latest state) instead of closure state
+              // [FIX] Calculate POG using liveStatsRef (latest state)
               if (isManualMode && !simulationData.pogPlayer) {
-                   const finalStats = liveStatsRef.current; // Access latest stats via Ref
+                   const finalStats = liveStatsRef.current;
                    const manualPog = calculateManualPog(
                        finalStats.players.filter(p => p.side === 'BLUE'),
                        finalStats.players.filter(p => p.side === 'RED'),
@@ -681,8 +707,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
 
     return (
       <div className="fixed inset-0 bg-gray-900 z-[200] flex flex-col text-white font-sans">
-        
-        {/* Header - Always Visible */}
+        {/* Header */}
         <div className="bg-black border-b border-gray-800 flex flex-col shrink-0">
             {globalBanList.length > 0 && (
               <div className="bg-purple-900/50 text-purple-200 text-[10px] text-center py-1 font-bold border-b border-purple-900 flex justify-center gap-4">
@@ -690,7 +715,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                   {globalBanList.map((b, idx) => <span key={idx} className="text-white">{b}</span>)}
               </div>
             )}
-  
             <div className="h-24 flex items-center justify-between px-8">
               <div className="flex flex-col w-1/3">
                    <div className="flex items-center gap-4 mb-2">
@@ -702,11 +726,11 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                       </div>
                    </div>
               </div>
-  
               <div className="flex flex-col items-center justify-center w-1/3 relative">
                   {phase === 'DRAFT' ? (
                       <div className="flex flex-col items-center w-full">
                           <div className="flex items-center gap-4 mb-2">
+                              {/* Blue Bans */}
                               <div className="flex gap-1">
                                   {[0,1,2,3,4].map(i => (
                                       <div key={i} className="w-10 h-10 bg-gray-800 border border-gray-600 rounded flex items-center justify-center">
@@ -717,6 +741,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                   ))}
                               </div>
                               <div className="text-2xl font-black text-yellow-400 w-12 text-center">{Math.ceil(draftTimer)}</div>
+                              {/* Red Bans */}
                               <div className="flex gap-1">
                                   {[0,1,2,3,4].map(i => (
                                       <div key={i} className="w-10 h-10 bg-gray-800 border border-gray-600 rounded flex items-center justify-center">
@@ -749,7 +774,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                       </>
                   )}
               </div>
-  
               <div className="flex flex-col items-end w-1/3">
                    <div className="flex items-center gap-4 mb-2">
                       <div className="flex gap-2">
@@ -763,6 +787,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             </div>
         </div>
   
+        {/* Draft / Game Views (Identical Layout to previous) */}
         {phase === 'DRAFT' ? (
              <div className="flex-1 flex bg-gray-900 p-8 gap-8 items-center justify-center relative overflow-hidden">
                  <div className="absolute inset-0 bg-gradient-to-r from-blue-900/20 to-red-900/20 pointer-events-none"></div>
@@ -1002,7 +1027,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                         </div>
                    </div>
 
-                   {/* POS CARD (Only if Series Ends & BO5) */}
+                   {/* POS CARD */}
                    {match.format === 'BO5' && 
                      (winsA + (simulationData.winnerName === teamA.name ? 1 : 0) >= targetWins || 
                       winsB + (simulationData.winnerName === teamB.name ? 1 : 0) >= targetWins) && (
@@ -1011,22 +1036,43 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                 SERIES MVP
                             </div>
                             
-                            {/* Calculate POS on the fly */}
                             {(() => {
                                 const winnerName = (winsA + (simulationData.winnerName === teamA.name ? 1 : 0) >= targetWins) ? teamA.name : teamB.name;
-                                const posPlayer = calculatePOS(matchHistory, simulationData, winnerName);
+                                
+                                // [FIX] Manual mode creates history at the END of this render. 
+                                // So we need to inject the current game manually with LIVE stats for POS calculation.
+                                const currentSetWithStats = {
+                                    ...simulationData,
+                                    winnerName: simulationData.winnerName,
+                                    // Merge live stats into picks so POS calculator sees damage/kills
+                                    picks: {
+                                        A: simulationData.picks.A.map(p => {
+                                            const lp = liveStats.players.find(x => x.playerName === p.playerName);
+                                            return lp ? { ...p, ...lp, stats: lp.stats || p.stats } : p;
+                                        }),
+                                        B: simulationData.picks.B.map(p => {
+                                            const lp = liveStats.players.find(x => x.playerName === p.playerName);
+                                            return lp ? { ...p, ...lp, stats: lp.stats || p.stats } : p;
+                                        })
+                                    }
+                                };
+
+                                const posPlayer = calculatePOS(matchHistory, currentSetWithStats, winnerName);
+                                
+                                if (!posPlayer) return <div className="text-gray-400 mt-10">Calculating MVP...</div>;
+
                                 return (
                                     <>
                                         <div className="w-24 h-24 rounded-full bg-purple-800 border-2 border-purple-300 mb-4 flex items-center justify-center shadow-[0_0_15px_rgba(168,85,247,0.5)]">
                                             <span className="text-3xl">👑</span>
                                         </div>
-                                        <div className="text-2xl font-black text-white">{posPlayer?.playerName}</div>
-                                        <div className="text-sm text-purple-300 mb-2">{posPlayer?.playerData?.포지션 || 'Player'}</div>
+                                        <div className="text-2xl font-black text-white">{posPlayer.playerName}</div>
+                                        <div className="text-sm text-purple-300 mb-2">{posPlayer.playerData?.포지션 || 'Player'}</div>
                                         <div className="mt-2 text-center text-gray-300 text-sm italic">
                                             "Series MVP"
                                         </div>
                                         <div className="mt-4 bg-black/40 px-4 py-2 rounded text-purple-200 font-mono text-sm">
-                                            Score: {posPlayer?.totalScore?.toFixed(1)}
+                                            Score: {posPlayer.totalScore?.toFixed(1)}
                                         </div>
                                     </>
                                 );
@@ -1051,10 +1097,23 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                     const killsA = isBlueA ? liveStats.kills.BLUE : liveStats.kills.RED;
                     const killsB = isBlueA ? liveStats.kills.RED : liveStats.kills.BLUE;
 
+                    // [FIX] CRITICAL: Merge Live Stats into History Item
+                    // Otherwise history has 0 kills/damage and POS calc fails next time
+                    const mergedPicks = {
+                        A: simulationData.picks.A.map(p => {
+                            const lp = liveStats.players.find(x => x.playerName === p.playerName);
+                            return lp ? { ...p, ...lp, stats: lp.stats || p.stats } : p;
+                        }),
+                        B: simulationData.picks.B.map(p => {
+                            const lp = liveStats.players.find(x => x.playerName === p.playerName);
+                            return lp ? { ...p, ...lp, stats: lp.stats || p.stats } : p;
+                        })
+                    };
+
                     const histItem = { 
                         set: currentSet, 
                         winner: simulationData.winnerName, 
-                        picks: simulationData.picks, 
+                        picks: mergedPicks, // Use merged picks
                         bans: simulationData.bans, 
                         logs: simulationData.logs,
                         pogPlayer: simulationData.pogPlayer,
@@ -1072,7 +1131,9 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                         
                         let posData = null;
                         if (match.format === 'BO5') {
-                            posData = calculatePOS(matchHistory, simulationData, winnerName);
+                            // Calculate POS using the FULL history including this game
+                            // We pass null for currentSetData because newHist already has it
+                            posData = calculatePOS(newHist, null, winnerName);
                         }
 
                         onMatchComplete(match, { 
