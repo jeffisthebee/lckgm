@@ -59,6 +59,7 @@ const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
 };
 
 // --- [FIXED] Manual POG Calculation with Sanitizer ---
+// Prevents crash by handling undefined stats gracefully
 const calculateManualPog = (picksBlue, picksRed, winnerSide, gameMinutes) => {
     const winningPicks = winnerSide === 'BLUE' ? picksBlue : picksRed;
     
@@ -68,6 +69,7 @@ const calculateManualPog = (picksBlue, picksRed, winnerSide, gameMinutes) => {
         // Sanitizer: Ensure we have numbers, not undefined
         const safeStats = p.stats || { kills: 0, deaths: 0, assists: 0, damage: 0 };
         
+        // Prioritize Live 'k' values, fallback to 'stats.kills'
         const k = p.k ?? safeStats.kills ?? 0;
         const d = p.d ?? safeStats.deaths ?? 0;
         const a = p.a ?? safeStats.assists ?? 0;
@@ -82,6 +84,7 @@ const calculateManualPog = (picksBlue, picksRed, winnerSide, gameMinutes) => {
         const role = p.playerData?.포지션 || 'MID';
         if (['JGL', '정글', 'SUP', '서포터'].includes(role)) score *= 1.15;
         
+        // Return 0 if NaN to prevent sort crash
         return { ...p, pogScore: isNaN(score) ? 0 : score, kdaVal: (k+a)/safeD, dpm };
     });
     
@@ -96,7 +99,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     const [winsA, setWinsA] = useState(0);
     const [winsB, setWinsB] = useState(0);
     
-    // Phase: READY -> LOADING -> DRAFT -> GAME -> SET_RESULT
     const [phase, setPhase] = useState('READY'); 
     
     const [simulationData, setSimulationData] = useState(null);
@@ -110,20 +112,14 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     const [selectedChampion, setSelectedChampion] = useState(null);
     const [filterRole, setFilterRole] = useState('TOP');
     const [draftLogs, setDraftLogs] = useState([]);
-    // -------------------------
 
     // --- DRAFT STATE ---
     const [draftStep, setDraftStep] = useState(0); 
     const [draftTimer, setDraftTimer] = useState(15);
     const [draftState, setDraftState] = useState({
-        blueBans: [],
-        redBans: [],
-        bluePicks: Array(5).fill(null),
-        redPicks: Array(5).fill(null),
-        currentAction: 'Starting Draft...'
+        blueBans: [], redBans: [], bluePicks: Array(5).fill(null), redPicks: Array(5).fill(null), currentAction: 'Starting Draft...'
     });
 
-    // Real-time stats for UI
     const [gameTime, setGameTime] = useState(0);
     const [playbackSpeed, setPlaybackSpeed] = useState(1);
     const [liveStats, setLiveStats] = useState({
@@ -137,7 +133,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     const [matchHistory, setMatchHistory] = useState([]);
     const targetWins = match.format === 'BO5' ? 3 : 2;
   
-    // 1. Initialize Set Simulation or Manual Setup
+    // 1. Initialize Set
     const startSet = useCallback(() => {
       setPhase('LOADING');
       setResultProcessed(false);
@@ -181,7 +177,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                   setManualTeams({ blue: blueTeam, red: redTeam });
                   setPhase('DRAFT');
               } else {
-                  // AUTO: Run Full Simulation Upfront
+                  // AUTO: Run Full Simulation
                   const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
                   if (!result || !result.picks) throw new Error("Draft failed");
       
@@ -226,6 +222,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     }, [phase, startSet]);
 
     // --- [FIXED] DRAFT PHASE LOGIC (Auto Mode Replay) ---
+    // Now uses INDEX-based lookup instead of Log Parsing to prevent freezing
     useEffect(() => {
         if (phase !== 'DRAFT') return;
 
@@ -239,6 +236,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         }
 
         if (isManualMode) {
+            // ... (Manual Draft Logic - Same as before)
             const stepInfo = DRAFT_SEQUENCE[draftStep];
             const actingTeamSide = stepInfo.side; 
             const actingTeamObj = actingTeamSide === 'BLUE' ? manualTeams.blue : manualTeams.red;
@@ -278,39 +276,74 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 return () => clearInterval(timer);
             }
         } 
-        
         else if (simulationData) {
-            // [FIX] Robust Auto Replay - No freezing
+            // [FIX] Auto Mode: Index-based lookup (Robust)
             const triggerTime = Math.floor(Math.random() * 8) + 1; 
             const timer = setInterval(() => {
                 setDraftTimer(prev => {
                     if (prev <= triggerTime) {
                         const stepInfo = DRAFT_SEQUENCE[draftStep];
                         
-                        // Try to find the exact log to visualize
-                        let logEntry = simulationData.logs.find(l => l.startsWith(`[${stepInfo.order}]`));
-                        
-                        // If log missing, don't crash, just proceed
-                        if (logEntry) {
-                            processDraftStepLog(stepInfo, logEntry);
+                        // [FIX] Calculate Array Index based on DRAFT_SEQUENCE
+                        // Count how many actions of this type (BAN/PICK) for this SIDE happened before this step
+                        let arrayIndex = 0;
+                        for (let i = 0; i < draftStep; i++) {
+                            if (DRAFT_SEQUENCE[i].side === stepInfo.side && DRAFT_SEQUENCE[i].type === stepInfo.type) {
+                                arrayIndex++;
+                            }
+                        }
+
+                        let champName = null;
+                        if (stepInfo.type === 'BAN') {
+                            const bans = stepInfo.side === 'BLUE' ? simulationData.bans.A : simulationData.bans.B;
+                            champName = bans[arrayIndex];
                         } else {
-                            // Optionally could infer: "Pick #1", etc.
-                            console.warn(`Skipping visual for step ${stepInfo.order}`);
+                            const picks = stepInfo.side === 'BLUE' ? simulationData.picks.A : simulationData.picks.B;
+                            champName = picks[arrayIndex]?.champName;
+                        }
+
+                        // Update State directly
+                        if (champName) {
+                            processDraftStep(stepInfo, champName);
                         }
                         
-                        // [CRITICAL] Always advance step to prevent infinite loop
-                        setDraftStep(s => s + 1); 
+                        setDraftStep(s => s + 1);
                         return 15; 
                     }
                     return prev - 1;
                 });
-            }, 50); // Faster speed for better UX
+            }, 50); 
             return () => clearInterval(timer);
         }
 
     }, [phase, draftStep, simulationData, isManualMode, manualTeams, manualPicks]);
 
-    // --- MANUAL MODE HELPER FUNCTIONS ---
+    // --- HELPER: Update Draft UI State ---
+    const processDraftStep = (stepInfo, champName) => {
+        const logMsg = `[${stepInfo.order}] ${stepInfo.side} ${stepInfo.type}: ${champName}`;
+        setDraftState(prev => {
+            const newState = { ...prev, currentAction: logMsg };
+            if (stepInfo.type === 'BAN') {
+                if (stepInfo.side === 'BLUE') newState.blueBans = [...prev.blueBans, champName]; 
+                else newState.redBans = [...prev.redBans, champName];
+            } else {
+                const currentPicks = stepInfo.side === 'BLUE' ? prev.bluePicks : prev.redPicks;
+                const teamPicks = stepInfo.side === 'BLUE' ? simulationData.picks.A : simulationData.picks.B;
+                const pickData = teamPicks.find(p => p.champName === champName);
+                
+                const emptyIdx = currentPicks.findIndex(p => p === null);
+                if (emptyIdx !== -1 && pickData) {
+                    const newPicks = [...currentPicks]; 
+                    newPicks[emptyIdx] = pickData;
+                    if (stepInfo.side === 'BLUE') newState.bluePicks = newPicks; 
+                    else newState.redPicks = newPicks;
+                }
+            }
+            return newState;
+        });
+    };
+
+    // --- MANUAL MODE CPU LOGIC ---
     const handleCpuTurn = (stepInfo, team, side) => {
         const availableChamps = activeChampionList.filter(c => !manualLockedChamps.has(c.name));
         let selectedChamp = null;
@@ -411,7 +444,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     // =========================================================================
     const finalizeManualDraft = () => {
         if (!manualTeams.blue || !manualTeams.red) {
-            console.error("Critical Error: Teams not initialized");
             alert("Error: Teams not initialized. Please restart.");
             return;
         }
@@ -505,36 +537,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             console.error("CRITICAL SIMULATION ERROR:", error);
             alert(`Simulation Failed: ${error.message}`);
         }
-    };
-
-    const processDraftStepLog = (stepInfo, logEntry) => {
-        let champName = 'Unknown';
-        if (logEntry.includes('🚫')) {
-            champName = logEntry.split('🚫')[1].trim();
-        } else if (logEntry.includes('✅')) {
-            champName = logEntry.split('✅')[1].split('(')[0].trim();
-        }
-
-        setDraftState(prev => {
-            const newState = { ...prev, currentAction: logEntry.split(']')[1] };
-            if (stepInfo.type === 'BAN') {
-                if (stepInfo.side === 'BLUE') newState.blueBans = [...prev.blueBans, champName];
-                else newState.redBans = [...prev.redBans, champName];
-            } else {
-                const currentPicks = stepInfo.side === 'BLUE' ? prev.bluePicks : prev.redPicks;
-                const teamPicks = stepInfo.side === 'BLUE' ? simulationData.picks.A : simulationData.picks.B;
-                const pickData = teamPicks.find(p => p.champName === champName);
-                
-                const emptyIdx = currentPicks.findIndex(p => p === null);
-                if (emptyIdx !== -1 && pickData) {
-                    const newPicks = [...currentPicks];
-                    newPicks[emptyIdx] = pickData;
-                    if (stepInfo.side === 'BLUE') newState.bluePicks = newPicks;
-                    else newState.redPicks = newPicks;
-                }
-            }
-            return newState;
-        });
     };
 
     const skipDraft = () => {
@@ -1053,13 +1055,10 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                     setWinsA(newA); 
                     setWinsB(newB);
                     
-                    // [FIX] Calculate Kill Scores for History
-                    // We need to map BLUE/RED kills to Team A/Team B
                     const isBlueA = simulationData.blueTeam.name === teamA.name;
                     const killsA = isBlueA ? liveStats.kills.BLUE : liveStats.kills.RED;
                     const killsB = isBlueA ? liveStats.kills.RED : liveStats.kills.BLUE;
 
-                    // [UPDATED] Save History Item
                     const histItem = { 
                         set: currentSet, 
                         winner: simulationData.winnerName, 
@@ -1069,8 +1068,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                         pogPlayer: simulationData.pogPlayer,
                         gameTime: simulationData.gameTime || "30분 00초",
                         totalMinutes: simulationData.totalMinutes || 30,
-                        
-                        // [FIX] Save the Kill Scores here!
                         scores: { A: killsA, B: killsB } 
                     };
 
