@@ -59,14 +59,12 @@ const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
 };
 
 // --- [FIXED] Manual POG Calculation with Sanitizer ---
-// Prevents crash by handling undefined stats gracefully
 const calculateManualPog = (picksBlue, picksRed, winnerSide, gameMinutes) => {
     const winningPicks = winnerSide === 'BLUE' ? picksBlue : picksRed;
     
     if (!Array.isArray(winningPicks) || winningPicks.length === 0) return null;
 
     const candidates = winningPicks.map(p => {
-        // Sanitizer: Ensure we have numbers, not undefined
         const safeStats = p.stats || { kills: 0, deaths: 0, assists: 0, damage: 0 };
         
         // Prioritize Live 'k' values, fallback to 'stats.kills'
@@ -76,7 +74,7 @@ const calculateManualPog = (picksBlue, picksRed, winnerSide, gameMinutes) => {
         const damage = p.damage ?? safeStats.damage ?? 0;
         const gold = p.currentGold || 5000;
         
-        const dpm = damage / (gameMinutes || 30);
+        const dpm = damage / (Math.max(1, gameMinutes)); // Prevent division by zero
         const safeD = d === 0 ? 1 : d;
         
         let score = ((k + a) / safeD * 3) + (dpm / 100) + (gold / 1000) + (a * 1);
@@ -84,7 +82,6 @@ const calculateManualPog = (picksBlue, picksRed, winnerSide, gameMinutes) => {
         const role = p.playerData?.포지션 || 'MID';
         if (['JGL', '정글', 'SUP', '서포터'].includes(role)) score *= 1.15;
         
-        // Return 0 if NaN to prevent sort crash
         return { ...p, pogScore: isNaN(score) ? 0 : score, kdaVal: (k+a)/safeD, dpm };
     });
     
@@ -128,6 +125,12 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
       towers: { BLUE: 0, RED: 0 },
       players: [] 
     });
+
+    // [FIX] Use Ref to track liveStats for the interval closure
+    const liveStatsRef = useRef(liveStats);
+    useEffect(() => {
+        liveStatsRef.current = liveStats;
+    }, [liveStats]);
   
     const [globalBanList, setGlobalBanList] = useState(externalGlobalBans || []);
     const [matchHistory, setMatchHistory] = useState([]);
@@ -187,7 +190,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                       return { 
                           ...p, side: side, k: 0, d: 0, a: 0, currentGold: 500, lvl: 1, xp: 0, 
                           playerData: safeData, 
-                          // [FIX] Initialize stats object here to prevent crash later
                           stats: { kills: 0, deaths: 0, assists: 0, damage: 0 }
                       };
                   };
@@ -221,8 +223,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
       if (phase === 'READY') startSet();
     }, [phase, startSet]);
 
-    // --- [FIXED] DRAFT PHASE LOGIC (Auto Mode Replay) ---
-    // Now uses INDEX-based lookup instead of Log Parsing to prevent freezing
+    // --- DRAFT PHASE LOGIC ---
     useEffect(() => {
         if (phase !== 'DRAFT') return;
 
@@ -235,9 +236,10 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             return;
         }
 
+        const stepInfo = DRAFT_SEQUENCE[draftStep];
+
+        // --- MANUAL MODE ---
         if (isManualMode) {
-            // ... (Manual Draft Logic - Same as before)
-            const stepInfo = DRAFT_SEQUENCE[draftStep];
             const actingTeamSide = stepInfo.side; 
             const actingTeamObj = actingTeamSide === 'BLUE' ? manualTeams.blue : manualTeams.red;
             const isPlayerTurn = actingTeamObj.name === simOptions.playerTeamName;
@@ -276,16 +278,14 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 return () => clearInterval(timer);
             }
         } 
-        else if (simulationData) {
-            // [FIX] Auto Mode: Index-based lookup (Robust)
+        // --- AUTO MODE (FIXED) ---
+        else if (simulationData && simulationData.bans && simulationData.picks) {
             const triggerTime = Math.floor(Math.random() * 8) + 1; 
+            
             const timer = setInterval(() => {
                 setDraftTimer(prev => {
                     if (prev <= triggerTime) {
-                        const stepInfo = DRAFT_SEQUENCE[draftStep];
-                        
-                        // [FIX] Calculate Array Index based on DRAFT_SEQUENCE
-                        // Count how many actions of this type (BAN/PICK) for this SIDE happened before this step
+                        // [FIX] Calculate Array Index Safely
                         let arrayIndex = 0;
                         for (let i = 0; i < draftStep; i++) {
                             if (DRAFT_SEQUENCE[i].side === stepInfo.side && DRAFT_SEQUENCE[i].type === stepInfo.type) {
@@ -296,13 +296,12 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                         let champName = null;
                         if (stepInfo.type === 'BAN') {
                             const bans = stepInfo.side === 'BLUE' ? simulationData.bans.A : simulationData.bans.B;
-                            champName = bans[arrayIndex];
+                            if (bans && bans[arrayIndex]) champName = bans[arrayIndex];
                         } else {
                             const picks = stepInfo.side === 'BLUE' ? simulationData.picks.A : simulationData.picks.B;
-                            champName = picks[arrayIndex]?.champName;
+                            if (picks && picks[arrayIndex]) champName = picks[arrayIndex].champName;
                         }
 
-                        // Update State directly
                         if (champName) {
                             processDraftStep(stepInfo, champName);
                         }
@@ -439,9 +438,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         setDraftTimer(25); 
     };
 
-    // =========================================================================
-    // FINALIZE MANUAL DRAFT (SAFE VERSION)
-    // =========================================================================
     const finalizeManualDraft = () => {
         if (!manualTeams.blue || !manualTeams.red) {
             alert("Error: Teams not initialized. Please restart.");
@@ -451,7 +447,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         const mapToEngineFormat = (sidePicks, roster, teamSide) => {
             return ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(pos => {
                 const c = sidePicks[pos];
-                // Safe fallback if no champion selected
                 const safeChamp = c || activeChampionList.find(ch => ch.role === pos) || activeChampionList[0];
                 const p = roster.find(pl => pl.포지션 === pos);
                 
@@ -479,7 +474,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                     xp: 0,
                     deadUntil: 0,
                     flashEndTime: 0,
-                    // [FIX] Init stats here to prevent crash
                     stats: { kills: 0, deaths: 0, assists: 0, damage: 0, takenDamage: 0 }
                 };
             }).filter(Boolean);
@@ -497,7 +491,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             const safeOptions = simOptions || { difficulty: 'normal', playerTeamName: '' };
             const result = runGameTickEngine(manualTeams.blue, manualTeams.red, picksBlueDetailed, picksRedDetailed, safeOptions);
             
-            // 4. Set Data
             setSimulationData({
                 winnerName: result.winnerName,
                 gameResult: result,
@@ -510,12 +503,10 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 blueTeam: manualTeams.blue,
                 redTeam: manualTeams.red,
                 totalSeconds: result.totalSeconds,
-                // [FIX] Save Game Time here for consistency in history
                 gameTime: result.finalTimeStr || `${result.totalMinutes}분 00초`,
-                
                 picks: { A: picksBlueDetailed, B: picksRedDetailed },
                 bans: { A: draftState.blueBans, B: draftState.redBans },
-                pogPlayer: null, // Will calc later
+                pogPlayer: null, 
                 usedChamps: [...picksBlueDetailed, ...picksRedDetailed].map(p => p.champName) 
             });
         
@@ -525,7 +516,9 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 towers: { BLUE: 0, RED: 0 },
                 players: [...picksBlueDetailed, ...picksRedDetailed].map(p => ({
                     ...p,
-                    k: 0, d: 0, a: 0, lvl: 1, xp: 0, currentGold: 500
+                    k: 0, d: 0, a: 0, lvl: 1, xp: 0, currentGold: 500,
+                    // Ensure nested stats exist
+                    stats: { kills: 0, deaths: 0, assists: 0, damage: 0 } 
                 }))
             });
         
@@ -576,7 +569,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     
             if (currentLogs.length > 0) {
                 setDisplayLogs(prevLogs => [...prevLogs, ...currentLogs].slice(-15));
-                // Log Parsing logic
                 currentLogs.forEach(l => {
                     if (l.includes('⚔️') || l.includes('🛡️')) {
                         try {
@@ -599,7 +591,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                 if (killer && victim && killer.side !== victim.side) {
                                     killer.k++; nextStats.kills[killer.side]++; killer.currentGold += 300; victim.d++; killer.xp += 100 + (victim.lvl * 25);
                                     
-                                    // [FIX] Update NESTED STATS for Manual Mode Stability
                                     if (!killer.stats) killer.stats = { kills:0, deaths:0, assists:0, damage:0 };
                                     if (!victim.stats) victim.stats = { kills:0, deaths:0, assists:0, damage:0 };
                                     
@@ -645,11 +636,12 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
               setGameTime(finalSec);
               setLiveStats(st => ({ ...st, kills: simulationData.gameResult.finalKills }));
               
-              // [FIX] If Manual Mode, Ensure POG is calculated NOW
+              // [FIX] Calculate POG using liveStatsRef (latest state) instead of closure state
               if (isManualMode && !simulationData.pogPlayer) {
+                   const finalStats = liveStatsRef.current; // Access latest stats via Ref
                    const manualPog = calculateManualPog(
-                       liveStats.players.filter(p => p.side === 'BLUE'),
-                       liveStats.players.filter(p => p.side === 'RED'),
+                       finalStats.players.filter(p => p.side === 'BLUE'),
+                       finalStats.players.filter(p => p.side === 'RED'),
                        simulationData.winnerName === manualTeams.blue.name ? 'BLUE' : 'RED',
                        Math.floor(finalSec / 60)
                    );
@@ -975,7 +967,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             </div>
         )}
   
-        {/* 3. [UPDATED] Result Overlay with POG/POS */}
+        {/* Result Overlay */}
         {phase === 'SET_RESULT' && (
            <div className="absolute inset-0 bg-black/90 z-50 flex flex-col items-center justify-center animate-fade-in p-8">
                <h1 className="text-6xl font-black mb-4 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-red-400">
