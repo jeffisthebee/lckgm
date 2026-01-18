@@ -753,9 +753,10 @@ const getOvrBadgeStyle = (ovr) => {
       { id: 'roster', name: '로스터', icon: '👥' },
       { id: 'standings', name: '순위표', icon: '🏆' },
       { id: 'playoffs', name: '플레이오프', icon: '👑' },
-      { id: 'finance', name: '재정', icon: '💰' }, 
-      { id: 'meta', name: '메타 분석', icon: '🔥' },
-      { id: 'schedule', name: '일정', icon: '📅' },
+      { id: 'finance', name: '재정', icon: '💰' },
+      { id: 'meta', name: '메타 분석', icon: '🧠' },
+      { id: 'schedule', name: '전체 일정', icon: '📅' },
+      { id: 'team_schedule', name: '팀 일정', icon: '📆' },
       { id: 'stats', name: '리그 통계', icon: '📈' },
     ];
     
