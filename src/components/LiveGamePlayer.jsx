@@ -113,6 +113,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     const [selectedChampion, setSelectedChampion] = useState(null);
     const [filterRole, setFilterRole] = useState('TOP');
     const [draftLogs, setDraftLogs] = useState([]);
+    const [userSelectedRole, setUserSelectedRole] = useState(false); // NEW: track if user explicitly chose a role
     // -------------------------
 
     // --- DRAFT STATE ---
@@ -145,6 +146,11 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     // safe utility
     const safeArray = (v) => Array.isArray(v) ? v : [];
     const ROLE_ORDER = ['TOP','JGL','MID','ADC','SUP'];
+
+    // reset userSelectedRole when draftStep advances (so auto-suggest can re-enable next pick)
+    useEffect(() => {
+      setUserSelectedRole(false);
+    }, [draftStep]);
   
     // 1. Initialize Set Simulation or Manual Setup
     const startSet = useCallback(() => {
@@ -163,6 +169,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
       setManualPicks({ blue: {}, red: {} });
       setManualLockedChamps(new Set(globalBanList)); 
       setSelectedChampion(null);
+      setUserSelectedRole(false);
 
       setTimeout(() => {
           try {
@@ -261,7 +268,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             const actingTeamObj = actingTeamSide === 'BLUE' ? manualTeams.blue : manualTeams.red;
             const isPlayerTurn = actingTeamObj?.name === simOptions?.playerTeamName;
 
-            if (isPlayerTurn && stepInfo.type === 'PICK') {
+            // Auto-suggest role only if user hasn't explicitly chosen role
+            if (isPlayerTurn && stepInfo.type === 'PICK' && !userSelectedRole) {
                 const myPicks = actingTeamSide === 'BLUE' ? manualPicks.blue : manualPicks.red;
                 const roles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
                 const neededRole = roles.find(r => !myPicks[r]);
@@ -316,7 +324,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             return () => clearInterval(timer);
         }
 
-    }, [phase, draftStep, simulationData, isManualMode, manualTeams, manualPicks, filterRole]);
+    }, [phase, draftStep, simulationData, isManualMode, manualTeams, manualPicks, filterRole, userSelectedRole]);
 
     // --- MANUAL MODE HELPER FUNCTIONS ---
     const handleCpuTurn = (stepInfo, team, side) => {
@@ -377,6 +385,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         
         commitDraftAction(stepInfo, selectedChampion, team, side);
         setSelectedChampion(null);
+        // player explicitly locked a champ -> mark role chosen by user so auto-suggest won't override
+        setUserSelectedRole(true);
     };
 
     const commitDraftAction = (stepInfo, champ, team, side) => {
@@ -392,22 +402,22 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 if (side === 'BLUE') newState.blueBans = [...prev.blueBans, champ.name];
                 else newState.redBans = [...prev.redBans, champ.name];
             } else {
-                // PICK: place into the slot that corresponds to the champion's role (so manual picks can be out-of-order)
-                const roleIdx = ROLE_ORDER.indexOf(champ.role || filterRole || 'MID');
+                // PICK: we will place picks in order slots (Pick 1..5), but we also support picking by role.
+                // This preserves the "pick order shown in UI", while allowing the user to choose which role the champ will be for.
                 const teamPicks = side === 'BLUE' ? prev.bluePicks.slice() : prev.redPicks.slice();
 
-                // If desired role index is valid and empty, put it there
-                if (roleIdx >= 0 && teamPicks[roleIdx] === null) {
-                    teamPicks[roleIdx] = { champName: champ.name, playerName: (team?.roster || []).find(p => p.포지션 === (champ.role || filterRole))?.이름 || 'Unknown', tier: champ.tier };
+                // find first null slot (pick order)
+                const emptyIdx = teamPicks.findIndex(p => p === null);
+                const chosenRole = champ.role || filterRole || 'MID';
+
+                const playerName = (team?.roster || []).find(p => p.포지션 === chosenRole)?.이름 || 'Unknown';
+                const pickObj = { champName: champ.name, playerName, tier: champ.tier, role: chosenRole };
+
+                if (emptyIdx !== -1) {
+                    teamPicks[emptyIdx] = pickObj;
                 } else {
-                    // Fallback: first null slot (preserve previous behavior if role slot occupied)
-                    const emptyIdx = teamPicks.findIndex(p => p === null);
-                    if (emptyIdx !== -1) {
-                        teamPicks[emptyIdx] = { champName: champ.name, playerName: (team?.roster || []).find(p => p.포지션 === (champ.role || filterRole))?.이름 || 'Unknown', tier: champ.tier };
-                    } else {
-                        // As last resort, overwrite the role slot
-                        if (roleIdx >= 0) teamPicks[roleIdx] = { champName: champ.name, playerName: (team?.roster || []).find(p => p.포지션 === (champ.role || filterRole))?.이름 || 'Unknown', tier: champ.tier };
-                    }
+                    // fallback: overwrite last slot if none empty
+                    teamPicks[teamPicks.length - 1] = pickObj;
                 }
 
                 if (side === 'BLUE') newState.bluePicks = teamPicks;
@@ -425,6 +435,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             }));
         }
 
+        // advance the draft step and reset userSelectedRole will be handled by effect on draftStep
         setDraftStep(prev => prev + 1);
         setDraftTimer(25); 
     };
@@ -441,6 +452,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         }
 
         const mapToEngineFormat = (sidePicks, roster, teamSide) => {
+            // sidePicks here is mapping by role (manualPicks) -- ensure all roles exist
             return ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(pos => {
                 const c = sidePicks[pos];
                 // Safe fallback if no champion selected
@@ -836,7 +848,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                      {['TOP','JGL','MID','ADC','SUP'].map(r => (
                                          <button 
                                             key={r} 
-                                            onClick={() => setFilterRole(r)}
+                                            onClick={() => { setFilterRole(r); setUserSelectedRole(true); }}
                                             className={`px-4 py-2 rounded font-bold text-sm transition ${filterRole === r ? 'bg-yellow-500 text-black' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}
                                          >
                                              {r}
@@ -857,7 +869,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                         <span className="text-xs text-blue-200">({recommendedChamp.tier}티어)</span>
                                     </div>
                                     <button 
-                                        onClick={() => setSelectedChampion(recommendedChamp)}
+                                        onClick={() => { setSelectedChampion({ ...recommendedChamp, role: filterRole }); }}
                                         className="ml-auto text-xs bg-blue-600 px-3 py-1 rounded hover:bg-blue-500"
                                     >
                                         선택
@@ -877,7 +889,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                             <button 
                                                 key={champ.id}
                                                 disabled={isLocked}
-                                                onClick={() => setSelectedChampion(champ)}
+                                                onClick={() => setSelectedChampion({ ...champ, role: filterRole })}
                                                 className={`relative group flex flex-col items-center p-2 rounded border transition ${
                                                     isLocked ? 'opacity-30 grayscale cursor-not-allowed border-transparent' : 
                                                     isSelected ? 'bg-yellow-500/20 border-yellow-500' : 
