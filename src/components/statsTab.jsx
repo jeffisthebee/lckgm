@@ -1,7 +1,7 @@
 // src/components/StatsTab.jsx
 import React, { useState, useMemo } from 'react';
 import playerList from '../data/players.json';
-import { championList } from '../data/constants';
+
 
 // Utility: safe array
 const safeArray = (v) => Array.isArray(v) ? v : [];
