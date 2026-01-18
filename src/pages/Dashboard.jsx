@@ -17,7 +17,7 @@ import MetaTab from '../components/MetaTab';
 import FinanceTab from '../components/FinanceTab';
 import ScheduleTab from '../components/ScheduleTab';
 import PlayoffTab from '../components/PlayoffTab';
-import StatsTab from '../components/StatsTab'; // NEW
+import StatsTab from '../components/statsTab'; // NEW
 
 // Helper functions (Paste getLeagues, updateLeague, etc here if they aren't used elsewhere)
 const getLeagues = () => { const s = localStorage.getItem('lckgm_leagues'); return s ? JSON.parse(s) : []; };
