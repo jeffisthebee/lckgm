@@ -144,6 +144,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
 
     // safe utility
     const safeArray = (v) => Array.isArray(v) ? v : [];
+    const ROLE_ORDER = ['TOP','JGL','MID','ADC','SUP'];
   
     // 1. Initialize Set Simulation or Manual Setup
     const startSet = useCallback(() => {
@@ -358,6 +359,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             } else {
                 const neededRole = remainingRoles[0] || 'MID';
                 selectedChamp = getRecommendedChampion(neededRole, [], availableChamps);
+                // Ensure role is set for the champ object
+                selectedChamp = { ...selectedChamp, role: neededRole };
             }
         }
     
@@ -389,23 +392,36 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 if (side === 'BLUE') newState.blueBans = [...prev.blueBans, champ.name];
                 else newState.redBans = [...prev.redBans, champ.name];
             } else {
-                const teamPicks = side === 'BLUE' ? prev.bluePicks : prev.redPicks;
-                const emptyIdx = teamPicks.findIndex(p => p === null);
-                if (emptyIdx !== -1) {
-                    const newPicks = [...teamPicks];
-                    const player = (team?.roster || []).find(p => p.포지션 === champ.role) || { 이름: 'Unknown' };
-                    newPicks[emptyIdx] = { champName: champ.name, playerName: player.이름, tier: champ.tier };
-                    if (side === 'BLUE') newState.bluePicks = newPicks;
-                    else newState.redPicks = newPicks;
+                // PICK: place into the slot that corresponds to the champion's role (so manual picks can be out-of-order)
+                const roleIdx = ROLE_ORDER.indexOf(champ.role || filterRole || 'MID');
+                const teamPicks = side === 'BLUE' ? prev.bluePicks.slice() : prev.redPicks.slice();
+
+                // If desired role index is valid and empty, put it there
+                if (roleIdx >= 0 && teamPicks[roleIdx] === null) {
+                    teamPicks[roleIdx] = { champName: champ.name, playerName: (team?.roster || []).find(p => p.포지션 === (champ.role || filterRole))?.이름 || 'Unknown', tier: champ.tier };
+                } else {
+                    // Fallback: first null slot (preserve previous behavior if role slot occupied)
+                    const emptyIdx = teamPicks.findIndex(p => p === null);
+                    if (emptyIdx !== -1) {
+                        teamPicks[emptyIdx] = { champName: champ.name, playerName: (team?.roster || []).find(p => p.포지션 === (champ.role || filterRole))?.이름 || 'Unknown', tier: champ.tier };
+                    } else {
+                        // As last resort, overwrite the role slot
+                        if (roleIdx >= 0) teamPicks[roleIdx] = { champName: champ.name, playerName: (team?.roster || []).find(p => p.포지션 === (champ.role || filterRole))?.이름 || 'Unknown', tier: champ.tier };
+                    }
                 }
+
+                if (side === 'BLUE') newState.bluePicks = teamPicks;
+                else newState.redPicks = teamPicks;
             }
             return newState;
         });
 
         if (stepInfo.type === 'PICK') {
+            // Also update manualPicks mapping by role so UI & CPU logic know which roles are filled
+            const role = champ.role || filterRole || 'MID';
             setManualPicks(prev => ({
                 ...prev,
-                [side.toLowerCase()]: { ...prev[side.toLowerCase()], [champ.role]: champ }
+                [side.toLowerCase()]: { ...prev[side.toLowerCase()], [role]: champ }
             }));
         }
 
