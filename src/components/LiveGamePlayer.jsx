@@ -83,7 +83,7 @@ const calculateManualPog = (picksBlue = [], picksRed = [], winnerSide = 'BLUE', 
         let score = ((k + a) / d * 3) + (dpm / 100) + ((p.currentGold || 0) / 1000) + (a * 1);
         
         const role = p.playerData?.포지션;
-        if (['JGL', '정글' ].includes(role)) score *= 1.05;
+        if (['JGL', '정글' ].includes(role)) score *= 1.07;
         if (['SUP', '서포터'].includes(role)) score *= 1.10;
         
         return { ...p, pogScore: score, kdaVal: (k+a)/d, dpm };

@@ -80,7 +80,8 @@ export function computeStatsForLeague(league, options = {}) {
       const safeD = d === 0 ? 1 : d;
       let score = ((k + a) / safeD) * 3 + (damage / 3000) + (gold / 1000) + (a * 1);
       const role = normalizeRole(p.playerData?.포지션 || p.role || p.position);
-      if (['JGL', '정글', 'SUP', '서포터'].includes(role)) score *= 1.15;
+      if (['JGL', '정글'].includes(role)) score *= 1.07;
+      if (['SUP', '서포터'].includes(role)) score *= 1.10;
       return score;
     };
   

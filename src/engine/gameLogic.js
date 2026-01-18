@@ -42,8 +42,11 @@ function calculatePog(winningPicks, gameMinutes) {
         let pogScore = (kda * 3) + (dpm / 100) + ((p.currentGold || 0) / 1000) + (a * 1);
         
         const role = p.playerData?.포지션 || 'MID';
-        if (['JGL', '정글', 'SUP', '서포터'].includes(role)) {
-            pogScore *= 1.15;
+        if (['JGL', '정글'].includes(role)) {
+            pogScore *= 1.07;
+        }
+        if (['SUP', '서포터'].includes(role)) {
+            pogScore *= 1.10;
         }
 
         return { ...p, kdaVal: kda, pogScore: pogScore, dpm: dpm };
