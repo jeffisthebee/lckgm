@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { calculateIndividualIncome, simulateSet, runGameTickEngine, selectPickFromTop3, selectBanFromProbabilities } from '../engine/simEngine';
+import { calculateIndividualIncome, simulateSet, runGameTickEngine, selectPickFromTop3, selectBanFromProbabilities } from '../engine/gameLogic';
 import { DRAFT_SEQUENCE, championList } from '../data/constants'; 
 
 // --- HELPER: Simple Scoring for Recommendation (Frontend Version) ---
 const getRecommendedChampion = (role, currentChamps, availableChamps) => {
+    // Filter by Role
     const roleChamps = availableChamps.filter(c => c.role === (role === 'SUP' ? 'SUP' : role));
     if (roleChamps.length === 0) return availableChamps[0];
 
+    // Sort by Tier (1 is best) -> Stats Sum
     return roleChamps.sort((a, b) => {
-        if (a.tier !== b.tier) return a.tier - b.tier; 
+        if (a.tier !== b.tier) return a.tier - b.tier; // Lower tier # is better
         const sumA = Object.values(a.stats || {}).reduce((acc, v) => acc + v, 0);
         const sumB = Object.values(b.stats || {}).reduce((acc, v) => acc + v, 0);
         return sumB - sumA;
@@ -47,8 +49,7 @@ const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
             let score = ((k + a) / d * 3) + (damage / 3000) + (gold / 1000) + (a * 1);
             
             const role = p.playerData?.포지션 || 'MID';
-            if (['JGL', '정글'].includes(role)) score *= 1.07;
-            if (['SUP', '서포터'].includes(role)) score *= 1.10;
+            if (['JGL', '정글', 'SUP', '서포터'].includes(role)) score *= 1.15;
 
             playerScores[p.playerName].totalScore += score;
             playerScores[p.playerName].games += 1;
@@ -71,7 +72,6 @@ const calculateManualPog = (picksBlue = [], picksRed = [], winnerSide = 'BLUE', 
         const damage = p.stats?.damage || 0;
         
         const dpm = damage / (gameMinutes || 1);
-        
         let score = ((k + a) / d * 3) + (dpm / 100) + ((p.currentGold || 0) / 1000) + (a * 1);
         
         const role = p.playerData?.포지션;
@@ -91,9 +91,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     const [winsA, setWinsA] = useState(0);
     const [winsB, setWinsB] = useState(0);
     
-    // Phase: ROSTER_SELECT -> READY -> LOADING -> DRAFT -> GAME -> SET_RESULT -> SIDE_SELECT
-    // Manual Mode starts at ROSTER_SELECT for set 1
-    const [phase, setPhase] = useState(isManualMode ? 'ROSTER_SELECT' : 'READY'); 
+    // Phase: READY -> SIDE_SELECT -> ROSTER_SELECT -> LOADING -> DRAFT -> GAME -> SET_RESULT
+    const [phase, setPhase] = useState('READY'); 
     
     const [simulationData, setSimulationData] = useState(null);
     const [displayLogs, setDisplayLogs] = useState([]);
@@ -106,13 +105,12 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     const [selectedChampion, setSelectedChampion] = useState(null);
     const [filterRole, setFilterRole] = useState('TOP');
     const [draftLogs, setDraftLogs] = useState([]);
-    const [userSelectedRole, setUserSelectedRole] = useState(false); 
+    const [userSelectedRole, setUserSelectedRole] = useState(false);
     
-    // Feature 1: Side Selection
-    const [nextSetSide, setNextSetSide] = useState(null); // 'BLUE' or 'RED' set by user
-    
-    // Feature 2: Roster Selection
-    const [userLineup, setUserLineup] = useState({}); // { TOP: playerObj, JGL: playerObj... }
+    // NEW: Side Selection & Roster State
+    const [pendingSideInfo, setPendingSideInfo] = useState({ userHasChoice: false, previousLoserId: null });
+    const [selectedSide, setSelectedSide] = useState(null); // 'BLUE' or 'RED'
+    const [activeRoster, setActiveRoster] = useState({}); // { TOP: playerObj, JGL: playerObj ... }
 
     // --- DRAFT STATE ---
     const [draftStep, setDraftStep] = useState(0); 
@@ -125,6 +123,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         currentAction: 'Starting Draft...'
     });
 
+    // Real-time stats for UI
     const [gameTime, setGameTime] = useState(0);
     const [playbackSpeed, setPlaybackSpeed] = useState(1);
     const [liveStats, setLiveStats] = useState({
@@ -142,173 +141,229 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
 
     const safeArray = (v) => Array.isArray(v) ? v : [];
     
-    // --------------------------------------------------------------------------
-    // ROSTER INIT HELPER
-    // --------------------------------------------------------------------------
-    const getMyTeamObject = () => {
-        const myName = simOptions?.playerTeamName;
-        if (teamA.name === myName) return teamA;
-        if (teamB.name === myName) return teamB;
-        return teamA; // fallback
+    // Reset user selection tracking on draft step change
+    useEffect(() => { setUserSelectedRole(false); }, [draftStep]);
+  
+    // -------------------------------------------------------------------------
+    // 1. PHASE MANAGEMENT & INITIALIZATION
+    // -------------------------------------------------------------------------
+    
+    const initNextSet = useCallback(() => {
+        setResultProcessed(false);
+        setDraftStep(0);
+        setDraftTimer(isManualMode ? 25 : 15);
+        setDraftLogs([]);
+        setManualPicks({ blue: {}, red: {} });
+        setManualLockedChamps(new Set(globalBanList));
+        setSelectedChampion(null);
+        setUserSelectedRole(false);
+
+        // Determine Sides Logic
+        if (currentSet === 1) {
+            // Set 1: Default (Team A = Blue usually, or randomization from dashboard)
+            // But for Manual Mode, we proceed to Roster Select with default sides
+            setSelectedSide(null); 
+            setPhase(isManualMode ? 'ROSTER_SELECT' : 'LOADING');
+        } else {
+            // Set 2+: Loser picks side
+            const lastGame = matchHistory[matchHistory.length - 1];
+            const lastWinnerName = lastGame.winner;
+            const previousLoser = (lastWinnerName === teamA.name) ? teamB : teamA;
+            const isUserLoser = previousLoser.name === simOptions.playerTeamName;
+
+            if (isManualMode && isUserLoser) {
+                // FEATURE 1: User gets to choose side
+                setPendingSideInfo({ userHasChoice: true, previousLoserId: previousLoser.id });
+                setPhase('SIDE_SELECT');
+            } else {
+                // AI Loser: 90% chance to pick Blue
+                const loserPicksBlue = Math.random() < 0.90;
+                // If loser picks Blue, User gets Red (and vice versa)
+                const userSide = (previousLoser.name === teamA.name) // If Loser is A (User?) No, we handled User above.
+                // Re-calc:
+                // If AI is Loser. AI picks side.
+                // if AI=Blue, User=Red. if AI=Red, User=Blue.
+                // We set 'selectedSide' to what the USER will play as.
+                // If TeamA is User, and TeamB (AI) loses. TeamB picks Blue. User(A) becomes Red.
+                
+                // Simplified: Determine Blue Team object
+                let blueTeam, redTeam;
+                if (loserPicksBlue) {
+                    blueTeam = previousLoser;
+                    redTeam = (previousLoser.name === teamA.name) ? teamB : teamA;
+                } else {
+                    redTeam = previousLoser;
+                    blueTeam = (previousLoser.name === teamA.name) ? teamB : teamA;
+                }
+                
+                // Store implicit side decision for loading phase
+                setManualTeams({ blue: blueTeam, red: redTeam });
+                setPhase(isManualMode ? 'ROSTER_SELECT' : 'LOADING');
+            }
+        }
+    }, [currentSet, teamA, teamB, globalBanList, matchHistory, isManualMode, simOptions]);
+
+    useEffect(() => {
+      if (phase === 'READY') initNextSet();
+    }, [phase, initNextSet]);
+
+    // -------------------------------------------------------------------------
+    // 2. MANUAL FLOW HANDLERS
+    // -------------------------------------------------------------------------
+
+    // FEATURE 1: Handle User Side Selection
+    const handleUserSideSelect = (side) => {
+        // User is the loser of prev set, so they get to pick their side
+        const userTeam = (teamA.name === simOptions.playerTeamName) ? teamA : teamB;
+        const aiTeam = (userTeam.id === teamA.id) ? teamB : teamA;
+
+        if (side === 'BLUE') {
+            setManualTeams({ blue: userTeam, red: aiTeam });
+        } else {
+            setManualTeams({ blue: aiTeam, red: userTeam });
+        }
+        setPhase('ROSTER_SELECT');
     };
 
-    // Initialize default lineup on mount (best overall players per role)
+    // FEATURE 2: Initialize Roster Selection
     useEffect(() => {
-        if (isManualMode) {
-            const myTeam = getMyTeamObject();
-            const positions = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
-            const bestLineup = {};
-            positions.forEach(pos => {
-                // Find all players for this position, pick highest OVR
-                const candidates = (myTeam.roster || []).filter(p => p.포지션 === pos || (pos === 'SUP' && p.포지션 === 'SPT'));
-                candidates.sort((a,b) => (b.종합 || 0) - (a.종합 || 0));
-                bestLineup[pos] = candidates[0] || { 이름: 'Unknown', 포지션: pos, 종합: 70 };
+        if (phase === 'ROSTER_SELECT') {
+            // Pre-fill active roster with best players or existing selection
+            const userTeam = (teamA.name === simOptions.playerTeamName) ? teamA : teamB;
+            const fullRoster = userTeam.roster || [];
+            
+            // Default best OVR per role
+            const bestRoster = {};
+            ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].forEach(pos => {
+                const candidates = fullRoster.filter(p => p.포지션 === pos || (pos === 'SUP' && p.포지션 === 'SPT'));
+                if (candidates.length > 0) {
+                    // Sort by OVR desc
+                    candidates.sort((a,b) => b.종합 - a.종합);
+                    bestRoster[pos] = candidates[0];
+                }
             });
-            setUserLineup(bestLineup);
+            setActiveRoster(bestRoster);
         }
-    }, [isManualMode, teamA, teamB]);
+    }, [phase, teamA, teamB, simOptions]);
 
-    // --------------------------------------------------------------------------
-    // 1. START SET LOGIC (Supports Side Selection & Roster)
-    // --------------------------------------------------------------------------
-    const startSet = useCallback(() => {
-      setPhase('LOADING');
-      setResultProcessed(false);
-      setDraftStep(0);
-      setDraftTimer(isManualMode ? 25 : 15);
-      setDraftLogs([]);
-      
-      setDraftState({
-          blueBans: [], redBans: [], 
-          bluePicks: Array(5).fill(null), redPicks: Array(5).fill(null),
-          currentAction: '밴픽 준비 중...'
-      });
+    const confirmRosterAndStart = () => {
+        // 1. Construct User Team with SELECTED 5 players
+        const userTeamOrig = (teamA.name === simOptions.playerTeamName) ? teamA : teamB;
+        const aiTeamOrig = (userTeamOrig.id === teamA.id) ? teamB : teamA;
 
-      setManualPicks({ blue: {}, red: {} });
-      setManualLockedChamps(new Set(globalBanList)); 
-      setSelectedChampion(null);
-      setUserSelectedRole(false);
+        const finalUserRoster = Object.values(activeRoster);
+        
+        // AI always uses full roster (engine picks best) or we can filter for AI too?
+        // Let's filter AI to best 5 to be fair/consistent with engine
+        const aiBestRoster = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(pos => {
+            const candidates = aiTeamOrig.roster.filter(p => p.포지션 === pos || (pos === 'SUP' && p.포지션 === 'SPT'));
+            return candidates.sort((a,b) => b.종합 - a.종합)[0];
+        }).filter(Boolean);
 
-      setTimeout(() => {
-          try {
-              let blueTeam, redTeam;
-              
-              if (currentSet === 1) {
-                  // Set 1 is fixed by bracket usually (Team A = Blue)
-                  blueTeam = teamA; redTeam = teamB;
-              } else {
-                  // Check if Manual Mode User chose a side
-                  if (isManualMode && nextSetSide) {
-                      const myTeamObj = getMyTeamObject();
-                      const oppTeamObj = (myTeamObj.id === teamA.id) ? teamB : teamA;
-                      
-                      if (nextSetSide === 'BLUE') {
-                          blueTeam = myTeamObj; redTeam = oppTeamObj;
-                      } else {
-                          redTeam = myTeamObj; blueTeam = oppTeamObj;
-                      }
-                  } else {
-                      // AUTO Logic: Loser picks Blue with 90% chance
-                      const lastGame = matchHistory[matchHistory.length - 1];
-                      const lastWinnerName = lastGame?.winner;
-                      const previousLoser = (lastWinnerName === teamA.name) ? teamB : teamA;
-                      
-                      // Standard CPU Logic
-                      const loserPicksBlue = Math.random() < 0.90;
-                      if (loserPicksBlue) {
-                          blueTeam = previousLoser;
-                          redTeam = (previousLoser.name === teamA.name) ? teamB : teamA;
-                      } else {
-                          redTeam = previousLoser;
-                          blueTeam = (previousLoser.name === teamA.name) ? teamB : teamA;
-                      }
-                  }
-              }
+        const userTeamFinal = { ...userTeamOrig, roster: finalUserRoster };
+        const aiTeamFinal = { ...aiTeamOrig, roster: aiBestRoster };
 
-              if (isManualMode) {
-                  // [FEATURE 2] Inject User's Chosen Roster into the Team Object
-                  // We only modify the "roster" array of the team object used for this set.
-                  // This ensures the draft logic picks the *selected* player for each role.
-                  
-                  const myName = simOptions?.playerTeamName;
-                  
-                  const applyUserRoster = (team) => {
-                      if (team.name !== myName) return team; // Return CPU team as is
-                      
-                      // Filter roster to ONLY include the 5 selected players
-                      const selectedPlayers = Object.values(userLineup);
-                      return { ...team, roster: selectedPlayers };
-                  };
+        // 2. Assign to Blue/Red based on earlier selection (or default for Set 1)
+        let blueT, redT;
+        
+        if (currentSet === 1) {
+            // Set 1 default: A=Blue, B=Red (unless updated logic provided, usually random)
+            // If random logic needed:
+            if (Math.random() < 0.5) { blueT = userTeamFinal; redT = aiTeamFinal; }
+            else { blueT = aiTeamFinal; redT = userTeamFinal; }
+        } else {
+            // Use the manualTeams set during Side Selection or InitNextSet
+            if (manualTeams.blue.id === userTeamOrig.id) {
+                blueT = userTeamFinal; redT = aiTeamFinal;
+            } else {
+                blueT = aiTeamFinal; redT = userTeamFinal;
+            }
+        }
 
-                  setManualTeams({ 
-                      blue: applyUserRoster(blueTeam), 
-                      red: applyUserRoster(redTeam) 
-                  });
-                  setPhase('DRAFT');
-              } else {
-                  // AUTO MODE
-                  const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
-                  if (!result || !result.picks) throw new Error("Draft failed");
+        setManualTeams({ blue: blueT, red: redT });
+        setPhase('LOADING');
+        // Proceed to execute the actual loading/draft start
+        executeStartGame(blueT, redT);
+    };
 
-                  const safeResult = {
-                      ...result,
-                      logs: safeArray(result.logs),
-                      pogPlayer: result.pogPlayer || null,
-                      totalSeconds: result.totalSeconds || (result.totalMinutes ? result.totalMinutes * 60 : 30 * 60)
-                  };
-      
-                  const enrichPlayer = (p, teamRoster, side) => {
-                      const rosterData = teamRoster.find(r => r.이름 === p.playerName) || {};
-                      const safeData = rosterData || { 이름: p.playerName, 포지션: 'TOP', 상세: { 성장: 50 } };
-                      return { 
-                          ...p, side: side, k: p.stats?.kills ?? p.k ?? 0, d: p.stats?.deaths ?? p.d ?? 0, a: p.stats?.assists ?? p.a ?? 0, currentGold: p.currentGold || 500, lvl: p.level || 1, xp: p.xp || 0, playerData: safeData 
-                      };
-                  };
-      
-                  const initPlayers = [
-                      ...safeArray(safeResult.picks?.A).map(p => enrichPlayer(p, blueTeam.roster, 'BLUE')),
-                      ...safeArray(safeResult.picks?.B).map(p => enrichPlayer(p, redTeam.roster, 'RED'))
-                  ];
-      
-                  setSimulationData({ ...safeResult, blueTeam, redTeam });
-                  setLiveStats({
-                      kills: { BLUE: 0, RED: 0 },
-                      gold: { BLUE: 2500, RED: 2500 },
-                      towers: { BLUE: 0, RED: 0 },
-                      players: initPlayers
-                  });
-                  
-                  setGameTime(0);
-                  setDisplayLogs([]);
-                  setPhase('DRAFT'); 
-              }
-  
-          } catch (e) {
-              console.error("Simulation Error:", e);
-              try { onClose && onClose(); } catch { }
-          }
-      }, 500);
-    }, [currentSet, teamA, teamB, globalBanList, simOptions, onClose, matchHistory, isManualMode, nextSetSide, userLineup]);
+    // -------------------------------------------------------------------------
+    // 3. EXECUTE LOADING (Common Path)
+    // -------------------------------------------------------------------------
+    const executeStartGame = (blueTeam, redTeam) => {
+        setDraftState({
+            blueBans: [], redBans: [],
+            bluePicks: Array(5).fill(null), redPicks: Array(5).fill(null),
+            currentAction: '밴픽 준비 중...'
+        });
 
-    // Triggers startSet when READY
-    useEffect(() => {
-      if (phase === 'READY') startSet();
-    }, [phase, startSet]);
+        setTimeout(() => {
+            try {
+                if (isManualMode) {
+                    setPhase('DRAFT');
+                } else {
+                    // AUTO MODE SIMULATION
+                    const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
+                    if (!result || !result.picks) throw new Error("Draft failed");
 
-    // --- DRAFT & GAME EFFECTS (Keep existing logic) ---
+                    const safeResult = {
+                        ...result,
+                        logs: safeArray(result.logs),
+                        pogPlayer: result.pogPlayer || null,
+                        totalSeconds: result.totalSeconds || (result.totalMinutes ? result.totalMinutes * 60 : 30 * 60)
+                    };
+        
+                    const enrichPlayer = (p, teamRoster, side) => {
+                        const rosterData = teamRoster.find(r => r.이름 === p.playerName) || {};
+                        const safeData = rosterData || { 이름: p.playerName, 포지션: 'TOP', 상세: { 성장: 50, 라인전: 50, 무력: 50, 안정성: 50, 운영: 50, 한타: 50 } };
+                        return { 
+                            ...p, side: side, k: p.stats?.kills ?? p.k ?? 0, d: p.stats?.deaths ?? p.d ?? 0, a: p.stats?.assists ?? p.a ?? 0, currentGold: p.currentGold || 500, lvl: p.level || 1, xp: p.xp || 0, playerData: safeData 
+                        };
+                    };
+        
+                    const initPlayers = [
+                        ...safeArray(safeResult.picks?.A).map(p => enrichPlayer(p, blueTeam.roster, 'BLUE')),
+                        ...safeArray(safeResult.picks?.B).map(p => enrichPlayer(p, redTeam.roster, 'RED'))
+                    ];
+        
+                    setSimulationData({ ...safeResult, blueTeam, redTeam });
+                    setLiveStats({
+                        kills: { BLUE: 0, RED: 0 },
+                        gold: { BLUE: 2500, RED: 2500 },
+                        towers: { BLUE: 0, RED: 0 },
+                        players: initPlayers
+                    });
+                    
+                    setGameTime(0);
+                    setDisplayLogs([]);
+                    setPhase('DRAFT'); 
+                }
+            } catch (e) {
+                console.error("Sim Error", e);
+                onClose && onClose();
+            }
+        }, 500);
+    };
+
+    // --- DRAFT PHASE LOGIC ---
     useEffect(() => {
         if (phase !== 'DRAFT') return;
+
         if (draftStep >= DRAFT_SEQUENCE.length) {
-            if (isManualMode) finalizeManualDraft();
-            else setTimeout(() => setPhase('GAME'), 1000);
+            if (isManualMode) {
+                finalizeManualDraft();
+            } else {
+                setTimeout(() => setPhase('GAME'), 1000);
+            }
             return;
         }
+
         if (isManualMode) {
             const stepInfo = DRAFT_SEQUENCE[draftStep];
             const actingTeamSide = stepInfo.side; 
             const actingTeamObj = actingTeamSide === 'BLUE' ? manualTeams.blue : manualTeams.red;
             const isPlayerTurn = actingTeamObj?.name === simOptions?.playerTeamName;
 
+            // Auto-suggest role only if user hasn't explicitly chosen role
             if (isPlayerTurn && stepInfo.type === 'PICK' && !userSelectedRole) {
                 const myPicks = actingTeamSide === 'BLUE' ? manualPicks.blue : manualPicks.red;
                 const roles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
@@ -344,6 +399,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             }
         } 
         else if (simulationData) {
+            // Auto Replay Logic
             const triggerTime = Math.floor(Math.random() * 12) + 1; 
             const timer = setInterval(() => {
                 setDraftTimer(prev => {
@@ -361,12 +417,13 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         }
     }, [phase, draftStep, simulationData, isManualMode, manualTeams, manualPicks, filterRole, userSelectedRole]);
 
-    // --- MANUAL MODE CPU LOGIC ---
+    // --- MANUAL MODE HELPER FUNCTIONS (CPU/Player Turns) ---
     const handleCpuTurn = (stepInfo, team, side) => {
         const availableChamps = activeChampionList.filter(c => !manualLockedChamps.has(c.name));
         let selectedChamp = null;
     
         if (stepInfo.type === 'BAN') {
+            const opponentSide = side === 'BLUE' ? 'RED' : 'BLUE';
             const opponentTeam = side === 'BLUE' ? manualTeams.red : manualTeams.blue;
             const opponentOpenRoles = side === 'BLUE' 
                 ? ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].filter(r => !manualPicks.red[r])
@@ -392,7 +449,9 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                     }
                 }
             });
+            
             roleCandidates.sort((a, b) => b.score - a.score);
+            
             if (roleCandidates.length > 0) {
                 const bestPick = roleCandidates[0];
                 selectedChamp = { ...bestPick.champ, role: bestPick.role };
@@ -413,6 +472,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         const stepInfo = DRAFT_SEQUENCE[draftStep];
         const side = stepInfo.side;
         const team = side === 'BLUE' ? manualTeams.blue : manualTeams.red;
+        
         commitDraftAction(stepInfo, selectedChampion, team, side);
         setSelectedChampion(null);
         setUserSelectedRole(true);
@@ -469,9 +529,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 const safeChamp = c || activeChampionList.find(ch => ch.role === pos) || activeChampionList[0];
                 const p = (roster || []).find(pl => pl.포지션 === pos);
                 
-                const safePlayerData = p || { 
-                    이름: 'Unknown', 포지션: pos, 종합: 75, 상세: { 라인전: 75, 무력: 75, 한타: 75, 성장: 75, 안정성: 75, 운영: 75 } 
-                };
+                const safePlayerData = p || { 이름: 'Unknown', 포지션: pos, 종합: 75, 상세: { 라인전: 75, 무력: 75, 한타: 75, 성장: 75, 안정성: 75, 운영: 75 } };
 
                 return {
                     champName: safeChamp.name || 'Unknown',
@@ -500,7 +558,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             const picksRedDetailed = mapToEngineFormat(manualPicks.red || {}, manualTeams.red?.roster || [], 'RED');
         
             if (picksBlueDetailed.length < 5 || picksRedDetailed.length < 5) {
-                alert('Draft Error: Incomplete teams (Must pick 5 champions).');
+                alert('Draft Error: Incomplete teams.');
                 return;
             }
         
@@ -522,8 +580,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 logs: [`========== [ MANUAL DRAFT ] ==========` , ...draftLogs, `========== [ GAME START ] ==========`, ...logs],
                 blueTeam: manualTeams.blue,
                 redTeam: manualTeams.red,
-                totalSeconds,
-                totalMinutes,
+                totalSeconds, totalMinutes,
                 gameTime: result?.finalTimeStr || `${totalMinutes}분 00초`,
                 picks: { A: picksBlueDetailed, B: picksRedDetailed },
                 bans: { A: draftState.blueBans || [], B: draftState.redBans || [] },
@@ -583,10 +640,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     };
 
     const skipDraft = () => {
-        if (isManualMode) {
-            alert("수동 모드에서는 스킵할 수 없습니다.");
-            return;
-        }
+        if (isManualMode) { alert("수동 모드에서는 스킵할 수 없습니다."); return; }
         setPhase('GAME');
     };
 
@@ -602,13 +656,11 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
           const nextTime = prevTime + 1;
           const currentMinute = Math.floor(nextTime / 60) + 1; 
   
-          // A. Process Logs
           const currentLogs = (simulationData.logs || []).filter(l => {
                const m = (l || '').match(/^\s*\[(\d+):(\d{1,2})\]/);
                return m && ((parseInt(m[1],10)*60 + parseInt(m[2],10)) === nextTime);
           });
   
-          // B. Update Stats
           setLiveStats(prevStats => {
             const nextStats = { 
                 ...prevStats, 
@@ -619,7 +671,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     
             if (currentLogs.length > 0) {
                 setDisplayLogs(prevLogs => [...prevLogs, ...currentLogs].slice(-15));
-                // Log Parsing logic
                 currentLogs.forEach(l => {
                     if (!l) return;
                     if (l.includes('⚔️') || l.includes('🛡️')) {
@@ -667,7 +718,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                     }
                 });
             }
-            // Passive Income
             nextStats.players.forEach(p => {
                 const income = calculateIndividualIncome(p, currentMinute, 1.0); 
                 if (income.gold > 0) p.currentGold = (p.currentGold || 0) + (income.gold / 60);
@@ -702,111 +752,82 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
       return () => clearInterval(timer);
     }, [phase, simulationData, playbackSpeed, isManualMode, manualTeams]);
 
-    // Small helper to safely read pog fields in UI
     const pog = simulationData?.pogPlayer || simulationData?.gameResult?.pogPlayer || null;
-
-    if ((!simulationData && !isManualMode && phase !== 'SET_RESULT' && phase !== 'SIDE_SELECT' && phase !== 'ROSTER_SELECT') || (isManualMode && !manualTeams.blue && phase !== 'ROSTER_SELECT' && phase !== 'SIDE_SELECT')) {
-        return <div className="fixed inset-0 bg-black text-white flex items-center justify-center z-[200] font-bold text-3xl">경기 로딩 중...</div>;
-    }
-    
-    // --- 3. SIDE SELECT UI ---
-    if (phase === 'SIDE_SELECT') {
-        const loserTeamName = simOptions?.playerTeamName;
-        return (
-            <div className="fixed inset-0 bg-gray-900 z-[200] flex flex-col items-center justify-center text-white">
-                <h1 className="text-4xl font-black mb-8 animate-bounce">⚔️ 진영 선택 (Side Selection) ⚔️</h1>
-                <p className="text-xl text-gray-300 mb-12">전 세트 패배팀인 <span className="font-bold text-white">{loserTeamName}</span>가 진영을 선택합니다.</p>
-                <div className="flex gap-12">
-                    <button 
-                        onClick={() => { setNextSetSide('BLUE'); setPhase('ROSTER_SELECT'); }}
-                        className="w-64 h-64 bg-blue-600 hover:bg-blue-500 rounded-3xl flex flex-col items-center justify-center gap-4 transition transform hover:scale-105 shadow-[0_0_50px_rgba(37,99,235,0.5)] border-4 border-blue-400"
-                    >
-                        <div className="text-6xl">🟦</div>
-                        <div className="text-3xl font-black">BLUE SIDE</div>
-                        <div className="text-sm font-bold text-blue-200">선픽 (First Pick)</div>
-                    </button>
-                    <button 
-                        onClick={() => { setNextSetSide('RED'); setPhase('ROSTER_SELECT'); }}
-                        className="w-64 h-64 bg-red-600 hover:bg-red-500 rounded-3xl flex flex-col items-center justify-center gap-4 transition transform hover:scale-105 shadow-[0_0_50px_rgba(220,38,38,0.5)] border-4 border-red-400"
-                    >
-                        <div className="text-6xl">🟥</div>
-                        <div className="text-3xl font-black">RED SIDE</div>
-                        <div className="text-sm font-bold text-red-200">후픽 (Counter Pick)</div>
-                    </button>
-                </div>
-            </div>
-        );
-    }
-
-    // --- 4. ROSTER SELECT UI ---
-    if (phase === 'ROSTER_SELECT') {
-        const myTeam = getMyTeamObject();
-        const positions = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
-        
-        return (
-            <div className="fixed inset-0 bg-gray-900 z-[200] flex flex-col items-center justify-center text-white p-10">
-                <h1 className="text-4xl font-black mb-2">📋 선발 로스터 제출 (Starting Lineup)</h1>
-                <p className="text-gray-400 mb-8">이번 세트에 출전할 5명의 선수를 확정해주세요.</p>
-                
-                <div className="bg-gray-800 p-8 rounded-2xl border border-gray-700 shadow-2xl w-full max-w-4xl">
-                    <div className="grid grid-cols-5 gap-4">
-                        {positions.map(pos => (
-                            <div key={pos} className="flex flex-col gap-2">
-                                <div className="text-center font-bold text-gray-500 mb-2">{pos}</div>
-                                <div className="space-y-2">
-                                    {(myTeam.roster || [])
-                                        .filter(p => p.포지션 === pos || (pos === 'SUP' && p.포지션 === 'SPT'))
-                                        .map(player => (
-                                            <button
-                                                key={player.이름}
-                                                onClick={() => setUserLineup(prev => ({ ...prev, [pos]: player }))}
-                                                className={`w-full p-3 rounded-lg border-2 transition flex flex-col items-center ${
-                                                    userLineup[pos]?.이름 === player.이름 
-                                                        ? 'bg-blue-600 border-blue-400 shadow-lg scale-105' 
-                                                        : 'bg-gray-700 border-gray-600 hover:bg-gray-600'
-                                                }`}
-                                            >
-                                                <div className="font-bold text-sm truncate">{player.이름}</div>
-                                                <div className="text-xs text-gray-300">OVR {player.종합}</div>
-                                            </button>
-                                        ))}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                <button 
-                    onClick={() => setPhase('READY')} // Go to READY -> triggers startSet
-                    disabled={Object.keys(userLineup).length < 5}
-                    className={`mt-10 px-12 py-4 rounded-full font-black text-xl transition ${
-                        Object.keys(userLineup).length < 5 
-                        ? 'bg-gray-700 text-gray-500 cursor-not-allowed' 
-                        : 'bg-green-600 hover:bg-green-500 text-white shadow-xl hover:scale-105'
-                    }`}
-                >
-                    로스터 확정 및 경기 시작 (Confirm Roster)
-                </button>
-            </div>
-        );
-    }
-
-    // --- MAIN GAME UI (Draft & Game & Result) ---
-    const currentBlueTeam = isManualMode ? manualTeams.blue : simulationData?.blueTeam;
-    const currentRedTeam = isManualMode ? manualTeams.red : simulationData?.redTeam;
-    
-    const isBlueTeamA = currentBlueTeam?.name === teamA.name;
-    const blueTeamWins = isBlueTeamA ? winsA : winsB;
-    const redTeamWins = isBlueTeamA ? winsB : winsA;
-  
-    const currentStepInfo = isManualMode ? DRAFT_SEQUENCE[draftStep] : null;
-    const isUserTurn = isManualMode && currentStepInfo && 
-        ((currentStepInfo.side === 'BLUE' && manualTeams.blue?.name === simOptions?.playerTeamName) ||
-         (currentStepInfo.side === 'RED' && manualTeams.red?.name === simOptions?.playerTeamName));
 
     return (
       <div className="fixed inset-0 bg-gray-900 z-[200] flex flex-col text-white font-sans">
         
+        {/* === FEATURE 1 UI: SIDE SELECTION === */}
+        {phase === 'SIDE_SELECT' && (
+            <div className="absolute inset-0 z-[250] bg-black/90 flex flex-col items-center justify-center animate-fade-in">
+                <h1 className="text-4xl font-black text-white mb-8">SIDE SELECTION</h1>
+                <p className="text-gray-400 mb-12">다음 세트 진영을 선택하세요</p>
+                <div className="flex gap-10">
+                    <button 
+                        onClick={() => handleUserSideSelect('BLUE')}
+                        className="w-64 h-80 bg-blue-900/50 border-4 border-blue-600 hover:bg-blue-800 hover:scale-105 transition rounded-2xl flex flex-col items-center justify-center group"
+                    >
+                        <span className="text-6xl mb-4 group-hover:scale-125 transition">🔵</span>
+                        <span className="text-3xl font-black text-blue-400">BLUE SIDE</span>
+                        <span className="text-sm text-blue-200 mt-2">선픽 / 밴픽 주도권</span>
+                    </button>
+                    <button 
+                        onClick={() => handleUserSideSelect('RED')}
+                        className="w-64 h-80 bg-red-900/50 border-4 border-red-600 hover:bg-red-800 hover:scale-105 transition rounded-2xl flex flex-col items-center justify-center group"
+                    >
+                        <span className="text-6xl mb-4 group-hover:scale-125 transition">🔴</span>
+                        <span className="text-3xl font-black text-red-400">RED SIDE</span>
+                        <span className="text-sm text-red-200 mt-2">후픽 / 카운터 픽</span>
+                    </button>
+                </div>
+            </div>
+        )}
+
+        {/* === FEATURE 2 UI: ROSTER SELECTION === */}
+        {phase === 'ROSTER_SELECT' && (
+            <div className="absolute inset-0 z-[250] bg-gray-900 flex flex-col items-center justify-center p-8 animate-fade-in">
+                <h1 className="text-3xl font-black text-white mb-2">TACTICAL SETUP</h1>
+                <p className="text-gray-400 mb-8">이번 세트에 출전할 선발 라인업을 확정해주세요.</p>
+                
+                <div className="flex gap-4 mb-8 w-full max-w-5xl justify-center">
+                    {['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(pos => {
+                        const userTeam = (teamA.name === simOptions.playerTeamName) ? teamA : teamB;
+                        // Find all players for this position in user's team
+                        const candidates = (userTeam.roster || []).filter(p => p.포지션 === pos || (pos === 'SUP' && p.포지션 === 'SPT'));
+                        const selected = activeRoster[pos];
+
+                        return (
+                            <div key={pos} className="flex-1 bg-gray-800 rounded-xl border border-gray-700 overflow-hidden flex flex-col">
+                                <div className="bg-gray-700 p-2 text-center font-bold text-gray-300 border-b border-gray-600">{pos}</div>
+                                <div className="p-2 space-y-2 flex-1 overflow-y-auto">
+                                    {candidates.map(p => (
+                                        <button
+                                            key={p.이름}
+                                            onClick={() => setActiveRoster(prev => ({ ...prev, [pos]: p }))}
+                                            className={`w-full p-3 rounded-lg flex flex-col items-center transition border-2 ${selected?.이름 === p.이름 ? 'bg-blue-900/50 border-blue-500 shadow-md' : 'bg-gray-700/50 border-transparent hover:bg-gray-700'}`}
+                                        >
+                                            <span className={`font-bold text-sm ${selected?.이름 === p.이름 ? 'text-white' : 'text-gray-400'}`}>{p.이름}</span>
+                                            <span className="text-xs text-yellow-500 font-mono">OVR {p.종합}</span>
+                                            <span className="text-[10px] text-gray-500">{p.컨디션 || 'Normal'}</span>
+                                        </button>
+                                    ))}
+                                    {candidates.length === 0 && <div className="text-xs text-gray-500 text-center py-4">선수 없음</div>}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+
+                <button 
+                    onClick={confirmRosterAndStart}
+                    className="px-12 py-4 bg-green-600 hover:bg-green-500 text-white font-black text-xl rounded-full shadow-lg hover:scale-105 transition flex items-center gap-3"
+                >
+                    <span>⚔️</span> ROSTER LOCKED - START GAME
+                </button>
+            </div>
+        )}
+
+        {/* --- EXISTING LIVE GAME UI (Header, Draft, Game, Result) --- */}
         {/* Header - Always Visible */}
         <div className="bg-black border-b border-gray-800 flex flex-col shrink-0">
             {globalBanList.length > 0 && (
@@ -888,7 +909,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             </div>
         </div>
 
-        {phase === 'DRAFT' && (
+        {phase === 'DRAFT' ? (
              <div className="flex-1 flex bg-gray-900 p-8 gap-8 items-center justify-center relative overflow-hidden">
                  <div className="absolute inset-0 bg-gradient-to-r from-blue-900/20 to-red-900/20 pointer-events-none"></div>
 
@@ -1013,9 +1034,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                      ))}
                  </div>
              </div>
-        )}
-
-        {phase === 'GAME' && (
+        ) : (
             <div className="flex-1 flex overflow-hidden">
                {/* GAME UI: Left (Blue) */}
                <div className="w-80 bg-gray-900 border-r border-gray-800 flex flex-col pt-2">
@@ -1094,7 +1113,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             </div>
         )}
   
-        {/* 3. [UPDATED] Result Overlay with POG/POS */}
+        {/* 3. Result Overlay with POG/POS */}
         {phase === 'SET_RESULT' && (
            <div className="absolute inset-0 bg-black/90 z-50 flex flex-col items-center justify-center animate-fade-in p-8">
                <h1 className="text-6xl font-black mb-4 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-red-400">
@@ -1174,11 +1193,12 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         setWinsA(newA); 
         setWinsB(newB);
         
-        // Save history item
+        // Calculate Kill Scores for History (use liveStatsRef if available)
         const isBlueA = (simulationData?.blueTeam?.name === teamA.name);
         const killsA = isBlueA ? (liveStatsRef.current?.kills?.BLUE ?? 0) : (liveStatsRef.current?.kills?.RED ?? 0);
         const killsB = isBlueA ? (liveStatsRef.current?.kills?.RED ?? 0) : (liveStatsRef.current?.kills?.BLUE ?? 0);
 
+        // Save History Item (use simulationData safely)
         const histItem = { 
             set: currentSet, 
             winner: simulationData?.winnerName, 
@@ -1188,20 +1208,26 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             pogPlayer: simulationData?.pogPlayer,
             gameTime: simulationData?.gameTime || `${simulationData?.totalMinutes || 30}분 00초`,
             totalMinutes: simulationData?.totalMinutes || 30,
+            
+            // Save the Kill Scores here!
             scores: { A: killsA, B: killsB },
             usedChamps: simulationData?.usedChamps || [] 
         };
 
         const newHist = [...matchHistory, histItem];
         setMatchHistory(newHist);
+        
+        // Fearless Draft: Add champions from THIS set to global ban list
         setGlobalBanList(prev => [...prev, ...(simulationData?.usedChamps||[])]);
         
         if(newA >= targetWins || newB >= targetWins) {
             const winnerName = newA > newB ? teamA.name : teamB.name;
+            
             let posData = null;
             if (match?.format === 'BO5') {
                 posData = calculatePOS(newHist, null, winnerName);
             }
+
             try {
                 onMatchComplete && onMatchComplete(match, { 
                     winner: winnerName, 
@@ -1212,23 +1238,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             } catch (err) { console.warn("onMatchComplete error:", err); }
         } else {
             setCurrentSet(s => s+1);
-            if (isManualMode) {
-                // If I lost, I get to pick side
-                if (simulationData?.winnerName !== simOptions?.playerTeamName) {
-                    setPhase('SIDE_SELECT');
-                } else {
-                    // I won, CPU picks side (e.g. 90% chance to stay blue or pick blue? usually loser picks side)
-                    // CPU lost, CPU picks side.
-                    const cpuPicksBlue = Math.random() < 0.9;
-                    // If CPU is team A, and picks blue, then team A is blue.
-                    // We just set nextSetSide here conceptually? No, we handle it in startSet logic for CPU.
-                    // But we MUST transition to ROSTER_SELECT for Manual Mode anyway.
-                    setNextSetSide(null); // Let startSet handle CPU logic
-                    setPhase('ROSTER_SELECT');
-                }
-            } else {
-                setPhase('READY'); 
-            }
+            setPhase('READY'); 
         }
     }} 
     className="px-12 py-5 bg-white text-black rounded-full font-black text-2xl hover:scale-105 transition shadow-xl"
