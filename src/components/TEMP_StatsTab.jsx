@@ -1,11 +1,12 @@
 // src/components/StatsTab.jsx
 import React, { useState, useMemo } from 'react';
 import playerList from '../data/players.json';
+import { championList } from '../data/constants';
 
 // Utility: safe array
 const safeArray = (v) => Array.isArray(v) ? v : [];
 
-// Normalize position names
+// Normalize position names so filter works with various strings in data
 const normalizePos = (p) => {
   if (!p) return 'UNKNOWN';
   const up = String(p).toUpperCase();
@@ -35,29 +36,33 @@ export default function StatsTab({ league }) {
   const [activeSection, setActiveSection] = useState('POG'); // 'POG', 'RATING', 'META', 'KDA'
 
   const stats = useMemo(() => {
-    const players = {}; 
+    const players = {}; // playerName -> aggregated data
+    const champions = {}; // champName -> { picks, wins, bans }
     // Bucket champions by role: { ALL: {}, TOP: {}, ... }
     const championStats = { ALL: {}, TOP: {}, JGL: {}, MID: {}, ADC: {}, SUP: {}, UNKNOWN: {} };
     
+    let totalPicks = 0;
+    let totalBans = 0;
     let totalGames = 0;
 
     if (!league || !Array.isArray(league.matches)) {
-      return { players, championStats, totalGames };
+      return { players, champions, championStats, totalPicks, totalBans, totalGames };
     }
 
-    // Helper to init champ entry
-    const initChamp = (bucket, name) => {
-      if (!bucket[name]) bucket[name] = { picks: 0, wins: 0, bans: 0 };
+    // Helper to init champ entry in buckets
+    const initChampBucket = (bucket, name) => {
+        if (!bucket[name]) bucket[name] = { picks: 0, wins: 0, bans: 0 };
     };
 
     // Iterate matches
     for (const match of league.matches) {
       if (!match || match.status !== 'finished') continue;
-      if (regularOnly && match.type !== 'regular') continue;
+      
+      // [FIX] Include 'super' (Super Week) matches as part of Regular Season
+      if (regularOnly && match.type !== 'regular' && match.type !== 'super') continue;
 
       const history = safeArray(match.result?.history);
-      
-      // Series MVP (POS) counts as POG
+      // Count series-level POS as POG
       const seriesPos = match.result?.posPlayer?.playerName;
       if (seriesPos) {
         players[seriesPos] = players[seriesPos] || { games: 0, totalScore: 0, pog: 0, kills: 0, deaths: 0, assists: 0, champCounts: {} };
@@ -66,11 +71,18 @@ export default function StatsTab({ league }) {
 
       for (const set of history) {
         totalGames++;
-        
-        // Bans (Global count, added to 'ALL' bucket)
+
+        // Bans
         const bans = [...safeArray(set.bans?.A), ...safeArray(set.bans?.B), ...safeArray(set.fearlessBans)];
-        bans.forEach(b => {
-            initChamp(championStats['ALL'], b);
+        totalBans += bans.length;
+        
+        bans.forEach(b => { 
+            // Old flat structure
+            champions[b] = champions[b] || { picks: 0, wins: 0, bans: 0 }; 
+            champions[b].bans += 1; 
+
+            // New Bucket structure (Bans are global/ALL)
+            initChampBucket(championStats['ALL'], b);
             championStats['ALL'][b].bans += 1;
         });
 
@@ -82,6 +94,7 @@ export default function StatsTab({ league }) {
         }
 
         const winnerName = set.winner;
+
         const picksA = safeArray(set.picks?.A);
         const picksB = safeArray(set.picks?.B);
 
@@ -92,60 +105,67 @@ export default function StatsTab({ league }) {
           const playerName = p.playerName;
           players[playerName] = players[playerName] || { games: 0, totalScore: 0, pog: 0, kills: 0, deaths: 0, assists: 0, champCounts: {} };
           const { score, kills, deaths, assists } = computeSetPlayerScore(p);
-          
           players[playerName].games += 1;
           players[playerName].totalScore += (score || 0);
           players[playerName].kills += (kills || 0);
           players[playerName].deaths += (deaths || 0);
           players[playerName].assists += (assists || 0);
 
-          // 2. Champion Stats (Role Aware)
+          // 2. Champion Stats
           const champName = p.champName || p.champ || p.champName;
           if (champName) {
-            // Determine Role
-            const rawRole = p.role || p.playerData?.포지션;
-            const role = normalizePos(rawRole);
-
+            totalPicks += 1;
+            
             // Determine Win
             let isWin = false;
             if (winnerName) {
-                const pTeam = p.playerData?.팀 || p.playerData?.team;
-                if (pTeam && String(pTeam) === String(winnerName)) isWin = true;
-                else if (set.winnerSide) {
-                    if ((side === 'A' && set.winnerSide === 'BLUE') || (side === 'B' && set.winnerSide === 'RED')) isWin = true;
-                }
+              const playerTeam = p.playerData?.팀 || p.playerData?.team;
+              if (playerTeam && winnerName && String(playerTeam) === String(winnerName)) {
+                isWin = true;
+              } else if (set.winnerSide) { 
+                  if ((side === 'A' && set.winnerSide === 'BLUE') || (side === 'B' && set.winnerSide === 'RED')) {
+                    isWin = true;
+                  }
+              }
             }
 
-            // Update Global Bucket
-            initChamp(championStats['ALL'], champName);
+            // Old Structure
+            champions[champName] = champions[champName] || { picks: 0, wins: 0, bans: 0 };
+            champions[champName].picks += 1;
+            if (isWin) champions[champName].wins += 1;
+            
+            players[playerName].champCounts[champName] = (players[playerName].champCounts[champName] || 0) + 1;
+
+            // New Bucket Structure
+            const rawRole = p.role || p.playerData?.포지션;
+            const role = normalizePos(rawRole);
+
+            // Global Bucket
+            initChampBucket(championStats['ALL'], champName);
             championStats['ALL'][champName].picks += 1;
             if (isWin) championStats['ALL'][champName].wins += 1;
 
-            // Update Specific Role Bucket
+            // Role Bucket
             if (championStats[role]) {
-                initChamp(championStats[role], champName);
+                initChampBucket(championStats[role], champName);
                 championStats[role][champName].picks += 1;
                 if (isWin) championStats[role][champName].wins += 1;
             }
-            
-            // Player Champ Usage
-            players[playerName].champCounts[champName] = (players[playerName].champCounts[champName] || 0) + 1;
           }
         };
 
         picksA.forEach(p => processPick(p, 'A'));
         picksB.forEach(p => processPick(p, 'B'));
-      }
+      } 
     }
 
-    return { players, championStats, totalGames };
+    return { players, champions, championStats, totalPicks, totalBans, totalGames };
   }, [league, regularOnly]);
 
-  // --- Derived Lists ---
-
+  // Derived leaderboards
   const pogLeaderboard = useMemo(() => {
     const arr = Object.entries(stats.players).map(([name, data]) => ({ name, pog: data.pog || 0 }));
-    // Filter: Hide players with 0 POG
+    // Filter out 0 POGs
     return arr.filter(p => p.pog > 0).sort((a, b) => b.pog - a.pog || a.name.localeCompare(b.name));
   }, [stats]);
 
@@ -154,7 +174,8 @@ export default function StatsTab({ league }) {
       const avg = data.games > 0 ? (data.totalScore / data.games) : 0;
       return { name, avg, games: data.games, kills: data.kills, deaths: data.deaths, assists: data.assists };
     });
-    return arr.sort((a, b) => b.avg - a.avg);
+    arr.sort((a, b) => b.avg - a.avg);
+    return arr;
   }, [stats]);
 
   const kdaLeaders = useMemo(() => {
@@ -165,18 +186,19 @@ export default function StatsTab({ league }) {
       const ratio = (k + a) / Math.max(1, d);
       return { name, k, d, a, ratio, games: data.games };
     });
-    return arr.sort((a, b) => b.ratio - a.ratio || b.k - a.k);
+    arr.sort((a, b) => b.ratio - a.ratio || b.k - a.k);
+    return arr;
   }, [stats]);
 
   const championMeta = useMemo(() => {
-    // Select the bucket based on the current filter
+    // Select bucket based on filter
     const targetBucket = stats.championStats[posFilter] || stats.championStats['ALL'];
-    const globalBucket = stats.championStats['ALL']; // Used for ban stats (since bans are global)
+    const globalBucket = stats.championStats['ALL'];
 
     const champEntries = Object.entries(targetBucket).map(([name, data]) => {
       const picks = data.picks || 0;
       const wins = data.wins || 0;
-      // Bans are always global
+      // Bans are global
       const bans = globalBucket[name]?.bans || 0; 
       
       return {
@@ -185,17 +207,15 @@ export default function StatsTab({ league }) {
         wins,
         bans,
         winRate: picks > 0 ? (wins / picks) : 0,
-        pickRate: stats.totalGames > 0 ? (picks / stats.totalGames) : 0, // Picked in % of games
+        pickRate: stats.totalGames > 0 ? (picks / stats.totalGames) : 0,
         banRate: stats.totalGames > 0 ? (bans / stats.totalGames) : 0
       };
     });
-    
-    // Sort by Pick Rate (Popularity)
-    return champEntries.sort((a, b) => b.picks - a.picks || b.winRate - a.winRate);
+    champEntries.sort((a, b) => b.picks - a.picks || b.winRate - a.winRate);
+    return champEntries;
   }, [stats, posFilter]);
 
-  // --- Filtering & Styles ---
-
+  // Filters apply to player lists
   const applyFilters = (list) => {
     const query = (searchQuery || '').trim().toLowerCase();
     const pos = posFilter;
