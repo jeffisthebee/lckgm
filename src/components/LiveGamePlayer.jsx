@@ -1,25 +1,29 @@
+// src/components/LiveGamePlayer.jsx
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-// [IMPORTANT] Ensure this import points to your actual engine file (simEngine.js or gameLogic.js)
 import { calculateIndividualIncome, simulateSet, runGameTickEngine, selectPickFromTop3, selectBanFromProbabilities } from '../engine/simEngine';
 import { DRAFT_SEQUENCE, championList } from '../data/constants'; 
+import { validateLineup, getDefaultLineup } from '../engine/rosterLogic';
 
-// --- HELPER: Simple Scoring for Recommendation ---
+// --- HELPER: Simple Scoring for Recommendation (Frontend Version) ---
 const getRecommendedChampion = (role, currentChamps, availableChamps) => {
+    // Filter by Role
     const roleChamps = availableChamps.filter(c => c.role === (role === 'SUP' ? 'SUP' : role));
     if (roleChamps.length === 0) return availableChamps[0];
 
+    // Sort by Tier (1 is best) -> Stats Sum
     return roleChamps.sort((a, b) => {
-        if (a.tier !== b.tier) return a.tier - b.tier; 
+        if (a.tier !== b.tier) return a.tier - b.tier; // Lower tier # is better
         const sumA = Object.values(a.stats || {}).reduce((acc, v) => acc + v, 0);
         const sumB = Object.values(b.stats || {}).reduce((acc, v) => acc + v, 0);
         return sumB - sumA;
     })[0];
 };
 
-// --- HELPER: POS Calculation ---
+// --- HELPER: Calculate POS (Player of the Series) ---
 const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
     const allGames = [...(matchHistory || [])];
     if (currentSetData) {
+        // Add the current game to the calculation
         allGames.push({
             winner: currentSetData.winnerName,
             picks: currentSetData.picks 
@@ -29,15 +33,18 @@ const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
     const playerScores = {};
 
     allGames.forEach(game => {
+        // Identify which set of picks belongs to the winning team
         const picksA = game.picks?.A || [];
         const picksB = game.picks?.B || [];
-        const isTeamA = picksA[0]?.playerData?.팀 === winningTeamName || (game.winner === winningTeamName && picksA[0]);
+        // Heuristic: if picks contain playerData with a team field, use it; otherwise fallback by winner name
+        const isTeamA = picksA[0]?.playerData?.팀 === winningTeamName || (picksA[0]?.playerData?.팀 === undefined && game.winner === winningTeamName && picksA[0]);
         const winningPicks = isTeamA ? picksA : picksB;
 
         (winningPicks || []).forEach(p => {
             if (!p) return;
             if (!playerScores[p.playerName]) playerScores[p.playerName] = { ...p, totalScore: 0, games: 0 };
             
+            // Recalculate score for the series
             const stats = p.stats || { kills: p.k || 0, deaths: p.d || 0, assists: p.a || 0, damage: 0 };
             const k = stats.kills || 0;
             const d = (stats.deaths === 0 ? 1 : (stats.deaths || 1));
@@ -45,9 +52,12 @@ const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
             const gold = p.currentGold || 0;
             const damage = stats.damage || 0;
             
+            // Approximate score
             let score = ((k + a) / d * 3) + (damage / 3000) + (gold / 1000) + (a * 1);
+            
             const role = p.playerData?.포지션 || 'MID';
-            if (['JGL', '정글', 'SUP', '서포터'].includes(role)) score *= 1.15;
+            if (['JGL', '정글'].includes(role)) score *= 1.07;
+            if (['SUP', '서포터'].includes(role)) score *= 1.10;
 
             playerScores[p.playerName].totalScore += score;
             playerScores[p.playerName].games += 1;
@@ -69,7 +79,9 @@ const calculateManualPog = (picksBlue = [], picksRed = [], winnerSide = 'BLUE', 
         const a = (p.stats?.assists ?? p.a) || 0;
         const damage = p.stats?.damage || 0;
         
+        // DPM
         const dpm = damage / (gameMinutes || 1);
+        
         let score = ((k + a) / d * 3) + (dpm / 100) + ((p.currentGold || 0) / 1000) + (a * 1);
         
         const role = p.playerData?.포지션;
@@ -83,18 +95,27 @@ const calculateManualPog = (picksBlue = [], picksRed = [], winnerSide = 'BLUE', 
 };
 
 export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onClose, externalGlobalBans = [], isManualMode = false }) {
+    // [FIX] Define Active Champion List (Dynamic Meta)
     const activeChampionList = simOptions?.currentChampionList || championList;
 
     const [currentSet, setCurrentSet] = useState(1);
     const [winsA, setWinsA] = useState(0);
     const [winsB, setWinsB] = useState(0);
     
-    const [phase, setPhase] = useState('READY'); 
+    // Phase: ROSTER_SELECTION -> SIDE_SELECTION -> READY -> LOADING -> DRAFT -> GAME -> SET_RESULT
+    // Set 1 starts at ROSTER_SELECTION
+    const [phase, setPhase] = useState('ROSTER_SELECTION'); 
     
     const [simulationData, setSimulationData] = useState(null);
     const [displayLogs, setDisplayLogs] = useState([]);
     const [resultProcessed, setResultProcessed] = useState(false);
     
+    // --- ROSTER & SIDE STATE ---
+    // activeRosterA: The 5 players user chose to start
+    const [activeRosterA, setActiveRosterA] = useState({}); 
+    // preselectedSide: 'BLUE' or 'RED' (if determined by side selection phase)
+    const [preselectedSide, setPreselectedSide] = useState(null); 
+
     // --- MANUAL MODE STATE ---
     const [manualTeams, setManualTeams] = useState({ blue: null, red: null });
     const [manualPicks, setManualPicks] = useState({ blue: {}, red: {} }); 
@@ -102,21 +123,21 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     const [selectedChampion, setSelectedChampion] = useState(null);
     const [filterRole, setFilterRole] = useState('TOP');
     const [draftLogs, setDraftLogs] = useState([]);
-    const [userSelectedRole, setUserSelectedRole] = useState(false);
-    
-    // NEW: Side Selection & Roster State
-    const [activeRoster, setActiveRoster] = useState({}); 
+    const [userSelectedRole, setUserSelectedRole] = useState(false); 
+    // -------------------------
 
     // --- DRAFT STATE ---
     const [draftStep, setDraftStep] = useState(0); 
     const [draftTimer, setDraftTimer] = useState(15);
     const [draftState, setDraftState] = useState({
-        blueBans: [], redBans: [],
-        bluePicks: Array(5).fill(null), redPicks: Array(5).fill(null),
+        blueBans: [],
+        redBans: [],
+        bluePicks: Array(5).fill(null),
+        redPicks: Array(5).fill(null),
         currentAction: 'Starting Draft...'
     });
 
-    // Real-time stats
+    // Real-time stats for UI
     const [gameTime, setGameTime] = useState(0);
     const [playbackSpeed, setPlaybackSpeed] = useState(1);
     const [liveStats, setLiveStats] = useState({
@@ -132,189 +153,171 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     const [matchHistory, setMatchHistory] = useState([]);
     const targetWins = match?.format === 'BO5' ? 3 : 2;
 
+    // safe utility
     const safeArray = (v) => Array.isArray(v) ? v : [];
-    
-    useEffect(() => { setUserSelectedRole(false); }, [draftStep]);
+    const ROLE_ORDER = ['TOP','JGL','MID','ADC','SUP'];
+
+    // --- INITIALIZE ROSTER ON MOUNT ---
+    useEffect(() => {
+        // Set default best 5 lineup when component mounts
+        const defaultLineup = getDefaultLineup(teamA.name);
+        setActiveRosterA(defaultLineup);
+    }, [teamA]);
+
+    // reset userSelectedRole when draftStep advances
+    useEffect(() => {
+      setUserSelectedRole(false);
+    }, [draftStep]);
   
-    // -------------------------------------------------------------------------
-    // 1. PHASE MANAGEMENT & INITIALIZATION
-    // -------------------------------------------------------------------------
-    const initNextSet = useCallback(() => {
-        setResultProcessed(false);
-        setDraftStep(0);
-        setDraftTimer(isManualMode ? 25 : 15);
-        setDraftLogs([]);
-        setManualPicks({ blue: {}, red: {} });
-        setManualLockedChamps(new Set(globalBanList));
-        setSelectedChampion(null);
-        setUserSelectedRole(false);
+    // 1. Initialize Set Simulation or Manual Setup
+    const startSet = useCallback(() => {
+      setPhase('LOADING');
+      setResultProcessed(false);
+      setDraftStep(0);
+      setDraftTimer(isManualMode ? 25 : 15);
+      setDraftLogs([]);
+      
+      setDraftState({
+          blueBans: [], redBans: [], 
+          bluePicks: Array(5).fill(null), redPicks: Array(5).fill(null),
+          currentAction: '밴픽 준비 중...'
+      });
 
-        // Determine Sides
-        if (currentSet === 1) {
-            // Set 1: Default side assignment (TeamA = Blue for logic simplicity initially)
-            // But we allow manual swap in Roster Select if needed? No, standard is TeamA blue usually.
-            setManualTeams({ blue: teamA, red: teamB });
-            setPhase(isManualMode ? 'ROSTER_SELECT' : 'LOADING');
-        } else {
-            // Set 2+: Loser picks side
-            const lastGame = matchHistory[matchHistory.length - 1];
-            const lastWinnerName = lastGame.winner;
-            const previousLoser = (lastWinnerName === teamA.name) ? teamB : teamA;
-            const isUserLoser = previousLoser.name === simOptions.playerTeamName;
+      setManualPicks({ blue: {}, red: {} });
+      setManualLockedChamps(new Set(globalBanList)); 
+      setSelectedChampion(null);
+      setUserSelectedRole(false);
 
-            if (isManualMode && isUserLoser) {
-                // User chooses
-                setPhase('SIDE_SELECT');
-            } else {
-                // AI chooses: 90% Blue
-                const loserPicksBlue = Math.random() < 0.90;
-                let blueTeam, redTeam;
-                if (loserPicksBlue) {
-                    blueTeam = previousLoser;
-                    redTeam = (previousLoser.name === teamA.name) ? teamB : teamA;
-                } else {
-                    redTeam = previousLoser;
-                    blueTeam = (previousLoser.name === teamA.name) ? teamB : teamA;
-                }
-                
-                setManualTeams({ blue: blueTeam, red: redTeam });
-                setPhase(isManualMode ? 'ROSTER_SELECT' : 'LOADING');
-            }
-        }
-    }, [currentSet, teamA, teamB, globalBanList, matchHistory, isManualMode, simOptions]);
+      setTimeout(() => {
+          try {
+              // Construct Team Objects with ACTIVE Rosters
+              // User Team (A): Use the selected 5
+              const teamA_Active = { ...teamA, roster: Object.values(activeRosterA) };
+              // CPU Team (B): Use full roster (simEngine picks best 5 anyway) or filter here
+              const teamB_Active = teamB; // Engine handles best 5 for CPU
+
+              let blueTeam, redTeam;
+
+              // --- SIDE SELECTION LOGIC ---
+              if (preselectedSide) {
+                  // If side was chosen in SIDE_SELECTION phase (Manual Mode)
+                  if (preselectedSide === 'BLUE') {
+                      blueTeam = teamA_Active; redTeam = teamB_Active;
+                  } else {
+                      redTeam = teamA_Active; blueTeam = teamB_Active;
+                  }
+              } else if (currentSet === 1) {
+                  // Set 1 Default (Random or Match prop)
+                  const t1Id = typeof match.t1 === 'object' ? match.t1.id : match.t1;
+                  const myId = teamA.id;
+                  let userIsBlue = true;
+                  
+                  if (match.blueSidePriority) {
+                      if (match.blueSidePriority === 'coin') userIsBlue = Math.random() < 0.5;
+                      else userIsBlue = Number(match.blueSidePriority) === Number(myId);
+                  } else {
+                      userIsBlue = Math.random() < 0.5;
+                  }
+                  
+                  blueTeam = userIsBlue ? teamA_Active : teamB_Active;
+                  redTeam = userIsBlue ? teamB_Active : teamA_Active;
+              } else {
+                  // Fallback for Auto Mode (Previous Loser picks side)
+                  const lastGame = matchHistory[matchHistory.length - 1];
+                  const lastWinnerName = lastGame.winner;
+                  const previousLoser = (lastWinnerName === teamA.name) ? teamB : teamA;
+                  const loserPicksBlue = Math.random() < 0.90; // AI Logic
+                  
+                  if (loserPicksBlue) {
+                      blueTeam = previousLoser.name === teamA.name ? teamA_Active : teamB_Active;
+                      redTeam = previousLoser.name === teamA.name ? teamB_Active : teamA_Active;
+                  } else {
+                      redTeam = previousLoser.name === teamA.name ? teamA_Active : teamB_Active;
+                      blueTeam = previousLoser.name === teamA.name ? teamB_Active : teamA_Active;
+                  }
+              }
+              // -----------------------------
+
+              if (isManualMode) {
+                  setManualTeams({ blue: blueTeam, red: redTeam });
+                  setPhase('DRAFT');
+              } else {
+                  // AUTO: Run Full Simulation Upfront
+                  const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
+                  if (!result || !result.picks) throw new Error("Draft failed");
+
+                  // Ensure we have logs and pogPlayer shape
+                  const safeResult = {
+                      ...result,
+                      logs: safeArray(result.logs),
+                      pogPlayer: result.pogPlayer || null,
+                      totalSeconds: result.totalSeconds || (result.totalMinutes ? result.totalMinutes * 60 : 30 * 60)
+                  };
+      
+                  const enrichPlayer = (p, teamRoster, side) => {
+                      const rosterData = teamRoster.find(r => r.이름 === p.playerName) || {};
+                      const safeData = rosterData || { 이름: p.playerName, 포지션: 'TOP', 상세: { 성장: 50, 라인전: 50, 무력: 50, 안정성: 50, 운영: 50, 한타: 50 } };
+                      return { 
+                          ...p, side: side, k: p.stats?.kills ?? p.k ?? 0, d: p.stats?.deaths ?? p.d ?? 0, a: p.stats?.assists ?? p.a ?? 0, currentGold: p.currentGold || 500, lvl: p.level || 1, xp: p.xp || 0, playerData: safeData 
+                      };
+                  };
+      
+                  const initPlayers = [
+                      ...safeArray(safeResult.picks?.A).map(p => enrichPlayer(p, blueTeam.roster, 'BLUE')),
+                      ...safeArray(safeResult.picks?.B).map(p => enrichPlayer(p, redTeam.roster, 'RED'))
+                  ];
+      
+                  setSimulationData({ ...safeResult, blueTeam, redTeam }); // result now includes pogPlayer from engine
+                  setLiveStats({
+                      kills: { BLUE: 0, RED: 0 },
+                      gold: { BLUE: 2500, RED: 2500 },
+                      towers: { BLUE: 0, RED: 0 },
+                      players: initPlayers
+                  });
+                  
+                  setGameTime(0);
+                  setDisplayLogs([]);
+                  setPhase('DRAFT'); 
+              }
+  
+          } catch (e) {
+              console.error("Simulation Error:", e);
+              // don't crash the whole page - close modal gracefully
+              try { onClose && onClose(); } catch { /* swallow */ }
+          }
+      }, 500);
+    }, [currentSet, teamA, teamB, globalBanList, simOptions, onClose, matchHistory, isManualMode, activeRosterA, preselectedSide]);
 
     useEffect(() => {
-      if (phase === 'READY') initNextSet();
-    }, [phase, initNextSet]);
+      if (phase === 'READY') startSet();
+    }, [phase, startSet]);
 
-    // -------------------------------------------------------------------------
-    // 2. MANUAL FLOW HANDLERS
-    // -------------------------------------------------------------------------
-    const handleUserSideSelect = (side) => {
-        const userTeam = (teamA.name === simOptions.playerTeamName) ? teamA : teamB;
-        const aiTeam = (userTeam.id === teamA.id) ? teamB : teamA;
-
-        if (side === 'BLUE') setManualTeams({ blue: userTeam, red: aiTeam });
-        else setManualTeams({ blue: aiTeam, red: userTeam });
-        
-        setPhase('ROSTER_SELECT');
+    // --- PHASE TRANSITION HANDLERS ---
+    
+    // 1. Roster Confirm
+    const handleRosterConfirm = () => {
+        if (!validateLineup(activeRosterA)) {
+            alert("로스터가 불완전하거나 중복된 선수가 있습니다. 5명을 모두 채워주세요.");
+            return;
+        }
+        setPhase('READY');
     };
 
-    // Initialize Roster Selection when entering phase
-    useEffect(() => {
-        if (phase === 'ROSTER_SELECT') {
-            const userTeam = (teamA.name === simOptions.playerTeamName) ? teamA : teamB;
-            const fullRoster = userTeam.roster || [];
-            
-            // Auto-select best OVR per role as default
-            const bestRoster = {};
-            ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].forEach(pos => {
-                const candidates = fullRoster.filter(p => p.포지션 === pos || (pos === 'SUP' && p.포지션 === 'SPT'));
-                if (candidates.length > 0) {
-                    candidates.sort((a,b) => b.종합 - a.종합);
-                    bestRoster[pos] = candidates[0];
-                }
-            });
-            setActiveRoster(bestRoster);
-        }
-    }, [phase, teamA, teamB, simOptions]);
-
-    const confirmRosterAndStart = () => {
-        const userTeamOrig = (teamA.name === simOptions.playerTeamName) ? teamA : teamB;
-        const aiTeamOrig = (userTeamOrig.id === teamA.id) ? teamB : teamA;
-
-        const finalUserRoster = Object.values(activeRoster);
-        
-        // AI Logic: pick best 5
-        const aiBestRoster = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(pos => {
-            const candidates = aiTeamOrig.roster.filter(p => p.포지션 === pos || (pos === 'SUP' && p.포지션 === 'SPT'));
-            return candidates.sort((a,b) => b.종합 - a.종합)[0];
-        }).filter(Boolean);
-
-        const userTeamFinal = { ...userTeamOrig, roster: finalUserRoster };
-        const aiTeamFinal = { ...aiTeamOrig, roster: aiBestRoster };
-
-        // Re-assign based on manualTeams sides
-        let blueT, redT;
-        if (manualTeams.blue.id === userTeamOrig.id) {
-            blueT = userTeamFinal; redT = aiTeamFinal;
-        } else {
-            blueT = aiTeamFinal; redT = userTeamFinal;
-        }
-
-        setManualTeams({ blue: blueT, red: redT });
-        setPhase('LOADING'); 
+    // 2. Roster Select (Clicking a player)
+    const handlePlayerSelect = (position, player) => {
+        setActiveRosterA(prev => ({
+            ...prev,
+            [position]: player
+        }));
     };
 
-    // -------------------------------------------------------------------------
-    // 3. EXECUTE LOADING (The Missing Link Fixed)
-    // -------------------------------------------------------------------------
-    useEffect(() => {
-        if (phase === 'LOADING') {
-            // Ensure teams are set. If auto mode (first set), they were set in initNextSet.
-            // If manual mode, they were set in confirmRosterAndStart.
-            if (manualTeams.blue && manualTeams.red) {
-                executeStartGame(manualTeams.blue, manualTeams.red);
-            }
-        }
-    }, [phase, manualTeams]);
-
-    const executeStartGame = (blueTeam, redTeam) => {
-        setDraftState({
-            blueBans: [], redBans: [],
-            bluePicks: Array(5).fill(null), redPicks: Array(5).fill(null),
-            currentAction: '밴픽 준비 중...'
-        });
-
-        setTimeout(() => {
-            try {
-                if (isManualMode) {
-                    setPhase('DRAFT');
-                } else {
-                    // AUTO MODE SIMULATION
-                    const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
-                    if (!result || !result.picks) throw new Error("Draft failed");
-
-                    const safeResult = {
-                        ...result,
-                        logs: safeArray(result.logs),
-                        pogPlayer: result.pogPlayer || null,
-                        totalSeconds: result.totalSeconds || (result.totalMinutes ? result.totalMinutes * 60 : 30 * 60)
-                    };
-        
-                    const enrichPlayer = (p, teamRoster, side) => {
-                        const rosterData = teamRoster.find(r => r.이름 === p.playerName) || {};
-                        const safeData = rosterData || { 이름: p.playerName, 포지션: 'TOP', 상세: { 성장: 50, 라인전: 50, 무력: 50, 안정성: 50, 운영: 50, 한타: 50 } };
-                        return { 
-                            ...p, side: side, k: p.stats?.kills ?? p.k ?? 0, d: p.stats?.deaths ?? p.d ?? 0, a: p.stats?.assists ?? p.a ?? 0, currentGold: p.currentGold || 500, lvl: p.level || 1, xp: p.xp || 0, playerData: safeData 
-                        };
-                    };
-        
-                    const initPlayers = [
-                        ...safeArray(safeResult.picks?.A).map(p => enrichPlayer(p, blueTeam.roster, 'BLUE')),
-                        ...safeArray(safeResult.picks?.B).map(p => enrichPlayer(p, redTeam.roster, 'RED'))
-                    ];
-        
-                    setSimulationData({ ...safeResult, blueTeam, redTeam });
-                    setLiveStats({
-                        kills: { BLUE: 0, RED: 0 },
-                        gold: { BLUE: 2500, RED: 2500 },
-                        towers: { BLUE: 0, RED: 0 },
-                        players: initPlayers
-                    });
-                    
-                    setGameTime(0);
-                    setDisplayLogs([]);
-                    setPhase('DRAFT'); 
-                }
-            } catch (e) {
-                console.error("Sim Error", e);
-                onClose && onClose();
-            }
-        }, 500);
+    // 3. Side Select
+    const handleSideSelection = (side) => {
+        setPreselectedSide(side === 'blue' ? 'BLUE' : 'RED');
+        setPhase('ROSTER_SELECTION');
     };
 
-    // --- DRAFT PHASE LOGIC ---
+    // --- DRAFT PHASE LOGIC (Unchanged) ---
     useEffect(() => {
         if (phase !== 'DRAFT') return;
 
@@ -333,6 +336,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             const actingTeamObj = actingTeamSide === 'BLUE' ? manualTeams.blue : manualTeams.red;
             const isPlayerTurn = actingTeamObj?.name === simOptions?.playerTeamName;
 
+            // Auto-suggest role only if user hasn't explicitly chosen role
             if (isPlayerTurn && stepInfo.type === 'PICK' && !userSelectedRole) {
                 const myPicks = actingTeamSide === 'BLUE' ? manualPicks.blue : manualPicks.red;
                 const roles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
@@ -367,6 +371,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 return () => clearInterval(timer);
             }
         } 
+        
         else if (simulationData) {
             const triggerTime = Math.floor(Math.random() * 12) + 1; 
             const timer = setInterval(() => {
@@ -374,7 +379,10 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                     if (prev <= triggerTime) {
                         const stepInfo = DRAFT_SEQUENCE[draftStep];
                         const logEntry = (simulationData.logs || []).find(l => l && l.startsWith && l.startsWith(`[${stepInfo.order}]`));
-                        if (logEntry) processDraftStepLog(stepInfo, logEntry);
+                        
+                        if (logEntry) {
+                            processDraftStepLog(stepInfo, logEntry);
+                        }
                         setDraftStep(s => s + 1);
                         return 15; 
                     }
@@ -383,9 +391,10 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             }, 1000); 
             return () => clearInterval(timer);
         }
+
     }, [phase, draftStep, simulationData, isManualMode, manualTeams, manualPicks, filterRole, userSelectedRole]);
 
-    // --- MANUAL MODE HELPER FUNCTIONS (CPU/Player Turns) ---
+    // --- MANUAL MODE HELPER FUNCTIONS (Unchanged) ---
     const handleCpuTurn = (stepInfo, team, side) => {
         const availableChamps = activeChampionList.filter(c => !manualLockedChamps.has(c.name));
         let selectedChamp = null;
@@ -426,6 +435,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             } else {
                 const neededRole = remainingRoles[0] || 'MID';
                 selectedChamp = getRecommendedChampion(neededRole, [], availableChamps);
+                // Ensure role is set for the champ object
                 selectedChamp = { ...selectedChamp, role: neededRole };
             }
         }
@@ -443,6 +453,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         
         commitDraftAction(stepInfo, selectedChampion, team, side);
         setSelectedChampion(null);
+        // player explicitly locked a champ -> mark role chosen by user so auto-suggest won't override
         setUserSelectedRole(true);
     };
 
@@ -460,13 +471,18 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 else newState.redBans = [...prev.redBans, champ.name];
             } else {
                 const teamPicks = side === 'BLUE' ? prev.bluePicks.slice() : prev.redPicks.slice();
+
                 const emptyIdx = teamPicks.findIndex(p => p === null);
                 const chosenRole = champ.role || filterRole || 'MID';
+
                 const playerName = (team?.roster || []).find(p => p.포지션 === chosenRole)?.이름 || 'Unknown';
                 const pickObj = { champName: champ.name, playerName, tier: champ.tier, role: chosenRole };
 
-                if (emptyIdx !== -1) teamPicks[emptyIdx] = pickObj;
-                else teamPicks[teamPicks.length - 1] = pickObj;
+                if (emptyIdx !== -1) {
+                    teamPicks[emptyIdx] = pickObj;
+                } else {
+                    teamPicks[teamPicks.length - 1] = pickObj;
+                }
 
                 if (side === 'BLUE') newState.bluePicks = teamPicks;
                 else newState.redPicks = teamPicks;
@@ -481,12 +497,15 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 [side.toLowerCase()]: { ...prev[side.toLowerCase()], [role]: champ }
             }));
         }
+
         setDraftStep(prev => prev + 1);
         setDraftTimer(25); 
     };
 
+    // --- FINALIZE MANUAL DRAFT (Unchanged Logic, added safety) ---
     const finalizeManualDraft = () => {
         if (!manualTeams.blue || !manualTeams.red) {
+            console.error("Critical Error: Teams not initialized");
             alert("Error: Teams not initialized. Please restart.");
             return;
         }
@@ -497,7 +516,12 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 const safeChamp = c || activeChampionList.find(ch => ch.role === pos) || activeChampionList[0];
                 const p = (roster || []).find(pl => pl.포지션 === pos);
                 
-                const safePlayerData = p || { 이름: 'Unknown', 포지션: pos, 종합: 75, 상세: { 라인전: 75, 무력: 75, 한타: 75, 성장: 75, 안정성: 75, 운영: 75 } };
+                const safePlayerData = p || { 
+                    이름: 'Unknown', 
+                    포지션: pos, 
+                    종합: 75, 
+                    상세: { 라인전: 75, 무력: 75, 한타: 75, 성장: 75, 안정성: 75, 운영: 75 } 
+                };
 
                 return {
                     champName: safeChamp.name || 'Unknown',
@@ -526,7 +550,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             const picksRedDetailed = mapToEngineFormat(manualPicks.red || {}, manualTeams.red?.roster || [], 'RED');
         
             if (picksBlueDetailed.length < 5 || picksRedDetailed.length < 5) {
-                alert('Draft Error: Incomplete teams.');
+                alert('Draft Error: Incomplete teams (Must pick 5 champions).');
                 return;
             }
         
@@ -545,11 +569,18 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             setSimulationData({
                 winnerName: winnerName,
                 gameResult: result,
-                logs: [`========== [ MANUAL DRAFT ] ==========` , ...draftLogs, `========== [ GAME START ] ==========`, ...logs],
+                logs: [
+                    `========== [ MANUAL DRAFT ] ==========` ,
+                    ...draftLogs,
+                    `========== [ GAME START ] ==========`,
+                    ...logs
+                ],
                 blueTeam: manualTeams.blue,
                 redTeam: manualTeams.red,
-                totalSeconds, totalMinutes,
+                totalSeconds,
+                totalMinutes,
                 gameTime: result?.finalTimeStr || `${totalMinutes}분 00초`,
+                
                 picks: { A: picksBlueDetailed, B: picksRedDetailed },
                 bans: { A: draftState.blueBans || [], B: draftState.redBans || [] },
                 pogPlayer: pogPlayer || null,
@@ -608,11 +639,14 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     };
 
     const skipDraft = () => {
-        if (isManualMode) { alert("수동 모드에서는 스킵할 수 없습니다."); return; }
+        if (isManualMode) {
+            alert("수동 모드에서는 스킵할 수 없습니다.");
+            return;
+        }
         setPhase('GAME');
     };
 
-    // --- GAME PHASE TICK ---
+    // --- GAME PHASE TICK (Unchanged) ---
     useEffect(() => {
       if (phase !== 'GAME' || !simulationData || playbackSpeed === 0) return;
       
@@ -624,11 +658,13 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
           const nextTime = prevTime + 1;
           const currentMinute = Math.floor(nextTime / 60) + 1; 
   
+          // A. Process Logs
           const currentLogs = (simulationData.logs || []).filter(l => {
                const m = (l || '').match(/^\s*\[(\d+):(\d{1,2})\]/);
                return m && ((parseInt(m[1],10)*60 + parseInt(m[2],10)) === nextTime);
           });
   
+          // B. Update Stats
           setLiveStats(prevStats => {
             const nextStats = { 
                 ...prevStats, 
@@ -639,6 +675,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     
             if (currentLogs.length > 0) {
                 setDisplayLogs(prevLogs => [...prevLogs, ...currentLogs].slice(-15));
+                // Log Parsing logic
                 currentLogs.forEach(l => {
                     if (!l) return;
                     if (l.includes('⚔️') || l.includes('🛡️')) {
@@ -686,6 +723,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                     }
                 });
             }
+            // Passive Income
             nextStats.players.forEach(p => {
                 const income = calculateIndividualIncome(p, currentMinute, 1.0); 
                 if (income.gold > 0) p.currentGold = (p.currentGold || 0) + (income.gold / 60);
@@ -711,6 +749,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                    );
                    setSimulationData(prev => ({ ...prev, pogPlayer: manualPog }));
               }
+              
               setTimeout(() => setPhase('SET_RESULT'), 1000);
               return finalSec;
           }
@@ -720,83 +759,38 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
       return () => clearInterval(timer);
     }, [phase, simulationData, playbackSpeed, isManualMode, manualTeams]);
 
+    // --- RENDER HELPERS ---
+    const getActivePlayerName = (pos) => activeRosterA[pos]?.이름 || "선택 안됨";
+    const getActivePlayerOvr = (pos) => activeRosterA[pos]?.종합 || "-";
+
+    // --- LOADING SCREEN ---
+    if ((!simulationData && !isManualMode && phase !== 'SET_RESULT' && phase !== 'ROSTER_SELECTION' && phase !== 'SIDE_SELECTION' && phase !== 'LOADING') || (isManualMode && !manualTeams.blue && phase !== 'ROSTER_SELECTION' && phase !== 'SIDE_SELECTION')) {
+        return <div className="fixed inset-0 bg-black text-white flex items-center justify-center z-[200] font-bold text-3xl">경기 로딩 중...</div>;
+    }
+    
+    // --- SAFE DATA FOR HEADER ---
+    const currentBlueTeam = isManualMode ? manualTeams.blue : simulationData?.blueTeam;
+    const currentRedTeam = isManualMode ? manualTeams.red : simulationData?.redTeam;
+    const isBlueTeamA = currentBlueTeam?.name === teamA.name;
+    const blueTeamWins = isBlueTeamA ? winsA : winsB;
+    const redTeamWins = isBlueTeamA ? winsB : winsA;
+    const currentStepInfo = isManualMode ? DRAFT_SEQUENCE[draftStep] : null;
+    const isUserTurn = isManualMode && currentStepInfo && 
+        ((currentStepInfo.side === 'BLUE' && manualTeams.blue?.name === simOptions?.playerTeamName) ||
+         (currentStepInfo.side === 'RED' && manualTeams.red?.name === simOptions?.playerTeamName));
+    
+    let recommendedChamp = null;
+    if (isManualMode && isUserTurn) {
+        const available = activeChampionList.filter(c => !manualLockedChamps.has(c.name));
+        recommendedChamp = getRecommendedChampion(filterRole, [], available);
+    }
     const pog = simulationData?.pogPlayer || simulationData?.gameResult?.pogPlayer || null;
 
     return (
       <div className="fixed inset-0 bg-gray-900 z-[200] flex flex-col text-white font-sans">
         
-        {/* === SIDE SELECTION UI === */}
-        {phase === 'SIDE_SELECT' && (
-            <div className="absolute inset-0 z-[250] bg-black/90 flex flex-col items-center justify-center animate-fade-in">
-                <h1 className="text-4xl font-black text-white mb-8">SIDE SELECTION</h1>
-                <p className="text-gray-400 mb-12">다음 세트 진영을 선택하세요</p>
-                <div className="flex gap-10">
-                    <button 
-                        onClick={() => handleUserSideSelect('BLUE')}
-                        className="w-64 h-80 bg-blue-900/50 border-4 border-blue-600 hover:bg-blue-800 hover:scale-105 transition rounded-2xl flex flex-col items-center justify-center group"
-                    >
-                        <span className="text-6xl mb-4 group-hover:scale-125 transition">🔵</span>
-                        <span className="text-3xl font-black text-blue-400">BLUE SIDE</span>
-                        <span className="text-sm text-blue-200 mt-2">선픽 / 밴픽 주도권</span>
-                    </button>
-                    <button 
-                        onClick={() => handleUserSideSelect('RED')}
-                        className="w-64 h-80 bg-red-900/50 border-4 border-red-600 hover:bg-red-800 hover:scale-105 transition rounded-2xl flex flex-col items-center justify-center group"
-                    >
-                        <span className="text-6xl mb-4 group-hover:scale-125 transition">🔴</span>
-                        <span className="text-3xl font-black text-red-400">RED SIDE</span>
-                        <span className="text-sm text-red-200 mt-2">후픽 / 카운터 픽</span>
-                    </button>
-                </div>
-            </div>
-        )}
-
-        {/* === ROSTER SELECTION UI === */}
-        {phase === 'ROSTER_SELECT' && (
-            <div className="absolute inset-0 z-[250] bg-gray-900 flex flex-col items-center justify-center p-8 animate-fade-in">
-                <h1 className="text-3xl font-black text-white mb-2">TACTICAL SETUP</h1>
-                <p className="text-gray-400 mb-8">이번 세트에 출전할 선발 라인업을 확정해주세요.</p>
-                
-                <div className="flex gap-4 mb-8 w-full max-w-5xl justify-center">
-                    {['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(pos => {
-                        const userTeam = (teamA.name === simOptions.playerTeamName) ? teamA : teamB;
-                        // Find all players for this position in user's team
-                        const candidates = (userTeam.roster || []).filter(p => p.포지션 === pos || (pos === 'SUP' && p.포지션 === 'SPT'));
-                        const selected = activeRoster[pos];
-
-                        return (
-                            <div key={pos} className="flex-1 bg-gray-800 rounded-xl border border-gray-700 overflow-hidden flex flex-col">
-                                <div className="bg-gray-700 p-2 text-center font-bold text-gray-300 border-b border-gray-600">{pos}</div>
-                                <div className="p-2 space-y-2 flex-1 overflow-y-auto">
-                                    {candidates.map(p => (
-                                        <button
-                                            key={p.이름}
-                                            onClick={() => setActiveRoster(prev => ({ ...prev, [pos]: p }))}
-                                            className={`w-full p-3 rounded-lg flex flex-col items-center transition border-2 ${selected?.이름 === p.이름 ? 'bg-blue-900/50 border-blue-500 shadow-md' : 'bg-gray-700/50 border-transparent hover:bg-gray-700'}`}
-                                        >
-                                            <span className={`font-bold text-sm ${selected?.이름 === p.이름 ? 'text-white' : 'text-gray-400'}`}>{p.이름}</span>
-                                            <span className="text-xs text-yellow-500 font-mono">OVR {p.종합}</span>
-                                            <span className="text-[10px] text-gray-500">{p.컨디션 || 'Normal'}</span>
-                                        </button>
-                                    ))}
-                                    {candidates.length === 0 && <div className="text-xs text-gray-500 text-center py-4">선수 없음</div>}
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-
-                <button 
-                    onClick={confirmRosterAndStart}
-                    className="px-12 py-4 bg-green-600 hover:bg-green-500 text-white font-black text-xl rounded-full shadow-lg hover:scale-105 transition flex items-center gap-3"
-                >
-                    <span>⚔️</span> ROSTER LOCKED - START GAME
-                </button>
-            </div>
-        )}
-
-        {/* --- EXISTING LIVE GAME UI (Header, Draft, Game, Result) --- */}
-        {/* Header - Always Visible */}
+        {/* TOP BAR (Always Visible except for special phases maybe?) */}
+        {phase !== 'ROSTER_SELECTION' && phase !== 'SIDE_SELECTION' && (
         <div className="bg-black border-b border-gray-800 flex flex-col shrink-0">
             {globalBanList.length > 0 && (
               <div className="bg-purple-900/50 text-purple-200 text-[10px] text-center py-1 font-bold border-b border-purple-900 flex justify-center gap-4">
@@ -808,7 +802,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             <div className="h-24 flex items-center justify-between px-8">
               <div className="flex flex-col w-1/3">
                    <div className="flex items-center gap-4 mb-2">
-                      <div className="text-4xl font-black text-blue-500">{currentBlueTeam?.name}</div>
+                      <div className="text-4xl font-black text-blue-500">{currentBlueTeam?.name || 'BLUE'}</div>
                       <div className="flex gap-2">
                           {Array(match?.format === 'BO5' ? 3 : 2).fill(0).map((_,i) => (
                               <div key={i} className={`w-3 h-3 rounded-full ${i < blueTeamWins ? 'bg-blue-500' : 'bg-gray-700'}`}></div>
@@ -871,16 +865,103 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                               <div key={i} className={`w-3 h-3 rounded-full ${i < redTeamWins ? 'bg-red-500' : 'bg-gray-700'}`}></div>
                           ))}
                       </div>
-                      <div className="text-4xl font-black text-red-500">{currentRedTeam?.name}</div>
+                      <div className="text-4xl font-black text-red-500">{currentRedTeam?.name || 'RED'}</div>
                    </div>
               </div>
             </div>
         </div>
+        )}
 
-        {phase === 'DRAFT' ? (
+        {/* --- MAIN CONTENT AREA --- */}
+        <div className="flex-1 flex flex-col relative overflow-hidden">
+            
+            {/* 1. SIDE SELECTION UI */}
+            {phase === 'SIDE_SELECTION' && (
+                <div className="flex-1 flex flex-col items-center justify-center animate-fadeIn bg-black/95">
+                     <h2 className="text-4xl font-black mb-8">진영 선택 (Side Selection)</h2>
+                     <p className="text-xl text-gray-400 mb-12">다음 세트 진영을 선택하세요. (패자 선택권)</p>
+                     <div className="flex gap-8">
+                         <button 
+                            onClick={() => handleSideSelection('blue')}
+                            className="w-64 h-80 bg-blue-900/50 hover:bg-blue-800 border-4 border-blue-600 rounded-3xl flex flex-col items-center justify-center gap-4 transition hover:scale-105"
+                         >
+                             <div className="text-6xl">🔵</div>
+                             <div className="text-3xl font-black">BLUE</div>
+                             <div className="text-blue-300">선픽 / 밴 유리</div>
+                         </button>
+                         <button 
+                            onClick={() => handleSideSelection('red')}
+                            className="w-64 h-80 bg-red-900/50 hover:bg-red-800 border-4 border-red-600 rounded-3xl flex flex-col items-center justify-center gap-4 transition hover:scale-105"
+                         >
+                             <div className="text-6xl">🔴</div>
+                             <div className="text-3xl font-black">RED</div>
+                             <div className="text-red-300">후픽 / 카운터</div>
+                         </button>
+                     </div>
+                </div>
+            )}
+
+            {/* 2. ROSTER SELECTION UI */}
+            {phase === 'ROSTER_SELECTION' && (
+                <div className="flex-1 flex flex-col items-center justify-center bg-gray-900 p-8">
+                    <h2 className="text-3xl font-black mb-2 text-center">선발 라인업 확정 (Roster Check)</h2>
+                    <div className="text-center text-gray-400 mb-8">
+                        {currentSet}세트에 출전할 선수 5명을 선택해주세요. 
+                        {preselectedSide && <span> (선택 진영: <span className={preselectedSide === 'BLUE' ? 'text-blue-400' : 'text-red-400'}>{preselectedSide}</span>)</span>}
+                    </div>
+
+                    <div className="flex gap-8 w-full max-w-6xl h-[500px]">
+                         {/* LEFT: Starting 5 Slots */}
+                         <div className="w-1/3 space-y-4">
+                             {['TOP','JGL','MID','ADC','SUP'].map(pos => (
+                                 <div key={pos} className="bg-gray-800 p-4 rounded-xl border-2 border-gray-700 relative">
+                                     <div className="absolute top-2 right-3 text-xs font-bold text-gray-500">{pos}</div>
+                                     <div className="font-bold text-xl">{getActivePlayerName(pos)}</div>
+                                     <div className="text-sm text-yellow-500">OVR: {getActivePlayerOvr(pos)}</div>
+                                 </div>
+                             ))}
+                         </div>
+
+                         {/* RIGHT: Available Roster Pool */}
+                         <div className="flex-1 bg-gray-900 rounded-xl p-6 border border-gray-700 overflow-y-auto">
+                             <div className="grid grid-cols-3 gap-4">
+                                 {teamA.roster.map(player => {
+                                     const isSelected = Object.values(activeRosterA).some(p => p.id === player.id);
+                                     return (
+                                         <button 
+                                            key={player.id}
+                                            onClick={() => handlePlayerSelect(player.포지션 === 'SPT' ? 'SUP' : player.포지션, player)}
+                                            className={`p-4 rounded-lg flex flex-col items-start transition border-2 ${isSelected ? 'bg-green-900/30 border-green-500' : 'bg-gray-800 border-gray-700 hover:border-gray-500'}`}
+                                         >
+                                             <div className="flex justify-between w-full">
+                                                 <span className="font-bold text-lg">{player.이름}</span>
+                                                 <span className="text-xs bg-black px-2 py-1 rounded">{player.포지션}</span>
+                                             </div>
+                                             <div className="text-sm text-gray-400 mt-1">OVR {player.종합}</div>
+                                         </button>
+                                     );
+                                 })}
+                             </div>
+                         </div>
+                    </div>
+                    
+                    <div className="mt-8 flex justify-center">
+                        <button 
+                            onClick={handleRosterConfirm}
+                            className="px-12 py-4 bg-green-600 hover:bg-green-700 text-white font-black text-xl rounded-full shadow-lg transition hover:scale-105"
+                        >
+                            라인업 확정 및 경기 시작
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* 3. DRAFT UI (Same as before) */}
+            {phase === 'DRAFT' && (
              <div className="flex-1 flex bg-gray-900 p-8 gap-8 items-center justify-center relative overflow-hidden">
                  <div className="absolute inset-0 bg-gradient-to-r from-blue-900/20 to-red-900/20 pointer-events-none"></div>
 
+                 {/* Blue Picks List */}
                  <div className="w-1/4 space-y-4 z-10">
                      {draftState.bluePicks.map((pick, i) => (
                          <div key={i} className={`h-24 border-l-4 ${pick ? 'border-blue-500 bg-blue-900/30' : 'border-gray-700 bg-gray-800/50'} rounded-r-lg flex items-center p-4 transition-all duration-500`}>
@@ -899,9 +980,11 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                      ))}
                  </div>
 
+                 {/* Center Draft Board */}
                  <div className="flex-1 flex flex-col items-center justify-center z-20 h-full relative">
                      {isUserTurn ? (
                          <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-700 w-full max-w-4xl h-[600px] flex flex-col overflow-hidden">
+                             {/* Role Filters & Status */}
                              <div className="p-4 bg-gray-900 border-b border-gray-700 flex justify-between items-center">
                                  <div className="flex gap-2">
                                      {['TOP','JGL','MID','ADC','SUP'].map(r => (
@@ -919,6 +1002,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                  </div>
                              </div>
 
+                             {/* Recommended Champ */}
                              {recommendedChamp && (
                                 <div className="bg-blue-900/30 p-2 px-4 flex items-center gap-4 border-b border-blue-800">
                                     <span className="text-xs font-bold text-blue-300 uppercase">Recommended</span>
@@ -936,6 +1020,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                 </div>
                              )}
 
+                             {/* Champ Grid */}
                              <div className="flex-1 overflow-y-auto p-4 grid grid-cols-5 gap-3 content-start">
                                  {activeChampionList
                                     .filter(c => c.role === (filterRole === 'SUP' ? 'SUP' : filterRole)) 
@@ -967,6 +1052,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                     })}
                              </div>
 
+                             {/* Lock In Button */}
                              <div className="p-4 bg-gray-900 border-t border-gray-700 flex justify-center">
                                  <button 
                                     onClick={handlePlayerLockIn}
@@ -984,6 +1070,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                      )}
                  </div>
 
+                 {/* Red Picks List */}
                  <div className="w-1/4 space-y-4 z-10">
                      {draftState.redPicks.map((pick, i) => (
                          <div key={i} className={`h-24 border-r-4 ${pick ? 'border-red-500 bg-red-900/30' : 'border-gray-700 bg-gray-800/50'} rounded-l-lg flex flex-row-reverse items-center p-4 transition-all duration-500`}>
@@ -1002,86 +1089,90 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                      ))}
                  </div>
              </div>
-        ) : (
-            <div className="flex-1 flex overflow-hidden">
-               {/* GAME UI: Left (Blue) */}
-               <div className="w-80 bg-gray-900 border-r border-gray-800 flex flex-col pt-2">
-                  {liveStats.players.filter(p => p.side === 'BLUE').map((p, i) => (
-                      <div key={i} className="flex-1 border-b border-gray-800 relative p-2 flex items-center gap-3">
-                          <div className="w-12 h-12 bg-gray-800 rounded border border-blue-600 relative overflow-hidden">
-                              <div className="absolute inset-0 flex items-center justify-center font-bold text-xs text-blue-200 text-center leading-none">{p.champName}</div>
-                              <div className="absolute bottom-0 right-0 bg-black text-white text-[10px] px-1 font-bold">{p.lvl}</div>
-                          </div>
-                          <div className="flex-1">
-                              <div className="flex justify-between items-center">
-                                  <span className="font-bold text-sm text-blue-100">{p.playerName}</span>
-                                  <span className="text-yellow-400 font-mono text-xs">{Math.floor(p.currentGold)}g</span>
-                              </div>
-                              <div className="flex justify-between items-center mt-1">
-                                  <span className="text-xs text-gray-400 truncate w-16">{p.champName}</span>
-                                  <span className="font-bold text-white text-sm">{p.k}/{p.d}/{p.a}</span>
-                              </div>
-                              <div className="w-full bg-gray-800 h-1 mt-2 rounded-full overflow-hidden">
-                                  <div className="bg-blue-500 h-full" style={{width: `${(p.xp / (180 + (p.lvl||1) * 100))*100}%`}}></div>
-                              </div>
-                          </div>
-                      </div>
-                  ))}
-               </div>
-      
-               {/* GAME UI: Center (Logs) */}
-               <div className="flex-1 flex flex-col bg-black/95 relative">
-                  <div className="flex-1 p-4 space-y-2 overflow-y-auto font-mono text-sm pb-20 scrollbar-hide">
-                      {displayLogs.map((log, i) => (
-                          <div key={i} className={`py-1 px-2 rounded ${log?.includes('⚔️') ? 'bg-red-900/20 text-red-200 border-l-2 border-red-500' : (log?.includes('🐛') || log?.includes('🐉') ? 'bg-purple-900/20 text-purple-200' : 'text-gray-400')}`}>
-                              {log}
-                          </div>
-                      ))}
-                  </div>
-                  
-                  <div className="h-20 bg-gray-900 border-t border-gray-800 flex items-center justify-center gap-2">
-                      <button onClick={() => setPlaybackSpeed(0)} className="w-12 h-10 rounded bg-gray-700 hover:bg-gray-600 flex items-center justify-center text-xl">⏸</button>
-                      {[1, 4, 8, 16, 32].map(speed => (
-                          <button 
-                              key={speed} 
-                              onClick={() => setPlaybackSpeed(speed)} 
-                              className={`w-12 h-10 rounded font-bold transition ${playbackSpeed === speed ? 'bg-blue-600 text-white shadow-lg scale-105' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
-                          >
-                              x{speed}
-                          </button>
-                      ))}
-                      <button onClick={() => setPlaybackSpeed(100)} className="w-16 h-10 rounded font-bold bg-gray-700 hover:bg-red-600 transition">SKIP</button>
-                  </div>
-               </div>
-      
-               {/* GAME UI: Right (Red) */}
-               <div className="w-80 bg-gray-900 border-l border-gray-800 flex flex-col pt-2">
-                  {liveStats.players.filter(p => p.side === 'RED').map((p, i) => (
-                      <div key={i} className="flex-1 border-b border-gray-800 relative p-2 flex flex-row-reverse items-center gap-3 text-right">
-                          <div className="w-12 h-12 bg-gray-800 rounded border border-red-600 relative overflow-hidden">
-                              <div className="absolute inset-0 flex items-center justify-center font-bold text-xs text-red-200 text-center leading-none">{p.champName}</div>
-                              <div className="absolute bottom-0 left-0 bg-black text-white text-[10px] px-1 font-bold">{p.lvl}</div>
-                          </div>
-                          <div className="flex-1">
-                              <div className="flex justify-between items-center flex-row-reverse">
-                                  <span className="font-bold text-sm text-red-100">{p.playerName}</span>
-                                  <span className="text-yellow-400 font-mono text-xs">{Math.floor(p.currentGold)}g</span>
-                              </div>
-                              <div className="flex justify-between items-center mt-1 flex-row-reverse">
-                                  <span className="text-xs text-gray-400 truncate w-16">{p.champName}</span>
-                                  <span className="font-bold text-white text-sm">{p.k}/{p.d}/{p.a}</span>
-                              </div>
-                               <div className="w-full bg-gray-800 h-1 mt-2 rounded-full overflow-hidden flex justify-end">
-                                  <div className="bg-red-500 h-full" style={{width: `${(p.xp / (180 + (p.lvl||1) * 100))*100}%`}}></div>
-                              </div>
-                          </div>
-                      </div>
-                  ))}
-               </div>
-            </div>
-        )}
+            )}
+            
+            {/* 4. GAME PLAYBACK UI (Unchanged) */}
+            {phase === 'GAME' && (
+                <div className="flex-1 flex overflow-hidden">
+                {/* GAME UI: Left (Blue) */}
+                <div className="w-80 bg-gray-900 border-r border-gray-800 flex flex-col pt-2">
+                    {liveStats.players.filter(p => p.side === 'BLUE').map((p, i) => (
+                        <div key={i} className="flex-1 border-b border-gray-800 relative p-2 flex items-center gap-3">
+                            <div className="w-12 h-12 bg-gray-800 rounded border border-blue-600 relative overflow-hidden">
+                                <div className="absolute inset-0 flex items-center justify-center font-bold text-xs text-blue-200 text-center leading-none">{p.champName}</div>
+                                <div className="absolute bottom-0 right-0 bg-black text-white text-[10px] px-1 font-bold">{p.lvl}</div>
+                            </div>
+                            <div className="flex-1">
+                                <div className="flex justify-between items-center">
+                                    <span className="font-bold text-sm text-blue-100">{p.playerName}</span>
+                                    <span className="text-yellow-400 font-mono text-xs">{Math.floor(p.currentGold)}g</span>
+                                </div>
+                                <div className="flex justify-between items-center mt-1">
+                                    <span className="text-xs text-gray-400 truncate w-16">{p.champName}</span>
+                                    <span className="font-bold text-white text-sm">{p.k}/{p.d}/{p.a}</span>
+                                </div>
+                                <div className="w-full bg-gray-800 h-1 mt-2 rounded-full overflow-hidden">
+                                    <div className="bg-blue-500 h-full" style={{width: `${(p.xp / (180 + (p.lvl||1) * 100))*100}%`}}></div>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+        
+                {/* GAME UI: Center (Logs) */}
+                <div className="flex-1 flex flex-col bg-black/95 relative">
+                    <div className="flex-1 p-4 space-y-2 overflow-y-auto font-mono text-sm pb-20 scrollbar-hide">
+                        {displayLogs.map((log, i) => (
+                            <div key={i} className={`py-1 px-2 rounded ${log?.includes('⚔️') ? 'bg-red-900/20 text-red-200 border-l-2 border-red-500' : (log?.includes('🐛') || log?.includes('🐉') ? 'bg-purple-900/20 text-purple-200' : 'text-gray-400')}`}>
+                                {log}
+                            </div>
+                        ))}
+                    </div>
+                    
+                    <div className="h-20 bg-gray-900 border-t border-gray-800 flex items-center justify-center gap-2">
+                        <button onClick={() => setPlaybackSpeed(0)} className="w-12 h-10 rounded bg-gray-700 hover:bg-gray-600 flex items-center justify-center text-xl">⏸</button>
+                        {[1, 4, 8, 16, 32].map(speed => (
+                            <button 
+                                key={speed} 
+                                onClick={() => setPlaybackSpeed(speed)} 
+                                className={`w-12 h-10 rounded font-bold transition ${playbackSpeed === speed ? 'bg-blue-600 text-white shadow-lg scale-105' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+                            >
+                                x{speed}
+                            </button>
+                        ))}
+                        <button onClick={() => setPlaybackSpeed(100)} className="w-16 h-10 rounded font-bold bg-gray-700 hover:bg-red-600 transition">SKIP</button>
+                    </div>
+                </div>
+        
+                {/* GAME UI: Right (Red) */}
+                <div className="w-80 bg-gray-900 border-l border-gray-800 flex flex-col pt-2">
+                    {liveStats.players.filter(p => p.side === 'RED').map((p, i) => (
+                        <div key={i} className="flex-1 border-b border-gray-800 relative p-2 flex flex-row-reverse items-center gap-3 text-right">
+                            <div className="w-12 h-12 bg-gray-800 rounded border border-red-600 relative overflow-hidden">
+                                <div className="absolute inset-0 flex items-center justify-center font-bold text-xs text-red-200 text-center leading-none">{p.champName}</div>
+                                <div className="absolute bottom-0 left-0 bg-black text-white text-[10px] px-1 font-bold">{p.lvl}</div>
+                            </div>
+                            <div className="flex-1">
+                                <div className="flex justify-between items-center flex-row-reverse">
+                                    <span className="font-bold text-sm text-red-100">{p.playerName}</span>
+                                    <span className="text-yellow-400 font-mono text-xs">{Math.floor(p.currentGold)}g</span>
+                                </div>
+                                <div className="flex justify-between items-center mt-1 flex-row-reverse">
+                                    <span className="text-xs text-gray-400 truncate w-16">{p.champName}</span>
+                                    <span className="font-bold text-white text-sm">{p.k}/{p.d}/{p.a}</span>
+                                </div>
+                                <div className="w-full bg-gray-800 h-1 mt-2 rounded-full overflow-hidden flex justify-end">
+                                    <div className="bg-red-500 h-full" style={{width: `${(p.xp / (180 + (p.lvl||1) * 100))*100}%`}}></div>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                </div>
+            )}
+        </div>
   
-        {/* 3. [UPDATED] Result Overlay with POG/POS */}
+        {/* 5. RESULT OVERLAY (Modified to trigger Side Selection) */}
         {phase === 'SET_RESULT' && (
            <div className="absolute inset-0 bg-black/90 z-50 flex flex-col items-center justify-center animate-fade-in p-8">
                <h1 className="text-6xl font-black mb-4 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-red-400">
@@ -1150,73 +1241,82 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                </div>
                
                <button 
-    onClick={() => {
-        if (resultProcessed) return;
-        setResultProcessed(true);
+                onClick={() => {
+                    if (resultProcessed) return;
+                    setResultProcessed(true);
 
-        const winnerIsA = simulationData?.winnerName === teamA.name;
-        const newA = winsA + (winnerIsA ? 1 : 0);
-        const newB = winsB + (winnerIsA ? 0 : 1);
-        
-        setWinsA(newA); 
-        setWinsB(newB);
-        
-        // [FIX] Calculate Kill Scores for History (use liveStatsRef if available)
-        const isBlueA = (simulationData?.blueTeam?.name === teamA.name);
-        const killsA = isBlueA ? (liveStatsRef.current?.kills?.BLUE ?? 0) : (liveStatsRef.current?.kills?.RED ?? 0);
-        const killsB = isBlueA ? (liveStatsRef.current?.kills?.RED ?? 0) : (liveStatsRef.current?.kills?.BLUE ?? 0);
+                    const winnerIsA = simulationData?.winnerName === teamA.name;
+                    const newA = winsA + (winnerIsA ? 1 : 0);
+                    const newB = winsB + (winnerIsA ? 0 : 1);
+                    
+                    setWinsA(newA); 
+                    setWinsB(newB);
+                    
+                    const isBlueA = (simulationData?.blueTeam?.name === teamA.name);
+                    const killsA = isBlueA ? (liveStatsRef.current?.kills?.BLUE ?? 0) : (liveStatsRef.current?.kills?.RED ?? 0);
+                    const killsB = isBlueA ? (liveStatsRef.current?.kills?.RED ?? 0) : (liveStatsRef.current?.kills?.BLUE ?? 0);
 
-        // [UPDATED] Save History Item (use simulationData safely)
-        const histItem = { 
-            set: currentSet, 
-            winner: simulationData?.winnerName, 
-            picks: simulationData?.picks, 
-            bans: simulationData?.bans, 
-            logs: simulationData?.logs,
-            pogPlayer: simulationData?.pogPlayer,
-            gameTime: simulationData?.gameTime || `${simulationData?.totalMinutes || 30}분 00초`,
-            totalMinutes: simulationData?.totalMinutes || 30,
-            
-            // [FIX] Save the Kill Scores here!
-            scores: { A: killsA, B: killsB },
-            usedChamps: simulationData?.usedChamps || [] // Capture used champs
-        };
+                    const histItem = { 
+                        set: currentSet, 
+                        winner: simulationData?.winnerName, 
+                        picks: simulationData?.picks, 
+                        bans: simulationData?.bans, 
+                        logs: simulationData?.logs,
+                        pogPlayer: simulationData?.pogPlayer,
+                        gameTime: simulationData?.gameTime || `${simulationData?.totalMinutes || 30}분 00초`,
+                        totalMinutes: simulationData?.totalMinutes || 30,
+                        scores: { A: killsA, B: killsB },
+                        usedChamps: simulationData?.usedChamps || [] 
+                    };
 
-        const newHist = [...matchHistory, histItem];
-        setMatchHistory(newHist);
-        
-        // [FIX] This is the KEY fix for Fearless Draft
-        // Add the champions from THIS set to the global ban list for subsequent sets
-        setGlobalBanList(prev => [...prev, ...(simulationData?.usedChamps||[])]);
-        
-        if(newA >= targetWins || newB >= targetWins) {
-            const winnerName = newA > newB ? teamA.name : teamB.name;
-            
-            let posData = null;
-            if (match?.format === 'BO5') {
-                posData = calculatePOS(newHist, null, winnerName);
-            }
+                    const newHist = [...matchHistory, histItem];
+                    setMatchHistory(newHist);
+                    
+                    setGlobalBanList(prev => [...prev, ...(simulationData?.usedChamps||[])]);
+                    
+                    if(newA >= targetWins || newB >= targetWins) {
+                        const winnerName = newA > newB ? teamA.name : teamB.name;
+                        let posData = null;
+                        if (match?.format === 'BO5') {
+                            posData = calculatePOS(newHist, null, winnerName);
+                        }
 
-            try {
-                onMatchComplete && onMatchComplete(match, { 
-                    winner: winnerName, 
-                    scoreString: `${newA}:${newB}`, 
-                    history: newHist,
-                    posPlayer: posData
-                });
-            } catch (err) { console.warn("onMatchComplete error:", err); }
-        } else {
-            setCurrentSet(s => s+1);
-            setPhase('READY'); 
-        }
-    }} 
-    className="px-12 py-5 bg-white text-black rounded-full font-black text-2xl hover:scale-105 transition shadow-xl"
->
-    {(winsA + ((simulationData?.winnerName === teamA.name) ? 1 : 0) >= targetWins) || 
-    (winsB + ((simulationData?.winnerName === teamB.name) ? 1 : 0) >= targetWins)
-        ? '매치 종료 (Finish Match)' 
-        : '다음 세트 (Next Set)'}
-</button>
+                        try {
+                            onMatchComplete && onMatchComplete(match, { 
+                                winner: winnerName, 
+                                scoreString: `${newA}:${newB}`, 
+                                history: newHist,
+                                posPlayer: posData
+                            });
+                        } catch (err) { console.warn("onMatchComplete error:", err); }
+                    } else {
+                        // --- NEXT SET LOGIC ---
+                        setCurrentSet(s => s+1);
+
+                        // Who lost?
+                        const loserName = winnerIsA ? teamB.name : teamA.name;
+                        const isUserLoser = loserName === teamA.name;
+
+                        if (isUserLoser) {
+                            // User Lost -> Manual Side Selection
+                            setPhase('SIDE_SELECTION');
+                        } else {
+                            // AI Lost -> AI picks side (90% Blue)
+                            const aiPicksBlue = Math.random() < 0.90;
+                            // If AI (Team B) picks Blue, User (Team A) is Red
+                            setPreselectedSide(aiPicksBlue ? 'RED' : 'BLUE');
+                            // Move to Roster Selection
+                            setPhase('ROSTER_SELECTION');
+                        }
+                    }
+                }} 
+                className="px-12 py-5 bg-white text-black rounded-full font-black text-2xl hover:scale-105 transition shadow-xl"
+            >
+                {(winsA + ((simulationData?.winnerName === teamA.name) ? 1 : 0) >= targetWins) || 
+                (winsB + ((simulationData?.winnerName === teamB.name) ? 1 : 0) >= targetWins)
+                    ? '매치 종료 (Finish Match)' 
+                    : '다음 세트 (Next Set)'}
+            </button>
            </div>
         )}
       </div>

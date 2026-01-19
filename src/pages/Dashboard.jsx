@@ -4,6 +4,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { teams, teamFinanceData } from '../data/teams';
 import { championList, difficulties } from '../data/constants';
 import { simulateMatch, getTeamRoster, generateSchedule, quickSimulateMatch } from '../engine/simEngine';
+// [NEW] Import getFullTeamRoster to support substitutes
+import { getFullTeamRoster } from '../engine/rosterLogic';
 import LiveGamePlayer from '../components/LiveGamePlayer';
 import DetailedMatchResultModal from '../components/DetailedMatchResultModal';
 import playerList from '../data/players.json';
@@ -19,7 +21,7 @@ import ScheduleTab from '../components/ScheduleTab';
 import PlayoffTab from '../components/PlayoffTab';
 import StatsTab from '../components/TEMP_StatsTab';
 
-// Helper functions (Paste getLeagues, updateLeague, etc here if they aren't used elsewhere)
+// Helper functions
 const getLeagues = () => { const s = localStorage.getItem('lckgm_leagues'); return s ? JSON.parse(s) : []; };
 const updateLeague = (id, u) => { 
   const leagues = getLeagues(); 
@@ -79,12 +81,9 @@ const getOvrBadgeStyle = (ovr) => {
     const [opponentChoice, setOpponentChoice] = useState(null); 
     const [showFinalStandings, setShowFinalStandings] = useState(false);
 
-    // [MOVED UP] Define this helper before it is used in useEffect
+    // Define this helper before it is used in useEffect
     const recalculateStandings = (lg) => {
-      // We now just ask our new "Manager" to do the math for us!
       const newStandings = computeStandings(lg);
-      
-      // Then we update the UI state
       setComputedStandings(newStandings);
   };
   
@@ -106,8 +105,7 @@ const getOvrBadgeStyle = (ovr) => {
       loadData();
     }, [leagueId]);
 
-    // [FIXED] Effect: Calculate Prize Money Safely
-    // We use league.team.id directly to avoid referencing 'myTeam' before it is defined
+    // Effect: Calculate Prize Money Safely
     useEffect(() => {
       if (!league || !league.matches) return;
 
@@ -140,9 +138,8 @@ const getOvrBadgeStyle = (ovr) => {
 
         setPrizeMoney(earned);
       }
-    }, [league]); // Removed 'myTeam.id' to prevent ReferenceError
+    }, [league]);
   
-  // [FIX] Add this missing function back!
   const handleMatchClick = (match) => {
     if (!match || match.status !== 'finished' || !match.result) return;
     
@@ -180,10 +177,9 @@ const getOvrBadgeStyle = (ovr) => {
     
     const nextGlobalMatch = league.matches ? league.matches.find(m => m.status === 'pending') : null;
   
-    // [FIX] ID Normalization Helper to safely compare IDs (String vs Number)
+    // ID Normalization Helper to safely compare IDs
     const safeId = (id) => (typeof id === 'object' ? id.id : Number(id));
   
-    // [FIX] Updated logic using safeId to prevent type mismatch errors
     const isMyNextMatch = nextGlobalMatch 
       ? (safeId(nextGlobalMatch.t1) === safeId(myTeam.id) || safeId(nextGlobalMatch.t2) === safeId(myTeam.id)) 
       : false;
@@ -204,7 +200,7 @@ const getOvrBadgeStyle = (ovr) => {
       const updatedLeague = { ...league, matches: updatedMatches };
       updateLeague(league.id, { matches: updatedMatches });
       setLeague(updatedLeague);
-      recalculateStandings(updatedLeague); // 순위표 즉시 갱신
+      recalculateStandings(updatedLeague); 
       
       checkAndGenerateNextPlayInRound(updatedMatches);
       checkAndGenerateNextPlayoffRound(updatedMatches);
@@ -223,10 +219,6 @@ const getOvrBadgeStyle = (ovr) => {
         setOpponentChoice(null);
     };
   
-    // [FIX] Robust Round Progression using 'round' ID instead of Date strings
-    // [FIX] Robust Round Progression for Play-In (R1 -> R2 -> Final)
-  // [REPLACE] Function: checkAndGenerateNextPlayInRound
-  // Location: Inside Dashboard component, around line 1500
   const checkAndGenerateNextPlayInRound = (matches) => {
     // 1. Check if Round 1 is finished
     const r1Matches = matches.filter(m => m.type === 'playin' && m.round === 1);
@@ -240,8 +232,6 @@ const getOvrBadgeStyle = (ovr) => {
         // Fallback: If playInSeeds missing, try to reconstruct or abort safely
         if (!playInSeeds || playInSeeds.length < 2) {
            console.warn("PlayIn Seeds missing, using fallback.");
-           // Fallback logic could be added here, but for now we rely on seeds being present
-           // We will manually fetch seeds 1 and 2 from teams if possible, or just skip
         }
   
         const seed1 = teams.find(t => t.id === (playInSeeds[0]?.id || 0));
@@ -269,7 +259,6 @@ const getOvrBadgeStyle = (ovr) => {
         } 
         
         // If not my team, or I'm not seed 1, or just auto-gen needed
-        // Logic: If user is Seed 1, opponentChoice handles it. If user is NOT Seed 1, we auto-gen.
         if (seed1.id !== myTeam.id) {
              const lowerSeedWinner = winnersWithSeed[1]; 
              const higherSeedWinner = winnersWithSeed[0];
@@ -303,7 +292,6 @@ const getOvrBadgeStyle = (ovr) => {
     }
   };
   
-  // [FIX] Robust Playoff Progression using 'round' ID
   const checkAndGenerateNextPlayoffRound = (currentMatches) => {
     if (!league.playoffSeeds) return;
   
@@ -354,13 +342,9 @@ const getOvrBadgeStyle = (ovr) => {
             // AI Logic
             const r1m1Winner = getWinner(r1Matches.find(m => m.match === 1));
             const r1m2Winner = getWinner(r1Matches.find(m => m.match === 2));
-            // If the winner of Match 1 was the lower seed (Seed 6), Seed 1 avoids them if possible? 
-            // Default LCK logic: Seed 1 picks. AI picks random for now.
             const r1m1Seed3 = r1Matches.find(m => m.match === 1).t1;
             
             let pickedId;
-            // Simple logic: Seed 1 picks the winner of the Seed 3 vs 6 match usually if 6 wins? 
-            // Randomize for variety
             pickedId = Math.random() < 0.5 ? r1m1Winner : r1m2Winner;
             generateR2Matches(teams.find(t => t.id === pickedId));
         }
@@ -376,14 +360,14 @@ const getOvrBadgeStyle = (ovr) => {
     if (r2Finished && !r3Exists) {
         const r2wWinners = r2wMatches.map(m => getWinner(m));
         const r2wLosers = r2wMatches.map(m => ({ id: getLoser(m), seed: (league.playoffSeeds.find(s => s.id === getLoser(m)) || {seed: 99}).seed }));
-        r2wLosers.sort((a,b) => a.seed - b.seed); // Sort losers by seed (Higher seed gets priority)
+        r2wLosers.sort((a,b) => a.seed - b.seed); 
         
         const r2lWinner = getWinner(r2lMatch);
   
         const newPlayoffMatches = [
-            // Winner Bracket Final (Coin flip for side usually, or higher seed priority logic can be added)
+            // Winner Bracket Final
             { id: Date.now() + 500, round: 3, match: 1, label: '승자조 결승', t1: r2wWinners[0], t2: r2wWinners[1], date: '2.18 (수)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: 'coin' },
-            // Loser Bracket R2 (Higher seed loser vs R1 loser winner)
+            // Loser Bracket R2
             { id: Date.now() + 501, round: 2.2, match: 1, label: '패자조 2R', t1: r2wLosers[1].id, t2: r2lWinner, date: '2.15 (일)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' },
         ];
   
@@ -422,7 +406,7 @@ const getOvrBadgeStyle = (ovr) => {
     const r4Exists = currentMatches.some(m => m.type === 'playoff' && m.round === 4);
   
     if (r3lMatch?.status === 'finished' && r3wMatch?.status === 'finished' && !r4Exists) {
-        const r3wLoser = getLoser(r3wMatch); // Comes from Winner Final, so Higher seed
+        const r3wLoser = getLoser(r3wMatch); 
         const r3lWinner = getWinner(r3lMatch);
   
         const newMatch = { id: Date.now() + 700, round: 4, match: 1, label: '결승 진출전', t1: r3wLoser, t2: r3lWinner, date: '2.21 (토)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' };
@@ -452,9 +436,6 @@ const getOvrBadgeStyle = (ovr) => {
     }
   };
   
-    // [REPLACE] Function: runSimulationForMatch
-    // Location: Inside Dashboard component, before handleProceedNextMatch
-    // [FIX 2] Use simulateMatch for BO3/BO5 results (Set Score) instead of single set (Kill Score)
     const runSimulationForMatch = (match, isPlayerMatch) => {
       try {
         const getID = (val) => {
@@ -482,11 +463,10 @@ const getOvrBadgeStyle = (ovr) => {
                 format
             );
             
-            // MAP VARIABLES: instant sim returns 'winner', dashboard wants 'winnerName'
             return {
-                winnerName: result.winner,     // <--- The Critical Fix
+                winnerName: result.winner,
                 scoreString: result.scoreString,
-                history: result.history        // Save history for box scores
+                history: result.history
             };
         }
 
@@ -522,9 +502,6 @@ const getOvrBadgeStyle = (ovr) => {
       }
     };
     
-    // [수정됨] Dashboard 내부 로직 통합 (여기서부터 복사하세요)
-    // =========================================
-
   const handleProceedNextMatch = () => {
     try {
       if (!nextGlobalMatch) return;
@@ -554,9 +531,9 @@ const getOvrBadgeStyle = (ovr) => {
   
         // Construct Final Result Object
         const finalResult = { 
-            winner: result.winnerName, // Used for Standings
-            score: scoreStr,           // Used for Display
-            history: result.history    // Used for Box Score Modal (NEW)
+            winner: result.winnerName, 
+            score: scoreStr,
+            history: result.history
         };
   
         // Update League State
@@ -585,10 +562,7 @@ const getOvrBadgeStyle = (ovr) => {
     }
   };
   
-    // [1] 내 경기 시작하기 (안전장치 추가됨)
-    // [1] 내 경기 시작하기 (안전장치 추가됨)
-    // [FIX] 2. Robust Start Match Handler (Green Button)
-    // [FIX] 2. Robust Start Match Handler (Green Button) - Updated for Captain Mode
+    // [FIX] Robust Start Match Handler (Green Button) - Updated for Captain Mode
     const handleStartMyMatch = (mode = 'auto') => {
       try {
         if (!nextGlobalMatch) {
@@ -608,9 +582,10 @@ const getOvrBadgeStyle = (ovr) => {
           return;
         }
     
-        // 2. Fetch Rosters using the global function
-        const t1Roster = getTeamRoster(t1Obj.name);
-        const t2Roster = getTeamRoster(t2Obj.name);
+        // 2. Fetch Rosters using the global function (Full Roster for Manual Mode)
+        // [MODIFIED] Now using getFullTeamRoster to support substitutes in LiveGamePlayer
+        const t1Roster = getFullTeamRoster(t1Obj.name);
+        const t2Roster = getFullTeamRoster(t2Obj.name);
   
         // 3. Check for Champion List validity
         const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0) 
@@ -623,7 +598,7 @@ const getOvrBadgeStyle = (ovr) => {
           teamA: { ...t1Obj, roster: t1Roster },
           teamB: { ...t2Obj, roster: t2Roster },
           safeChampionList: safeChampionList,
-          isManualMode: mode === 'manual' // <--- NEW FLAG
+          isManualMode: mode === 'manual' 
         });
         
         setIsLiveGameMode(true);
@@ -634,7 +609,6 @@ const getOvrBadgeStyle = (ovr) => {
       }
     };
   
-    // [2] 경기 종료 처리 (이 함수가 없으면 흰 화면 뜸)
     const handleLiveMatchComplete = (match, resultData) => {
       // 1. 매치 결과 업데이트
       const updatedMatches = league.matches.map(m => {
@@ -645,7 +619,6 @@ const getOvrBadgeStyle = (ovr) => {
                   result: {
                       winner: resultData.winner,
                       score: resultData.scoreString,
-                      // [FIX] THIS WAS MISSING! Save the detailed history (POG, Stats, Time)
                       history: resultData.history,
                       posPlayer: resultData.posPlayer // Save Series MVP if exists
                   }
@@ -1077,7 +1050,6 @@ const getOvrBadgeStyle = (ovr) => {
           </div>
           
           <div className="flex items-center gap-3">
-            {/* [1] Final Standings Button */}
             {isSeasonOver && (
                <button 
                onClick={() => setShowFinalStandings(true)} 
@@ -1087,10 +1059,6 @@ const getOvrBadgeStyle = (ovr) => {
              </button>
             )}
 
-            
-
-            {/* [2] Super Week & Meta Check Button (Purple) */}
-            {/* Logic: Shows if regular season is done AND (Super Week not generated OR Meta is outdated) */}
             {hasDrafted && isRegularSeasonFinished && (!hasSuperWeekGenerated || league.metaVersion !== '16.02') && (
                  <button 
                  onClick={handleGenerateSuperWeek} 
@@ -1100,7 +1068,6 @@ const getOvrBadgeStyle = (ovr) => {
                </button>
             )}
 
-            {/* [3] Play-In Button */}
             {isSuperWeekFinished && !hasPlayInGenerated && (
                 <button 
                 onClick={handleGeneratePlayIn} 
@@ -1110,7 +1077,6 @@ const getOvrBadgeStyle = (ovr) => {
               </button>
             )} 
 
-            {/* [4] Playoff Button */}
             {isPlayInFinished && !hasPlayoffsGenerated && (
                 <button 
                 onClick={handleGeneratePlayoffs} 
@@ -1120,8 +1086,6 @@ const getOvrBadgeStyle = (ovr) => {
               </button>
             )}
             
-            {/* [5] Next Match Button (Blue) - UPDATED TO BLOCK PROGRESSION */}
-            {/* Logic: Added condition to HIDE this button if it's Super Week but meta isn't 16.02 yet */}
             {hasDrafted && nextGlobalMatch && !isMyNextMatch && 
              !(nextGlobalMatch.type === 'super' && league.metaVersion !== '16.02') && (
                 <button 
@@ -1132,7 +1096,6 @@ const getOvrBadgeStyle = (ovr) => {
                 </button>
             )}
 
-            {/* [6] Draft/Team Button */}
             <button onClick={handleDraftStart} disabled={hasDrafted} className={`px-6 py-1.5 rounded-full font-bold text-sm shadow-sm transition flex items-center gap-2 ${hasDrafted ? 'bg-gray-100 text-gray-400 cursor-not-allowed hidden' : 'bg-green-600 hover:bg-green-700 text-white animate-pulse'}`}>
                 <span>▶</span> {hasDrafted ? "" : (isCaptain ? "LCK 컵 팀 선정하기" : "LCK 컵 조 확인하기")}
             </button>
@@ -1162,7 +1125,6 @@ const getOvrBadgeStyle = (ovr) => {
                               
                               {isMyNextMatch ? (
                                   <div className="flex flex-col gap-2 mt-3 w-full">
-                                      {/* Button 1: Captain Mode (Manual) */}
                                       <button 
                                         onClick={() => handleStartMyMatch('manual')} 
                                         className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg shadow-md transform transition hover:scale-105 flex items-center justify-center gap-2"
@@ -1170,7 +1132,6 @@ const getOvrBadgeStyle = (ovr) => {
                                           <span>🎮</span> 경기 시작 (직접 플레이)
                                       </button>
                                       
-                                      {/* Button 2: Watch Mode (AI) */}
                                       <button 
                                         onClick={() => handleStartMyMatch('auto')} 
                                         className="w-full px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-lg shadow-md transform transition hover:scale-105 flex items-center justify-center gap-2"
@@ -1192,7 +1153,6 @@ const getOvrBadgeStyle = (ovr) => {
                      </div>
                   </div>
                   
-                  {/* --- 대시보드 우측 (순위표 또는 대진표) --- */}
                   <div className="col-span-12 lg:col-span-4 flex flex-col h-full max-h-[500px]">
                      {hasDrafted ? (
                        <div className="bg-white rounded-lg border shadow-sm p-4 h-full overflow-y-auto flex flex-col">
@@ -1353,7 +1313,6 @@ const getOvrBadgeStyle = (ovr) => {
                 />
             )}
   
-              {/* 재정 탭 */}
               {activeTab === 'finance' && (
                 <FinanceTab 
                     viewingTeam={viewingTeam}
@@ -1395,7 +1354,7 @@ const getOvrBadgeStyle = (ovr) => {
                     myTeam={myTeam}
                     hasDrafted={hasDrafted}
                     formatTeamName={formatTeamName}
-                    onMatchClick={handleMatchClick} // <--- [ADD THIS LINE]
+                    onMatchClick={handleMatchClick} 
                 />
             )} 
   
