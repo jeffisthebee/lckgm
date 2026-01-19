@@ -1,23 +1,22 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { calculateIndividualIncome, simulateSet, runGameTickEngine, selectPickFromTop3, selectBanFromProbabilities } from '../engine/gameLogic';
+// [IMPORTANT] Ensure this import points to your actual engine file (simEngine.js or gameLogic.js)
+import { calculateIndividualIncome, simulateSet, runGameTickEngine, selectPickFromTop3, selectBanFromProbabilities } from '../engine/simEngine';
 import { DRAFT_SEQUENCE, championList } from '../data/constants'; 
 
-// --- HELPER: Simple Scoring for Recommendation (Frontend Version) ---
+// --- HELPER: Simple Scoring for Recommendation ---
 const getRecommendedChampion = (role, currentChamps, availableChamps) => {
-    // Filter by Role
     const roleChamps = availableChamps.filter(c => c.role === (role === 'SUP' ? 'SUP' : role));
     if (roleChamps.length === 0) return availableChamps[0];
 
-    // Sort by Tier (1 is best) -> Stats Sum
     return roleChamps.sort((a, b) => {
-        if (a.tier !== b.tier) return a.tier - b.tier; // Lower tier # is better
+        if (a.tier !== b.tier) return a.tier - b.tier; 
         const sumA = Object.values(a.stats || {}).reduce((acc, v) => acc + v, 0);
         const sumB = Object.values(b.stats || {}).reduce((acc, v) => acc + v, 0);
         return sumB - sumA;
     })[0];
 };
 
-// --- HELPER: Calculate POS (Player of the Series) ---
+// --- HELPER: POS Calculation ---
 const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
     const allGames = [...(matchHistory || [])];
     if (currentSetData) {
@@ -32,7 +31,7 @@ const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
     allGames.forEach(game => {
         const picksA = game.picks?.A || [];
         const picksB = game.picks?.B || [];
-        const isTeamA = picksA[0]?.playerData?.팀 === winningTeamName || (picksA[0]?.playerData?.팀 === undefined && game.winner === winningTeamName && picksA[0]);
+        const isTeamA = picksA[0]?.playerData?.팀 === winningTeamName || (game.winner === winningTeamName && picksA[0]);
         const winningPicks = isTeamA ? picksA : picksB;
 
         (winningPicks || []).forEach(p => {
@@ -47,7 +46,6 @@ const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
             const damage = stats.damage || 0;
             
             let score = ((k + a) / d * 3) + (damage / 3000) + (gold / 1000) + (a * 1);
-            
             const role = p.playerData?.포지션 || 'MID';
             if (['JGL', '정글', 'SUP', '서포터'].includes(role)) score *= 1.15;
 
@@ -91,7 +89,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     const [winsA, setWinsA] = useState(0);
     const [winsB, setWinsB] = useState(0);
     
-    // Phase: READY -> SIDE_SELECT -> ROSTER_SELECT -> LOADING -> DRAFT -> GAME -> SET_RESULT
     const [phase, setPhase] = useState('READY'); 
     
     const [simulationData, setSimulationData] = useState(null);
@@ -108,22 +105,18 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     const [userSelectedRole, setUserSelectedRole] = useState(false);
     
     // NEW: Side Selection & Roster State
-    const [pendingSideInfo, setPendingSideInfo] = useState({ userHasChoice: false, previousLoserId: null });
-    const [selectedSide, setSelectedSide] = useState(null); // 'BLUE' or 'RED'
-    const [activeRoster, setActiveRoster] = useState({}); // { TOP: playerObj, JGL: playerObj ... }
+    const [activeRoster, setActiveRoster] = useState({}); 
 
     // --- DRAFT STATE ---
     const [draftStep, setDraftStep] = useState(0); 
     const [draftTimer, setDraftTimer] = useState(15);
     const [draftState, setDraftState] = useState({
-        blueBans: [],
-        redBans: [],
-        bluePicks: Array(5).fill(null),
-        redPicks: Array(5).fill(null),
+        blueBans: [], redBans: [],
+        bluePicks: Array(5).fill(null), redPicks: Array(5).fill(null),
         currentAction: 'Starting Draft...'
     });
 
-    // Real-time stats for UI
+    // Real-time stats
     const [gameTime, setGameTime] = useState(0);
     const [playbackSpeed, setPlaybackSpeed] = useState(1);
     const [liveStats, setLiveStats] = useState({
@@ -141,13 +134,11 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
 
     const safeArray = (v) => Array.isArray(v) ? v : [];
     
-    // Reset user selection tracking on draft step change
     useEffect(() => { setUserSelectedRole(false); }, [draftStep]);
   
     // -------------------------------------------------------------------------
     // 1. PHASE MANAGEMENT & INITIALIZATION
     // -------------------------------------------------------------------------
-    
     const initNextSet = useCallback(() => {
         setResultProcessed(false);
         setDraftStep(0);
@@ -158,11 +149,11 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         setSelectedChampion(null);
         setUserSelectedRole(false);
 
-        // Determine Sides Logic
+        // Determine Sides
         if (currentSet === 1) {
-            // Set 1: Default (Team A = Blue usually, or randomization from dashboard)
-            // But for Manual Mode, we proceed to Roster Select with default sides
-            setSelectedSide(null); 
+            // Set 1: Default side assignment (TeamA = Blue for logic simplicity initially)
+            // But we allow manual swap in Roster Select if needed? No, standard is TeamA blue usually.
+            setManualTeams({ blue: teamA, red: teamB });
             setPhase(isManualMode ? 'ROSTER_SELECT' : 'LOADING');
         } else {
             // Set 2+: Loser picks side
@@ -172,21 +163,11 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             const isUserLoser = previousLoser.name === simOptions.playerTeamName;
 
             if (isManualMode && isUserLoser) {
-                // FEATURE 1: User gets to choose side
-                setPendingSideInfo({ userHasChoice: true, previousLoserId: previousLoser.id });
+                // User chooses
                 setPhase('SIDE_SELECT');
             } else {
-                // AI Loser: 90% chance to pick Blue
+                // AI chooses: 90% Blue
                 const loserPicksBlue = Math.random() < 0.90;
-                // If loser picks Blue, User gets Red (and vice versa)
-                const userSide = (previousLoser.name === teamA.name) // If Loser is A (User?) No, we handled User above.
-                // Re-calc:
-                // If AI is Loser. AI picks side.
-                // if AI=Blue, User=Red. if AI=Red, User=Blue.
-                // We set 'selectedSide' to what the USER will play as.
-                // If TeamA is User, and TeamB (AI) loses. TeamB picks Blue. User(A) becomes Red.
-                
-                // Simplified: Determine Blue Team object
                 let blueTeam, redTeam;
                 if (loserPicksBlue) {
                     blueTeam = previousLoser;
@@ -196,7 +177,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                     blueTeam = (previousLoser.name === teamA.name) ? teamB : teamA;
                 }
                 
-                // Store implicit side decision for loading phase
                 setManualTeams({ blue: blueTeam, red: redTeam });
                 setPhase(isManualMode ? 'ROSTER_SELECT' : 'LOADING');
             }
@@ -210,34 +190,27 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     // -------------------------------------------------------------------------
     // 2. MANUAL FLOW HANDLERS
     // -------------------------------------------------------------------------
-
-    // FEATURE 1: Handle User Side Selection
     const handleUserSideSelect = (side) => {
-        // User is the loser of prev set, so they get to pick their side
         const userTeam = (teamA.name === simOptions.playerTeamName) ? teamA : teamB;
         const aiTeam = (userTeam.id === teamA.id) ? teamB : teamA;
 
-        if (side === 'BLUE') {
-            setManualTeams({ blue: userTeam, red: aiTeam });
-        } else {
-            setManualTeams({ blue: aiTeam, red: userTeam });
-        }
+        if (side === 'BLUE') setManualTeams({ blue: userTeam, red: aiTeam });
+        else setManualTeams({ blue: aiTeam, red: userTeam });
+        
         setPhase('ROSTER_SELECT');
     };
 
-    // FEATURE 2: Initialize Roster Selection
+    // Initialize Roster Selection when entering phase
     useEffect(() => {
         if (phase === 'ROSTER_SELECT') {
-            // Pre-fill active roster with best players or existing selection
             const userTeam = (teamA.name === simOptions.playerTeamName) ? teamA : teamB;
             const fullRoster = userTeam.roster || [];
             
-            // Default best OVR per role
+            // Auto-select best OVR per role as default
             const bestRoster = {};
             ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].forEach(pos => {
                 const candidates = fullRoster.filter(p => p.포지션 === pos || (pos === 'SUP' && p.포지션 === 'SPT'));
                 if (candidates.length > 0) {
-                    // Sort by OVR desc
                     candidates.sort((a,b) => b.종합 - a.종합);
                     bestRoster[pos] = candidates[0];
                 }
@@ -247,14 +220,12 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     }, [phase, teamA, teamB, simOptions]);
 
     const confirmRosterAndStart = () => {
-        // 1. Construct User Team with SELECTED 5 players
         const userTeamOrig = (teamA.name === simOptions.playerTeamName) ? teamA : teamB;
         const aiTeamOrig = (userTeamOrig.id === teamA.id) ? teamB : teamA;
 
         const finalUserRoster = Object.values(activeRoster);
         
-        // AI always uses full roster (engine picks best) or we can filter for AI too?
-        // Let's filter AI to best 5 to be fair/consistent with engine
+        // AI Logic: pick best 5
         const aiBestRoster = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(pos => {
             const candidates = aiTeamOrig.roster.filter(p => p.포지션 === pos || (pos === 'SUP' && p.포지션 === 'SPT'));
             return candidates.sort((a,b) => b.종합 - a.종합)[0];
@@ -263,32 +234,31 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         const userTeamFinal = { ...userTeamOrig, roster: finalUserRoster };
         const aiTeamFinal = { ...aiTeamOrig, roster: aiBestRoster };
 
-        // 2. Assign to Blue/Red based on earlier selection (or default for Set 1)
+        // Re-assign based on manualTeams sides
         let blueT, redT;
-        
-        if (currentSet === 1) {
-            // Set 1 default: A=Blue, B=Red (unless updated logic provided, usually random)
-            // If random logic needed:
-            if (Math.random() < 0.5) { blueT = userTeamFinal; redT = aiTeamFinal; }
-            else { blueT = aiTeamFinal; redT = userTeamFinal; }
+        if (manualTeams.blue.id === userTeamOrig.id) {
+            blueT = userTeamFinal; redT = aiTeamFinal;
         } else {
-            // Use the manualTeams set during Side Selection or InitNextSet
-            if (manualTeams.blue.id === userTeamOrig.id) {
-                blueT = userTeamFinal; redT = aiTeamFinal;
-            } else {
-                blueT = aiTeamFinal; redT = userTeamFinal;
-            }
+            blueT = aiTeamFinal; redT = userTeamFinal;
         }
 
         setManualTeams({ blue: blueT, red: redT });
-        setPhase('LOADING');
-        // Proceed to execute the actual loading/draft start
-        executeStartGame(blueT, redT);
+        setPhase('LOADING'); 
     };
 
     // -------------------------------------------------------------------------
-    // 3. EXECUTE LOADING (Common Path)
+    // 3. EXECUTE LOADING (The Missing Link Fixed)
     // -------------------------------------------------------------------------
+    useEffect(() => {
+        if (phase === 'LOADING') {
+            // Ensure teams are set. If auto mode (first set), they were set in initNextSet.
+            // If manual mode, they were set in confirmRosterAndStart.
+            if (manualTeams.blue && manualTeams.red) {
+                executeStartGame(manualTeams.blue, manualTeams.red);
+            }
+        }
+    }, [phase, manualTeams]);
+
     const executeStartGame = (blueTeam, redTeam) => {
         setDraftState({
             blueBans: [], redBans: [],
@@ -363,7 +333,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             const actingTeamObj = actingTeamSide === 'BLUE' ? manualTeams.blue : manualTeams.red;
             const isPlayerTurn = actingTeamObj?.name === simOptions?.playerTeamName;
 
-            // Auto-suggest role only if user hasn't explicitly chosen role
             if (isPlayerTurn && stepInfo.type === 'PICK' && !userSelectedRole) {
                 const myPicks = actingTeamSide === 'BLUE' ? manualPicks.blue : manualPicks.red;
                 const roles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
@@ -399,7 +368,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             }
         } 
         else if (simulationData) {
-            // Auto Replay Logic
             const triggerTime = Math.floor(Math.random() * 12) + 1; 
             const timer = setInterval(() => {
                 setDraftTimer(prev => {
@@ -757,7 +725,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     return (
       <div className="fixed inset-0 bg-gray-900 z-[200] flex flex-col text-white font-sans">
         
-        {/* === FEATURE 1 UI: SIDE SELECTION === */}
+        {/* === SIDE SELECTION UI === */}
         {phase === 'SIDE_SELECT' && (
             <div className="absolute inset-0 z-[250] bg-black/90 flex flex-col items-center justify-center animate-fade-in">
                 <h1 className="text-4xl font-black text-white mb-8">SIDE SELECTION</h1>
@@ -783,7 +751,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             </div>
         )}
 
-        {/* === FEATURE 2 UI: ROSTER SELECTION === */}
+        {/* === ROSTER SELECTION UI === */}
         {phase === 'ROSTER_SELECT' && (
             <div className="absolute inset-0 z-[250] bg-gray-900 flex flex-col items-center justify-center p-8 animate-fade-in">
                 <h1 className="text-3xl font-black text-white mb-2">TACTICAL SETUP</h1>
@@ -1113,7 +1081,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             </div>
         )}
   
-        {/* 3. Result Overlay with POG/POS */}
+        {/* 3. [UPDATED] Result Overlay with POG/POS */}
         {phase === 'SET_RESULT' && (
            <div className="absolute inset-0 bg-black/90 z-50 flex flex-col items-center justify-center animate-fade-in p-8">
                <h1 className="text-6xl font-black mb-4 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-red-400">
@@ -1193,12 +1161,12 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         setWinsA(newA); 
         setWinsB(newB);
         
-        // Calculate Kill Scores for History (use liveStatsRef if available)
+        // [FIX] Calculate Kill Scores for History (use liveStatsRef if available)
         const isBlueA = (simulationData?.blueTeam?.name === teamA.name);
         const killsA = isBlueA ? (liveStatsRef.current?.kills?.BLUE ?? 0) : (liveStatsRef.current?.kills?.RED ?? 0);
         const killsB = isBlueA ? (liveStatsRef.current?.kills?.RED ?? 0) : (liveStatsRef.current?.kills?.BLUE ?? 0);
 
-        // Save History Item (use simulationData safely)
+        // [UPDATED] Save History Item (use simulationData safely)
         const histItem = { 
             set: currentSet, 
             winner: simulationData?.winnerName, 
@@ -1209,15 +1177,16 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             gameTime: simulationData?.gameTime || `${simulationData?.totalMinutes || 30}분 00초`,
             totalMinutes: simulationData?.totalMinutes || 30,
             
-            // Save the Kill Scores here!
+            // [FIX] Save the Kill Scores here!
             scores: { A: killsA, B: killsB },
-            usedChamps: simulationData?.usedChamps || [] 
+            usedChamps: simulationData?.usedChamps || [] // Capture used champs
         };
 
         const newHist = [...matchHistory, histItem];
         setMatchHistory(newHist);
         
-        // Fearless Draft: Add champions from THIS set to global ban list
+        // [FIX] This is the KEY fix for Fearless Draft
+        // Add the champions from THIS set to the global ban list for subsequent sets
         setGlobalBanList(prev => [...prev, ...(simulationData?.usedChamps||[])]);
         
         if(newA >= targetWins || newB >= targetWins) {
