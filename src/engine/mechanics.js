@@ -56,7 +56,7 @@ export function resolveCombat(powerA, powerB) {
   
   let winChanceA = avgPowerA / totalAvgPower;
   const diff = avgPowerA - avgPowerB;
-  winChanceA += (diff * 0.018); 
+  winChanceA += (diff * 0.02); 
   if (winChanceA < 0) winChanceA = 0;
   if (winChanceA > 1) winChanceA = 1;
 
