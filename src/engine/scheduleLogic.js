@@ -11,84 +11,59 @@ const shuffle = (array) => {
     return array;
 };
 
-// --- BACKTRACKING SCHEDULER ---
-// This ensures strict adherence to "No Back-to-Back" constraints
+// --- BACKTRACKING SCHEDULER (Daily Slot Assignment) ---
 const solveWeekSchedule = (matches, days, slotsPerDay) => {
-    // We try multiple attempts with shuffled inputs to find a valid solution
     for (let attempt = 0; attempt < 50; attempt++) {
         const pool = shuffle([...matches]);
-        
-        // Data Structures
-        const schedule = Array(days.length).fill(null).map(() => []); // [ [Match, Match], [], ... ]
-        const teamActivity = {}; // { teamId: { dayIdx: boolean } }
+        const schedule = Array(days.length).fill(null).map(() => []); 
+        const teamActivity = {}; 
 
         if (runBacktrack(0, pool, schedule, teamActivity, slotsPerDay, days.length)) {
-            // Solution Found -> Format it
             const result = [];
             schedule.forEach((dayMatches, dayIdx) => {
                 dayMatches.forEach((m, slotIdx) => {
                     result.push({
                         ...m,
                         date: days[dayIdx],
-                        time: slotIdx === 0 ? '17:00' : '19:30' // Standard LCK Times
+                        time: slotIdx === 0 ? '17:00' : '19:30'
                     });
                 });
             });
             return result;
         }
     }
-    
-    console.warn("Could not find perfect schedule, falling back to simple distribution");
     return fallbackSchedule(matches, days, slotsPerDay);
 };
 
 const runBacktrack = (matchIdx, pool, schedule, teamActivity, slotsPerDay, numDays) => {
-    // Base Case: All matches placed
     if (matchIdx === pool.length) return true;
 
     const match = pool[matchIdx];
     const t1 = match.t1;
     const t2 = match.t2;
 
-    // Try to place this match on any of the days
-    // Optimization: Try days with fewer matches first to balance load? 
-    // For now, simple iteration 0..4 is fine for N=10 matches
     for (let day = 0; day < numDays; day++) {
-        
-        // Constraint 1: Slot Capacity
         if (schedule[day].length >= slotsPerDay) continue;
-
-        // Constraint 2: Teams cannot play twice on the same day
         if (hasPlayedOnDay(t1, day, teamActivity) || hasPlayedOnDay(t2, day, teamActivity)) continue;
-
-        // Constraint 3: NO BACK-TO-BACK (Cannot play on Day-1 or Day+1)
         if (hasPlayedOnDay(t1, day - 1, teamActivity) || hasPlayedOnDay(t1, day + 1, teamActivity)) continue;
         if (hasPlayedOnDay(t2, day - 1, teamActivity) || hasPlayedOnDay(t2, day + 1, teamActivity)) continue;
 
-        // Action: Place Match
         schedule[day].push(match);
         setPlayed(t1, day, true, teamActivity);
         setPlayed(t2, day, true, teamActivity);
 
-        // Recurse
-        if (runBacktrack(matchIdx + 1, pool, schedule, teamActivity, slotsPerDay, numDays)) {
-            return true;
-        }
+        if (runBacktrack(matchIdx + 1, pool, schedule, teamActivity, slotsPerDay, numDays)) return true;
 
-        // Backtrack: Undo Action
         schedule[day].pop();
         setPlayed(t1, day, false, teamActivity);
         setPlayed(t2, day, false, teamActivity);
     }
-
     return false;
 };
 
-// --- ACTIVITY HELPERS ---
 const hasPlayedOnDay = (teamId, dayIdx, activityMap) => {
     if (dayIdx < 0) return false;
-    if (!activityMap[teamId]) return false;
-    return !!activityMap[teamId][dayIdx];
+    return !!(activityMap[teamId] && activityMap[teamId][dayIdx]);
 };
 
 const setPlayed = (teamId, dayIdx, status, activityMap) => {
@@ -98,7 +73,6 @@ const setPlayed = (teamId, dayIdx, status, activityMap) => {
 };
 
 const fallbackSchedule = (matches, days, slotsPerDay) => {
-    // Simple dump if solver fails (should be rare)
     return matches.map((m, i) => ({
         ...m,
         date: days[Math.floor(i / slotsPerDay)] || days[days.length - 1],
@@ -106,131 +80,111 @@ const fallbackSchedule = (matches, days, slotsPerDay) => {
     }));
 };
 
-
 // --- MAIN GENERATOR ---
 export const generateSchedule = (baronIds, elderIds) => {
-    // 1. Normalize IDs
     const getID = (t) => (typeof t === 'object' ? t.id : t);
+    
+    // [CRITICAL] Do NOT shuffle the input arrays. 
+    // We assume baronIds and elderIds are passed in Pick Order (Index 0 = Captain, Index 1 = 1st Pick...)
     const barons = baronIds.map(getID);
     const elders = elderIds.map(getID);
     const allTeamIds = [...barons, ...elders];
 
-    // 2. Generate 5 Perfect Matchings (K5,5 Decomposition)
-    // Ensures every Baron plays every Elder exactly once.
-    const matchings = []; 
-    const shuffledElders = shuffle([...elders]);
-    const shuffledBarons = shuffle([...barons]); 
-
+    // --- 1. Construct 5 Perfect Matchings (Cyclic Offsets) ---
+    // Offset 0: B[0]vsE[0], B[1]vsE[1]... (This is the Rivalry/Draft Order Match)
+    // Offset 1..4: The other combinations needed for a full Round Robin across groups
+    const matchings = [];
     for (let offset = 0; offset < 5; offset++) {
         const roundMatches = [];
         for (let i = 0; i < 5; i++) {
             roundMatches.push({
-                t1: shuffledBarons[i],
-                t2: shuffledElders[(i + offset) % 5]
+                t1: barons[i],
+                t2: elders[(i + offset) % 5] 
             });
         }
         matchings.push(roundMatches);
     }
 
-    const shuffledMatchings = shuffle(matchings);
+    // --- 2. Assign Weeks ---
+    
+    // Super Week (Week 3) gets Offset 0 (Rivalry Matches: Pick Order Preserved)
+    const superWeekPool = [...matchings[0]]; 
 
-    // 3. Assign Rounds to Weeks
-    // Week 1: 2 Rounds (10 Matches)
-    const week1Pool = [...shuffledMatchings[0], ...shuffledMatchings[1]];
-    // Week 2: 2 Rounds (10 Matches)
-    const week2Pool = [...shuffledMatchings[2], ...shuffledMatchings[3]];
-    // Week 3 (Super Week): 1 Round (5 Matches)
-    const superWeekPool = [...shuffledMatchings[4]];
+    // Weeks 1 & 2 get Offsets 1, 2, 3, 4
+    // We shuffle these 4 rounds so the order of opponents in the first 2 weeks varies
+    const regularRounds = shuffle([ matchings[1], matchings[2], matchings[3], matchings[4] ]);
+    
+    const week1Pool = [...regularRounds[0], ...regularRounds[1]]; // 10 matches
+    const week2Pool = [...regularRounds[2], ...regularRounds[3]]; // 10 matches
 
-    // 4. Solve Dates for Each Week
+    // --- 3. Solve Daily Schedules ---
     const regularDays1 = ['1.14 (수)', '1.15 (목)', '1.16 (금)', '1.17 (토)', '1.18 (일)'];
     const regularDays2 = ['1.21 (수)', '1.22 (목)', '1.23 (금)', '1.24 (토)', '1.25 (일)'];
     const superDays = ['1.28 (수)', '1.29 (목)', '1.30 (금)', '1.31 (토)', '2.1 (일)']; 
 
     const scheduleW1 = solveWeekSchedule(week1Pool, regularDays1, 2);
     const scheduleW2 = solveWeekSchedule(week2Pool, regularDays2, 2);
-    
-    // Super week is easier (1 match per day), solver works or simple map works
-    // Use solver to ensure random valid distribution
     const scheduleSuper = solveWeekSchedule(superWeekPool, superDays, 1);
 
     let allScheduled = [...scheduleW1, ...scheduleW2, ...scheduleSuper];
 
-    // 5. Side Selection & Balancing
-    // Constraint: Every team must play minimum 2 games on Blue Side (out of 5 total).
-    
-    // A. Initial Random Assignment
+    // --- 4. Side Selection & Balancing ---
+    // Randomize initial sides
     allScheduled = allScheduled.map(m => {
         const coin = Math.random() < 0.5;
         return {
             ...m,
-            t1: coin ? m.t1 : m.t2, // New t1 is Blue
-            t2: coin ? m.t2 : m.t1, // New t2 is Red
+            t1: coin ? m.t1 : m.t2, 
+            t2: coin ? m.t2 : m.t1,
             blueSidePriority: 'coin'
         };
     });
 
-    // B. Balance Loop
+    // Balance Loop: Ensure min 2 Blue Sides per team
     const getBlueCounts = (matches) => {
         const counts = {};
         allTeamIds.forEach(id => counts[id] = 0);
-        matches.forEach(m => {
-            counts[m.t1] = (counts[m.t1] || 0) + 1;
-        });
+        matches.forEach(m => counts[m.t1] = (counts[m.t1] || 0) + 1);
         return counts;
     };
 
     let counts = getBlueCounts(allScheduled);
     let safety = 0;
-
     while (safety < 1000) {
-        // Find a team with < 2 Blue Sides
         const unluckyTeam = allTeamIds.find(id => counts[id] < 2);
+        if (!unluckyTeam) break;
+
+        // Try to swap a game where opponent has > 2 Blue sides
+        const candidates = allScheduled.filter(m => String(m.t2) === String(unluckyTeam) && counts[m.t1] > 2);
         
-        if (!unluckyTeam) break; // All balanced!
-
-        // Find a match where this team is Red (t2)
-        // AND the opponent (t1) has > 2 Blue Sides (so taking one away is fine)
-        const candidates = allScheduled.filter(m => 
-            String(m.t2) === String(unluckyTeam) && counts[m.t1] > 2
-        );
-
+        let swapMatch;
         if (candidates.length > 0) {
-            // Pick random candidate or first
-            const swapMatch = candidates[0];
-            
-            // Swap
+            swapMatch = candidates[0];
+        } else {
+            // Force swap if necessary
+            const force = allScheduled.filter(m => String(m.t2) === String(unluckyTeam));
+            if (force.length > 0) swapMatch = force[0];
+        }
+
+        if (swapMatch) {
             const temp = swapMatch.t1;
             swapMatch.t1 = swapMatch.t2;
             swapMatch.t2 = temp;
-
-            // Update Counts
             counts = getBlueCounts(allScheduled);
         } else {
-            // If no perfect swap exists, just swap against anyone to force the constraint
-            // (Even if it drops opponent to 1, subsequent loops will fix them)
-            const forceCandidates = allScheduled.filter(m => String(m.t2) === String(unluckyTeam));
-            if (forceCandidates.length > 0) {
-                const swapMatch = forceCandidates[0];
-                const temp = swapMatch.t1;
-                swapMatch.t1 = swapMatch.t2;
-                swapMatch.t2 = temp;
-                counts = getBlueCounts(allScheduled);
-            } else {
-                break; // Should not happen
-            }
+            break; 
         }
         safety++;
     }
 
-    // 6. Final Formatting
+    // --- 5. Formatting ---
     allScheduled = allScheduled.map(m => {
         const isSuper = superDays.includes(m.date);
         return {
             ...m,
             id: Date.now() + Math.floor(Math.random()*1000000), 
             type: isSuper ? 'super' : 'regular',
-            format: isSuper ? 'BO5' : 'BO3', // Super week is BO5? Or regular is BO3?
+            format: isSuper ? 'BO5' : 'BO3',
             status: 'pending'
         };
     });
