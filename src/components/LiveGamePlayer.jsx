@@ -55,7 +55,8 @@ const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
             let score = ((k + a) / d * 3) + (damage / 3000) + (gold / 1000) + (a * 1);
             
             const role = p.playerData?.포지션 || 'MID';
-            if (['JGL', '정글', 'SUP', '서포터'].includes(role)) score *= 1.15;
+            if (['JGL', '정글'].includes(role)) score *= 1.07;
+            if (['SUP', '서포터'].includes(role)) score *= 1.10;
 
             playerScores[p.playerName].totalScore += score;
             playerScores[p.playerName].games += 1;
@@ -168,6 +169,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
       });
 
       setManualPicks({ blue: {}, red: {} });
+      // [FIX] Initialize locked champs with global bans for this set
       setManualLockedChamps(new Set(globalBanList)); 
       setSelectedChampion(null);
       setUserSelectedRole(false);
@@ -506,7 +508,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             const winnerName = result?.winnerName || result?.gameResult?.winnerName || (result?.winner || null);
             const totalSeconds = result?.totalSeconds ?? (result?.totalMinutes ? result.totalMinutes * 60 : 30 * 60);
             const logs = safeArray(result?.logs);
-            const usedChamps = safeArray(result?.usedChamps || []);
+            // [FIX] CRITICAL: Manually calculate used champs because engine doesn't return them for manual games
+            const currentUsedChamps = [...picksBlueDetailed, ...picksRedDetailed].map(p => p.champName);
             const totalMinutes = result?.totalMinutes ?? Math.floor((totalSeconds || 1800) / 60);
 
             // 3. Calculate POG - determine winner side explicitly
@@ -532,7 +535,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 picks: { A: picksBlueDetailed, B: picksRedDetailed },
                 bans: { A: draftState.blueBans || [], B: draftState.redBans || [] },
                 pogPlayer: pogPlayer || null,
-                usedChamps: [...usedChamps]
+                usedChamps: currentUsedChamps // Pass the calculated list
             });
         
             setLiveStats({
@@ -1120,11 +1123,15 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             totalMinutes: simulationData?.totalMinutes || 30,
             
             // [FIX] Save the Kill Scores here!
-            scores: { A: killsA, B: killsB } 
+            scores: { A: killsA, B: killsB },
+            usedChamps: simulationData?.usedChamps || [] // Capture used champs
         };
 
         const newHist = [...matchHistory, histItem];
         setMatchHistory(newHist);
+        
+        // [FIX] This is the KEY fix for Fearless Draft
+        // Add the champions from THIS set to the global ban list for subsequent sets
         setGlobalBanList(prev => [...prev, ...(simulationData?.usedChamps||[])]);
         
         if(newA >= targetWins || newB >= targetWins) {
