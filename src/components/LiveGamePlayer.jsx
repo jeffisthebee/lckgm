@@ -23,7 +23,6 @@ const getRecommendedChampion = (role, currentChamps, availableChamps) => {
 const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
     const allGames = [...(matchHistory || [])];
     if (currentSetData) {
-        // Add the current game to the calculation
         allGames.push({
             winner: currentSetData.winnerName,
             picks: currentSetData.picks 
@@ -33,10 +32,9 @@ const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
     const playerScores = {};
 
     allGames.forEach(game => {
-        // Identify which set of picks belongs to the winning team
         const picksA = game.picks?.A || [];
         const picksB = game.picks?.B || [];
-        // Heuristic: if picks contain playerData with a team field, use it; otherwise fallback by winner name
+        // Heuristic: Check if picksA belongs to the winner
         const isTeamA = picksA[0]?.playerData?.팀 === winningTeamName || (picksA[0]?.playerData?.팀 === undefined && game.winner === winningTeamName && picksA[0]);
         const winningPicks = isTeamA ? picksA : picksB;
 
@@ -44,7 +42,6 @@ const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
             if (!p) return;
             if (!playerScores[p.playerName]) playerScores[p.playerName] = { ...p, totalScore: 0, games: 0 };
             
-            // Recalculate score for the series
             const stats = p.stats || { kills: p.k || 0, deaths: p.d || 0, assists: p.a || 0, damage: 0 };
             const k = stats.kills || 0;
             const d = (stats.deaths === 0 ? 1 : (stats.deaths || 1));
@@ -52,7 +49,6 @@ const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
             const gold = p.currentGold || 0;
             const damage = stats.damage || 0;
             
-            // Approximate score
             let score = ((k + a) / d * 3) + (damage / 3000) + (gold / 1000) + (a * 1);
             
             const role = p.playerData?.포지션 || 'MID';
@@ -79,7 +75,6 @@ const calculateManualPog = (picksBlue = [], picksRed = [], winnerSide = 'BLUE', 
         const a = (p.stats?.assists ?? p.a) || 0;
         const damage = p.stats?.damage || 0;
         
-        // DPM
         const dpm = damage / (gameMinutes || 1);
         
         let score = ((k + a) / d * 3) + (dpm / 100) + ((p.currentGold || 0) / 1000) + (a * 1);
@@ -103,18 +98,22 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     const [winsB, setWinsB] = useState(0);
     
     // Phase: ROSTER_SELECTION -> SIDE_SELECTION -> READY -> LOADING -> DRAFT -> GAME -> SET_RESULT
-    // Set 1 starts at ROSTER_SELECTION
     const [phase, setPhase] = useState('ROSTER_SELECTION'); 
     
     const [simulationData, setSimulationData] = useState(null);
     const [displayLogs, setDisplayLogs] = useState([]);
     const [resultProcessed, setResultProcessed] = useState(false);
     
-    // --- ROSTER & SIDE STATE ---
-    // activeRosterA: The 5 players user chose to start
-    const [activeRosterA, setActiveRosterA] = useState({}); 
-    // preselectedSide: 'BLUE' or 'RED' (if determined by side selection phase)
+    // --- [FIXED] ROSTER STATE ---
+    // activeUserRoster: The 5 players USER chose (regardless of whether they are Team A or B)
+    const [activeUserRoster, setActiveUserRoster] = useState({}); 
     const [preselectedSide, setPreselectedSide] = useState(null); 
+
+    // Helper: Identify which team object is the "Player's Team"
+    // If playerTeamName is not provided (auto mode), default to teamA
+    const isUserTeamA = !simOptions?.playerTeamName || teamA.name === simOptions.playerTeamName;
+    const userTeam = isUserTeamA ? teamA : teamB;
+    const cpuTeam = isUserTeamA ? teamB : teamA;
 
     // --- MANUAL MODE STATE ---
     const [manualTeams, setManualTeams] = useState({ blue: null, red: null });
@@ -137,7 +136,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         currentAction: 'Starting Draft...'
     });
 
-    // Real-time stats for UI
     const [gameTime, setGameTime] = useState(0);
     const [playbackSpeed, setPlaybackSpeed] = useState(1);
     const [liveStats, setLiveStats] = useState({
@@ -153,16 +151,14 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     const [matchHistory, setMatchHistory] = useState([]);
     const targetWins = match?.format === 'BO5' ? 3 : 2;
 
-    // safe utility
     const safeArray = (v) => Array.isArray(v) ? v : [];
-    const ROLE_ORDER = ['TOP','JGL','MID','ADC','SUP'];
-
+    
     // --- INITIALIZE ROSTER ON MOUNT ---
     useEffect(() => {
-        // Set default best 5 lineup when component mounts
-        const defaultLineup = getDefaultLineup(teamA.name);
-        setActiveRosterA(defaultLineup);
-    }, [teamA]);
+        // [FIX] Initialize roster for the USER'S team, not just Team A
+        const defaultLineup = getDefaultLineup(userTeam.name);
+        setActiveUserRoster(defaultLineup);
+    }, [userTeam.name]);
 
     // reset userSelectedRole when draftStep advances
     useEffect(() => {
@@ -190,11 +186,17 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
 
       setTimeout(() => {
           try {
-              // Construct Team Objects with ACTIVE Rosters
-              // User Team (A): Use the selected 5
-              const teamA_Active = { ...teamA, roster: Object.values(activeRosterA) };
-              // CPU Team (B): Use full roster (simEngine picks best 5 anyway) or filter here
-              const teamB_Active = teamB; // Engine handles best 5 for CPU
+              // [FIX] Construct Team Objects with ACTIVE Rosters Correctly
+              // If user is Team A, apply activeUserRoster to Team A.
+              // If user is Team B, apply activeUserRoster to Team B.
+              
+              const teamA_Active = isUserTeamA 
+                  ? { ...teamA, roster: Object.values(activeUserRoster) } 
+                  : teamA; // CPU uses default full roster (simEngine picks best)
+
+              const teamB_Active = !isUserTeamA 
+                  ? { ...teamB, roster: Object.values(activeUserRoster) }
+                  : teamB;
 
               let blueTeam, redTeam;
 
@@ -202,14 +204,22 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
               if (preselectedSide) {
                   // If side was chosen in SIDE_SELECTION phase (Manual Mode)
                   if (preselectedSide === 'BLUE') {
-                      blueTeam = teamA_Active; redTeam = teamB_Active;
+                      // Whoever chose BLUE is Blue.
+                      // Who chose? The USER chose.
+                      // So if User is Team A, and chose Blue -> Team A is Blue.
+                      // If User is Team B, and chose Blue -> Team B is Blue.
+                      
+                      blueTeam = isUserTeamA ? teamA_Active : teamB_Active;
+                      redTeam = isUserTeamA ? teamB_Active : teamA_Active;
                   } else {
-                      redTeam = teamA_Active; blueTeam = teamB_Active;
+                      // User chose RED -> User is Red.
+                      redTeam = isUserTeamA ? teamA_Active : teamB_Active;
+                      blueTeam = isUserTeamA ? teamB_Active : teamA_Active;
                   }
               } else if (currentSet === 1) {
-                  // Set 1 Default (Random or Match prop)
+                  // Set 1 Default
                   const t1Id = typeof match.t1 === 'object' ? match.t1.id : match.t1;
-                  const myId = teamA.id;
+                  const myId = userTeam.id; // User ID
                   let userIsBlue = true;
                   
                   if (match.blueSidePriority) {
@@ -219,21 +229,27 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                       userIsBlue = Math.random() < 0.5;
                   }
                   
-                  blueTeam = userIsBlue ? teamA_Active : teamB_Active;
-                  redTeam = userIsBlue ? teamB_Active : teamA_Active;
+                  const userTeamObj = isUserTeamA ? teamA_Active : teamB_Active;
+                  const cpuTeamObj = isUserTeamA ? teamB_Active : teamA_Active;
+
+                  blueTeam = userIsBlue ? userTeamObj : cpuTeamObj;
+                  redTeam = userIsBlue ? cpuTeamObj : userTeamObj;
               } else {
                   // Fallback for Auto Mode (Previous Loser picks side)
+                  // If we are here, preselectedSide was null, meaning Auto Logic
                   const lastGame = matchHistory[matchHistory.length - 1];
                   const lastWinnerName = lastGame.winner;
                   const previousLoser = (lastWinnerName === teamA.name) ? teamB : teamA;
                   const loserPicksBlue = Math.random() < 0.90; // AI Logic
                   
+                  // Identify objects
+                  const loserObj = previousLoser.name === teamA.name ? teamA_Active : teamB_Active;
+                  const winnerObj = previousLoser.name === teamA.name ? teamB_Active : teamA_Active;
+
                   if (loserPicksBlue) {
-                      blueTeam = previousLoser.name === teamA.name ? teamA_Active : teamB_Active;
-                      redTeam = previousLoser.name === teamA.name ? teamB_Active : teamA_Active;
+                      blueTeam = loserObj; redTeam = winnerObj;
                   } else {
-                      redTeam = previousLoser.name === teamA.name ? teamA_Active : teamB_Active;
-                      blueTeam = previousLoser.name === teamA.name ? teamB_Active : teamA_Active;
+                      redTeam = loserObj; blueTeam = winnerObj;
                   }
               }
               // -----------------------------
@@ -246,7 +262,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                   const result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
                   if (!result || !result.picks) throw new Error("Draft failed");
 
-                  // Ensure we have logs and pogPlayer shape
                   const safeResult = {
                       ...result,
                       logs: safeArray(result.logs),
@@ -267,7 +282,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                       ...safeArray(safeResult.picks?.B).map(p => enrichPlayer(p, redTeam.roster, 'RED'))
                   ];
       
-                  setSimulationData({ ...safeResult, blueTeam, redTeam }); // result now includes pogPlayer from engine
+                  setSimulationData({ ...safeResult, blueTeam, redTeam }); 
                   setLiveStats({
                       kills: { BLUE: 0, RED: 0 },
                       gold: { BLUE: 2500, RED: 2500 },
@@ -282,11 +297,10 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
   
           } catch (e) {
               console.error("Simulation Error:", e);
-              // don't crash the whole page - close modal gracefully
               try { onClose && onClose(); } catch { /* swallow */ }
           }
       }, 500);
-    }, [currentSet, teamA, teamB, globalBanList, simOptions, onClose, matchHistory, isManualMode, activeRosterA, preselectedSide]);
+    }, [currentSet, teamA, teamB, globalBanList, simOptions, onClose, matchHistory, isManualMode, activeUserRoster, preselectedSide, isUserTeamA, userTeam, cpuTeam]);
 
     useEffect(() => {
       if (phase === 'READY') startSet();
@@ -296,7 +310,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     
     // 1. Roster Confirm
     const handleRosterConfirm = () => {
-        if (!validateLineup(activeRosterA)) {
+        if (!validateLineup(activeUserRoster)) {
             alert("로스터가 불완전하거나 중복된 선수가 있습니다. 5명을 모두 채워주세요.");
             return;
         }
@@ -305,7 +319,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
 
     // 2. Roster Select (Clicking a player)
     const handlePlayerSelect = (position, player) => {
-        setActiveRosterA(prev => ({
+        setActiveUserRoster(prev => ({
             ...prev,
             [position]: player
         }));
@@ -435,7 +449,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             } else {
                 const neededRole = remainingRoles[0] || 'MID';
                 selectedChamp = getRecommendedChampion(neededRole, [], availableChamps);
-                // Ensure role is set for the champ object
                 selectedChamp = { ...selectedChamp, role: neededRole };
             }
         }
@@ -453,7 +466,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         
         commitDraftAction(stepInfo, selectedChampion, team, side);
         setSelectedChampion(null);
-        // player explicitly locked a champ -> mark role chosen by user so auto-suggest won't override
         setUserSelectedRole(true);
     };
 
@@ -502,7 +514,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         setDraftTimer(25); 
     };
 
-    // --- FINALIZE MANUAL DRAFT (Unchanged Logic, added safety) ---
+    // --- FINALIZE MANUAL DRAFT (Unchanged Logic) ---
     const finalizeManualDraft = () => {
         if (!manualTeams.blue || !manualTeams.red) {
             console.error("Critical Error: Teams not initialized");
@@ -760,8 +772,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     }, [phase, simulationData, playbackSpeed, isManualMode, manualTeams]);
 
     // --- RENDER HELPERS ---
-    const getActivePlayerName = (pos) => activeRosterA[pos]?.이름 || "선택 안됨";
-    const getActivePlayerOvr = (pos) => activeRosterA[pos]?.종합 || "-";
+    const getActivePlayerName = (pos) => activeUserRoster[pos]?.이름 || "선택 안됨";
+    const getActivePlayerOvr = (pos) => activeUserRoster[pos]?.종합 || "-";
 
     // --- LOADING SCREEN ---
     if ((!simulationData && !isManualMode && phase !== 'SET_RESULT' && phase !== 'ROSTER_SELECTION' && phase !== 'SIDE_SELECTION' && phase !== 'LOADING') || (isManualMode && !manualTeams.blue && phase !== 'ROSTER_SELECTION' && phase !== 'SIDE_SELECTION')) {
@@ -924,9 +936,10 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
 
                          {/* RIGHT: Available Roster Pool */}
                          <div className="flex-1 bg-gray-900 rounded-xl p-6 border border-gray-700 overflow-y-auto">
+                             {/* [FIXED] Using userTeam.roster instead of teamA.roster */}
                              <div className="grid grid-cols-3 gap-4">
-                                 {teamA.roster.map(player => {
-                                     const isSelected = Object.values(activeRosterA).some(p => p.id === player.id);
+                                 {userTeam.roster.map(player => {
+                                     const isSelected = Object.values(activeUserRoster).some(p => p.id === player.id);
                                      return (
                                          <button 
                                             key={player.id}
@@ -1295,7 +1308,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
 
                         // Who lost?
                         const loserName = winnerIsA ? teamB.name : teamA.name;
-                        const isUserLoser = loserName === teamA.name;
+                        const isUserLoser = loserName === userTeam.name;
 
                         if (isUserLoser) {
                             // User Lost -> Manual Side Selection
@@ -1303,7 +1316,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                         } else {
                             // AI Lost -> AI picks side (90% Blue)
                             const aiPicksBlue = Math.random() < 0.90;
-                            // If AI (Team B) picks Blue, User (Team A) is Red
+                            // If AI picks Blue, User is Red
                             setPreselectedSide(aiPicksBlue ? 'RED' : 'BLUE');
                             // Move to Roster Selection
                             setPhase('ROSTER_SELECTION');

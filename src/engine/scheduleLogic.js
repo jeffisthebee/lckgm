@@ -1,173 +1,205 @@
 // src/engine/scheduleLogic.js
 
+// Helper to shuffle array (Fisher-Yates)
+const shuffle = (array) => {
+    let currentIndex = array.length, randomIndex;
+    while (currentIndex !== 0) {
+        randomIndex = Math.floor(Math.random() * currentIndex);
+        currentIndex--;
+        [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+    }
+    return array;
+};
+
 export const generateSchedule = (baronIds, elderIds) => {
-    // LCK Cup Format: 2 Weeks of Regular Season (4 games) + 1 Super Week (1 game)
-    const regularDays = [
-        '1.14 (수)', '1.15 (목)', '1.16 (금)', '1.17 (토)', '1.18 (일)', 
-        '1.21 (수)', '1.22 (목)', '1.23 (금)', '1.24 (토)', '1.25 (일)'
-    ];
-    // Super Week days (adjust dates as needed)
-    const superDays = ['1.28 (수)', '1.29 (목)', '1.30 (금)', '1.31 (토)', '2.1 (일)'];
+    // 1. Data Prep: Ensure we have IDs (handle team objects if passed)
+    const getID = (t) => (typeof t === 'object' ? t.id : t);
+    const barons = baronIds.map(getID);
+    const elders = elderIds.map(getID);
 
-    // Restore Draft Order if inputs are Team Objects
-    const restoreOrder = (group) => {
-        if (group.length > 0 && typeof group[0] === 'object') {
-            return [...group].sort((a, b) => (a.draftOrder ?? a.id) - (b.draftOrder ?? b.id));
-        }
-        return group; // If strings/IDs, assume they are passed in correct order or can't sort
-    };
-
-    const baronList = restoreOrder(baronIds);
-    const elderList = restoreOrder(elderIds);
-
-    const allMatches = [];
-    const n = 5; 
+    // 2. Generate 5 Perfect Matchings (Decomposition of K5,5 Graph)
+    // We create 5 rounds where in each round, every team plays exactly once against a unique opponent.
+    const matchings = []; 
     
-    // Track Blue Side counts
-    const teamBlueCounts = {};
-    const getId = (t) => (typeof t === 'object' ? t.id : t);
-    [...baronList, ...elderList].forEach(t => teamBlueCounts[getId(t)] = 0);
-    
-    // Track Group Totals to enforce 12/13 split
-    let baronGroupBlueTotal = 0;
-    let elderGroupBlueTotal = 0;
+    // Shuffle elders relative to barons to ensure unique random pairings every season
+    const shuffledElders = shuffle([...elders]);
+    const shuffledBarons = shuffle([...barons]); 
 
-    // We generate 5 rounds total
-    for (let r = 0; r < 5; r++) {
-        const isSuperWeek = (r === 4);
-        const offset = isSuperWeek ? 0 : (r + 1);
-
-        for (let i = 0; i < n; i++) {
-            const b = baronList[i];
-            const e = elderList[(i + offset) % n];
+    for (let offset = 0; offset < 5; offset++) {
+        const roundMatches = [];
+        for (let i = 0; i < 5; i++) {
+            const baron = shuffledBarons[i];
+            const elder = shuffledElders[(i + offset) % 5];
             
-            let t1, t2; // t1 is Blue, t2 is Red
-
-            // --- Side Selection Logic (Strict Fairness) ---
-            const bId = getId(b);
-            const eId = getId(e);
-            const bBlue = teamBlueCounts[bId];
-            const eBlue = teamBlueCounts[eId];
-            
-            // Priority 1: Enforce "At least 2 Blue Games" per team
-            if (bBlue < 2 && eBlue >= 2) {
-                t1 = b; t2 = e;
-            } else if (eBlue < 2 && bBlue >= 2) {
-                t1 = e; t2 = b;
-            } 
-            // Priority 2: Enforce Group Balance (12 vs 13 split)
-            else if (baronGroupBlueTotal < elderGroupBlueTotal) {
-                t1 = b; t2 = e;
-            } else if (elderGroupBlueTotal < baronGroupBlueTotal) {
-                t1 = e; t2 = b;
-            } 
-            // Priority 3: Random
-            else {
-                if (Math.random() < 0.5) { t1 = b; t2 = e; } 
-                else { t1 = e; t2 = b; }
-            }
-            
-            // Update Counts
-            const t1Id = getId(t1);
-            teamBlueCounts[t1Id]++;
-            
-            // Check which group t1 belongs to (using original list inclusion)
-            if (baronList.includes(t1)) baronGroupBlueTotal++;
-            else elderGroupBlueTotal++;
-
-            allMatches.push({
-                id: Date.now() + allMatches.length + (r * 100),
-                t1: t1,
-                t2: t2,
-                type: isSuperWeek ? 'super' : 'regular',
-                status: 'pending',
-                format: isSuperWeek ? 'BO5' : 'BO3',
-                label: isSuperWeek ? '🔥 슈퍼위크' : '정규시즌',
-                roundIndex: r
+            roundMatches.push({
+                t1: baron,
+                t2: elder,
+                // Side will be balanced later
             });
         }
+        matchings.push(roundMatches);
     }
 
-    // 2. Separate Matches
-    const regularMatches = allMatches.filter(m => m.type === 'regular'); 
-    const superMatches = allMatches.filter(m => m.type === 'super');
+    // 3. Assign Matchings to Weeks (Even Distribution)
+    // We shuffle the order of the matchings (rounds) so the "Super Week" matchups aren't predictable.
+    const shuffledMatchings = shuffle(matchings);
 
-    // Schedule the 20 Regular Season matches into the 10 days
-    let finalRegularSchedule = [];
-    
-    // Attempt to schedule regular matches fairly
-    for (let attempt = 0; attempt < 5000; attempt++) {
-        const queue = [...regularMatches].sort(() => Math.random() - 0.5);
-        const slots = Array(10).fill(null).map(() => []); 
-        const teamDays = {};
-        [...baronList, ...elderList].forEach(t => teamDays[getId(t)] = new Set());
+    // Week 1: 2 Rounds (Everyone plays 2 games)
+    const week1Matches = [...shuffledMatchings[0], ...shuffledMatchings[1]];
+    // Week 2: 2 Rounds (Everyone plays 2 games)
+    const week2Matches = [...shuffledMatchings[2], ...shuffledMatchings[3]];
+    // Week 3 (Super Week): 1 Round (Everyone plays 1 game)
+    const superWeekMatches = [...shuffledMatchings[4]];
+
+    // 4. Daily Scheduling Helper
+    const scheduleWeek = (matches, days, matchesPerDay) => {
+        // We attempt to fit matches into days such that no team plays twice in one day.
+        let bestSchedule = null;
         
-        let possible = true;
+        // Try multiple times to find a valid conflict-free schedule
+        for(let attempt=0; attempt<50; attempt++) {
+            const dailySlots = Array(days.length).fill().map(() => []);
+            const pool = shuffle([...matches]);
+            let valid = true;
 
-        for (const match of queue) {
-            const t1Id = getId(match.t1);
-            const t2Id = getId(match.t2);
+            for(const match of pool) {
+                // Find days that are not full AND have no team conflicts
+                const validDays = [];
+                for(let d=0; d<days.length; d++) {
+                    if (dailySlots[d].length >= matchesPerDay) continue;
+                    
+                    const busy = dailySlots[d].some(m => m.t1 === match.t1 || m.t2 === match.t1 || m.t1 === match.t2 || m.t2 === match.t2);
+                    if (!busy) validDays.push(d);
+                }
 
-            const validDayIndices = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].filter(d => {
-                if (slots[d].length >= 2) return false;
-                if (teamDays[t1Id].has(d) || teamDays[t2Id].has(d)) return false;
+                if (validDays.length === 0) {
+                    valid = false;
+                    break;
+                }
 
-                // Back-to-Back Check
-                const checkNeighbor = (teamId, day) => {
-                    if (day > 0 && day !== 5) { if (teamDays[teamId].has(day - 1)) return false; }
-                    if (day < 9 && day !== 4) { if (teamDays[teamId].has(day + 1)) return false; }
-                    return true;
-                };
-                if (!checkNeighbor(t1Id, d)) return false;
-                if (!checkNeighbor(t2Id, d)) return false;
+                // Pick a random valid day
+                const pickedDay = validDays[Math.floor(Math.random() * validDays.length)];
+                dailySlots[pickedDay].push(match);
+            }
 
-                return true;
-            });
-
-            if (validDayIndices.length === 0) { possible = false; break; }
-            
-            const pick = validDayIndices[Math.floor(Math.random() * validDayIndices.length)];
-            slots[pick].push(match);
-            teamDays[t1Id].add(pick);
-            teamDays[t2Id].add(pick);
+            if (valid) {
+                bestSchedule = dailySlots;
+                break;
+            }
         }
-
-        if (possible) {
-            slots.forEach((dayMatches, dIdx) => {
-                dayMatches.forEach((m, mIdx) => {
-                    finalRegularSchedule.push({
+        
+        // Flatten into a final list
+        const result = [];
+        if (bestSchedule) {
+            bestSchedule.forEach((dayMatches, dayIdx) => {
+                dayMatches.forEach((m, idx) => {
+                    result.push({
                         ...m,
-                        date: regularDays[dIdx],
-                        time: mIdx === 0 ? '17:00' : '19:30'
+                        date: days[dayIdx],
+                        time: idx === 0 ? '17:00' : '19:30'
                     });
                 });
             });
-            break; 
+        } else {
+            // Fallback (Rare): Just dump them in order if logic fails
+            matches.forEach((m, i) => {
+                result.push({ ...m, date: days[Math.floor(i/matchesPerDay)] || days[0], time: '17:00' });
+            });
         }
-    }
+        return result;
+    };
 
-    // Fallback if scheduling failed
-    if (finalRegularSchedule.length === 0) {
-        finalRegularSchedule = regularMatches.map((m, i) => ({
+    const regularDays1 = ['1.14 (수)', '1.15 (목)', '1.16 (금)', '1.17 (토)', '1.18 (일)'];
+    const regularDays2 = ['1.21 (수)', '1.22 (목)', '1.23 (금)', '1.24 (토)', '1.25 (일)'];
+    const superDays = ['1.28 (수)', '1.29 (목)', '1.30 (금)', '1.31 (토)', '2.1 (일)']; 
+
+    const w1Final = scheduleWeek(week1Matches, regularDays1, 2); // 2 matches per day
+    const w2Final = scheduleWeek(week2Matches, regularDays2, 2);
+    const superFinal = scheduleWeek(superWeekMatches, superDays, 1); // 1 match per day
+
+    let allScheduled = [...w1Final, ...w2Final, ...superFinal];
+
+    // 5. Side Selection (Balance Constraint)
+    // Goal: Every team must play at least 2 Blue Side games out of their 5 total games.
+    
+    // Step A: Randomly assign sides initially
+    allScheduled = allScheduled.map(m => {
+        const coin = Math.random() < 0.5;
+        return {
             ...m,
-            date: regularDays[Math.floor(i / 2)] || 'TBD',
-            time: i % 2 === 0 ? '17:00' : '19:30'
-        }));
+            t1: coin ? m.t1 : m.t2, // t1 is Blue
+            t2: coin ? m.t2 : m.t1, // t2 is Red
+            blueSidePriority: 'coin' 
+        };
+    });
+
+    // Step B: Balancing Loop
+    const getBlueCounts = (matches) => {
+        const counts = {};
+        [...barons, ...elders].forEach(id => counts[id] = 0);
+        matches.forEach(m => {
+            counts[m.t1] = (counts[m.t1] || 0) + 1;
+        });
+        return counts;
+    };
+
+    let counts = getBlueCounts(allScheduled);
+    let iterations = 0;
+
+    // Keep swapping until everyone has >= 2 Blue games
+    while (iterations < 1000) {
+        // Find a team with < 2 Blue sides
+        const deficitTeam = Object.keys(counts).find(id => counts[id] < 2);
+        
+        if (!deficitTeam) break; // All good!
+
+        // Find a match where this deficit team is Red (t2)
+        // We prioritize swapping against an opponent who has 'extra' Blue sides (>2)
+        const candidateMatches = allScheduled.filter(m => String(m.t2) === String(deficitTeam));
+        
+        if (candidateMatches.length > 0) {
+            // Sort by opponent's blue count (descending) to take from the rich
+            candidateMatches.sort((a,b) => counts[b.t1] - counts[a.t1]);
+            
+            const matchToSwap = candidateMatches[0];
+            
+            // Swap sides
+            const temp = matchToSwap.t1;
+            matchToSwap.t1 = matchToSwap.t2;
+            matchToSwap.t2 = temp;
+            
+            // Recalculate counts
+            counts = getBlueCounts(allScheduled);
+        } else {
+            break; // Should mathematically not happen with 5 games
+        }
+        iterations++;
     }
 
-    // Process Super Week Matches (Assign dates)
-    const superMatchesScheduled = superMatches.sort(() => Math.random() - 0.5).map((m, i) => ({
-        ...m,
-        date: superDays[i] || '2.1 (일)',
-        time: '17:00' // Super Week usually 1 match per day
-    }));
-
-    // Return Combined Schedule (Regular + Super)
-    const fullSchedule = [...finalRegularSchedule, ...superMatchesScheduled];
-
-    return fullSchedule.sort((a, b) => {
-        const dateA = a.date.split(' ')[0];
-        const dateB = b.date.split(' ')[0];
-        return parseFloat(dateA) - parseFloat(dateB) || (a.time > b.time ? 1 : -1);
+    // 6. Final Polish (Add IDs, Type, Format)
+    allScheduled = allScheduled.map(m => {
+        const isSuper = superDays.includes(m.date);
+        return {
+            ...m,
+            id: Date.now() + Math.floor(Math.random()*100000), 
+            type: isSuper ? 'super' : 'regular',
+            format: isSuper ? 'BO5' : 'BO3',
+            status: 'pending'
+        };
     });
+
+    // Sort by Date/Time
+    const parseDate = (d) => {
+        const parts = d.split(' ')[0].split('.');
+        return parseInt(parts[0])*100 + parseInt(parts[1]);
+    };
+    
+    allScheduled.sort((a,b) => {
+        const da = parseDate(a.date);
+        const db = parseDate(b.date);
+        if (da !== db) return da - db;
+        return a.time.localeCompare(b.time);
+    });
+
+    return allScheduled;
 };
