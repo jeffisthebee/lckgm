@@ -1,7 +1,6 @@
 // src/components/StatsTab.jsx
 import React, { useState, useMemo } from 'react';
 import playerList from '../data/players.json';
-import { championList } from '../data/constants';
 
 // Utility: safe array
 const safeArray = (v) => Array.isArray(v) ? v : [];
@@ -236,18 +235,23 @@ export default function StatsTab({ league }) {
   };
 
   return (
-    <div className="bg-white rounded-xl border shadow-sm flex flex-col h-[700px]">
-      {/* HEADER */}
-      <div className="p-6 border-b border-gray-100">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-black text-gray-800">📊 2026 시즌 통계 센터</h2>
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-sm font-bold text-gray-600 cursor-pointer select-none">
+    // Responsive container height: adapts to screen size, excellent for landscape phones
+    <div className="bg-white rounded-xl border shadow-sm flex flex-col h-[calc(100vh-100px)] sm:h-[700px]">
+      
+      {/* HEADER: Flex wrap allows controls to stack on small/narrow screens */}
+      <div className="p-4 sm:p-6 border-b border-gray-100 flex-shrink-0">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3 sm:gap-0">
+          <h2 className="text-xl sm:text-2xl font-black text-gray-800 whitespace-nowrap">📊 통계 센터</h2>
+          
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
+            <label className="flex items-center gap-2 text-xs sm:text-sm font-bold text-gray-600 cursor-pointer select-none bg-gray-50 px-2 py-1 rounded">
               <input type="checkbox" checked={regularOnly} onChange={(e) => setRegularOnly(e.target.checked)} className="rounded text-blue-600 focus:ring-blue-500" />
               <span>정규 시즌만</span>
             </label>
-            <div className="h-4 w-px bg-gray-300 mx-2"></div>
-            <select value={posFilter} onChange={(e) => setPosFilter(e.target.value)} className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-bold text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none">
+            
+            <div className="h-4 w-px bg-gray-300 hidden sm:block"></div>
+            
+            <select value={posFilter} onChange={(e) => setPosFilter(e.target.value)} className="px-2 py-1.5 sm:px-3 border border-gray-300 rounded-lg text-xs sm:text-sm font-bold text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none flex-1 sm:flex-none">
               <option value="ALL">전체 포지션</option>
               <option value="TOP">TOP</option>
               <option value="JGL">JGL</option>
@@ -255,22 +259,23 @@ export default function StatsTab({ league }) {
               <option value="ADC">ADC</option>
               <option value="SUP">SUP</option>
             </select>
-            <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="선수/챔피언 검색" className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm w-48 focus:ring-2 focus:ring-blue-500 outline-none" />
+            
+            <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="검색" className="px-2 py-1.5 sm:px-3 border border-gray-300 rounded-lg text-xs sm:text-sm w-full sm:w-48 focus:ring-2 focus:ring-blue-500 outline-none" />
           </div>
         </div>
 
-        {/* TABS */}
-        <div className="flex gap-2">
+        {/* TABS: Horizontal scroll for small screens */}
+        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
           {[
             { id: 'POG', label: '🏅 POG 순위', color: 'yellow' },
-            { id: 'RATING', label: '⭐ 선수 평점', color: 'blue' },
-            { id: 'META', label: '🧭 챔피언 메타', color: 'purple' },
-            { id: 'KDA', label: '⚔️ KDA 순위', color: 'red' },
+            { id: 'RATING', label: '⭐ 평점', color: 'blue' },
+            { id: 'META', label: '🧭 메타', color: 'purple' },
+            { id: 'KDA', label: '⚔️ KDA', color: 'red' },
           ].map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveSection(tab.id)}
-              className={`px-6 py-3 rounded-lg font-black text-sm transition-all duration-200 border-b-4 ${
+              className={`px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-black text-xs sm:text-sm whitespace-nowrap transition-all duration-200 border-b-4 ${
                 activeSection === tab.id 
                   ? `bg-${tab.color}-50 text-${tab.color}-700 border-${tab.color}-500 shadow-inner` 
                   : 'bg-white text-gray-500 border-transparent hover:bg-gray-50'
@@ -282,34 +287,33 @@ export default function StatsTab({ league }) {
         </div>
       </div>
 
-      {/* CONTENT AREA */}
-      <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
+      {/* CONTENT AREA: Scrollable */}
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-gray-50">
         
         {/* === POG SECTION === */}
         {activeSection === 'POG' && (
           <div className="space-y-4">
-            <h3 className="font-bold text-lg text-gray-800 mb-4 flex items-center gap-2">
-                <span>🏆</span> Player of the Game 순위
-                <span className="text-xs font-normal text-gray-500 ml-2">(0회 수상자는 표시되지 않습니다)</span>
+            <h3 className="font-bold text-base sm:text-lg text-gray-800 mb-2 flex items-center gap-2">
+                <span>🏆</span> POG 순위
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
               {applyFilters(pogLeaderboard).map((p, i) => (
-                <div key={p.name} className={`flex items-center p-4 rounded-xl border-2 shadow-sm transition hover:-translate-y-1 ${getRankStyle(i + 1)}`}>
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-lg mr-4 ${i < 3 ? 'bg-black text-white' : 'bg-gray-200 text-gray-500'}`}>
+                <div key={p.name} className={`flex items-center p-3 sm:p-4 rounded-xl border-2 shadow-sm transition hover:-translate-y-1 ${getRankStyle(i + 1)}`}>
+                  <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center font-black text-base sm:text-lg mr-3 sm:mr-4 flex-shrink-0 ${i < 3 ? 'bg-black text-white' : 'bg-gray-200 text-gray-500'}`}>
                     {i + 1}
                   </div>
-                  <div className="flex-1">
-                    <div className="font-black text-gray-900 text-lg">{p.name}</div>
-                    <div className="text-xs font-bold text-gray-500">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-black text-gray-900 text-base sm:text-lg truncate">{p.name}</div>
+                    <div className="text-[10px] sm:text-xs font-bold text-gray-500 truncate">
                         {(() => {
                             const pinfo = playerList.find(pl => pl.이름 === p.name);
                             return pinfo ? `${pinfo.팀} · ${pinfo.포지션}` : 'Unknown';
                         })()}
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-black text-yellow-600">{p.pog}</div>
-                    <div className="text-[10px] font-bold text-gray-400 uppercase">Points</div>
+                  <div className="text-right flex-shrink-0">
+                    <div className="text-xl sm:text-2xl font-black text-yellow-600">{p.pog}</div>
+                    <div className="text-[9px] sm:text-[10px] font-bold text-gray-400 uppercase">Points</div>
                   </div>
                 </div>
               ))}
@@ -321,71 +325,72 @@ export default function StatsTab({ league }) {
         {/* === RATING SECTION === */}
         {activeSection === 'RATING' && (
           <div>
-            <h3 className="font-bold text-lg text-gray-800 mb-4">⭐ 선수 평균 평점 (시뮬레이션 기반)</h3>
-            <table className="w-full bg-white rounded-lg border shadow-sm overflow-hidden">
-              <thead className="bg-gray-100 text-gray-500 text-xs font-bold uppercase">
-                <tr>
-                  <th className="py-3 px-4 text-center w-16">순위</th>
-                  <th className="py-3 px-4 text-left">선수</th>
-                  <th className="py-3 px-4 text-center">평균 평점</th>
-                  <th className="py-3 px-4 text-center">KDA</th>
-                  <th className="py-3 px-4 text-center">경기 수</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {applyFilters(playerRatings).slice(0, 50).map((p, i) => (
-                  <tr key={p.name} className="hover:bg-blue-50/50 transition">
-                    <td className="py-3 px-4 text-center font-black text-gray-400">{i + 1}</td>
-                    <td className="py-3 px-4">
-                      <div className="font-bold text-gray-800">{p.name}</div>
-                      <div className="text-xs text-gray-500 font-medium">
-                        {(() => {
-                            const pinfo = playerList.find(pl => pl.이름 === p.name);
-                            return pinfo ? `${pinfo.팀} ${pinfo.포지션}` : '';
-                        })()}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                        <span className="inline-block px-3 py-1 rounded-full bg-blue-100 text-blue-700 font-black text-sm">
-                            {p.avg.toFixed(1)}
-                        </span>
-                    </td>
-                    <td className="py-3 px-4 text-center text-sm font-mono text-gray-600">
-                        {p.kills}/{p.deaths}/{p.assists}
-                    </td>
-                    <td className="py-3 px-4 text-center font-bold text-gray-700">{p.games}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <h3 className="font-bold text-base sm:text-lg text-gray-800 mb-2 sm:mb-4">⭐ 시뮬레이션 평점</h3>
+            <div className="overflow-x-auto bg-white rounded-lg border shadow-sm">
+                <table className="w-full min-w-[500px] sm:min-w-full">
+                <thead className="bg-gray-100 text-gray-500 text-[10px] sm:text-xs font-bold uppercase">
+                    <tr>
+                    <th className="py-2 px-2 sm:py-3 sm:px-4 text-center w-10 sm:w-16">순위</th>
+                    <th className="py-2 px-2 sm:py-3 sm:px-4 text-left">선수</th>
+                    <th className="py-2 px-2 sm:py-3 sm:px-4 text-center">평균 평점</th>
+                    <th className="py-2 px-2 sm:py-3 sm:px-4 text-center">KDA</th>
+                    <th className="py-2 px-2 sm:py-3 sm:px-4 text-center">Games</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                    {applyFilters(playerRatings).slice(0, 50).map((p, i) => (
+                    <tr key={p.name} className="hover:bg-blue-50/50 transition text-xs sm:text-sm">
+                        <td className="py-2 px-2 sm:py-3 sm:px-4 text-center font-black text-gray-400">{i + 1}</td>
+                        <td className="py-2 px-2 sm:py-3 sm:px-4">
+                        <div className="font-bold text-gray-800">{p.name}</div>
+                        <div className="text-[10px] sm:text-xs text-gray-500 font-medium">
+                            {(() => {
+                                const pinfo = playerList.find(pl => pl.이름 === p.name);
+                                return pinfo ? `${pinfo.팀} ${pinfo.포지션}` : '';
+                            })()}
+                        </div>
+                        </td>
+                        <td className="py-2 px-2 sm:py-3 sm:px-4 text-center">
+                            <span className="inline-block px-2 sm:px-3 py-0.5 sm:py-1 rounded-full bg-blue-100 text-blue-700 font-black text-xs sm:text-sm">
+                                {p.avg.toFixed(1)}
+                            </span>
+                        </td>
+                        <td className="py-2 px-2 sm:py-3 sm:px-4 text-center font-mono text-gray-600">
+                            {p.kills}/{p.deaths}/{p.assists}
+                        </td>
+                        <td className="py-2 px-2 sm:py-3 sm:px-4 text-center font-bold text-gray-700">{p.games}</td>
+                    </tr>
+                    ))}
+                </tbody>
+                </table>
+            </div>
           </div>
         )}
 
         {/* === META SECTION === */}
         {activeSection === 'META' && (
           <div>
-            <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold text-lg text-gray-800 flex items-center gap-2">
-                    <span>🧭</span> 챔피언 메타 분석
-                    {posFilter !== 'ALL' && <span className="bg-purple-100 text-purple-700 text-xs px-2 py-1 rounded font-bold">{posFilter} 포지션</span>}
+            <div className="flex justify-between items-center mb-2 sm:mb-4">
+                <h3 className="font-bold text-base sm:text-lg text-gray-800 flex items-center gap-2">
+                    <span>🧭</span> 메타 분석
                 </h3>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                 {championMeta.slice(0, 60).map((c, i) => (
-                <div key={c.name} className="bg-white p-4 rounded-xl border hover:shadow-md transition flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <span className={`text-xl font-black w-6 ${i<3 ? 'text-purple-600' : 'text-gray-300'}`}>{i+1}</span>
+                <div key={c.name} className="bg-white p-3 sm:p-4 rounded-xl border hover:shadow-md transition flex items-center justify-between">
+                    <div className="flex items-center gap-3 sm:gap-4">
+                        <span className={`text-lg sm:text-xl font-black w-5 sm:w-6 ${i<3 ? 'text-purple-600' : 'text-gray-300'}`}>{i+1}</span>
                         <div>
-                            <div className="font-black text-gray-800 text-lg">{c.name}</div>
-                            <div className="text-xs font-bold text-gray-500">Pick {c.picks} · Ban {c.bans}</div>
+                            <div className="font-black text-gray-800 text-base sm:text-lg">{c.name}</div>
+                            <div className="text-[10px] sm:text-xs font-bold text-gray-500">Pick {c.picks} · Ban {c.bans}</div>
                         </div>
                     </div>
                     <div className="text-right">
-                        <div className={`text-sm font-black ${c.winRate >= 0.5 ? 'text-green-600' : 'text-red-500'}`}>
+                        <div className={`text-xs sm:text-sm font-black ${c.winRate >= 0.5 ? 'text-green-600' : 'text-red-500'}`}>
                             {(c.winRate * 100).toFixed(1)}% WR
                         </div>
-                        <div className="text-xs text-gray-400 font-medium">
+                        <div className="text-[10px] sm:text-xs text-gray-400 font-medium">
                             P/B {((c.pickRate + c.banRate) * 100).toFixed(0)}%
                         </div>
                     </div>
@@ -399,43 +404,45 @@ export default function StatsTab({ league }) {
         {/* === KDA SECTION === */}
         {activeSection === 'KDA' && (
           <div>
-            <h3 className="font-bold text-lg text-gray-800 mb-4">⚔️ KDA 리더보드</h3>
-            <table className="w-full bg-white rounded-lg border shadow-sm overflow-hidden">
-              <thead className="bg-gray-100 text-gray-500 text-xs font-bold uppercase">
-                <tr>
-                  <th className="py-3 px-4 text-center w-16">순위</th>
-                  <th className="py-3 px-4 text-left">선수</th>
-                  <th className="py-3 px-4 text-center">KDA Ratio</th>
-                  <th className="py-3 px-4 text-center">상세 기록 (K/D/A)</th>
-                  <th className="py-3 px-4 text-center">경기 수</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {applyFilters(kdaLeaders).slice(0, 50).map((p, i) => (
-                  <tr key={p.name} className="hover:bg-red-50/50 transition">
-                    <td className="py-3 px-4 text-center font-black text-gray-400">{i + 1}</td>
-                    <td className="py-3 px-4">
-                      <div className="font-bold text-gray-800">{p.name}</div>
-                      <div className="text-xs text-gray-500 font-medium">
-                        {(() => {
-                            const pinfo = playerList.find(pl => pl.이름 === p.name);
-                            return pinfo ? `${pinfo.팀} ${pinfo.포지션}` : '';
-                        })()}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                        <span className="inline-block px-3 py-1 rounded-full bg-red-100 text-red-700 font-black text-sm">
-                            {p.ratio.toFixed(2)}
-                        </span>
-                    </td>
-                    <td className="py-3 px-4 text-center text-sm font-mono text-gray-700 font-bold">
-                        {p.k} <span className="text-gray-300">/</span> <span className="text-red-500">{p.d}</span> <span className="text-gray-300">/</span> {p.a}
-                    </td>
-                    <td className="py-3 px-4 text-center font-bold text-gray-700">{p.games}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <h3 className="font-bold text-base sm:text-lg text-gray-800 mb-2 sm:mb-4">⚔️ KDA 리더보드</h3>
+            <div className="overflow-x-auto bg-white rounded-lg border shadow-sm">
+                <table className="w-full min-w-[500px] sm:min-w-full">
+                <thead className="bg-gray-100 text-gray-500 text-[10px] sm:text-xs font-bold uppercase">
+                    <tr>
+                    <th className="py-2 px-2 sm:py-3 sm:px-4 text-center w-10 sm:w-16">순위</th>
+                    <th className="py-2 px-2 sm:py-3 sm:px-4 text-left">선수</th>
+                    <th className="py-2 px-2 sm:py-3 sm:px-4 text-center">KDA Ratio</th>
+                    <th className="py-2 px-2 sm:py-3 sm:px-4 text-center">K/D/A</th>
+                    <th className="py-2 px-2 sm:py-3 sm:px-4 text-center">Games</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                    {applyFilters(kdaLeaders).slice(0, 50).map((p, i) => (
+                    <tr key={p.name} className="hover:bg-red-50/50 transition text-xs sm:text-sm">
+                        <td className="py-2 px-2 sm:py-3 sm:px-4 text-center font-black text-gray-400">{i + 1}</td>
+                        <td className="py-2 px-2 sm:py-3 sm:px-4">
+                        <div className="font-bold text-gray-800">{p.name}</div>
+                        <div className="text-[10px] sm:text-xs text-gray-500 font-medium">
+                            {(() => {
+                                const pinfo = playerList.find(pl => pl.이름 === p.name);
+                                return pinfo ? `${pinfo.팀} ${pinfo.포지션}` : '';
+                            })()}
+                        </div>
+                        </td>
+                        <td className="py-2 px-2 sm:py-3 sm:px-4 text-center">
+                            <span className="inline-block px-2 sm:px-3 py-0.5 sm:py-1 rounded-full bg-red-100 text-red-700 font-black text-xs sm:text-sm">
+                                {p.ratio.toFixed(2)}
+                            </span>
+                        </td>
+                        <td className="py-2 px-2 sm:py-3 sm:px-4 text-center font-mono text-gray-700 font-bold">
+                            {p.k} <span className="text-gray-300">/</span> <span className="text-red-500">{p.d}</span> <span className="text-gray-300">/</span> {p.a}
+                        </td>
+                        <td className="py-2 px-2 sm:py-3 sm:px-4 text-center font-bold text-gray-700">{p.games}</td>
+                    </tr>
+                    ))}
+                </tbody>
+                </table>
+            </div>
           </div>
         )}
 
