@@ -15,7 +15,6 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
         matchScoreA = parts[0];
         matchScoreB = parts[1];
     } else {
-        // Fallback if saved as separate numbers
         matchScoreA = result.scoreA || 0;
         matchScoreB = result.scoreB || 0;
     }
@@ -44,7 +43,6 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
           {/* === HEADER (MATCH SCORE) === */}
           <div className="bg-black text-white p-3 lg:p-6 shrink-0 relative overflow-hidden flex justify-between items-center z-10">
             <div className="flex items-center gap-4 lg:gap-6">
-                {/* Score Display */}
                 <div className="text-3xl lg:text-5xl font-black text-blue-500">{matchScoreA}</div>
                 <div className="flex flex-col items-center">
                     <span className="text-[10px] lg:text-xs text-gray-400 font-bold tracking-widest hidden sm:block">FINAL</span>
@@ -53,12 +51,11 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                 <div className="text-3xl lg:text-5xl font-black text-red-500">{matchScoreB}</div>
             </div>
 
-            {/* POS DISPLAY (Series MVP) - Width limit relaxed */}
+            {/* POS DISPLAY (Series MVP) */}
             {posPlayer && (
                 <div className="flex items-center gap-2 lg:gap-4 bg-purple-900/80 border border-purple-500 px-3 py-1 lg:px-6 lg:py-2 rounded-lg lg:rounded-xl shadow-[0_0_15px_rgba(168,85,247,0.4)]">
                     <div className="flex flex-col items-end">
                         <span className="text-[8px] lg:text-[10px] text-purple-300 font-bold tracking-widest">MVP</span>
-                        {/* CHANGED: max-w increased for visibility */}
                         <span className="text-xs lg:text-xl font-black text-white truncate max-w-[120px] lg:max-w-none">{posPlayer.playerName}</span>
                     </div>
                     <div className="w-6 h-6 lg:w-10 lg:h-10 rounded-full bg-purple-600 flex items-center justify-center border-2 border-white shadow-lg text-xs lg:text-lg">
@@ -75,7 +72,6 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                 ✖ <span className="hidden sm:inline">CLOSE</span>
             </button>
             
-            {/* Background Gradient */}
             <div className="absolute inset-0 bg-gradient-to-r from-blue-900/20 via-transparent to-red-900/20 pointer-events-none -z-10"></div>
           </div>
 
@@ -102,12 +98,12 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
             {/* GAME INFO BAR */}
             <div className="flex flex-wrap lg:flex-nowrap justify-between items-center mb-3 lg:mb-6 bg-white p-2 lg:p-4 rounded-xl border border-gray-200 shadow-sm gap-2">
                  <div className="flex items-center gap-2 lg:gap-6 flex-wrap">
-                     {/* Game Time Badge */}
+                     {/* Game Time */}
                      <span className="bg-gray-800 text-white px-2 py-1 lg:px-3 rounded text-[10px] lg:text-xs font-bold flex items-center gap-1 whitespace-nowrap">
                         <span>⏱</span> {gameTimeStr}
                      </span>
                      
-                     {/* SET KILL SCORE DISPLAY */}
+                     {/* Kill Score */}
                      <div className="flex items-center gap-2 lg:gap-3 bg-gray-100 px-3 py-1 rounded-full border border-gray-300">
                         <span className="text-xs lg:text-sm font-black text-blue-600 truncate max-w-[50px] lg:max-w-none">{teamA.name}</span>
                         <div className="flex items-center gap-1 text-sm lg:text-xl font-black text-gray-800">
@@ -124,11 +120,10 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                      </span>
                  </div>
 
-                 {/* POG CARD - Width limit relaxed */}
+                 {/* POG CARD */}
                  {pogPlayer && (
                      <div className="flex items-center gap-2 lg:gap-3 bg-yellow-100 border border-yellow-300 px-2 py-1 lg:px-4 rounded-full shadow-sm ml-auto">
                          <span className="text-[9px] lg:text-[10px] font-bold text-yellow-800 bg-yellow-300 px-1.5 rounded">POG</span>
-                         {/* CHANGED: max-w increased */}
                          <span className="font-bold text-xs lg:text-sm text-gray-800 truncate max-w-[100px] lg:max-w-none">{pogPlayer.playerName}</span>
                          <span className="hidden lg:inline text-xs text-gray-600">({pogPlayer.champName})</span>
                          <span className="hidden lg:inline text-[10px] font-mono text-gray-500">Score: {pogPlayer.pogScore?.toFixed(1)}</span>
@@ -136,14 +131,14 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                  )}
             </div>
 
-            {/* BANS ROW */}
+            {/* BANS ROW - FIX: Variable width boxes */}
             <div className="grid grid-cols-2 gap-2 lg:gap-8 mb-4 lg:mb-8">
                {/* Blue Bans */}
                <div className="flex items-center gap-1 lg:gap-2 bg-white p-1.5 lg:p-3 rounded-lg border border-blue-100 shadow-sm overflow-hidden">
                   <span className="text-blue-600 font-bold text-[9px] lg:text-xs w-8 lg:w-12 shrink-0 leading-tight">BLUE BANS</span>
-                  <div className="flex gap-0.5 lg:gap-1 overflow-x-auto">
+                  <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-hide">
                      {[0,1,2,3,4].map(idx => (
-                       <div key={idx} className="w-6 h-6 lg:w-8 lg:h-8 bg-gray-200 rounded flex items-center justify-center text-[8px] lg:text-[9px] font-bold text-gray-500 shrink-0">
+                       <div key={idx} className="h-6 lg:h-8 bg-gray-200 rounded flex items-center justify-center text-[8px] lg:text-[9px] font-bold text-gray-500 shrink-0 px-2 w-auto min-w-[1.5rem] whitespace-nowrap">
                           {bansBlue[idx] || '-'}
                        </div>
                      ))}
@@ -151,9 +146,9 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                </div>
                {/* Red Bans */}
                <div className="flex items-center justify-end gap-1 lg:gap-2 bg-white p-1.5 lg:p-3 rounded-lg border border-red-100 shadow-sm overflow-hidden">
-                  <div className="flex gap-0.5 lg:gap-1 overflow-x-auto">
+                  <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-hide justify-end">
                      {[0,1,2,3,4].map(idx => (
-                       <div key={idx} className="w-6 h-6 lg:w-8 lg:h-8 bg-gray-200 rounded flex items-center justify-center text-[8px] lg:text-[9px] font-bold text-gray-500 shrink-0">
+                       <div key={idx} className="h-6 lg:h-8 bg-gray-200 rounded flex items-center justify-center text-[8px] lg:text-[9px] font-bold text-gray-500 shrink-0 px-2 w-auto min-w-[1.5rem] whitespace-nowrap">
                           {bansRed[idx] || '-'}
                        </div>
                      ))}
@@ -183,9 +178,9 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                             {/* Role */}
                             <div className="w-4 lg:w-8 text-center font-bold text-gray-400 text-[8px] lg:text-xs mr-1 lg:mr-2 shrink-0">{['TOP','JGL','MID','ADC','SUP'][i]}</div>
                             
-                            {/* Champ Info - Flexible width */}
-                            <div className="flex-1 min-w-0">
-                              <div className="font-bold text-gray-800 text-xs lg:text-sm flex items-center gap-1 lg:gap-2 truncate">
+                            {/* Champ Info - FIX: No truncate, allow wrap */}
+                            <div className="flex-1">
+                              <div className="font-bold text-gray-800 text-xs lg:text-sm flex items-center gap-1 lg:gap-2 whitespace-normal leading-tight">
                                   {p.champName}
                                   {/* POG BADGE */}
                                   {isPog && <span className="bg-yellow-400 text-black text-[8px] lg:text-[9px] px-1 lg:px-1.5 py-0.5 rounded font-black shadow-sm shrink-0">POG</span>}
@@ -193,7 +188,7 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                               <div className="text-[8px] lg:text-[10px] text-gray-500 truncate">{p.tier}티어 <span className="hidden lg:inline">{p.classType}</span></div>
                             </div>
 
-                            {/* Stats & Name - CHANGED: Removed max-w limitation on sm+ screens */}
+                            {/* Stats & Name */}
                             <div className="text-right z-10 flex flex-col items-end shrink-0 ml-1">
                               <div className="font-bold text-gray-900 text-[10px] lg:text-sm truncate max-w-[120px] sm:max-w-none">{p.playerName}</div>
                               <div className="text-[9px] lg:text-xs font-mono font-bold text-gray-600">
@@ -204,7 +199,6 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                               </div>
                             </div>
                             
-                            {/* Gradient BG */}
                             <div className="absolute left-0 top-0 bottom-0 w-8 lg:w-16 bg-gradient-to-r from-blue-50 to-transparent opacity-50 pointer-events-none"></div>
                          </div>
                        );
@@ -226,16 +220,16 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                             {/* Role */}
                             <div className="w-4 lg:w-8 text-center font-bold text-gray-400 text-[8px] lg:text-xs ml-1 lg:ml-2 shrink-0">{['TOP','JGL','MID','ADC','SUP'][i]}</div>
                             
-                            {/* Champ Info */}
-                            <div className="flex-1 text-right min-w-0">
-                              <div className="font-bold text-gray-800 text-xs lg:text-sm flex items-center justify-end gap-1 lg:gap-2 truncate">
+                            {/* Champ Info - FIX: No truncate, allow wrap */}
+                            <div className="flex-1 text-right">
+                              <div className="font-bold text-gray-800 text-xs lg:text-sm flex items-center justify-end gap-1 lg:gap-2 whitespace-normal leading-tight">
                                   {isPog && <span className="bg-yellow-400 text-black text-[8px] lg:text-[9px] px-1 lg:px-1.5 py-0.5 rounded font-black shadow-sm shrink-0">POG</span>}
                                   {p.champName}
                               </div>
                               <div className="text-[8px] lg:text-[10px] text-gray-500 truncate">{p.tier}티어 <span className="hidden lg:inline">{p.classType}</span></div>
                             </div>
 
-                            {/* Stats & Name - CHANGED: Removed max-w limitation on sm+ screens */}
+                            {/* Stats & Name */}
                             <div className="text-left z-10 flex flex-col items-start mr-1 shrink-0">
                               <div className="font-bold text-gray-900 text-[10px] lg:text-sm truncate max-w-[120px] sm:max-w-none">{p.playerName}</div>
                               <div className="text-[9px] lg:text-xs font-mono font-bold text-gray-600">
@@ -246,7 +240,6 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                               </div>
                             </div>
 
-                            {/* Gradient BG */}
                             <div className="absolute right-0 top-0 bottom-0 w-8 lg:w-16 bg-gradient-to-l from-red-50 to-transparent opacity-50 pointer-events-none"></div>
                          </div>
                        );
