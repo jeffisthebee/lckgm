@@ -338,13 +338,13 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             }
 
             if (!isPlayerTurn) {
-                const triggerTime = 22; 
+                const triggerTime = 25; 
                 const timer = setInterval(() => {
                     setDraftTimer(prev => {
                         if (prev <= triggerTime) {
                             clearInterval(timer);
                             handleCpuTurn(stepInfo, actingTeamObj, actingTeamSide);
-                            return 25;
+                            return 30;
                         }
                         return prev - 1;
                     });
@@ -356,7 +356,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                         if (prev <= 0) {
                             clearInterval(timer);
                             handleCpuTurn(stepInfo, actingTeamObj, actingTeamSide); 
-                            return 25;
+                            return 30;
                         }
                         return prev - 1;
                     });
@@ -491,7 +491,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         }
 
         setDraftStep(prev => prev + 1);
-        setDraftTimer(25); 
+        setDraftTimer(30); 
     };
 
     // --- FINALIZE MANUAL DRAFT ---
