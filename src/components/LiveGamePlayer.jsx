@@ -100,6 +100,9 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     // Phase: ROSTER_SELECTION -> SIDE_SELECTION -> READY -> LOADING -> DRAFT -> GAME -> SET_RESULT
     const [phase, setPhase] = useState('ROSTER_SELECTION'); 
     
+    // [NEW] Mobile Tab State for GAME phase
+    const [mobileTab, setMobileTab] = useState('LOGS'); 
+
     const [simulationData, setSimulationData] = useState(null);
     const [displayLogs, setDisplayLogs] = useState([]);
     const [resultProcessed, setResultProcessed] = useState(false);
@@ -811,8 +814,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
               </div>
             )}
 
-            <div className="h-24 flex items-center justify-between px-8">
-              <div className="flex flex-col w-1/3">
+            <div className="min-h-24 py-2 flex flex-col md:flex-row items-center justify-between px-4 md:px-8 gap-2">
+              <div className="flex flex-col w-full md:w-1/3 items-center md:items-start order-2 md:order-1">
                    <div className="flex items-center gap-4 mb-2">
                       <div className="text-4xl font-black text-blue-500">{currentBlueTeam?.name || 'BLUE'}</div>
                       <div className="flex gap-2">
@@ -823,7 +826,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                    </div>
               </div>
 
-              <div className="flex flex-col items-center justify-center w-1/3 relative">
+              <div className="flex flex-col items-center justify-center w-full md:w-1/3 relative order-1 md:order-2 mb-2 md:mb-0">
                   {phase === 'DRAFT' ? (
                       <div className="flex flex-col items-center w-full">
                           <div className="flex items-center gap-4 mb-2">
@@ -870,7 +873,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                   )}
               </div>
 
-              <div className="flex flex-col items-end w-1/3">
+              <div className="flex flex-col w-full md:w-1/3 items-center md:items-end order-3">
                    <div className="flex items-center gap-4 mb-2">
                       <div className="flex gap-2">
                           {Array(match?.format === 'BO5' ? 3 : 2).fill(0).map((_,i) => (
@@ -913,18 +916,18 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 </div>
             )}
 
-            {/* 2. ROSTER SELECTION UI */}
+            {/* 2. ROSTER SELECTION UI (FIXED FOR MOBILE) */}
             {phase === 'ROSTER_SELECTION' && (
-                <div className="flex-1 flex flex-col items-center justify-center bg-gray-900 p-8">
-                    <h2 className="text-3xl font-black mb-2 text-center">선발 라인업 확정 (Roster Check)</h2>
+                <div className="flex-1 flex flex-col items-center justify-start md:justify-center bg-gray-900 p-4 md:p-8 overflow-y-auto">
+                    <h2 className="text-3xl font-black mb-2 text-center mt-4 md:mt-0">선발 라인업 확정 (Roster Check)</h2>
                     <div className="text-center text-gray-400 mb-8">
                         {currentSet}세트에 출전할 선수 5명을 선택해주세요. 
                         {preselectedSide && <span> (선택 진영: <span className={preselectedSide === 'BLUE' ? 'text-blue-400' : 'text-red-400'}>{preselectedSide}</span>)</span>}
                     </div>
 
-                    <div className="flex gap-8 w-full max-w-6xl h-[500px]">
+                    <div className="flex flex-col md:flex-row gap-8 w-full max-w-6xl h-auto md:h-[500px]">
                          {/* LEFT: Starting 5 Slots */}
-                         <div className="w-1/3 space-y-4">
+                         <div className="w-full md:w-1/3 space-y-4">
                              {['TOP','JGL','MID','ADC','SUP'].map(pos => (
                                  <div key={pos} className="bg-gray-800 p-4 rounded-xl border-2 border-gray-700 relative">
                                      <div className="absolute top-2 right-3 text-xs font-bold text-gray-500">{pos}</div>
@@ -935,9 +938,9 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                          </div>
 
                          {/* RIGHT: Available Roster Pool */}
-                         <div className="flex-1 bg-gray-900 rounded-xl p-6 border border-gray-700 overflow-y-auto">
-                             {/* [FIXED] Using userTeam.roster instead of teamA.roster */}
-                             <div className="grid grid-cols-3 gap-4">
+                         <div className="flex-1 bg-gray-900 rounded-xl p-6 border border-gray-700 overflow-y-auto min-h-[400px] md:min-h-0">
+                             {/* [FIXED] Using userTeam.roster instead of teamA.roster, and responsive Grid */}
+                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                                  {userTeam.roster.map(player => {
                                      const isSelected = Object.values(activeUserRoster).some(p => p.id === player.id);
                                      return (
@@ -958,7 +961,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                          </div>
                     </div>
                     
-                    <div className="mt-8 flex justify-center">
+                    <div className="mt-8 mb-8 flex justify-center">
                         <button 
                             onClick={handleRosterConfirm}
                             className="px-12 py-4 bg-green-600 hover:bg-green-700 text-white font-black text-xl rounded-full shadow-lg transition hover:scale-105"
@@ -971,11 +974,11 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
 
             {/* 3. DRAFT UI (Same as before) */}
             {phase === 'DRAFT' && (
-             <div className="flex-1 flex bg-gray-900 p-8 gap-8 items-center justify-center relative overflow-hidden">
+             <div className="flex-1 flex flex-col md:flex-row bg-gray-900 p-4 md:p-8 gap-4 md:gap-8 items-center justify-center relative overflow-hidden">
                  <div className="absolute inset-0 bg-gradient-to-r from-blue-900/20 to-red-900/20 pointer-events-none"></div>
 
                  {/* Blue Picks List */}
-                 <div className="w-1/4 space-y-4 z-10">
+                 <div className="hidden md:block w-1/4 space-y-4 z-10">
                      {draftState.bluePicks.map((pick, i) => (
                          <div key={i} className={`h-24 border-l-4 ${pick ? 'border-blue-500 bg-blue-900/30' : 'border-gray-700 bg-gray-800/50'} rounded-r-lg flex items-center p-4 transition-all duration-500`}>
                              {pick ? (
@@ -994,7 +997,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                  </div>
 
                  {/* Center Draft Board */}
-                 <div className="flex-1 flex flex-col items-center justify-center z-20 h-full relative">
+                 <div className="w-full md:flex-1 flex flex-col items-center justify-center z-20 h-full relative">
                      {isUserTurn ? (
                          <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-700 w-full max-w-4xl h-[600px] flex flex-col overflow-hidden">
                              {/* Role Filters & Status */}
@@ -1084,7 +1087,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                  </div>
 
                  {/* Red Picks List */}
-                 <div className="w-1/4 space-y-4 z-10">
+                 <div className="hidden md:block w-1/4 space-y-4 z-10">
                      {draftState.redPicks.map((pick, i) => (
                          <div key={i} className={`h-24 border-r-4 ${pick ? 'border-red-500 bg-red-900/30' : 'border-gray-700 bg-gray-800/50'} rounded-l-lg flex flex-row-reverse items-center p-4 transition-all duration-500`}>
                              {pick ? (
@@ -1106,9 +1109,17 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             
             {/* 4. GAME PLAYBACK UI (Unchanged) */}
             {phase === 'GAME' && (
-                <div className="flex-1 flex overflow-hidden">
+                <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+                    
+                {/* [NEW] Mobile Tabs */}
+                <div className="md:hidden flex shrink-0 bg-gray-800 text-white font-bold text-sm">
+                    <button onClick={()=>setMobileTab('BLUE')} className={`flex-1 py-3 ${mobileTab==='BLUE'?'bg-blue-600':'hover:bg-gray-700'}`}>BLUE TEAM</button>
+                    <button onClick={()=>setMobileTab('LOGS')} className={`flex-1 py-3 ${mobileTab==='LOGS'?'bg-gray-600':'hover:bg-gray-700'}`}>LOGS</button>
+                    <button onClick={()=>setMobileTab('RED')} className={`flex-1 py-3 ${mobileTab==='RED'?'bg-red-600':'hover:bg-gray-700'}`}>RED TEAM</button>
+                </div>
+
                 {/* GAME UI: Left (Blue) */}
-                <div className="w-80 bg-gray-900 border-r border-gray-800 flex flex-col pt-2">
+                <div className={`${mobileTab === 'BLUE' ? 'flex' : 'hidden'} md:flex w-full md:w-80 bg-gray-900 border-r border-gray-800 flex-col pt-2`}>
                     {liveStats.players.filter(p => p.side === 'BLUE').map((p, i) => (
                         <div key={i} className="flex-1 border-b border-gray-800 relative p-2 flex items-center gap-3">
                             <div className="w-12 h-12 bg-gray-800 rounded border border-blue-600 relative overflow-hidden">
@@ -1133,7 +1144,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 </div>
         
                 {/* GAME UI: Center (Logs) */}
-                <div className="flex-1 flex flex-col bg-black/95 relative">
+                <div className={`${mobileTab === 'LOGS' ? 'flex' : 'hidden'} md:flex flex-1 flex-col bg-black/95 relative`}>
                     <div className="flex-1 p-4 space-y-2 overflow-y-auto font-mono text-sm pb-20 scrollbar-hide">
                         {displayLogs.map((log, i) => (
                             <div key={i} className={`py-1 px-2 rounded ${log?.includes('⚔️') ? 'bg-red-900/20 text-red-200 border-l-2 border-red-500' : (log?.includes('🐛') || log?.includes('🐉') ? 'bg-purple-900/20 text-purple-200' : 'text-gray-400')}`}>
@@ -1158,7 +1169,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 </div>
         
                 {/* GAME UI: Right (Red) */}
-                <div className="w-80 bg-gray-900 border-l border-gray-800 flex flex-col pt-2">
+                <div className={`${mobileTab === 'RED' ? 'flex' : 'hidden'} md:flex w-full md:w-80 bg-gray-900 border-l border-gray-800 flex-col pt-2`}>
                     {liveStats.players.filter(p => p.side === 'RED').map((p, i) => (
                         <div key={i} className="flex-1 border-b border-gray-800 relative p-2 flex flex-row-reverse items-center gap-3 text-right">
                             <div className="w-12 h-12 bg-gray-800 rounded border border-red-600 relative overflow-hidden">
