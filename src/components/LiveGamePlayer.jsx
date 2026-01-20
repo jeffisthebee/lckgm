@@ -121,7 +121,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     const [manualLockedChamps, setManualLockedChamps] = useState(new Set()); 
     const [selectedChampion, setSelectedChampion] = useState(null);
     const [filterRole, setFilterRole] = useState('TOP');
-    const [searchTerm, setSearchTerm] = useState(''); // [NEW] Search State
+    const [searchTerm, setSearchTerm] = useState(''); 
     const [draftLogs, setDraftLogs] = useState([]);
     const [userSelectedRole, setUserSelectedRole] = useState(false); 
     // -------------------------
@@ -162,7 +162,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
 
     useEffect(() => {
       setUserSelectedRole(false);
-      setSearchTerm(''); // Reset search on step change if desired, or keep it
+      setSearchTerm('');
     }, [draftStep]);
   
     // 1. Initialize Set Simulation or Manual Setup
@@ -630,6 +630,23 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         });
     };
 
+    // [NEW FUNCTION] Advance one step instantly
+    const advanceDraft = () => {
+        if (!simulationData || draftStep >= DRAFT_SEQUENCE.length) {
+             setPhase('GAME');
+             return;
+        }
+        
+        const stepInfo = DRAFT_SEQUENCE[draftStep];
+        const logEntry = (simulationData.logs || []).find(l => l && l.startsWith && l.startsWith(`[${stepInfo.order}]`));
+        
+        if (logEntry) {
+            processDraftStepLog(stepInfo, logEntry);
+        }
+        setDraftStep(prev => prev + 1);
+        setDraftTimer(15); // Reset visual timer
+    };
+
     const skipDraft = () => {
         if (isManualMode) {
             alert("수동 모드에서는 스킵할 수 없습니다.");
@@ -1071,15 +1088,23 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                              </div>
                          </div>
                      ) : (
-                         <div className="flex flex-col items-center justify-center h-full">
-                             <div className="text-4xl sm:text-7xl lg:text-9xl font-black text-white opacity-30 select-none mb-4">VS</div>
+                         <div className="flex flex-col items-center justify-center h-full gap-4">
+                             <div className="text-4xl sm:text-7xl lg:text-9xl font-black text-white opacity-30 select-none">VS</div>
                              
-                             {/* SKIP BUTTON FOR AUTO MODE */}
+                             {/* [CHANGED] Next Step Button */}
+                             <button 
+                                onClick={advanceDraft}
+                                className="bg-yellow-500 hover:bg-yellow-400 text-black font-black py-3 px-8 sm:py-4 sm:px-12 rounded-full text-xl sm:text-2xl shadow-[0_0_20px_rgba(234,179,8,0.5)] transition transform hover:scale-105 animate-pulse"
+                             >
+                                 NEXT ⏩
+                             </button>
+
+                             {/* [CHANGED] Secondary Skip All Button */}
                              <button 
                                 onClick={skipDraft}
-                                className="bg-red-600 hover:bg-red-700 text-white font-black py-4 px-8 rounded-full text-xl shadow-lg transition transform hover:scale-110"
+                                className="text-gray-500 hover:text-white text-xs sm:text-sm underline decoration-gray-500 hover:decoration-white"
                              >
-                                 SKIP DRAFT ⏩
+                                 SKIP TO GAME ⏭️
                              </button>
                          </div>
                      )}
@@ -1092,7 +1117,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                              {pick ? (
                                  <>
                                     <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded border border-red-400 flex items-center justify-center bg-black overflow-hidden shrink-0">
-                                        <div className="font-bold text-[6px] sm:text-[8px] lg:text-xs text-center break-words leading-tight">{pick.champName}</div>
+                                        <div className="font-bold text-[6px] sm:text-[8px] lg:text-xs text-center break-words leading-tight">{pick.champName.substring(0,3)}</div>
                                     </div>
                                     <div className="mr-2 lg:mr-4 overflow-hidden text-right">
                                         <div className="text-xs sm:text-sm lg:text-2xl font-black text-white truncate">{pick.champName}</div>
@@ -1122,7 +1147,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                     {liveStats.players.filter(p => p.side === 'BLUE').map((p, i) => (
                         <div key={i} className="flex-1 border-b border-gray-800 relative p-1 lg:p-2 flex items-center gap-2 lg:gap-3">
                             <div className="w-8 h-8 lg:w-12 lg:h-12 bg-gray-800 rounded border border-blue-600 relative overflow-hidden shrink-0">
-                                <div className="absolute inset-0 flex items-center justify-center font-bold text-[6px] sm:text-[8px] lg:text-xs text-blue-200 text-center leading-none break-words p-0.5">{p.champName}</div>
+                                <div className="absolute inset-0 flex items-center justify-center font-bold text-[6px] sm:text-[8px] lg:text-xs text-blue-200 text-center leading-none break-words p-0.5">{p.champName.substring(0,3)}</div>
                                 <div className="absolute bottom-0 right-0 bg-black text-white text-[8px] lg:text-[10px] px-1 font-bold">{p.lvl}</div>
                             </div>
                             <div className="flex-1 min-w-0">
@@ -1171,7 +1196,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                     {liveStats.players.filter(p => p.side === 'RED').map((p, i) => (
                         <div key={i} className="flex-1 border-b border-gray-800 relative p-1 lg:p-2 flex flex-row-reverse items-center gap-2 lg:gap-3 text-right">
                             <div className="w-8 h-8 lg:w-12 lg:h-12 bg-gray-800 rounded border border-red-600 relative overflow-hidden shrink-0">
-                                <div className="absolute inset-0 flex items-center justify-center font-bold text-[6px] sm:text-[8px] lg:text-xs text-red-200 text-center leading-none break-words p-0.5">{p.champName}</div>
+                                <div className="absolute inset-0 flex items-center justify-center font-bold text-[6px] sm:text-[8px] lg:text-xs text-red-200 text-center leading-none break-words p-0.5">{p.champName.substring(0,3)}</div>
                                 <div className="absolute bottom-0 left-0 bg-black text-white text-[8px] lg:text-[10px] px-1 font-bold">{p.lvl}</div>
                             </div>
                             <div className="flex-1 min-w-0">
