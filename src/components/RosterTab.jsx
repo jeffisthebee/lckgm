@@ -53,49 +53,52 @@ const RosterTab = ({ viewingTeam, roster, onPrevTeam, onNextTeam }) => {
 
             {/* Content Section - Horizontal Scroll Enabled */}
             <div className="flex-1 overflow-auto">
-                <table className="w-full text-xs text-left min-w-[800px] lg:min-w-full table-fixed">
+                {/* [FIX] Increased min-w from 800px to 1200px to prevent overlap */}
+                <table className="w-full text-xs text-left min-w-[1200px] lg:min-w-full table-fixed">
                     <thead className="bg-white text-gray-500 uppercase font-bold border-b sticky top-0 z-10 shadow-sm">
                         <tr>
-                            {/* Sticky Column for Player Info */}
-                            <th className="py-2 px-2 bg-gray-50 w-[140px] lg:w-[12%] sticky left-0 z-20 border-r shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">정보</th>
+                            {/* Sticky Info Column - Widen to 160px */}
+                            <th className="py-2 px-2 bg-gray-50 w-[160px] lg:w-[14%] sticky left-0 z-20 border-r shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">정보</th>
                             
-                            <th className="py-2 px-1 text-center w-[60px] lg:w-[5%]">OVR</th>
-                            <th className="py-2 px-1 text-center w-[50px] lg:w-[5%]">나이</th>
-                            <th className="py-2 px-1 text-center w-[50px] lg:w-[5%]">경력</th>
-                            <th className="py-2 px-1 text-center w-[60px] lg:w-[6%]">소속</th>
-                            <th className="py-2 px-1 text-center w-[80px] lg:w-[8%]">연봉</th>
+                            {/* Widen Data Columns to ~70-80px each */}
+                            <th className="py-2 px-1 text-center w-[70px] lg:w-[5%]">OVR</th>
+                            <th className="py-2 px-1 text-center w-[70px] lg:w-[5%]">나이</th>
+                            <th className="py-2 px-1 text-center w-[70px] lg:w-[5%]">경력</th>
+                            <th className="py-2 px-1 text-center w-[80px] lg:w-[7%]">소속</th>
+                            <th className="py-2 px-1 text-center w-[100px] lg:w-[9%]">연봉</th>
                             
                             {/* Stats Group */}
-                            <th className="py-2 px-1 text-center bg-gray-50 border-l w-[50px] lg:w-[6%]">라인</th>
-                            <th className="py-2 px-1 text-center bg-gray-50 w-[50px] lg:w-[6%]">무력</th>
-                            <th className="py-2 px-1 text-center bg-gray-50 w-[50px] lg:w-[6%]">한타</th>
-                            <th className="py-2 px-1 text-center bg-gray-50 w-[50px] lg:w-[6%]">성장</th>
-                            <th className="py-2 px-1 text-center bg-gray-50 w-[50px] lg:w-[6%]">안정</th>
-                            <th className="py-2 px-1 text-center bg-gray-50 w-[50px] lg:w-[6%]">운영</th>
+                            <th className="py-2 px-1 text-center bg-gray-50 border-l w-[60px] lg:w-[6%]">라인</th>
+                            <th className="py-2 px-1 text-center bg-gray-50 w-[60px] lg:w-[6%]">무력</th>
+                            <th className="py-2 px-1 text-center bg-gray-50 w-[60px] lg:w-[6%]">한타</th>
+                            <th className="py-2 px-1 text-center bg-gray-50 w-[60px] lg:w-[6%]">성장</th>
+                            <th className="py-2 px-1 text-center bg-gray-50 w-[60px] lg:w-[6%]">안정</th>
+                            <th className="py-2 px-1 text-center bg-gray-50 w-[60px] lg:w-[6%]">운영</th>
                             
-                            <th className="py-2 px-1 text-center bg-gray-50 border-l text-purple-600 w-[50px] lg:w-[6%]">POT</th>
-                            <th className="py-2 px-2 text-left bg-gray-50 border-l w-[120px] lg:w-[12%]">계약 정보</th>
+                            <th className="py-2 px-1 text-center bg-gray-50 border-l text-purple-600 w-[60px] lg:w-[6%]">POT</th>
+                            <th className="py-2 px-2 text-left bg-gray-50 border-l w-[140px] lg:w-auto">계약 정보</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                         {roster.map((p, i) => (
                             <tr key={i} className="hover:bg-blue-50/30 transition group">
-                                {/* Sticky Column for Player Info Row */}
+                                {/* Sticky Info Row */}
                                 <td className="py-2 px-2 bg-white group-hover:bg-blue-50/30 sticky left-0 z-10 border-r shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                                     <div className="flex items-center gap-2">
-                                        <span className="font-bold text-gray-400 w-6 text-center shrink-0">{p.포지션}</span>
+                                        <span className="font-bold text-gray-400 w-8 text-center shrink-0">{p.포지션}</span>
                                         <div className="overflow-hidden min-w-0">
-                                            <div className="font-bold text-gray-900 truncate text-xs lg:text-sm">{p.이름} {p.주장 && <span className="text-yellow-500" title="주장">👑</span>}</div>
+                                            {/* whitespace-nowrap ensures names don't wrap and cause height issues */}
+                                            <div className="font-bold text-gray-900 truncate text-xs lg:text-sm whitespace-nowrap">{p.이름} {p.주장 && <span className="text-yellow-500" title="주장">👑</span>}</div>
                                             <div className="text-[9px] lg:text-[10px] text-gray-400 truncate">{p.특성}</div>
                                         </div>
                                     </div>
                                 </td>
                                 
-                                <td className="py-2 px-1 text-center"><span className={`inline-flex items-center justify-center w-7 h-5 lg:w-8 lg:h-6 rounded font-black text-[10px] lg:text-xs shadow-sm border ${getOvrBadgeStyle(p.종합)}`}>{p.종합}</span></td>
-                                <td className="py-2 px-1 text-center text-gray-600">{p.나이 || '-'}</td>
-                                <td className="py-2 px-1 text-center text-gray-600">{p.경력 || '-'}</td>
-                                <td className="py-2 px-1 text-center text-gray-700">{p['팀 소속기간'] || '-'}</td>
-                                <td className="py-2 px-1 text-center text-gray-700 font-bold truncate">{p.연봉 || '-'}</td>
+                                <td className="py-2 px-1 text-center"><span className={`inline-flex items-center justify-center w-8 h-6 rounded font-black text-[10px] lg:text-xs shadow-sm border ${getOvrBadgeStyle(p.종합)}`}>{p.종합}</span></td>
+                                <td className="py-2 px-1 text-center text-gray-600 whitespace-nowrap">{p.나이 || '-'}</td>
+                                <td className="py-2 px-1 text-center text-gray-600 whitespace-nowrap">{p.경력 || '-'}</td>
+                                <td className="py-2 px-1 text-center text-gray-700 whitespace-nowrap">{p['팀 소속기간'] || '-'}</td>
+                                <td className="py-2 px-1 text-center text-gray-700 font-bold truncate whitespace-nowrap">{p.연봉 || '-'}</td>
                                 
                                 <td className="py-2 px-1 text-center border-l font-medium text-gray-600">{p.상세?.라인전 || '-'}</td>
                                 <td className="py-2 px-1 text-center font-medium text-gray-600">{p.상세?.무력 || '-'}</td>
@@ -105,7 +108,7 @@ const RosterTab = ({ viewingTeam, roster, onPrevTeam, onNextTeam }) => {
                                 <td className="py-2 px-1 text-center font-medium text-gray-600">{p.상세?.운영 || '-'}</td>
                                 
                                 <td className="py-2 px-1 text-center border-l"><span className={`font-bold ${getPotBadgeStyle(p.잠재력)}`}>{p.잠재력}</span></td>
-                                <td className="py-2 px-2 border-l"><span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-[9px] lg:text-[10px] font-bold block truncate text-center">{p.계약}</span></td>
+                                <td className="py-2 px-2 border-l"><span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-[9px] lg:text-[10px] font-bold block truncate text-center max-w-[120px] mx-auto">{p.계약}</span></td>
                             </tr>
                         ))} 
                     </tbody>
