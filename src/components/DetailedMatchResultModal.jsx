@@ -44,7 +44,7 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
           {/* === HEADER (MATCH SCORE) === */}
           <div className="bg-black text-white p-3 lg:p-6 shrink-0 relative overflow-hidden flex justify-between items-center z-10">
             <div className="flex items-center gap-4 lg:gap-6">
-                {/* [FIXED] Display parsed scores - Smaller text on mobile */}
+                {/* Score Display */}
                 <div className="text-3xl lg:text-5xl font-black text-blue-500">{matchScoreA}</div>
                 <div className="flex flex-col items-center">
                     <span className="text-[10px] lg:text-xs text-gray-400 font-bold tracking-widest hidden sm:block">FINAL</span>
@@ -53,12 +53,13 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                 <div className="text-3xl lg:text-5xl font-black text-red-500">{matchScoreB}</div>
             </div>
 
-            {/* POS DISPLAY (Series MVP) - Simplified for Mobile */}
+            {/* POS DISPLAY (Series MVP) - Width limit relaxed */}
             {posPlayer && (
                 <div className="flex items-center gap-2 lg:gap-4 bg-purple-900/80 border border-purple-500 px-3 py-1 lg:px-6 lg:py-2 rounded-lg lg:rounded-xl shadow-[0_0_15px_rgba(168,85,247,0.4)]">
                     <div className="flex flex-col items-end">
                         <span className="text-[8px] lg:text-[10px] text-purple-300 font-bold tracking-widest">MVP</span>
-                        <span className="text-xs lg:text-xl font-black text-white truncate max-w-[80px] lg:max-w-none">{posPlayer.playerName}</span>
+                        {/* CHANGED: max-w increased for visibility */}
+                        <span className="text-xs lg:text-xl font-black text-white truncate max-w-[120px] lg:max-w-none">{posPlayer.playerName}</span>
                     </div>
                     <div className="w-6 h-6 lg:w-10 lg:h-10 rounded-full bg-purple-600 flex items-center justify-center border-2 border-white shadow-lg text-xs lg:text-lg">
                         👑
@@ -98,7 +99,7 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
           {/* === CONTENT === */}
           <div className="flex-1 overflow-y-auto p-2 lg:p-6 bg-gray-50">
             
-            {/* [NEW] GAME INFO BAR (WITH KILL SCORE) */}
+            {/* GAME INFO BAR */}
             <div className="flex flex-wrap lg:flex-nowrap justify-between items-center mb-3 lg:mb-6 bg-white p-2 lg:p-4 rounded-xl border border-gray-200 shadow-sm gap-2">
                  <div className="flex items-center gap-2 lg:gap-6 flex-wrap">
                      {/* Game Time Badge */}
@@ -106,7 +107,7 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                         <span>⏱</span> {gameTimeStr}
                      </span>
                      
-                     {/* [NEW] SET KILL SCORE DISPLAY */}
+                     {/* SET KILL SCORE DISPLAY */}
                      <div className="flex items-center gap-2 lg:gap-3 bg-gray-100 px-3 py-1 rounded-full border border-gray-300">
                         <span className="text-xs lg:text-sm font-black text-blue-600 truncate max-w-[50px] lg:max-w-none">{teamA.name}</span>
                         <div className="flex items-center gap-1 text-sm lg:text-xl font-black text-gray-800">
@@ -118,17 +119,17 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                         <span className="hidden lg:inline text-[10px] text-gray-500 font-bold ml-2 uppercase">Kills</span>
                      </div>
 
-                     {/* Winner Badge - Hidden on very small screens if needed, or simplified */}
                      <span className={`px-2 py-1 lg:px-3 rounded text-[10px] lg:text-xs font-bold whitespace-nowrap ${currentSetData.winner === teamA.name ? 'bg-blue-100 text-blue-800' : 'bg-red-100 text-red-800'}`}>
                         🏆 {currentSetData.winner} WIN
                      </span>
                  </div>
 
-                 {/* POG CARD (Small Version) */}
+                 {/* POG CARD - Width limit relaxed */}
                  {pogPlayer && (
                      <div className="flex items-center gap-2 lg:gap-3 bg-yellow-100 border border-yellow-300 px-2 py-1 lg:px-4 rounded-full shadow-sm ml-auto">
                          <span className="text-[9px] lg:text-[10px] font-bold text-yellow-800 bg-yellow-300 px-1.5 rounded">POG</span>
-                         <span className="font-bold text-xs lg:text-sm text-gray-800 truncate max-w-[60px] lg:max-w-none">{pogPlayer.playerName}</span>
+                         {/* CHANGED: max-w increased */}
+                         <span className="font-bold text-xs lg:text-sm text-gray-800 truncate max-w-[100px] lg:max-w-none">{pogPlayer.playerName}</span>
                          <span className="hidden lg:inline text-xs text-gray-600">({pogPlayer.champName})</span>
                          <span className="hidden lg:inline text-[10px] font-mono text-gray-500">Score: {pogPlayer.pogScore?.toFixed(1)}</span>
                      </div>
@@ -163,7 +164,7 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
 
             {/* PICKS (PLAYERS) */}
             <div className="flex gap-2 lg:gap-8 relative">
-              {/* VS Divider - Scaled down for mobile */}
+              {/* VS Divider */}
               <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 lg:w-10 lg:h-10 bg-gray-300 rounded-full flex items-center justify-center font-black text-gray-500 z-10 border-2 lg:border-4 border-gray-50 text-[10px] lg:text-xs">
                   VS
               </div>
@@ -182,7 +183,7 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                             {/* Role */}
                             <div className="w-4 lg:w-8 text-center font-bold text-gray-400 text-[8px] lg:text-xs mr-1 lg:mr-2 shrink-0">{['TOP','JGL','MID','ADC','SUP'][i]}</div>
                             
-                            {/* Champ Info */}
+                            {/* Champ Info - Flexible width */}
                             <div className="flex-1 min-w-0">
                               <div className="font-bold text-gray-800 text-xs lg:text-sm flex items-center gap-1 lg:gap-2 truncate">
                                   {p.champName}
@@ -192,9 +193,9 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                               <div className="text-[8px] lg:text-[10px] text-gray-500 truncate">{p.tier}티어 <span className="hidden lg:inline">{p.classType}</span></div>
                             </div>
 
-                            {/* Stats & Name */}
+                            {/* Stats & Name - CHANGED: Removed max-w limitation on sm+ screens */}
                             <div className="text-right z-10 flex flex-col items-end shrink-0 ml-1">
-                              <div className="font-bold text-gray-900 text-[10px] lg:text-sm truncate max-w-[60px] lg:max-w-none">{p.playerName}</div>
+                              <div className="font-bold text-gray-900 text-[10px] lg:text-sm truncate max-w-[120px] sm:max-w-none">{p.playerName}</div>
                               <div className="text-[9px] lg:text-xs font-mono font-bold text-gray-600">
                                   {p.k ?? p.stats?.kills ?? 0}/<span className="text-red-500">{p.d ?? p.stats?.deaths ?? 0}</span>/{p.a ?? p.stats?.assists ?? 0}
                               </div>
@@ -234,9 +235,9 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                               <div className="text-[8px] lg:text-[10px] text-gray-500 truncate">{p.tier}티어 <span className="hidden lg:inline">{p.classType}</span></div>
                             </div>
 
-                            {/* Stats & Name */}
+                            {/* Stats & Name - CHANGED: Removed max-w limitation on sm+ screens */}
                             <div className="text-left z-10 flex flex-col items-start mr-1 shrink-0">
-                              <div className="font-bold text-gray-900 text-[10px] lg:text-sm truncate max-w-[60px] lg:max-w-none">{p.playerName}</div>
+                              <div className="font-bold text-gray-900 text-[10px] lg:text-sm truncate max-w-[120px] sm:max-w-none">{p.playerName}</div>
                               <div className="text-[9px] lg:text-xs font-mono font-bold text-gray-600">
                                   {p.k ?? p.stats?.kills ?? 0}/<span className="text-red-500">{p.d ?? p.stats?.deaths ?? 0}</span>/{p.a ?? p.stats?.assists ?? 0}
                               </div>
