@@ -1130,14 +1130,14 @@ const getOvrBadgeStyle = (ovr) => {
                      <div className="absolute top-0 right-0 p-4 opacity-10 text-9xl pointer-events-none">📅</div>
                      <h3 className="text-lg font-bold text-gray-800 mb-2">다음 경기 일정</h3>
                      <div className="flex items-center justify-between bg-gray-50 rounded-xl p-3 lg:p-6 border">
-                        <div className="text-center w-1/3"><div className="text-2xl lg:text-4xl font-black text-gray-800 mb-2">{t1 ? t1.name : '?'}</div></div>
+                        <div className="text-center w-1/3"><div className="text-lg lg:text-4xl font-black text-gray-800 mb-2 truncate">{t1 ? t1.name : '?'}</div></div>
                         <div className="text-center w-1/3 flex flex-col items-center">
-                          <div className="text-xs font-bold text-gray-400 uppercase">VS</div><div className="text-xl lg:text-3xl font-bold text-gray-300 my-1 lg:my-2">@</div>
+                          <div className="text-xs font-bold text-gray-400 uppercase">VS</div><div className="text-lg lg:text-3xl font-bold text-gray-300 my-1 lg:my-2">@</div>
                           {nextGlobalMatch ? (
                             <div className="mt-1 flex flex-col items-center">
-                              <span className="text-sm lg:text-base font-black text-blue-600">{nextGlobalMatch.date}</span>
-                              <span className="text-xs lg:text-sm font-bold text-gray-600">{nextGlobalMatch.time}</span>
-                              <span className="mt-2 text-[10px] lg:text-xs font-bold text-white bg-blue-600 px-3 py-1 rounded-full shadow-sm">
+                              <span className="text-xs lg:text-base font-black text-blue-600">{nextGlobalMatch.date}</span>
+                              <span className="text-[10px] lg:text-sm font-bold text-gray-600">{nextGlobalMatch.time}</span>
+                              <span className="mt-2 text-[10px] lg:text-xs font-bold text-white bg-blue-600 px-3 py-1 rounded-full shadow-sm whitespace-nowrap">
                                   {nextGlobalMatch.label || nextGlobalMatch.format}
                               </span>
                               
@@ -1145,14 +1145,14 @@ const getOvrBadgeStyle = (ovr) => {
                                   <div className="flex flex-col gap-2 mt-3 w-full">
                                       <button 
                                         onClick={() => handleStartMyMatch('manual')} 
-                                        className="w-full px-2 lg:px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-bold text-xs lg:text-base rounded-lg shadow-md transform transition hover:scale-105 flex items-center justify-center gap-2"
+                                        className="w-full px-2 lg:px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-bold text-xs lg:text-base rounded-lg shadow-md transform transition hover:scale-105 flex items-center justify-center gap-2 whitespace-nowrap"
                                       >
                                           <span>🎮</span> 경기 시작 (직접)
                                       </button>
                                       
                                       <button 
                                         onClick={() => handleStartMyMatch('auto')} 
-                                        className="w-full px-2 lg:px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs lg:text-base rounded-lg shadow-md transform transition hover:scale-105 flex items-center justify-center gap-2"
+                                        className="w-full px-2 lg:px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs lg:text-base rounded-lg shadow-md transform transition hover:scale-105 flex items-center justify-center gap-2 whitespace-nowrap"
                                       >
                                           <span>📺</span> 경기 시작 (AI)
                                       </button>
@@ -1166,7 +1166,7 @@ const getOvrBadgeStyle = (ovr) => {
                           ) : <div className="text-xs font-bold text-blue-600">{isSeasonOver ? '시즌 종료' : '대진 생성 대기 중'}</div>}
                         </div>
                         <div className="text-center w-1/3">
-                            <div className="text-2xl lg:text-4xl font-black text-gray-800 mb-2">{t2 ? t2.name : '?'}</div>
+                            <div className="text-lg lg:text-4xl font-black text-gray-800 mb-2 truncate">{t2 ? t2.name : '?'}</div>
                         </div>
                      </div>
                   </div>
@@ -1217,9 +1217,9 @@ const getOvrBadgeStyle = (ovr) => {
                                                   <span className="text-lg">{group.icon}</span>
                                                   <span className={`font-black text-sm text-${group.color}-700`}>{group.name}</span>
                                               </div>
-                                              <table className="w-full text-xs">
+                                              <table className="w-full text-xs min-w-max">
                                                   <thead className="bg-gray-50 text-gray-400">
-                                                      <tr><th className="p-2 text-center w-8">#</th><th className="p-2 text-left">팀</th><th className="p-2 text-center w-12">W-L</th><th className="p-2 text-center w-10">득실</th></tr>
+                                                      <tr><th className="p-2 text-center w-8">#</th><th className="p-2 text-left whitespace-nowrap">팀</th><th className="p-2 text-center w-12 whitespace-nowrap">W-L</th><th className="p-2 text-center w-10 whitespace-nowrap">득실</th></tr>
                                                   </thead>
                                                   <tbody>
                                                   {sortGroupByStandings(league.groups[group.id] || [], computedStandings).map((id, idx) => {
@@ -1233,19 +1233,19 @@ const getOvrBadgeStyle = (ovr) => {
                                                               const poInfo = summary.poTeams.find(pt => pt.id === id);
                                                               const piInfo = summary.playInTeams.find(pit => pit.id === id);
   
-                                                              if (poInfo) statusBadge = <span className="text-[10px] bg-yellow-100 text-yellow-700 px-1 rounded ml-1 font-bold">PO {poInfo.seed}시드</span>;
-                                                              else if (piInfo) statusBadge = <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1 rounded ml-1 font-bold">PI {piInfo.seed}시드</span>;
-                                                              else if (summary.eliminated === id) statusBadge = <span className="text-[10px] bg-gray-200 text-gray-500 px-1 rounded ml-1 font-bold">OUT</span>;
+                                                              if (poInfo) statusBadge = <span className="text-[10px] bg-yellow-100 text-yellow-700 px-1 rounded ml-1 font-bold whitespace-nowrap">PO {poInfo.seed}시드</span>;
+                                                              else if (piInfo) statusBadge = <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1 rounded ml-1 font-bold whitespace-nowrap">PI {piInfo.seed}시드</span>;
+                                                              else if (summary.eliminated === id) statusBadge = <span className="text-[10px] bg-gray-200 text-gray-500 px-1 rounded ml-1 font-bold whitespace-nowrap">OUT</span>;
                                                           }
   
                                                           return (
                                                               <tr key={id} onClick={() => setViewingTeamId(id)} className={`cursor-pointer border-b last:border-0 transition-colors ${isMyTeam ? `bg-${group.color}-50` : 'hover:bg-gray-50'}`}>
                                                                   <td className="p-2 text-center font-bold text-gray-500">{idx+1}</td>
                                                                   <td className="p-2 font-bold flex items-center">
-                                                                      <span className={`${isMyTeam ? 'text-blue-700' : 'text-gray-800'} hover:underline`}>{t.fullName}</span>
+                                                                      <span className={`${isMyTeam ? 'text-blue-700' : 'text-gray-800'} hover:underline whitespace-nowrap`}>{t.fullName}</span>
                                                                       {statusBadge}
                                                                   </td>
-                                                                  <td className="p-2 text-center">{rec.w} - {rec.l}</td><td className="p-2 text-center text-gray-400">{rec.diff > 0 ? `+${rec.diff}` : rec.diff}</td>
+                                                                  <td className="p-2 text-center whitespace-nowrap">{rec.w} - {rec.l}</td><td className="p-2 text-center text-gray-400 whitespace-nowrap">{rec.diff > 0 ? `+${rec.diff}` : rec.diff}</td>
                                                               </tr>
                                                           );
                                                       })}
@@ -1273,32 +1273,32 @@ const getOvrBadgeStyle = (ovr) => {
                       <button onClick={()=>setActiveTab('roster')} className="text-xs lg:text-sm font-bold text-blue-600 hover:underline">상세 정보 보기 →</button>
                     </div>
                     <div className="p-0 overflow-x-auto">
-                      <table className="w-full text-xs table-fixed text-left min-w-[600px] lg:min-w-0">
+                      <table className="min-w-max w-full text-xs text-left border-collapse">
                           <thead className="bg-white text-gray-400 uppercase font-bold border-b">
                               <tr>
-                                  <th className="py-2 px-1 w-[8%] text-center">라인</th>
-                                  <th className="py-2 px-1 w-[20%]">이름</th>
-                                  <th className="py-2 px-1 w-[8%] text-center">OVR</th>
-                                  <th className="py-2 px-1 w-[6%] text-center">나이</th>
-                                  <th className="py-2 px-1 w-[8%] text-center">경력</th>
-                                  <th className="py-2 px-1 w-[10%] text-center">소속</th>
-                                  <th className="py-2 px-1 w-[12%] text-center">연봉</th>
-                                  <th className="py-2 px-1 w-[10%] text-center">POT</th>
-                                  <th className="py-2 px-1 w-[18%] text-left">계약</th>
+                                  <th className="py-2 px-3 text-center whitespace-nowrap">라인</th>
+                                  <th className="py-2 px-3 whitespace-nowrap">이름</th>
+                                  <th className="py-2 px-3 text-center whitespace-nowrap">OVR</th>
+                                  <th className="py-2 px-3 text-center whitespace-nowrap">나이</th>
+                                  <th className="py-2 px-3 text-center whitespace-nowrap">경력</th>
+                                  <th className="py-2 px-3 text-center whitespace-nowrap">소속</th>
+                                  <th className="py-2 px-3 text-center whitespace-nowrap">연봉</th>
+                                  <th className="py-2 px-3 text-center whitespace-nowrap">POT</th>
+                                  <th className="py-2 px-3 text-left whitespace-nowrap">계약</th>
                               </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
                               {currentRoster.length > 0 ? currentRoster.map((p, i) => (
                                   <tr key={i} className="hover:bg-gray-50 transition">
-                                      <td className="py-2 px-1 font-bold text-gray-400 text-center">{p.포지션}</td>
-                                      <td className="py-2 px-1 font-bold text-gray-800 truncate">{p.이름} <span className="text-gray-400 font-normal text-[10px] hidden lg:inline">({p.실명})</span> {p.주장 && <span className="text-yellow-500" title="주장">👑</span>}</td>
-                                      <td className="py-2 px-1 text-center"><span className={`inline-flex items-center justify-center w-8 h-6 rounded font-black text-xs shadow-sm border ${getOvrBadgeStyle(p.종합)}`}>{p.종합}</span></td>
-                                      <td className="py-2 px-1 text-center text-gray-600">{p.나이 || '-'}</td>
-                                      <td className="py-2 px-1 text-center text-gray-600">{p.경력 || '-'}</td>
-                                      <td className="py-2 px-1 text-center text-gray-700">{p['팀 소속기간'] || '-'}</td>
-                                      <td className="py-2 px-1 text-center text-gray-700 font-bold truncate">{p.연봉 || '-'}</td>
-                                      <td className="py-2 px-1 text-center"><span className={`text-[10px] ${getPotBadgeStyle(p.잠재력)}`}>{p.잠재력}</span></td>
-                                      <td className="py-2 px-1 text-gray-500 font-medium truncate">{p.계약}</td>
+                                      <td className="py-2 px-3 font-bold text-gray-400 text-center whitespace-nowrap">{p.포지션}</td>
+                                      <td className="py-2 px-3 font-bold text-gray-800 whitespace-nowrap">{p.이름} <span className="text-gray-400 font-normal text-[10px] hidden lg:inline">({p.실명})</span> {p.주장 && <span className="text-yellow-500" title="주장">👑</span>}</td>
+                                      <td className="py-2 px-3 text-center"><span className={`inline-flex items-center justify-center w-8 h-6 rounded font-black text-xs shadow-sm border ${getOvrBadgeStyle(p.종합)}`}>{p.종합}</span></td>
+                                      <td className="py-2 px-3 text-center text-gray-600 whitespace-nowrap">{p.나이 || '-'}</td>
+                                      <td className="py-2 px-3 text-center text-gray-600 whitespace-nowrap">{p.경력 || '-'}</td>
+                                      <td className="py-2 px-3 text-center text-gray-700 whitespace-nowrap">{p['팀 소속기간'] || '-'}</td>
+                                      <td className="py-2 px-3 text-center text-gray-700 font-bold whitespace-nowrap">{p.연봉 || '-'}</td>
+                                      <td className="py-2 px-3 text-center"><span className={`text-[10px] ${getPotBadgeStyle(p.잠재력)}`}>{p.잠재력}</span></td>
+                                      <td className="py-2 px-3 text-gray-500 font-medium whitespace-nowrap">{p.계약}</td>
                                   </tr>
                               )) : <tr><td colSpan="9" className="py-10 text-center text-gray-300">데이터 없음</td></tr>}
                           </tbody>
