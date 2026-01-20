@@ -916,10 +916,10 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 </div>
             )}
 
-            {/* 2. ROSTER SELECTION UI */}
+            {/* 2. ROSTER SELECTION UI (FIXED FOR MOBILE) */}
             {phase === 'ROSTER_SELECTION' && (
-                <div className="flex-1 flex flex-col items-center justify-center bg-gray-900 p-8">
-                    <h2 className="text-3xl font-black mb-2 text-center">선발 라인업 확정 (Roster Check)</h2>
+                <div className="flex-1 flex flex-col items-center justify-start md:justify-center bg-gray-900 p-4 md:p-8 overflow-y-auto">
+                    <h2 className="text-3xl font-black mb-2 text-center mt-4 md:mt-0">선발 라인업 확정 (Roster Check)</h2>
                     <div className="text-center text-gray-400 mb-8">
                         {currentSet}세트에 출전할 선수 5명을 선택해주세요. 
                         {preselectedSide && <span> (선택 진영: <span className={preselectedSide === 'BLUE' ? 'text-blue-400' : 'text-red-400'}>{preselectedSide}</span>)</span>}
@@ -938,9 +938,9 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                          </div>
 
                          {/* RIGHT: Available Roster Pool */}
-                         <div className="flex-1 bg-gray-900 rounded-xl p-6 border border-gray-700 overflow-y-auto min-h-[400px]">
-                             {/* [FIXED] Using userTeam.roster instead of teamA.roster */}
-                             <div className="grid grid-cols-3 gap-4">
+                         <div className="flex-1 bg-gray-900 rounded-xl p-6 border border-gray-700 overflow-y-auto min-h-[400px] md:min-h-0">
+                             {/* [FIXED] Using userTeam.roster instead of teamA.roster, and responsive Grid */}
+                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                                  {userTeam.roster.map(player => {
                                      const isSelected = Object.values(activeUserRoster).some(p => p.id === player.id);
                                      return (
@@ -961,7 +961,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                          </div>
                     </div>
                     
-                    <div className="mt-8 flex justify-center">
+                    <div className="mt-8 mb-8 flex justify-center">
                         <button 
                             onClick={handleRosterConfirm}
                             className="px-12 py-4 bg-green-600 hover:bg-green-700 text-white font-black text-xl rounded-full shadow-lg transition hover:scale-105"
