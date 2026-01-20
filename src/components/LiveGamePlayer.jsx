@@ -8,7 +8,6 @@ import { validateLineup, getDefaultLineup } from '../engine/rosterLogic';
 const getRecommendedChampion = (role, currentChamps, availableChamps) => {
     // Filter by Role
     const roleChamps = availableChamps.filter(c => c.role === (role === 'SUP' ? 'SUP' : role));
-    // Fallback if no specific role champs found
     if (roleChamps.length === 0) return availableChamps[0];
 
     // Sort by Tier (1 is best) -> Stats Sum
@@ -36,7 +35,6 @@ const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
         const picksA = game.picks?.A || [];
         const picksB = game.picks?.B || [];
         // Heuristic: Check if picksA belongs to the winner
-        // If picksA[0] team name matches winner, or if undetermined, assume A is winner if game.winner says so
         const isTeamA = picksA[0]?.playerData?.팀 === winningTeamName || (picksA[0]?.playerData?.팀 === undefined && game.winner === winningTeamName && picksA[0]);
         const winningPicks = isTeamA ? picksA : picksB;
 
@@ -51,10 +49,8 @@ const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
             const gold = p.currentGold || 0;
             const damage = stats.damage || 0;
             
-            // POS Scoring Formula
             let score = ((k + a) / d * 3) + (damage / 3000) + (gold / 1000) + (a * 1);
             
-            // Role weighting
             const role = p.playerData?.포지션 || 'MID';
             if (['JGL', '정글'].includes(role)) score *= 1.07;
             if (['SUP', '서포터'].includes(role)) score *= 1.10;
@@ -64,7 +60,6 @@ const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
         });
     });
 
-    // Return player with highest total score
     const sorted = Object.values(playerScores).sort((a, b) => b.totalScore - a.totalScore);
     return sorted[0]; 
 };
@@ -73,7 +68,6 @@ const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
 const calculateManualPog = (picksBlue = [], picksRed = [], winnerSide = 'BLUE', gameMinutes = 30) => {
     const winningPicks = winnerSide === 'BLUE' ? picksBlue : picksRed;
     if (!Array.isArray(winningPicks) || winningPicks.length === 0) return null;
-    
     const candidates = winningPicks.map(p => {
         const k = (p.stats?.kills ?? p.k) || 0; 
         const dRaw = (p.stats?.deaths ?? p.d);
@@ -83,7 +77,6 @@ const calculateManualPog = (picksBlue = [], picksRed = [], winnerSide = 'BLUE', 
         
         const dpm = damage / (gameMinutes || 1);
         
-        // POG Scoring Formula
         let score = ((k + a) / d * 3) + (dpm / 100) + ((p.currentGold || 0) / 1000) + (a * 1);
         
         const role = p.playerData?.포지션;
@@ -92,7 +85,6 @@ const calculateManualPog = (picksBlue = [], picksRed = [], winnerSide = 'BLUE', 
         
         return { ...p, pogScore: score, kdaVal: (k+a)/d, dpm };
     });
-    
     candidates.sort((a, b) => (b.pogScore || 0) - (a.pogScore || 0));
     return candidates[0] || null;
 };
@@ -116,12 +108,9 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     const [resultProcessed, setResultProcessed] = useState(false);
     
     // --- [FIXED] ROSTER STATE ---
-    // activeUserRoster: The 5 players USER chose (regardless of whether they are Team A or B)
     const [activeUserRoster, setActiveUserRoster] = useState({}); 
     const [preselectedSide, setPreselectedSide] = useState(null); 
 
-    // Helper: Identify which team object is the "Player's Team"
-    // If playerTeamName is not provided (auto mode), default to teamA
     const isUserTeamA = !simOptions?.playerTeamName || teamA.name === simOptions.playerTeamName;
     const userTeam = isUserTeamA ? teamA : teamB;
     const cpuTeam = isUserTeamA ? teamB : teamA;
@@ -166,12 +155,10 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     
     // --- INITIALIZE ROSTER ON MOUNT ---
     useEffect(() => {
-        // [FIX] Initialize roster for the USER'S team, not just Team A
         const defaultLineup = getDefaultLineup(userTeam.name);
         setActiveUserRoster(defaultLineup);
     }, [userTeam.name]);
 
-    // reset userSelectedRole when draftStep advances
     useEffect(() => {
       setUserSelectedRole(false);
     }, [draftStep]);
@@ -197,13 +184,9 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
 
       setTimeout(() => {
           try {
-              // [FIX] Construct Team Objects with ACTIVE Rosters Correctly
-              // If user is Team A, apply activeUserRoster to Team A.
-              // If user is Team B, apply activeUserRoster to Team B.
-              
               const teamA_Active = isUserTeamA 
                   ? { ...teamA, roster: Object.values(activeUserRoster) } 
-                  : teamA; // CPU uses default full roster (simEngine picks best)
+                  : teamA; 
 
               const teamB_Active = !isUserTeamA 
                   ? { ...teamB, roster: Object.values(activeUserRoster) }
@@ -213,24 +196,15 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
 
               // --- SIDE SELECTION LOGIC ---
               if (preselectedSide) {
-                  // If side was chosen in SIDE_SELECTION phase (Manual Mode)
                   if (preselectedSide === 'BLUE') {
-                      // Whoever chose BLUE is Blue.
-                      // Who chose? The USER chose.
-                      // So if User is Team A, and chose Blue -> Team A is Blue.
-                      // If User is Team B, and chose Blue -> Team B is Blue.
-                      
                       blueTeam = isUserTeamA ? teamA_Active : teamB_Active;
                       redTeam = isUserTeamA ? teamB_Active : teamA_Active;
                   } else {
-                      // User chose RED -> User is Red.
                       redTeam = isUserTeamA ? teamA_Active : teamB_Active;
                       blueTeam = isUserTeamA ? teamB_Active : teamA_Active;
                   }
               } else if (currentSet === 1) {
-                  // Set 1 Default
-                  const t1Id = typeof match.t1 === 'object' ? match.t1.id : match.t1;
-                  const myId = userTeam.id; // User ID
+                  const myId = userTeam.id; 
                   let userIsBlue = true;
                   
                   if (match.blueSidePriority) {
@@ -246,14 +220,11 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                   blueTeam = userIsBlue ? userTeamObj : cpuTeamObj;
                   redTeam = userIsBlue ? cpuTeamObj : userTeamObj;
               } else {
-                  // Fallback for Auto Mode (Previous Loser picks side)
-                  // If we are here, preselectedSide was null, meaning Auto Logic
                   const lastGame = matchHistory[matchHistory.length - 1];
                   const lastWinnerName = lastGame.winner;
                   const previousLoser = (lastWinnerName === teamA.name) ? teamB : teamA;
-                  const loserPicksBlue = Math.random() < 0.90; // AI Logic
+                  const loserPicksBlue = Math.random() < 0.90; 
                   
-                  // Identify objects
                   const loserObj = previousLoser.name === teamA.name ? teamA_Active : teamB_Active;
                   const winnerObj = previousLoser.name === teamA.name ? teamB_Active : teamA_Active;
 
@@ -263,7 +234,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                       redTeam = loserObj; blueTeam = winnerObj;
                   }
               }
-              // -----------------------------
 
               if (isManualMode) {
                   setManualTeams({ blue: blueTeam, red: redTeam });
@@ -318,8 +288,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     }, [phase, startSet]);
 
     // --- PHASE TRANSITION HANDLERS ---
-    
-    // 1. Roster Confirm
     const handleRosterConfirm = () => {
         if (!validateLineup(activeUserRoster)) {
             alert("로스터가 불완전하거나 중복된 선수가 있습니다. 5명을 모두 채워주세요.");
@@ -328,7 +296,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         setPhase('READY');
     };
 
-    // 2. Roster Select (Clicking a player)
     const handlePlayerSelect = (position, player) => {
         setActiveUserRoster(prev => ({
             ...prev,
@@ -336,13 +303,12 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         }));
     };
 
-    // 3. Side Select
     const handleSideSelection = (side) => {
         setPreselectedSide(side === 'blue' ? 'BLUE' : 'RED');
         setPhase('ROSTER_SELECTION');
     };
 
-    // --- DRAFT PHASE LOGIC (Unchanged) ---
+    // --- DRAFT PHASE LOGIC ---
     useEffect(() => {
         if (phase !== 'DRAFT') return;
 
@@ -361,7 +327,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             const actingTeamObj = actingTeamSide === 'BLUE' ? manualTeams.blue : manualTeams.red;
             const isPlayerTurn = actingTeamObj?.name === simOptions?.playerTeamName;
 
-            // Auto-suggest role only if user hasn't explicitly chosen role
             if (isPlayerTurn && stepInfo.type === 'PICK' && !userSelectedRole) {
                 const myPicks = actingTeamSide === 'BLUE' ? manualPicks.blue : manualPicks.red;
                 const roles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
@@ -419,7 +384,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
 
     }, [phase, draftStep, simulationData, isManualMode, manualTeams, manualPicks, filterRole, userSelectedRole]);
 
-    // --- MANUAL MODE HELPER FUNCTIONS (Unchanged) ---
+    // --- MANUAL MODE HELPER FUNCTIONS ---
     const handleCpuTurn = (stepInfo, team, side) => {
         const availableChamps = activeChampionList.filter(c => !manualLockedChamps.has(c.name));
         let selectedChamp = null;
@@ -525,7 +490,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         setDraftTimer(25); 
     };
 
-    // --- FINALIZE MANUAL DRAFT (Unchanged Logic) ---
+    // --- FINALIZE MANUAL DRAFT ---
     const finalizeManualDraft = () => {
         if (!manualTeams.blue || !manualTeams.red) {
             console.error("Critical Error: Teams not initialized");
@@ -842,7 +807,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                   {[0,1,2,3,4].map(i => (
                                       <div key={i} className="w-5 h-5 sm:w-8 sm:h-8 bg-gray-800 border border-gray-600 rounded flex items-center justify-center">
                                           {draftState.blueBans[i] ? (
-                                             <div className="text-[8px] sm:text-[10px] font-bold text-gray-400 text-center leading-tight">{draftState.blueBans[i]}</div>
+                                             <div className="text-[6px] sm:text-[10px] font-bold text-gray-400 text-center leading-tight break-words">{draftState.blueBans[i]}</div>
                                           ) : <div className="w-full h-full bg-blue-900/20"></div>}
                                       </div>
                                   ))}
@@ -852,7 +817,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                   {[0,1,2,3,4].map(i => (
                                       <div key={i} className="w-5 h-5 sm:w-8 sm:h-8 bg-gray-800 border border-gray-600 rounded flex items-center justify-center">
                                           {draftState.redBans[i] ? (
-                                             <div className="text-[8px] sm:text-[10px] font-bold text-gray-400 text-center leading-tight">{draftState.redBans[i]}</div>
+                                             <div className="text-[6px] sm:text-[10px] font-bold text-gray-400 text-center leading-tight break-words">{draftState.redBans[i]}</div>
                                           ) : <div className="w-full h-full bg-red-900/20"></div>}
                                       </div>
                                   ))}
@@ -993,7 +958,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                              {pick ? (
                                  <>
                                     <div className="w-8 h-8 sm:w-10 sm:h-10 rounded border border-blue-400 flex items-center justify-center bg-black overflow-hidden shrink-0">
-                                        <div className="font-bold text-[8px] text-center">{pick.champName.substring(0,3)}</div>
+                                        <div className="font-bold text-[6px] sm:text-[8px] text-center break-words leading-tight">{pick.champName}</div>
                                     </div>
                                     <div className="ml-2 overflow-hidden">
                                         <div className="text-xs sm:text-sm font-black text-white truncate">{pick.champName}</div>
@@ -1032,7 +997,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                 <div className="bg-blue-900/30 p-1 px-2 flex items-center gap-2 border-b border-blue-800 shrink-0">
                                     <span className="text-[8px] font-bold text-blue-300 uppercase">Rec</span>
                                     <div className="flex items-center gap-1">
-                                        <div className="w-5 h-5 bg-black rounded border border-blue-500 flex items-center justify-center text-[8px]">{recommendedChamp.name.substring(0,2)}</div>
+                                        <div className="w-5 h-5 bg-black rounded border border-blue-500 flex items-center justify-center text-[6px] break-words leading-none">{recommendedChamp.name}</div>
                                         <span className="font-bold text-[10px] text-white truncate max-w-[60px]">{recommendedChamp.name}</span>
                                         <span className="text-[8px] text-blue-200">({recommendedChamp.tier}T)</span>
                                     </div>
@@ -1065,8 +1030,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                                     'bg-gray-700/50 border-gray-600 hover:bg-gray-600 hover:border-gray-400'
                                                 }`}
                                             >
-                                                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-black rounded mb-0.5 flex items-center justify-center text-[8px] sm:text-[10px] text-gray-400 font-bold overflow-hidden">
-                                                    {champ.name.substring(0,4)}
+                                                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-black rounded mb-0.5 flex items-center justify-center text-[6px] sm:text-[8px] text-gray-400 font-bold overflow-hidden leading-tight break-words p-0.5">
+                                                    {champ.name}
                                                 </div>
                                                 <div className="text-[8px] font-bold text-center w-full truncate">{champ.name}</div>
                                                 <div className={`absolute top-0.5 right-0.5 w-3 h-3 rounded-full flex items-center justify-center text-[6px] font-bold border ${champ.tier === 1 ? 'bg-purple-600 border-purple-400 text-white' : 'bg-gray-800 border-gray-500 text-gray-400'}`}>
@@ -1102,7 +1067,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                              {pick ? (
                                  <>
                                     <div className="w-8 h-8 sm:w-10 sm:h-10 rounded border border-red-400 flex items-center justify-center bg-black overflow-hidden shrink-0">
-                                        <div className="font-bold text-[8px] text-center">{pick.champName.substring(0,3)}</div>
+                                        <div className="font-bold text-[6px] sm:text-[8px] text-center break-words leading-tight">{pick.champName}</div>
                                     </div>
                                     <div className="mr-2 overflow-hidden text-right">
                                         <div className="text-xs sm:text-sm font-black text-white truncate">{pick.champName}</div>
@@ -1132,7 +1097,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                     {liveStats.players.filter(p => p.side === 'BLUE').map((p, i) => (
                         <div key={i} className="flex-1 border-b border-gray-800 relative p-1 flex items-center gap-2">
                             <div className="w-8 h-8 bg-gray-800 rounded border border-blue-600 relative overflow-hidden shrink-0">
-                                <div className="absolute inset-0 flex items-center justify-center font-bold text-[8px] text-blue-200 text-center leading-none">{p.champName.substring(0,3)}</div>
+                                <div className="absolute inset-0 flex items-center justify-center font-bold text-[6px] sm:text-[8px] text-blue-200 text-center leading-none break-words p-0.5">{p.champName}</div>
                                 <div className="absolute bottom-0 right-0 bg-black text-white text-[8px] px-1 font-bold">{p.lvl}</div>
                             </div>
                             <div className="flex-1 min-w-0">
@@ -1181,7 +1146,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                     {liveStats.players.filter(p => p.side === 'RED').map((p, i) => (
                         <div key={i} className="flex-1 border-b border-gray-800 relative p-1 flex flex-row-reverse items-center gap-2 text-right">
                             <div className="w-8 h-8 bg-gray-800 rounded border border-red-600 relative overflow-hidden shrink-0">
-                                <div className="absolute inset-0 flex items-center justify-center font-bold text-[8px] text-red-200 text-center leading-none">{p.champName.substring(0,3)}</div>
+                                <div className="absolute inset-0 flex items-center justify-center font-bold text-[6px] sm:text-[8px] text-red-200 text-center leading-none break-words p-0.5">{p.champName}</div>
                                 <div className="absolute bottom-0 left-0 bg-black text-white text-[8px] px-1 font-bold">{p.lvl}</div>
                             </div>
                             <div className="flex-1 min-w-0">
@@ -1231,8 +1196,44 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                     {pog?.stats?.assists ?? pog?.a ?? 0}
                                 </span>
                             </div>
+                            {/* [FIXED] Added Score Row */}
+                            <div className="flex justify-between text-[10px] sm:text-xs">
+                                <span className="text-gray-400">Score</span>
+                                <span className="font-mono text-yellow-500">{pog?.pogScore ? (pog.pogScore.toFixed(1)) : 'N/A'}</span>
+                            </div>
                         </div>
                    </div>
+
+                   {/* POS CARD (Only if Series Ends & BO5) */}
+                   {match?.format === 'BO5' && 
+                     (winsA + ((simulationData?.winnerName === teamA.name) ? 1 : 0) >= targetWins || 
+                      winsB + ((simulationData?.winnerName === teamB.name) ? 1 : 0) >= targetWins) && (
+                        <div className="bg-gradient-to-br from-purple-900 to-indigo-900 border border-purple-400 p-3 sm:p-4 rounded-xl shadow-2xl w-1/2 flex flex-col items-center relative overflow-hidden animate-pulse-slow">
+                            <div className="absolute top-0 right-0 bg-purple-500 text-white font-bold px-2 py-0.5 text-[8px] sm:text-[10px] rounded-bl-lg z-10">
+                                SERIES MVP
+                            </div>
+                            
+                            {/* Calculate POS on the fly */}
+                            {(() => {
+                                const winnerName = (winsA + ((simulationData?.winnerName === teamA.name) ? 1 : 0) >= targetWins) ? teamA.name : teamB.name;
+                                const posPlayer = calculatePOS(matchHistory, simulationData, winnerName);
+                                return (
+                                    <>
+                                        <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-purple-800 border-2 border-purple-300 mb-1 sm:mb-2 flex items-center justify-center shadow-[0_0_15px_rgba(168,85,247,0.5)]">
+                                            <span className="text-xl sm:text-2xl">👑</span>
+                                        </div>
+                                        <div className="text-sm sm:text-base font-black text-white">{posPlayer?.playerName || 'Unknown'}</div>
+                                        <div className="text-[10px] sm:text-xs text-purple-300 mb-1">{posPlayer?.playerData?.포지션 || 'Player'}</div>
+                                        
+                                        <div className="w-full mt-2 bg-black/40 px-2 py-1 rounded text-purple-200 font-mono text-[10px] sm:text-xs flex justify-between">
+                                            <span>Score</span>
+                                            <span>{posPlayer?.totalScore ? posPlayer.totalScore.toFixed(1) : 'N/A'}</span>
+                                        </div>
+                                    </>
+                                );
+                            })()}
+                        </div>
+                   )}
                </div>
                
                <button 
