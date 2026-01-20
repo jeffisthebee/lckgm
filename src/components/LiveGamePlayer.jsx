@@ -787,13 +787,13 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
               </div>
             )}
 
-            <div className="min-h-10 sm:min-h-12 py-1 flex flex-col sm:flex-row items-center justify-between px-2 sm:px-4 gap-1">
+            <div className="min-h-10 sm:min-h-12 lg:min-h-24 py-1 sm:py-2 flex flex-col sm:flex-row items-center justify-between px-2 sm:px-4 lg:px-8 gap-1 sm:gap-2">
               <div className="flex flex-col w-full sm:w-1/3 items-center sm:items-start order-2 sm:order-1">
-                   <div className="flex items-center gap-2 sm:gap-3 mb-0">
-                      <div className="text-lg sm:text-2xl font-black text-blue-500">{currentBlueTeam?.name || 'BLUE'}</div>
-                      <div className="flex gap-1">
+                   <div className="flex items-center gap-2 sm:gap-3 lg:gap-4 mb-0 sm:mb-2">
+                      <div className="text-lg sm:text-2xl lg:text-4xl font-black text-blue-500">{currentBlueTeam?.name || 'BLUE'}</div>
+                      <div className="flex gap-1 sm:gap-2">
                           {Array(match?.format === 'BO5' ? 3 : 2).fill(0).map((_,i) => (
-                              <div key={i} className={`w-2 h-2 rounded-full ${i < blueTeamWins ? 'bg-blue-500' : 'bg-gray-700'}`}></div>
+                              <div key={i} className={`w-2 h-2 sm:w-3 sm:h-3 rounded-full ${i < blueTeamWins ? 'bg-blue-500' : 'bg-gray-700'}`}></div>
                           ))}
                       </div>
                    </div>
@@ -802,58 +802,58 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
               <div className="flex flex-col items-center justify-center w-full sm:w-1/3 relative order-1 sm:order-2 mb-1 sm:mb-0">
                   {phase === 'DRAFT' ? (
                       <div className="flex flex-col items-center w-full">
-                          <div className="flex items-center gap-2 sm:gap-3 mb-1">
+                          <div className="flex items-center gap-2 sm:gap-3 lg:gap-4 mb-1 sm:mb-2">
                               <div className="flex gap-1">
                                   {[0,1,2,3,4].map(i => (
-                                      <div key={i} className="w-5 h-5 sm:w-8 sm:h-8 bg-gray-800 border border-gray-600 rounded flex items-center justify-center">
+                                      <div key={i} className="w-5 h-5 sm:w-8 sm:h-8 lg:w-10 lg:h-10 bg-gray-800 border border-gray-600 rounded flex items-center justify-center">
                                           {draftState.blueBans[i] ? (
-                                             <div className="text-[6px] sm:text-[10px] font-bold text-gray-400 text-center leading-tight break-words">{draftState.blueBans[i]}</div>
+                                             <div className="text-[6px] sm:text-[8px] lg:text-[10px] font-bold text-gray-400 text-center leading-tight break-words">{draftState.blueBans[i]}</div>
                                           ) : <div className="w-full h-full bg-blue-900/20"></div>}
                                       </div>
                                   ))}
                               </div>
-                              <div className="text-lg sm:text-2xl font-black text-yellow-400 w-8 sm:w-10 text-center">{Math.ceil(draftTimer)}</div>
+                              <div className="text-lg sm:text-2xl lg:text-3xl font-black text-yellow-400 w-8 sm:w-10 lg:w-16 text-center">{Math.ceil(draftTimer)}</div>
                               <div className="flex gap-1">
                                   {[0,1,2,3,4].map(i => (
-                                      <div key={i} className="w-5 h-5 sm:w-8 sm:h-8 bg-gray-800 border border-gray-600 rounded flex items-center justify-center">
+                                      <div key={i} className="w-5 h-5 sm:w-8 sm:h-8 lg:w-10 lg:h-10 bg-gray-800 border border-gray-600 rounded flex items-center justify-center">
                                           {draftState.redBans[i] ? (
-                                             <div className="text-[6px] sm:text-[10px] font-bold text-gray-400 text-center leading-tight break-words">{draftState.redBans[i]}</div>
+                                             <div className="text-[6px] sm:text-[8px] lg:text-[10px] font-bold text-gray-400 text-center leading-tight break-words">{draftState.redBans[i]}</div>
                                           ) : <div className="w-full h-full bg-red-900/20"></div>}
                                       </div>
                                   ))}
                               </div>
                           </div>
-                          <div className="text-[10px] text-gray-400 font-mono animate-pulse">{draftState.currentAction}</div>
-                          {!isManualMode && <button onClick={skipDraft} className="absolute -bottom-6 text-[10px] text-gray-500 hover:text-white underline">SKIP</button>}
+                          <div className="text-[10px] sm:text-xs text-gray-400 font-mono animate-pulse">{draftState.currentAction}</div>
+                          {!isManualMode && <button onClick={skipDraft} className="absolute -bottom-6 sm:-bottom-8 text-[10px] text-gray-500 hover:text-white underline">SKIP DRAFT ⏩</button>}
                       </div>
                   ) : (
                       <>
-                          <div className="flex items-center gap-3">
-                              <span className="text-2xl sm:text-4xl font-black text-blue-400">{liveStats.kills.BLUE}</span>
-                              <div className="bg-gray-800 px-2 sm:px-3 py-0.5 rounded text-base sm:text-lg font-mono font-bold text-white">
+                          <div className="flex items-center gap-3 sm:gap-6">
+                              <span className="text-2xl sm:text-4xl lg:text-5xl font-black text-blue-400">{liveStats.kills.BLUE}</span>
+                              <div className="bg-gray-800 px-2 sm:px-3 lg:px-4 py-0.5 sm:py-1 rounded text-base sm:text-lg lg:text-xl font-mono font-bold text-white">
                                   {Math.floor(gameTime/60)}:{String(gameTime%60).padStart(2,'0')}
                               </div>
-                              <span className="text-2xl sm:text-4xl font-black text-red-400">{liveStats.kills.RED}</span>
+                              <span className="text-2xl sm:text-4xl lg:text-5xl font-black text-red-400">{liveStats.kills.RED}</span>
                           </div>
-                          <div className="flex gap-3 text-[10px] font-bold text-gray-500 mt-0.5">
-                              <span>💰{(liveStats.gold.BLUE/1000).toFixed(1)}k</span>
-                              <span>🔥{liveStats.towers.BLUE}</span>
+                          <div className="flex gap-3 sm:gap-6 lg:gap-8 text-[10px] sm:text-xs font-bold text-gray-500 mt-0.5 sm:mt-1">
+                              <span>💰 {(liveStats.gold.BLUE/1000).toFixed(1)}k</span>
+                              <span>🔥 {liveStats.towers.BLUE}</span>
                               <span>VS</span>
-                              <span>🔥{liveStats.towers.RED}</span>
-                              <span>💰{(liveStats.gold.RED/1000).toFixed(1)}k</span>
+                              <span>🔥 {liveStats.towers.RED}</span>
+                              <span>💰 {(liveStats.gold.RED/1000).toFixed(1)}k</span>
                           </div>
                       </>
                   )}
               </div>
 
               <div className="flex flex-col w-full sm:w-1/3 items-center sm:items-end order-3">
-                   <div className="flex items-center gap-2 sm:gap-3 mb-0">
-                      <div className="flex gap-1">
+                   <div className="flex items-center gap-2 sm:gap-3 lg:gap-4 mb-0 sm:mb-2">
+                      <div className="flex gap-1 sm:gap-2">
                           {Array(match?.format === 'BO5' ? 3 : 2).fill(0).map((_,i) => (
-                              <div key={i} className={`w-2 h-2 rounded-full ${i < redTeamWins ? 'bg-red-500' : 'bg-gray-700'}`}></div>
+                              <div key={i} className={`w-2 h-2 sm:w-3 sm:h-3 rounded-full ${i < redTeamWins ? 'bg-red-500' : 'bg-gray-700'}`}></div>
                           ))}
                       </div>
-                      <div className="text-lg sm:text-2xl font-black text-red-500">{currentRedTeam?.name || 'RED'}</div>
+                      <div className="text-lg sm:text-2xl lg:text-4xl font-black text-red-500">{currentRedTeam?.name || 'RED'}</div>
                    </div>
               </div>
             </div>
@@ -866,24 +866,24 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             {/* 1. SIDE SELECTION UI */}
             {phase === 'SIDE_SELECTION' && (
                 <div className="flex-1 flex flex-col items-center justify-center animate-fadeIn bg-black/95">
-                     <h2 className="text-2xl sm:text-3xl font-black mb-4 sm:mb-6">진영 선택 (Side Selection)</h2>
-                     <p className="text-sm sm:text-base text-gray-400 mb-6 sm:mb-8">다음 세트 진영을 선택하세요. (패자 선택권)</p>
+                     <h2 className="text-2xl sm:text-3xl lg:text-4xl font-black mb-4 sm:mb-6 lg:mb-8">진영 선택 (Side Selection)</h2>
+                     <p className="text-sm sm:text-base lg:text-xl text-gray-400 mb-6 sm:mb-8 lg:mb-12">다음 세트 진영을 선택하세요. (패자 선택권)</p>
                      <div className="flex gap-4 sm:gap-8">
                          <button 
                             onClick={() => handleSideSelection('blue')}
-                            className="w-32 sm:w-56 h-40 sm:h-64 bg-blue-900/50 hover:bg-blue-800 border-4 border-blue-600 rounded-3xl flex flex-col items-center justify-center gap-2 transition hover:scale-105"
+                            className="w-32 sm:w-56 lg:w-64 h-40 sm:h-64 lg:h-80 bg-blue-900/50 hover:bg-blue-800 border-4 border-blue-600 rounded-3xl flex flex-col items-center justify-center gap-2 sm:gap-4 transition hover:scale-105"
                          >
-                             <div className="text-3xl sm:text-5xl">🔵</div>
-                             <div className="text-lg sm:text-2xl font-black">BLUE</div>
-                             <div className="text-[10px] sm:text-sm text-blue-300">선픽 / 밴 유리</div>
+                             <div className="text-3xl sm:text-5xl lg:text-6xl">🔵</div>
+                             <div className="text-lg sm:text-2xl lg:text-3xl font-black">BLUE</div>
+                             <div className="text-[10px] sm:text-sm lg:text-base text-blue-300">선픽 / 밴 유리</div>
                          </button>
                          <button 
                             onClick={() => handleSideSelection('red')}
-                            className="w-32 sm:w-56 h-40 sm:h-64 bg-red-900/50 hover:bg-red-800 border-4 border-red-600 rounded-3xl flex flex-col items-center justify-center gap-2 transition hover:scale-105"
+                            className="w-32 sm:w-56 lg:w-64 h-40 sm:h-64 lg:h-80 bg-red-900/50 hover:bg-red-800 border-4 border-red-600 rounded-3xl flex flex-col items-center justify-center gap-2 sm:gap-4 transition hover:scale-105"
                          >
-                             <div className="text-3xl sm:text-5xl">🔴</div>
-                             <div className="text-lg sm:text-2xl font-black">RED</div>
-                             <div className="text-[10px] sm:text-sm text-red-300">후픽 / 카운터</div>
+                             <div className="text-3xl sm:text-5xl lg:text-6xl">🔴</div>
+                             <div className="text-lg sm:text-2xl lg:text-3xl font-black">RED</div>
+                             <div className="text-[10px] sm:text-sm lg:text-base text-red-300">후픽 / 카운터</div>
                          </button>
                      </div>
                 </div>
@@ -891,43 +891,43 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
 
             {/* 2. ROSTER SELECTION UI (FIXED FOR LANDSCAPE) */}
             {phase === 'ROSTER_SELECTION' && (
-                <div className="flex-1 flex flex-col items-center justify-start sm:justify-center bg-gray-900 p-2 sm:p-4 overflow-y-auto">
-                    <h2 className="text-lg sm:text-2xl font-black mb-1 sm:mb-2 text-center mt-2 sm:mt-0">선발 라인업 확정</h2>
-                    <div className="text-center text-[10px] sm:text-sm text-gray-400 mb-2 sm:mb-4">
+                <div className="flex-1 flex flex-col items-center justify-start sm:justify-center bg-gray-900 p-2 sm:p-4 lg:p-8 overflow-y-auto">
+                    <h2 className="text-lg sm:text-2xl lg:text-3xl font-black mb-1 sm:mb-2 text-center mt-2 sm:mt-0">선발 라인업 확정</h2>
+                    <div className="text-center text-[10px] sm:text-sm lg:text-base text-gray-400 mb-2 sm:mb-4 lg:mb-8">
                         {currentSet}세트에 출전할 선수 5명을 선택해주세요. 
                         {preselectedSide && <span> (선택 진영: <span className={preselectedSide === 'BLUE' ? 'text-blue-400' : 'text-red-400'}>{preselectedSide}</span>)</span>}
                     </div>
 
-                    <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 w-full max-w-6xl h-auto sm:h-[70vh]">
+                    <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 lg:gap-8 w-full max-w-6xl h-auto sm:h-[70vh] lg:h-[500px]">
                          {/* LEFT: Starting 5 Slots */}
-                         <div className="w-full sm:w-1/3 space-y-1 sm:space-y-2">
+                         <div className="w-full sm:w-1/3 space-y-1 sm:space-y-2 lg:space-y-4">
                              {['TOP','JGL','MID','ADC','SUP'].map(pos => (
-                                 <div key={pos} className="bg-gray-800 p-2 rounded-lg border border-gray-700 relative flex items-center justify-between">
-                                     <div className="font-bold text-sm sm:text-base">{getActivePlayerName(pos)}</div>
-                                     <div className="flex flex-col items-end">
-                                        <div className="text-[10px] font-bold text-gray-500">{pos}</div>
-                                        <div className="text-[10px] text-yellow-500">OVR: {getActivePlayerOvr(pos)}</div>
+                                 <div key={pos} className="bg-gray-800 p-2 lg:p-4 rounded-lg lg:rounded-xl border border-gray-700 lg:border-2 relative flex sm:block items-center justify-between sm:justify-start">
+                                     <div className="font-bold text-sm sm:text-base lg:text-xl">{getActivePlayerName(pos)}</div>
+                                     <div className="flex flex-col items-end sm:items-start sm:block">
+                                        <div className="text-[10px] lg:text-xs font-bold text-gray-500 sm:absolute sm:top-2 sm:right-3">{pos}</div>
+                                        <div className="text-[10px] lg:text-sm text-yellow-500">OVR: {getActivePlayerOvr(pos)}</div>
                                      </div>
                                  </div>
                              ))}
                          </div>
 
                          {/* RIGHT: Available Roster Pool */}
-                         <div className="flex-1 bg-gray-900 rounded-lg p-2 sm:p-4 border border-gray-700 overflow-y-auto min-h-[300px] sm:min-h-0">
-                             <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                         <div className="flex-1 bg-gray-900 rounded-lg lg:rounded-xl p-2 sm:p-4 lg:p-6 border border-gray-700 overflow-y-auto min-h-[300px] sm:min-h-0">
+                             <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-2 lg:gap-4">
                                  {userTeam.roster.map(player => {
                                      const isSelected = Object.values(activeUserRoster).some(p => p.id === player.id);
                                      return (
                                          <button 
                                             key={player.id}
                                             onClick={() => handlePlayerSelect(player.포지션 === 'SPT' ? 'SUP' : player.포지션, player)}
-                                            className={`p-2 rounded flex flex-col items-start transition border ${isSelected ? 'bg-green-900/30 border-green-500' : 'bg-gray-800 border-gray-700 hover:border-gray-500'}`}
+                                            className={`p-2 lg:p-4 rounded lg:rounded-lg flex flex-col items-start transition border ${isSelected ? 'bg-green-900/30 border-green-500' : 'bg-gray-800 border-gray-700 hover:border-gray-500'}`}
                                          >
                                              <div className="flex justify-between w-full">
-                                                 <span className="font-bold text-sm">{player.이름}</span>
-                                                 <span className="text-[10px] bg-black px-1.5 py-0.5 rounded">{player.포지션}</span>
+                                                 <span className="font-bold text-sm lg:text-lg">{player.이름}</span>
+                                                 <span className="text-[10px] lg:text-xs bg-black px-1.5 py-0.5 rounded">{player.포지션}</span>
                                              </div>
-                                             <div className="text-[10px] text-gray-400 mt-0.5">OVR {player.종합}</div>
+                                             <div className="text-[10px] lg:text-sm text-gray-400 mt-0.5 lg:mt-1">OVR {player.종합}</div>
                                          </button>
                                      );
                                  })}
@@ -935,10 +935,10 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                          </div>
                     </div>
                     
-                    <div className="mt-2 sm:mt-4 mb-2 flex justify-center">
+                    <div className="mt-2 sm:mt-4 lg:mt-8 mb-2 flex justify-center">
                         <button 
                             onClick={handleRosterConfirm}
-                            className="px-8 sm:px-10 py-2 sm:py-3 bg-green-600 hover:bg-green-700 text-white font-black text-base sm:text-lg rounded-full shadow-lg transition hover:scale-105"
+                            className="px-8 sm:px-10 lg:px-12 py-2 sm:py-3 lg:py-4 bg-green-600 hover:bg-green-700 text-white font-black text-base sm:text-lg lg:text-xl rounded-full shadow-lg transition hover:scale-105"
                         >
                             경기 시작
                         </button>
@@ -946,26 +946,26 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 </div>
             )}
 
-            {/* 3. DRAFT UI (ULTRA COMPACT FOR LANDSCAPE) */}
+            {/* 3. DRAFT UI (RESPONSIVE: COMPACT FOR LANDSCAPE, BIG FOR DESKTOP) */}
             {phase === 'DRAFT' && (
-             <div className="flex-1 flex flex-col sm:flex-row bg-gray-900 p-1 sm:p-2 gap-1 sm:gap-2 items-center justify-center relative overflow-hidden">
+             <div className="flex-1 flex flex-col sm:flex-row bg-gray-900 p-1 sm:p-2 lg:p-8 gap-1 sm:gap-2 lg:gap-8 items-center justify-center relative overflow-hidden">
                  <div className="absolute inset-0 bg-gradient-to-r from-blue-900/20 to-red-900/20 pointer-events-none"></div>
 
                  {/* Blue Picks List */}
-                 <div className="hidden sm:block w-1/5 sm:w-1/6 space-y-1 sm:space-y-2 z-10">
+                 <div className="hidden sm:block w-1/5 sm:w-1/6 lg:w-1/4 space-y-1 sm:space-y-2 lg:space-y-4 z-10">
                      {draftState.bluePicks.map((pick, i) => (
-                         <div key={i} className={`h-10 sm:h-12 border-l-2 ${pick ? 'border-blue-500 bg-blue-900/30' : 'border-gray-700 bg-gray-800/50'} rounded-r flex items-center p-1 sm:p-2 transition-all duration-500`}>
+                         <div key={i} className={`h-10 sm:h-12 lg:h-24 border-l-2 lg:border-l-4 ${pick ? 'border-blue-500 bg-blue-900/30' : 'border-gray-700 bg-gray-800/50'} rounded-r lg:rounded-r-lg flex items-center p-1 sm:p-2 lg:p-4 transition-all duration-500`}>
                              {pick ? (
                                  <>
-                                    <div className="w-8 h-8 sm:w-10 sm:h-10 rounded border border-blue-400 flex items-center justify-center bg-black overflow-hidden shrink-0">
-                                        <div className="font-bold text-[6px] sm:text-[8px] text-center break-words leading-tight">{pick.champName}</div>
+                                    <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded border border-blue-400 flex items-center justify-center bg-black overflow-hidden shrink-0">
+                                        <div className="font-bold text-[6px] sm:text-[8px] lg:text-xs text-center break-words leading-tight">{pick.champName}</div>
                                     </div>
-                                    <div className="ml-2 overflow-hidden">
-                                        <div className="text-xs sm:text-sm font-black text-white truncate">{pick.champName}</div>
-                                        <div className="text-[8px] sm:text-[10px] text-blue-300 font-bold truncate">{pick.playerName}</div>
+                                    <div className="ml-2 lg:ml-4 overflow-hidden">
+                                        <div className="text-xs sm:text-sm lg:text-2xl font-black text-white truncate">{pick.champName}</div>
+                                        <div className="text-[8px] sm:text-[10px] lg:text-sm text-blue-300 font-bold truncate">{pick.playerName}</div>
                                     </div>
                                  </>
-                             ) : <div className="text-gray-600 font-bold text-[10px] sm:text-xs">Pick {i+1}</div>}
+                             ) : <div className="text-gray-600 font-bold text-[10px] sm:text-xs lg:text-lg">Pick {i+1}</div>}
                          </div>
                      ))}
                  </div>
@@ -973,45 +973,45 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                  {/* Center Draft Board (Fits in short height) */}
                  <div className="w-full sm:flex-1 flex flex-col items-center justify-center z-20 h-full relative">
                      {isUserTurn ? (
-                         <div className="bg-gray-800 rounded-lg shadow-2xl border border-gray-700 w-full max-w-3xl h-full flex flex-col overflow-hidden">
+                         <div className="bg-gray-800 rounded-lg lg:rounded-xl shadow-2xl border border-gray-700 w-full max-w-3xl lg:max-w-4xl h-full lg:h-[600px] flex flex-col overflow-hidden">
                              {/* Role Filters & Status */}
-                             <div className="p-1 sm:p-2 bg-gray-900 border-b border-gray-700 flex justify-between items-center shrink-0">
-                                 <div className="flex gap-1">
+                             <div className="p-1 sm:p-2 lg:p-4 bg-gray-900 border-b border-gray-700 flex justify-between items-center shrink-0">
+                                 <div className="flex gap-1 lg:gap-2">
                                      {['TOP','JGL','MID','ADC','SUP'].map(r => (
                                          <button 
                                             key={r} 
                                             onClick={() => { setFilterRole(r); setUserSelectedRole(true); }}
-                                            className={`px-2 py-1 rounded font-bold text-[10px] sm:text-xs transition ${filterRole === r ? 'bg-yellow-500 text-black' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}
+                                            className={`px-2 py-1 lg:px-4 lg:py-2 rounded font-bold text-[10px] sm:text-xs lg:text-sm transition ${filterRole === r ? 'bg-yellow-500 text-black' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}
                                          >
                                              {r}
                                          </button>
                                      ))}
                                  </div>
-                                 <div className="text-yellow-400 font-bold animate-pulse text-xs sm:text-sm">
-                                     {currentStepInfo?.type === 'BAN' ? '🚫 금지' : '✅ 선택'}
+                                 <div className="text-yellow-400 font-bold animate-pulse text-xs sm:text-sm lg:text-lg">
+                                     {currentStepInfo?.type === 'BAN' ? '🚫 챔피언 금지' : '✅ 챔피언 선택'}
                                  </div>
                              </div>
 
                              {/* Recommended Champ */}
                              {recommendedChamp && (
-                                <div className="bg-blue-900/30 p-1 px-2 flex items-center gap-2 border-b border-blue-800 shrink-0">
-                                    <span className="text-[8px] font-bold text-blue-300 uppercase">Rec</span>
-                                    <div className="flex items-center gap-1">
-                                        <div className="w-5 h-5 bg-black rounded border border-blue-500 flex items-center justify-center text-[6px] break-words leading-none">{recommendedChamp.name}</div>
-                                        <span className="font-bold text-[10px] text-white truncate max-w-[60px]">{recommendedChamp.name}</span>
-                                        <span className="text-[8px] text-blue-200">({recommendedChamp.tier}T)</span>
+                                <div className="bg-blue-900/30 p-1 px-2 lg:p-2 lg:px-4 flex items-center gap-2 lg:gap-4 border-b border-blue-800 shrink-0">
+                                    <span className="text-[8px] lg:text-xs font-bold text-blue-300 uppercase">Rec</span>
+                                    <div className="flex items-center gap-1 lg:gap-2">
+                                        <div className="w-5 h-5 lg:w-8 lg:h-8 bg-black rounded border border-blue-500 flex items-center justify-center text-[6px] lg:text-[10px] break-words leading-none">{recommendedChamp.name}</div>
+                                        <span className="font-bold text-[10px] lg:text-sm text-white truncate max-w-[60px] lg:max-w-none">{recommendedChamp.name}</span>
+                                        <span className="text-[8px] lg:text-xs text-blue-200">({recommendedChamp.tier}T)</span>
                                     </div>
                                     <button 
                                         onClick={() => { setSelectedChampion({ ...recommendedChamp, role: filterRole }); }}
-                                        className="ml-auto text-[8px] bg-blue-600 px-2 py-0.5 rounded hover:bg-blue-500"
+                                        className="ml-auto text-[8px] lg:text-xs bg-blue-600 px-2 py-0.5 lg:px-3 lg:py-1 rounded hover:bg-blue-500"
                                     >
                                         선택
                                     </button>
                                 </div>
                              )}
 
-                             {/* Champ Grid (More columns for landscape) */}
-                             <div className="flex-1 overflow-y-auto p-1 sm:p-2 grid grid-cols-5 sm:grid-cols-6 md:grid-cols-7 gap-1 sm:gap-2 content-start">
+                             {/* Champ Grid */}
+                             <div className="flex-1 overflow-y-auto p-1 sm:p-2 lg:p-4 grid grid-cols-5 sm:grid-cols-6 md:grid-cols-7 lg:grid-cols-5 gap-1 sm:gap-2 lg:gap-3 content-start">
                                  {activeChampionList
                                     .filter(c => c.role === (filterRole === 'SUP' ? 'SUP' : filterRole)) 
                                     .sort((a,b) => (a.tier||99) - (b.tier||99))
@@ -1024,17 +1024,17 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                                 key={champ.id}
                                                 disabled={isLocked}
                                                 onClick={() => setSelectedChampion({ ...champ, role: filterRole })}
-                                                className={`relative group flex flex-col items-center p-1 rounded border transition ${
+                                                className={`relative group flex flex-col items-center p-1 lg:p-2 rounded border transition ${
                                                     isLocked ? 'opacity-30 grayscale cursor-not-allowed border-transparent' : 
                                                     isSelected ? 'bg-yellow-500/20 border-yellow-500' : 
                                                     'bg-gray-700/50 border-gray-600 hover:bg-gray-600 hover:border-gray-400'
                                                 }`}
                                             >
-                                                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-black rounded mb-0.5 flex items-center justify-center text-[6px] sm:text-[8px] text-gray-400 font-bold overflow-hidden leading-tight break-words p-0.5">
+                                                <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-16 lg:h-16 bg-black rounded mb-0.5 lg:mb-2 flex items-center justify-center text-[6px] sm:text-[8px] lg:text-xs text-gray-400 font-bold overflow-hidden leading-tight break-words p-0.5">
                                                     {champ.name}
                                                 </div>
-                                                <div className="text-[8px] font-bold text-center w-full truncate">{champ.name}</div>
-                                                <div className={`absolute top-0.5 right-0.5 w-3 h-3 rounded-full flex items-center justify-center text-[6px] font-bold border ${champ.tier === 1 ? 'bg-purple-600 border-purple-400 text-white' : 'bg-gray-800 border-gray-500 text-gray-400'}`}>
+                                                <div className="text-[8px] lg:text-xs font-bold text-center w-full truncate">{champ.name}</div>
+                                                <div className={`absolute top-0.5 right-0.5 lg:top-1 lg:right-1 w-3 h-3 lg:w-5 lg:h-5 rounded-full flex items-center justify-center text-[6px] lg:text-[10px] font-bold border ${champ.tier === 1 ? 'bg-purple-600 border-purple-400 text-white' : 'bg-gray-800 border-gray-500 text-gray-400'}`}>
                                                     {champ.tier}
                                                 </div>
                                             </button>
@@ -1043,11 +1043,11 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                              </div>
 
                              {/* Lock In Button */}
-                             <div className="p-1 sm:p-2 bg-gray-900 border-t border-gray-700 flex justify-center shrink-0">
+                             <div className="p-1 sm:p-2 lg:p-4 bg-gray-900 border-t border-gray-700 flex justify-center shrink-0">
                                  <button 
                                     onClick={handlePlayerLockIn}
                                     disabled={!selectedChampion}
-                                    className={`px-6 py-2 rounded text-base sm:text-lg font-black uppercase tracking-widest transition ${
+                                    className={`px-6 py-2 lg:px-12 lg:py-3 rounded text-base sm:text-lg lg:text-xl font-black uppercase tracking-widest transition ${
                                         selectedChampion ? 'bg-yellow-500 text-black hover:bg-yellow-400 hover:scale-105 shadow-lg shadow-yellow-500/20' : 'bg-gray-700 text-gray-500 cursor-not-allowed'
                                     }`}
                                  >
@@ -1056,25 +1056,25 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                              </div>
                          </div>
                      ) : (
-                         <div className="text-4xl sm:text-7xl font-black text-white opacity-30 select-none">VS</div>
+                         <div className="text-4xl sm:text-7xl lg:text-9xl font-black text-white opacity-30 select-none">VS</div>
                      )}
                  </div>
 
                  {/* Red Picks List */}
-                 <div className="hidden sm:block w-1/5 sm:w-1/6 space-y-1 sm:space-y-2 z-10">
+                 <div className="hidden sm:block w-1/5 sm:w-1/6 lg:w-1/4 space-y-1 sm:space-y-2 lg:space-y-4 z-10">
                      {draftState.redPicks.map((pick, i) => (
-                         <div key={i} className={`h-10 sm:h-12 border-r-2 ${pick ? 'border-red-500 bg-red-900/30' : 'border-gray-700 bg-gray-800/50'} rounded-l flex flex-row-reverse items-center p-1 sm:p-2 transition-all duration-500`}>
+                         <div key={i} className={`h-10 sm:h-12 lg:h-24 border-r-2 lg:border-r-4 ${pick ? 'border-red-500 bg-red-900/30' : 'border-gray-700 bg-gray-800/50'} rounded-l lg:rounded-l-lg flex flex-row-reverse items-center p-1 sm:p-2 lg:p-4 transition-all duration-500`}>
                              {pick ? (
                                  <>
-                                    <div className="w-8 h-8 sm:w-10 sm:h-10 rounded border border-red-400 flex items-center justify-center bg-black overflow-hidden shrink-0">
-                                        <div className="font-bold text-[6px] sm:text-[8px] text-center break-words leading-tight">{pick.champName}</div>
+                                    <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded border border-red-400 flex items-center justify-center bg-black overflow-hidden shrink-0">
+                                        <div className="font-bold text-[6px] sm:text-[8px] lg:text-xs text-center break-words leading-tight">{pick.champName.substring(0,3)}</div>
                                     </div>
-                                    <div className="mr-2 overflow-hidden text-right">
-                                        <div className="text-xs sm:text-sm font-black text-white truncate">{pick.champName}</div>
-                                        <div className="text-[8px] sm:text-[10px] text-red-300 font-bold truncate">{pick.playerName}</div>
+                                    <div className="mr-2 lg:mr-4 overflow-hidden text-right">
+                                        <div className="text-xs sm:text-sm lg:text-2xl font-black text-white truncate">{pick.champName}</div>
+                                        <div className="text-[8px] sm:text-[10px] lg:text-sm text-red-300 font-bold truncate">{pick.playerName}</div>
                                     </div>
                                  </>
-                             ) : <div className="text-gray-600 font-bold text-[10px] sm:text-xs">Pick {i+1}</div>}
+                             ) : <div className="text-gray-600 font-bold text-[10px] sm:text-xs lg:text-lg">Pick {i+1}</div>}
                          </div>
                      ))}
                  </div>
@@ -1092,23 +1092,23 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                     <button onClick={()=>setMobileTab('RED')} className={`flex-1 py-3 ${mobileTab==='RED'?'bg-red-600':'hover:bg-gray-700'}`}>RED TEAM</button>
                 </div>
 
-                {/* GAME UI: Left (Blue) - Compact for landscape */}
+                {/* GAME UI: Left (Blue) - Compact for landscape, Big for Desktop */}
                 <div className={`${mobileTab === 'BLUE' ? 'flex' : 'hidden'} sm:flex w-full sm:w-40 lg:w-80 bg-gray-900 border-r border-gray-800 flex-col pt-1 sm:pt-2`}>
                     {liveStats.players.filter(p => p.side === 'BLUE').map((p, i) => (
-                        <div key={i} className="flex-1 border-b border-gray-800 relative p-1 flex items-center gap-2">
-                            <div className="w-8 h-8 bg-gray-800 rounded border border-blue-600 relative overflow-hidden shrink-0">
-                                <div className="absolute inset-0 flex items-center justify-center font-bold text-[6px] sm:text-[8px] text-blue-200 text-center leading-none break-words p-0.5">{p.champName}</div>
-                                <div className="absolute bottom-0 right-0 bg-black text-white text-[8px] px-1 font-bold">{p.lvl}</div>
+                        <div key={i} className="flex-1 border-b border-gray-800 relative p-1 lg:p-2 flex items-center gap-2 lg:gap-3">
+                            <div className="w-8 h-8 lg:w-12 lg:h-12 bg-gray-800 rounded border border-blue-600 relative overflow-hidden shrink-0">
+                                <div className="absolute inset-0 flex items-center justify-center font-bold text-[6px] sm:text-[8px] lg:text-xs text-blue-200 text-center leading-none break-words p-0.5">{p.champName}</div>
+                                <div className="absolute bottom-0 right-0 bg-black text-white text-[8px] lg:text-[10px] px-1 font-bold">{p.lvl}</div>
                             </div>
                             <div className="flex-1 min-w-0">
                                 <div className="flex justify-between items-center">
-                                    <span className="font-bold text-[10px] sm:text-xs text-blue-100 truncate">{p.playerName}</span>
-                                    <span className="text-yellow-400 font-mono text-[8px] sm:text-[10px]">{Math.floor(p.currentGold)}g</span>
+                                    <span className="font-bold text-[10px] sm:text-xs lg:text-sm text-blue-100 truncate">{p.playerName}</span>
+                                    <span className="text-yellow-400 font-mono text-[8px] sm:text-[10px] lg:text-xs">{Math.floor(p.currentGold)}g</span>
                                 </div>
-                                <div className="flex justify-between items-center mt-0.5">
-                                    <span className="font-bold text-white text-[10px] sm:text-xs">{p.k}/{p.d}/{p.a}</span>
+                                <div className="flex justify-between items-center mt-0.5 lg:mt-1">
+                                    <span className="font-bold text-white text-[10px] sm:text-xs lg:text-sm">{p.k}/{p.d}/{p.a}</span>
                                 </div>
-                                <div className="w-full bg-gray-800 h-1 mt-0.5 rounded-full overflow-hidden">
+                                <div className="w-full bg-gray-800 h-1 mt-0.5 lg:mt-2 rounded-full overflow-hidden">
                                     <div className="bg-blue-500 h-full" style={{width: `${(p.xp / (180 + (p.lvl||1) * 100))*100}%`}}></div>
                                 </div>
                             </div>
@@ -1118,46 +1118,46 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         
                 {/* GAME UI: Center (Logs) */}
                 <div className={`${mobileTab === 'LOGS' ? 'flex' : 'hidden'} sm:flex flex-1 flex-col bg-black/95 relative`}>
-                    <div className="flex-1 p-2 space-y-1 overflow-y-auto font-mono text-[10px] sm:text-xs pb-12 sm:pb-16 scrollbar-hide">
+                    <div className="flex-1 p-2 lg:p-4 space-y-1 lg:space-y-2 overflow-y-auto font-mono text-[10px] sm:text-xs lg:text-sm pb-12 sm:pb-16 lg:pb-20 scrollbar-hide">
                         {displayLogs.map((log, i) => (
-                            <div key={i} className={`py-0.5 px-1 rounded ${log?.includes('⚔️') ? 'bg-red-900/20 text-red-200 border-l-2 border-red-500' : (log?.includes('🐛') || log?.includes('🐉') ? 'bg-purple-900/20 text-purple-200' : 'text-gray-400')}`}>
+                            <div key={i} className={`py-0.5 lg:py-1 px-1 lg:px-2 rounded ${log?.includes('⚔️') ? 'bg-red-900/20 text-red-200 border-l-2 border-red-500' : (log?.includes('🐛') || log?.includes('🐉') ? 'bg-purple-900/20 text-purple-200' : 'text-gray-400')}`}>
                                 {log}
                             </div>
                         ))}
                     </div>
                     
-                    <div className="h-12 sm:h-14 bg-gray-900 border-t border-gray-800 flex items-center justify-center gap-1">
-                        <button onClick={() => setPlaybackSpeed(0)} className="w-8 h-8 rounded bg-gray-700 hover:bg-gray-600 flex items-center justify-center text-lg">⏸</button>
+                    <div className="h-12 sm:h-14 lg:h-20 bg-gray-900 border-t border-gray-800 flex items-center justify-center gap-1 lg:gap-2">
+                        <button onClick={() => setPlaybackSpeed(0)} className="w-8 h-8 lg:w-12 lg:h-10 rounded bg-gray-700 hover:bg-gray-600 flex items-center justify-center text-lg lg:text-xl">⏸</button>
                         {[1, 4, 8, 16, 32].map(speed => (
                             <button 
                                 key={speed} 
                                 onClick={() => setPlaybackSpeed(speed)} 
-                                className={`w-8 h-8 rounded font-bold text-[10px] transition ${playbackSpeed === speed ? 'bg-blue-600 text-white shadow-lg scale-105' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+                                className={`w-8 h-8 lg:w-12 lg:h-10 rounded font-bold text-[10px] lg:text-base transition ${playbackSpeed === speed ? 'bg-blue-600 text-white shadow-lg scale-105' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
                             >
                                 x{speed}
                             </button>
                         ))}
-                        <button onClick={() => setPlaybackSpeed(100)} className="w-10 h-8 rounded font-bold text-[10px] bg-gray-700 hover:bg-red-600 transition">SKIP</button>
+                        <button onClick={() => setPlaybackSpeed(100)} className="w-10 h-8 lg:w-16 lg:h-10 rounded font-bold text-[10px] lg:text-base bg-gray-700 hover:bg-red-600 transition">SKIP</button>
                     </div>
                 </div>
         
-                {/* GAME UI: Right (Red) - Compact for landscape */}
+                {/* GAME UI: Right (Red) - Compact for landscape, Big for Desktop */}
                 <div className={`${mobileTab === 'RED' ? 'flex' : 'hidden'} sm:flex w-full sm:w-40 lg:w-80 bg-gray-900 border-l border-gray-800 flex-col pt-1 sm:pt-2`}>
                     {liveStats.players.filter(p => p.side === 'RED').map((p, i) => (
-                        <div key={i} className="flex-1 border-b border-gray-800 relative p-1 flex flex-row-reverse items-center gap-2 text-right">
-                            <div className="w-8 h-8 bg-gray-800 rounded border border-red-600 relative overflow-hidden shrink-0">
-                                <div className="absolute inset-0 flex items-center justify-center font-bold text-[6px] sm:text-[8px] text-red-200 text-center leading-none break-words p-0.5">{p.champName}</div>
-                                <div className="absolute bottom-0 left-0 bg-black text-white text-[8px] px-1 font-bold">{p.lvl}</div>
+                        <div key={i} className="flex-1 border-b border-gray-800 relative p-1 lg:p-2 flex flex-row-reverse items-center gap-2 lg:gap-3 text-right">
+                            <div className="w-8 h-8 lg:w-12 lg:h-12 bg-gray-800 rounded border border-red-600 relative overflow-hidden shrink-0">
+                                <div className="absolute inset-0 flex items-center justify-center font-bold text-[6px] sm:text-[8px] lg:text-xs text-red-200 text-center leading-none break-words p-0.5">{p.champName}</div>
+                                <div className="absolute bottom-0 left-0 bg-black text-white text-[8px] lg:text-[10px] px-1 font-bold">{p.lvl}</div>
                             </div>
                             <div className="flex-1 min-w-0">
                                 <div className="flex justify-between items-center flex-row-reverse">
-                                    <span className="font-bold text-[10px] sm:text-xs text-red-100 truncate">{p.playerName}</span>
-                                    <span className="text-yellow-400 font-mono text-[8px] sm:text-[10px]">{Math.floor(p.currentGold)}g</span>
+                                    <span className="font-bold text-[10px] sm:text-xs lg:text-sm text-red-100 truncate">{p.playerName}</span>
+                                    <span className="text-yellow-400 font-mono text-[8px] sm:text-[10px] lg:text-xs">{Math.floor(p.currentGold)}g</span>
                                 </div>
-                                <div className="flex justify-between items-center mt-0.5 flex-row-reverse">
-                                    <span className="font-bold text-white text-[10px] sm:text-xs">{p.k}/{p.d}/{p.a}</span>
+                                <div className="flex justify-between items-center mt-0.5 lg:mt-1 flex-row-reverse">
+                                    <span className="font-bold text-white text-[10px] sm:text-xs lg:text-sm">{p.k}/{p.d}/{p.a}</span>
                                 </div>
-                                <div className="w-full bg-gray-800 h-1 mt-0.5 rounded-full overflow-hidden flex justify-end">
+                                <div className="w-full bg-gray-800 h-1 mt-0.5 lg:mt-2 rounded-full overflow-hidden flex justify-end">
                                     <div className="bg-red-500 h-full" style={{width: `${(p.xp / (180 + (p.lvl||1) * 100))*100}%`}}></div>
                                 </div>
                             </div>
@@ -1170,25 +1170,25 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
   
         {/* 5. RESULT OVERLAY */}
         {phase === 'SET_RESULT' && (
-           <div className="absolute inset-0 bg-black/90 z-50 flex flex-col items-center justify-center animate-fade-in p-4">
-               <h1 className="text-3xl sm:text-5xl font-black mb-2 sm:mb-4 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-red-400">
+           <div className="absolute inset-0 bg-black/90 z-50 flex flex-col items-center justify-center animate-fade-in p-4 sm:p-8">
+               <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black mb-2 sm:mb-4 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-red-400">
                    {simulationData?.winnerName || simulationData?.gameResult?.winnerName || 'WIN'} WIN!
                </h1>
                
-               <div className="flex gap-4 w-full max-w-2xl justify-center items-stretch mb-4">
+               <div className="flex gap-4 sm:gap-8 w-full max-w-2xl lg:max-w-4xl justify-center items-stretch mb-4 sm:mb-8">
                    {/* POG CARD */}
-                   <div className="bg-gradient-to-br from-gray-800 to-gray-900 border border-yellow-500/50 p-3 sm:p-4 rounded-xl shadow-2xl w-1/2 flex flex-col items-center relative overflow-hidden group">
-                        <div className="absolute top-0 left-0 bg-yellow-500 text-black font-bold px-2 py-0.5 text-[8px] sm:text-[10px] rounded-br-lg z-10">
-                            POG
+                   <div className="bg-gradient-to-br from-gray-800 to-gray-900 border border-yellow-500/50 p-3 sm:p-4 lg:p-6 rounded-xl lg:rounded-2xl shadow-2xl w-1/2 lg:w-1/3 flex flex-col items-center relative overflow-hidden group">
+                        <div className="absolute top-0 left-0 bg-yellow-500 text-black font-bold px-2 py-0.5 lg:px-3 lg:py-1 text-[8px] sm:text-[10px] lg:text-xs rounded-br-lg z-10">
+                            SET {currentSet} POG
                         </div>
-                        <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gray-700 border-2 border-yellow-400 mb-1 sm:mb-2 flex items-center justify-center overflow-hidden">
-                            <span className="text-xl sm:text-2xl">👤</span>
+                        <div className="w-12 h-12 sm:w-16 sm:h-16 lg:w-24 lg:h-24 rounded-full bg-gray-700 border-2 border-yellow-400 mb-1 sm:mb-2 lg:mb-4 flex items-center justify-center overflow-hidden">
+                            <span className="text-xl sm:text-2xl lg:text-3xl">👤</span>
                         </div>
-                        <div className="text-sm sm:text-base font-bold text-yellow-400">{pog?.playerName || 'Unknown'}</div>
-                        <div className="text-[10px] sm:text-xs text-gray-400 mb-1">{pog?.champName || ''}</div>
+                        <div className="text-sm sm:text-base lg:text-xl font-bold text-yellow-400">{pog?.playerName || 'Unknown'}</div>
+                        <div className="text-[10px] sm:text-xs lg:text-sm text-gray-400 mb-1 lg:mb-2">{pog?.champName || ''}</div>
                         
-                        <div className="w-full space-y-1 bg-black/30 p-2 rounded-lg">
-                            <div className="flex justify-between text-[10px] sm:text-xs">
+                        <div className="w-full space-y-1 lg:space-y-2 mt-1 lg:mt-2 bg-black/30 p-2 lg:p-3 rounded-lg">
+                            <div className="flex justify-between text-[10px] sm:text-xs lg:text-sm">
                                 <span className="text-gray-400">KDA</span>
                                 <span className="font-mono font-bold text-white">
                                     {pog?.stats?.kills ?? pog?.k ?? 0}/
@@ -1196,8 +1196,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                     {pog?.stats?.assists ?? pog?.a ?? 0}
                                 </span>
                             </div>
-                            {/* [FIXED] Added Score Row */}
-                            <div className="flex justify-between text-[10px] sm:text-xs">
+                            <div className="flex justify-between text-[10px] sm:text-xs lg:text-sm">
                                 <span className="text-gray-400">Score</span>
                                 <span className="font-mono text-yellow-500">{pog?.pogScore ? (pog.pogScore.toFixed(1)) : 'N/A'}</span>
                             </div>
@@ -1208,8 +1207,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                    {match?.format === 'BO5' && 
                      (winsA + ((simulationData?.winnerName === teamA.name) ? 1 : 0) >= targetWins || 
                       winsB + ((simulationData?.winnerName === teamB.name) ? 1 : 0) >= targetWins) && (
-                        <div className="bg-gradient-to-br from-purple-900 to-indigo-900 border border-purple-400 p-3 sm:p-4 rounded-xl shadow-2xl w-1/2 flex flex-col items-center relative overflow-hidden animate-pulse-slow">
-                            <div className="absolute top-0 right-0 bg-purple-500 text-white font-bold px-2 py-0.5 text-[8px] sm:text-[10px] rounded-bl-lg z-10">
+                        <div className="bg-gradient-to-br from-purple-900 to-indigo-900 border border-purple-400 p-3 sm:p-4 lg:p-6 rounded-xl lg:rounded-2xl shadow-2xl w-1/2 lg:w-1/3 flex flex-col items-center relative overflow-hidden animate-pulse-slow">
+                            <div className="absolute top-0 right-0 bg-purple-500 text-white font-bold px-2 py-0.5 lg:px-3 lg:py-1 text-[8px] sm:text-[10px] lg:text-xs rounded-bl-lg z-10">
                                 SERIES MVP
                             </div>
                             
@@ -1219,13 +1218,15 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                 const posPlayer = calculatePOS(matchHistory, simulationData, winnerName);
                                 return (
                                     <>
-                                        <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-purple-800 border-2 border-purple-300 mb-1 sm:mb-2 flex items-center justify-center shadow-[0_0_15px_rgba(168,85,247,0.5)]">
-                                            <span className="text-xl sm:text-2xl">👑</span>
+                                        <div className="w-12 h-12 sm:w-16 sm:h-16 lg:w-24 lg:h-24 rounded-full bg-purple-800 border-2 border-purple-300 mb-1 sm:mb-2 lg:mb-4 flex items-center justify-center shadow-[0_0_15px_rgba(168,85,247,0.5)]">
+                                            <span className="text-xl sm:text-2xl lg:text-3xl">👑</span>
                                         </div>
-                                        <div className="text-sm sm:text-base font-black text-white">{posPlayer?.playerName || 'Unknown'}</div>
-                                        <div className="text-[10px] sm:text-xs text-purple-300 mb-1">{posPlayer?.playerData?.포지션 || 'Player'}</div>
-                                        
-                                        <div className="w-full mt-2 bg-black/40 px-2 py-1 rounded text-purple-200 font-mono text-[10px] sm:text-xs flex justify-between">
+                                        <div className="text-sm sm:text-base lg:text-2xl font-black text-white">{posPlayer?.playerName || 'Unknown'}</div>
+                                        <div className="text-[10px] sm:text-xs lg:text-sm text-purple-300 mb-1 lg:mb-2">{posPlayer?.playerData?.포지션 || 'Player'}</div>
+                                        <div className="mt-1 lg:mt-2 text-center text-gray-300 text-[10px] sm:text-sm italic">
+                                            "Series MVP"
+                                        </div>
+                                        <div className="mt-2 lg:mt-4 bg-black/40 px-2 lg:px-4 py-1 lg:py-2 rounded text-purple-200 font-mono text-[10px] sm:text-xs lg:text-sm flex justify-between w-full">
                                             <span>Score</span>
                                             <span>{posPlayer?.totalScore ? posPlayer.totalScore.toFixed(1) : 'N/A'}</span>
                                         </div>
@@ -1276,6 +1277,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                         if (match?.format === 'BO5') {
                             posData = calculatePOS(newHist, null, winnerName);
                         }
+
                         try {
                             onMatchComplete && onMatchComplete(match, { 
                                 winner: winnerName, 
@@ -1299,12 +1301,12 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                         }
                     }
                 }} 
-                className="px-6 sm:px-8 py-2 sm:py-3 bg-white text-black rounded-full font-black text-lg sm:text-xl hover:scale-105 transition shadow-xl"
+                className="px-6 sm:px-8 lg:px-12 py-3 sm:py-5 bg-white text-black rounded-full font-black text-xl sm:text-2xl hover:scale-105 transition shadow-xl"
             >
                 {(winsA + ((simulationData?.winnerName === teamA.name) ? 1 : 0) >= targetWins) || 
                 (winsB + ((simulationData?.winnerName === teamB.name) ? 1 : 0) >= targetWins)
-                    ? '매치 종료' 
-                    : '다음 세트'}
+                    ? '매치 종료 (Finish Match)' 
+                    : '다음 세트 (Next Set)'}
             </button>
            </div>
         )}
