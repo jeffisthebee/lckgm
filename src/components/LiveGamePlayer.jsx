@@ -121,6 +121,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     const [manualLockedChamps, setManualLockedChamps] = useState(new Set()); 
     const [selectedChampion, setSelectedChampion] = useState(null);
     const [filterRole, setFilterRole] = useState('TOP');
+    const [searchTerm, setSearchTerm] = useState(''); // [NEW] Search State
     const [draftLogs, setDraftLogs] = useState([]);
     const [userSelectedRole, setUserSelectedRole] = useState(false); 
     // -------------------------
@@ -161,6 +162,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
 
     useEffect(() => {
       setUserSelectedRole(false);
+      setSearchTerm(''); // Reset search on step change if desired, or keep it
     }, [draftStep]);
   
     // 1. Initialize Set Simulation or Manual Setup
@@ -181,6 +183,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
       setManualLockedChamps(new Set(globalBanList)); 
       setSelectedChampion(null);
       setUserSelectedRole(false);
+      setSearchTerm('');
 
       setTimeout(() => {
           try {
@@ -443,6 +446,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         commitDraftAction(stepInfo, selectedChampion, team, side);
         setSelectedChampion(null);
         setUserSelectedRole(true);
+        setSearchTerm('');
     };
 
     const commitDraftAction = (stepInfo, champ, team, side) => {
@@ -974,8 +978,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                  <div className="w-full sm:flex-1 flex flex-col items-center justify-center z-20 h-full relative">
                      {isUserTurn ? (
                          <div className="bg-gray-800 rounded-lg lg:rounded-xl shadow-2xl border border-gray-700 w-full max-w-3xl lg:max-w-4xl h-full lg:h-[600px] flex flex-col overflow-hidden">
-                             {/* Role Filters & Status */}
-                             <div className="p-1 sm:p-2 lg:p-4 bg-gray-900 border-b border-gray-700 flex justify-between items-center shrink-0">
+                             {/* Role Filters & Status & Search */}
+                             <div className="p-1 sm:p-2 lg:p-4 bg-gray-900 border-b border-gray-700 flex flex-wrap gap-2 justify-between items-center shrink-0">
                                  <div className="flex gap-1 lg:gap-2">
                                      {['TOP','JGL','MID','ADC','SUP'].map(r => (
                                          <button 
@@ -987,7 +991,17 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                          </button>
                                      ))}
                                  </div>
-                                 <div className="text-yellow-400 font-bold animate-pulse text-xs sm:text-sm lg:text-lg">
+                                 
+                                 {/* Search Input */}
+                                 <input 
+                                    type="text" 
+                                    placeholder="Search Champ..." 
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="bg-gray-700 text-white rounded px-2 py-1 text-[10px] lg:text-sm w-24 lg:w-40 border border-gray-600 focus:border-yellow-500 outline-none"
+                                 />
+
+                                 <div className="text-yellow-400 font-bold animate-pulse text-xs sm:text-sm lg:text-lg hidden sm:block">
                                      {currentStepInfo?.type === 'BAN' ? '🚫 챔피언 금지' : '✅ 챔피언 선택'}
                                  </div>
                              </div>
@@ -1013,7 +1027,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                              {/* Champ Grid */}
                              <div className="flex-1 overflow-y-auto p-1 sm:p-2 lg:p-4 grid grid-cols-5 sm:grid-cols-6 md:grid-cols-7 lg:grid-cols-5 gap-1 sm:gap-2 lg:gap-3 content-start">
                                  {activeChampionList
-                                    .filter(c => c.role === (filterRole === 'SUP' ? 'SUP' : filterRole)) 
+                                    .filter(c => c.role === (filterRole === 'SUP' ? 'SUP' : filterRole))
+                                    .filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())) 
                                     .sort((a,b) => (a.tier||99) - (b.tier||99))
                                     .map(champ => {
                                         const isLocked = manualLockedChamps.has(champ.name);
@@ -1056,7 +1071,17 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                              </div>
                          </div>
                      ) : (
-                         <div className="text-4xl sm:text-7xl lg:text-9xl font-black text-white opacity-30 select-none">VS</div>
+                         <div className="flex flex-col items-center justify-center h-full">
+                             <div className="text-4xl sm:text-7xl lg:text-9xl font-black text-white opacity-30 select-none mb-4">VS</div>
+                             
+                             {/* SKIP BUTTON FOR AUTO MODE */}
+                             <button 
+                                onClick={skipDraft}
+                                className="bg-red-600 hover:bg-red-700 text-white font-black py-4 px-8 rounded-full text-xl shadow-lg transition transform hover:scale-110"
+                             >
+                                 SKIP DRAFT ⏩
+                             </button>
+                         </div>
                      )}
                  </div>
 
@@ -1067,7 +1092,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                              {pick ? (
                                  <>
                                     <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded border border-red-400 flex items-center justify-center bg-black overflow-hidden shrink-0">
-                                        <div className="font-bold text-[6px] sm:text-[8px] lg:text-xs text-center break-words leading-tight">{pick.champName.substring(0,3)}</div>
+                                        <div className="font-bold text-[6px] sm:text-[8px] lg:text-xs text-center break-words leading-tight">{pick.champName}</div>
                                     </div>
                                     <div className="mr-2 lg:mr-4 overflow-hidden text-right">
                                         <div className="text-xs sm:text-sm lg:text-2xl font-black text-white truncate">{pick.champName}</div>
