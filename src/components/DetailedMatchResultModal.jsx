@@ -58,12 +58,13 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                         <span className="text-[8px] lg:text-[10px] text-purple-300 font-bold tracking-widest">MVP</span>
                         <span className="text-xs lg:text-xl font-black text-white truncate max-w-[120px] lg:max-w-none">{posPlayer.playerName}</span>
                     </div>
-                    <div className="w-6 h-6 lg:w-10 lg:h-10 rounded-full bg-purple-600 flex items-center justify-center border-2 border-white shadow-lg text-xs lg:text-lg">
+                    <div className="w-6 h-6 lg:w-10 lg:h-10 rounded-full bg-purple-600 flex items-center justify-center border-2 border-white shadow-lg text-xs lg:text-lg shrink-0">
                         👑
                     </div>
-                    <div className="hidden lg:flex flex-col">
-                            <span className="text-xs text-gray-300">{posPlayer.playerData?.포지션 || 'Player'}</span>
-                            <span className="text-[10px] text-purple-400 font-mono">Score: {posPlayer.totalScore?.toFixed(1)}</span>
+                    {/* MODIFIED: Show Score on Phone Mode now */}
+                    <div className="flex flex-col justify-center ml-1 lg:ml-0 pl-2 lg:pl-0 border-l border-purple-500/50 lg:border-none">
+                            <span className="hidden lg:inline text-xs text-gray-300">{posPlayer.playerData?.포지션 || 'Player'}</span>
+                            <span className="text-[9px] lg:text-[10px] text-purple-200 lg:text-purple-400 font-mono font-bold whitespace-nowrap">Score: {posPlayer.totalScore?.toFixed(1)}</span>
                     </div>
                 </div>
             )}
@@ -126,7 +127,8 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                          <span className="text-[9px] lg:text-[10px] font-bold text-yellow-800 bg-yellow-300 px-1.5 rounded">POG</span>
                          <span className="font-bold text-xs lg:text-sm text-gray-800 truncate max-w-[100px] lg:max-w-none">{pogPlayer.playerName}</span>
                          <span className="hidden lg:inline text-xs text-gray-600">({pogPlayer.champName})</span>
-                         <span className="hidden lg:inline text-[10px] font-mono text-gray-500">Score: {pogPlayer.pogScore?.toFixed(1)}</span>
+                         {/* MODIFIED: Show Score on Phone Mode */}
+                         <span className="text-[9px] lg:text-[10px] font-mono text-gray-500 whitespace-nowrap ml-1">Score: {pogPlayer.pogScore?.toFixed(1)}</span>
                      </div>
                  )}
             </div>
