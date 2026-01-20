@@ -60,6 +60,9 @@ const getOvrBadgeStyle = (ovr) => {
     const [showPlayInBracket, setShowPlayInBracket] = useState(false);
     const [isLiveGameMode, setIsLiveGameMode] = useState(false);
     const [liveMatchData, setLiveMatchData] = useState(null);
+    
+    // Mobile Sidebar State
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
     // 드래프트 상태
     const [isDrafting, setIsDrafting] = useState(false);
@@ -161,6 +164,7 @@ const getOvrBadgeStyle = (ovr) => {
   
     const handleMenuClick = (tabId) => {
       setActiveTab(tabId);
+      setIsSidebarOpen(false); // Close sidebar on selection for mobile
       if (tabId === 'dashboard' && league) {
         setViewingTeamId(league.team.id);
       }
@@ -945,19 +949,19 @@ const getOvrBadgeStyle = (ovr) => {
   
         {opponentChoice && (
           <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-              <div className="bg-white rounded-2xl p-8 max-w-lg w-full text-center shadow-2xl">
-                  <h2 className="text-2xl font-black mb-2">{opponentChoice.title}</h2>
-                  <p className="text-gray-600 mb-6">{opponentChoice.description}</p>
+              <div className="bg-white rounded-2xl p-4 lg:p-8 max-w-lg w-full text-center shadow-2xl max-h-[90vh] overflow-y-auto">
+                  <h2 className="text-xl lg:text-2xl font-black mb-2">{opponentChoice.title}</h2>
+                  <p className="text-sm lg:text-base text-gray-600 mb-6">{opponentChoice.description}</p>
                   <div className="grid grid-cols-2 gap-4">
                       {opponentChoice.opponents.map(opp => (
                           <button 
                               key={opp.id}
                               onClick={() => opponentChoice.onConfirm(opp)}
-                              className="p-4 rounded-xl border-2 transition flex flex-col items-center gap-2 bg-white border-gray-200 hover:border-blue-500 hover:shadow-md cursor-pointer"
+                              className="p-3 lg:p-4 rounded-xl border-2 transition flex flex-col items-center gap-2 bg-white border-gray-200 hover:border-blue-500 hover:shadow-md cursor-pointer"
                           >
-                              <div className="w-16 h-16 rounded-full flex items-center justify-center text-white font-bold shadow-sm text-lg" style={{backgroundColor:opp.colors.primary}}>{opp.name}</div>
-                              <div className="font-bold text-lg">{opp.fullName}</div>
-                              <div className="text-sm bg-gray-100 px-3 py-1 rounded-full font-bold">
+                              <div className="w-12 h-12 lg:w-16 lg:h-16 rounded-full flex items-center justify-center text-white font-bold shadow-sm text-sm lg:text-lg" style={{backgroundColor:opp.colors.primary}}>{opp.name}</div>
+                              <div className="font-bold text-sm lg:text-lg">{opp.fullName}</div>
+                              <div className="text-xs bg-gray-100 px-3 py-1 rounded-full font-bold">
                                   {getTeamSeed(opp.id, opponentChoice.type.startsWith('playoff') ? 'playoff' : 'playin')} 시드
                               </div>
                           </button>
@@ -988,9 +992,9 @@ const getOvrBadgeStyle = (ovr) => {
   )}
   
         {isDrafting && (
-          <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl p-8 max-w-4xl w-full text-center shadow-2xl overflow-hidden relative min-h-[500px] flex flex-col">
-              <h2 className="text-3xl font-black mb-2">{isCaptain ? "팀 드래프트 진행" : "조 추첨 진행 중..."}</h2>
+          <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-2 lg:p-4">
+            <div className="bg-white rounded-2xl p-4 lg:p-8 max-w-4xl w-full text-center shadow-2xl overflow-hidden relative min-h-[500px] flex flex-col">
+              <h2 className="text-2xl lg:text-3xl font-black mb-2">{isCaptain ? "팀 드래프트 진행" : "조 추첨 진행 중..."}</h2>
               {!isCaptain ? (
                   <div className="flex-1 flex flex-col items-center justify-center">
                       <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
@@ -998,25 +1002,25 @@ const getOvrBadgeStyle = (ovr) => {
                   </div>
               ) : (
                   <div className="flex-1 flex flex-col">
-                      <div className="flex justify-between items-center bg-gray-100 p-4 rounded-lg mb-6">
-                          <div className={`w-1/3 p-3 rounded-lg ${draftTurn === (myTeam.id===1?'user':'cpu') ? 'bg-yellow-100 ring-2 ring-yellow-400' : 'bg-white'}`}>
-                              <span className="font-bold text-lg block mb-1">GEN (Baron)</span>
-                              <div className="flex flex-wrap gap-1 justify-center">{draftGroups.baron.map(id => <span key={id} className="text-xs bg-gray-800 text-white px-2 py-1 rounded">{teams.find(t=>t.id===id)?.name}</span>)}</div>
+                      <div className="flex justify-between items-center bg-gray-100 p-2 lg:p-4 rounded-lg mb-6">
+                          <div className={`w-1/3 p-2 lg:p-3 rounded-lg ${draftTurn === (myTeam.id===1?'user':'cpu') ? 'bg-yellow-100 ring-2 ring-yellow-400' : 'bg-white'}`}>
+                              <span className="font-bold text-sm lg:text-lg block mb-1">GEN (Baron)</span>
+                              <div className="flex flex-wrap gap-1 justify-center">{draftGroups.baron.map(id => <span key={id} className="text-[10px] lg:text-xs bg-gray-800 text-white px-2 py-1 rounded">{teams.find(t=>t.id===id)?.name}</span>)}</div>
                           </div>
                           <div className="w-1/3 text-xl font-bold text-gray-400">VS</div>
-                          <div className={`w-1/3 p-3 rounded-lg ${draftTurn === (myTeam.id===2?'user':'cpu') ? 'bg-yellow-100 ring-2 ring-yellow-400' : 'bg-white'}`}>
-                              <span className="font-bold text-lg block mb-1">HLE (Elder)</span>
-                              <div className="flex flex-wrap gap-1 justify-center">{draftGroups.elder.map(id => <span key={id} className="text-xs bg-gray-800 text-white px-2 py-1 rounded">{teams.find(t=>t.id===id)?.name}</span>)}</div>
+                          <div className={`w-1/3 p-2 lg:p-3 rounded-lg ${draftTurn === (myTeam.id===2?'user':'cpu') ? 'bg-yellow-100 ring-2 ring-yellow-400' : 'bg-white'}`}>
+                              <span className="font-bold text-sm lg:text-lg block mb-1">HLE (Elder)</span>
+                              <div className="flex flex-wrap gap-1 justify-center">{draftGroups.elder.map(id => <span key={id} className="text-[10px] lg:text-xs bg-gray-800 text-white px-2 py-1 rounded">{teams.find(t=>t.id===id)?.name}</span>)}</div>
                           </div>
                       </div>
                       <div className="text-left mb-2 font-bold text-gray-700">{draftTurn === 'user' ? "👉 영입할 팀을 선택하세요!" : "🤖 상대가 고민 중입니다..."}</div>
-                      <div className="grid grid-cols-4 gap-3 overflow-y-auto max-h-[300px] p-2">
+                      <div className="grid grid-cols-3 lg:grid-cols-4 gap-2 lg:gap-3 overflow-y-auto max-h-[300px] p-2">
                           {draftPool.map(t => (
                               <button key={t.id} onClick={() => handleUserPick(t.id)} disabled={draftTurn !== 'user'}
-                                  className={`p-4 rounded-xl border-2 transition flex flex-col items-center gap-2 hover:shadow-md ${draftTurn === 'user' ? 'bg-white border-gray-200 hover:border-blue-500 cursor-pointer' : 'bg-gray-50 border-gray-100 opacity-50 cursor-not-allowed'}`}>
-                                  <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold shadow-sm" style={{backgroundColor:t.colors.primary}}>{t.name}</div>
-                                  <div className="font-bold text-sm">{t.fullName}</div>
-                                  <div className="text-xs bg-gray-100 px-2 py-1 rounded">전력 {t.power}</div>
+                                  className={`p-2 lg:p-4 rounded-xl border-2 transition flex flex-col items-center gap-2 hover:shadow-md ${draftTurn === 'user' ? 'bg-white border-gray-200 hover:border-blue-500 cursor-pointer' : 'bg-gray-50 border-gray-100 opacity-50 cursor-not-allowed'}`}>
+                                  <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-full flex items-center justify-center text-white font-bold shadow-sm text-xs" style={{backgroundColor:t.colors.primary}}>{t.name}</div>
+                                  <div className="font-bold text-xs lg:text-sm truncate w-full">{t.fullName}</div>
+                                  <div className="text-[10px] lg:text-xs bg-gray-100 px-2 py-1 rounded">전력 {t.power}</div>
                               </button>
                           ))}
                       </div>
@@ -1026,8 +1030,17 @@ const getOvrBadgeStyle = (ovr) => {
           </div>
         )}
   
-        <aside className="w-64 bg-gray-900 text-gray-300 flex-shrink-0 flex flex-col shadow-xl z-20">
-          <div className="p-5 bg-gray-800 border-b border-gray-700 flex items-center gap-3">
+        {/* Mobile Toggle Button (Visible only on small screens) */}
+        <button 
+           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+           className="lg:hidden absolute top-3 left-3 z-50 bg-gray-800 text-white p-2 rounded shadow-lg"
+        >
+           {isSidebarOpen ? '✖' : '☰'}
+        </button>
+
+        {/* Responsive Sidebar: Hidden on mobile unless toggled, Fixed on Desktop */}
+        <aside className={`${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:relative w-64 h-full bg-gray-900 text-gray-300 flex-shrink-0 flex flex-col shadow-xl z-40 transition-transform duration-300 ease-in-out`}>
+          <div className="p-5 bg-gray-800 border-b border-gray-700 flex items-center gap-3 mt-10 lg:mt-0">
             <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white text-xs shadow-lg" style={{backgroundColor: myTeam.colors.primary}}>{myTeam.name}</div>
             <div><div className="text-white font-bold text-sm leading-tight">{myTeam.fullName}</div><div className="text-xs text-gray-400">GM 모드</div></div>
           </div>
@@ -1039,50 +1052,55 @@ const getOvrBadgeStyle = (ovr) => {
           <div className="p-4 border-t border-gray-700 bg-gray-800"><button onClick={() => navigate('/')} className="w-full flex items-center justify-center gap-2 text-xs font-bold text-gray-400 hover:text-white transition"><span>🚪</span> 메인으로 나가기</button></div>
         </aside>
   
-        <div className="flex-1 flex flex-col h-screen overflow-hidden">
-        <header className="bg-white border-b h-14 flex items-center justify-between px-6 shadow-sm z-10 flex-shrink-0">
-          <div className="flex items-center gap-6 text-sm">
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col h-screen overflow-hidden w-full relative">
+          {/* Overlay for mobile sidebar */}
+          {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={() => setIsSidebarOpen(false)}></div>}
+
+        <header className="bg-white border-b min-h-14 flex items-center justify-between px-4 lg:px-6 shadow-sm z-10 flex-shrink-0 overflow-x-auto">
+          {/* Header Info - Hidden on very small screens, scrollable on others */}
+          <div className="flex items-center gap-3 lg:gap-6 text-xs lg:text-sm pl-8 lg:pl-0 whitespace-nowrap">
             <div className="flex items-center gap-2 font-bold text-gray-700"><span className="text-gray-400">📅</span> {effectiveDate}</div>
             <div className="h-4 w-px bg-gray-300"></div>
             <div className="flex items-center gap-2 font-bold text-gray-700"><span className="text-gray-400">🏆</span> {myRecord.w}승 {myRecord.l}패 ({myRecord.diff > 0 ? `+${myRecord.diff}` : myRecord.diff})</div>
-            <div className="h-4 w-px bg-gray-300"></div>
-            <div className="flex items-center gap-2 font-bold text-gray-700"><span className="text-gray-400">💰</span> 상금: {prizeMoney.toFixed(1)}억</div>
+            <div className="hidden sm:flex h-4 w-px bg-gray-300"></div>
+            <div className="hidden sm:flex items-center gap-2 font-bold text-gray-700"><span className="text-gray-400">💰</span> {prizeMoney.toFixed(1)}억</div>
           </div>
           
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 lg:gap-3 ml-4">
             {isSeasonOver && (
                <button 
                onClick={() => setShowFinalStandings(true)} 
-               className="px-5 py-1.5 rounded-full font-bold text-sm bg-gray-900 hover:bg-black text-yellow-400 shadow-sm flex items-center gap-2 transition border-2 border-yellow-500 animate-pulse"
+               className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-gray-900 hover:bg-black text-yellow-400 shadow-sm flex items-center gap-2 transition border-2 border-yellow-500 animate-pulse whitespace-nowrap"
              >
-                 <span>🏆</span> 최종 순위 보기
+                 <span>🏆</span> <span className="hidden sm:inline">최종 순위</span>
              </button>
             )}
 
             {hasDrafted && isRegularSeasonFinished && (!hasSuperWeekGenerated || league.metaVersion !== '16.02') && (
                  <button 
                  onClick={handleGenerateSuperWeek} 
-                 className="px-5 py-1.5 rounded-full font-bold text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition"
+                 className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition whitespace-nowrap"
                >
-                   <span>🔥</span> 슈퍼위크 및 16.02 패치 확인
+                   <span>🔥</span> <span className="hidden sm:inline">슈퍼위크</span>
                </button>
             )}
 
             {isSuperWeekFinished && !hasPlayInGenerated && (
                 <button 
                 onClick={handleGeneratePlayIn} 
-                className="px-5 py-1.5 rounded-full font-bold text-sm bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition"
+                className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition whitespace-nowrap"
               >
-                  <span>🛡️</span> 플레이-인 진출팀 확정
+                  <span>🛡️</span> <span className="hidden sm:inline">플레이-인</span>
               </button>
             )} 
 
             {isPlayInFinished && !hasPlayoffsGenerated && (
                 <button 
                 onClick={handleGeneratePlayoffs} 
-                className="px-5 py-1.5 rounded-full font-bold text-sm bg-yellow-500 hover:bg-yellow-600 text-white shadow-sm flex items-center gap-2 animate-bounce transition"
+                className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-yellow-500 hover:bg-yellow-600 text-white shadow-sm flex items-center gap-2 animate-bounce transition whitespace-nowrap"
               >
-                  <span>👑</span> 플레이오프 대진 생성
+                  <span>👑</span> <span className="hidden sm:inline">PO 대진</span>
               </button>
             )}
             
@@ -1090,36 +1108,36 @@ const getOvrBadgeStyle = (ovr) => {
              !(nextGlobalMatch.type === 'super' && league.metaVersion !== '16.02') && (
                 <button 
                   onClick={handleProceedNextMatch} 
-                  className="px-5 py-1.5 rounded-full font-bold text-sm bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-2 animate-pulse transition"
+                  className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-2 animate-pulse transition whitespace-nowrap"
                 >
-                    <span>⏩</span> 다음 경기 진행 ({t1?.name} vs {t2?.name})
+                    <span>⏩</span> <span className="hidden sm:inline">다음 경기 ({t1?.name} vs {t2?.name})</span><span className="sm:hidden">진행</span>
                 </button>
             )}
 
-            <button onClick={handleDraftStart} disabled={hasDrafted} className={`px-6 py-1.5 rounded-full font-bold text-sm shadow-sm transition flex items-center gap-2 ${hasDrafted ? 'bg-gray-100 text-gray-400 cursor-not-allowed hidden' : 'bg-green-600 hover:bg-green-700 text-white animate-pulse'}`}>
-                <span>▶</span> {hasDrafted ? "" : (isCaptain ? "LCK 컵 팀 선정하기" : "LCK 컵 조 확인하기")}
+            <button onClick={handleDraftStart} disabled={hasDrafted} className={`px-3 lg:px-6 py-1.5 rounded-full font-bold text-xs lg:text-sm shadow-sm transition flex items-center gap-2 whitespace-nowrap ${hasDrafted ? 'bg-gray-100 text-gray-400 cursor-not-allowed hidden' : 'bg-green-600 hover:bg-green-700 text-white animate-pulse'}`}>
+                <span>▶</span> {hasDrafted ? "" : (isCaptain ? "팀 선정" : "조 추첨")}
             </button>
           </div>
         </header>
 
-          <main className="flex-1 overflow-y-auto p-6 scroll-smooth">
+          <main className="flex-1 overflow-y-auto p-2 lg:p-6 scroll-smooth">
             <div className="max-w-7xl mx-auto">
                 
               {activeTab === 'dashboard' && (
-                <div className="grid grid-cols-12 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
                   {/* 대시보드 메인 카드 */}
-                  <div className="col-span-12 lg:col-span-8 bg-white rounded-lg border shadow-sm p-5 relative overflow-hidden">
-                     <div className="absolute top-0 right-0 p-4 opacity-10 text-9xl">📅</div>
+                  <div className="col-span-1 lg:col-span-8 bg-white rounded-lg border shadow-sm p-4 lg:p-5 relative overflow-hidden">
+                     <div className="absolute top-0 right-0 p-4 opacity-10 text-9xl pointer-events-none">📅</div>
                      <h3 className="text-lg font-bold text-gray-800 mb-2">다음 경기 일정</h3>
-                     <div className="flex items-center justify-between bg-gray-50 rounded-xl p-6 border">
-                        <div className="text-center w-1/3"><div className="text-4xl font-black text-gray-800 mb-2">{t1 ? t1.name : '?'}</div></div>
+                     <div className="flex items-center justify-between bg-gray-50 rounded-xl p-3 lg:p-6 border">
+                        <div className="text-center w-1/3"><div className="text-2xl lg:text-4xl font-black text-gray-800 mb-2">{t1 ? t1.name : '?'}</div></div>
                         <div className="text-center w-1/3 flex flex-col items-center">
-                          <div className="text-xs font-bold text-gray-400 uppercase">VS</div><div className="text-3xl font-bold text-gray-300 my-2">@</div>
+                          <div className="text-xs font-bold text-gray-400 uppercase">VS</div><div className="text-xl lg:text-3xl font-bold text-gray-300 my-1 lg:my-2">@</div>
                           {nextGlobalMatch ? (
                             <div className="mt-1 flex flex-col items-center">
-                              <span className="text-base font-black text-blue-600">{nextGlobalMatch.date}</span>
-                              <span className="text-sm font-bold text-gray-600">{nextGlobalMatch.time}</span>
-                              <span className="mt-2 text-xs font-bold text-white bg-blue-600 px-3 py-1 rounded-full shadow-sm">
+                              <span className="text-sm lg:text-base font-black text-blue-600">{nextGlobalMatch.date}</span>
+                              <span className="text-xs lg:text-sm font-bold text-gray-600">{nextGlobalMatch.time}</span>
+                              <span className="mt-2 text-[10px] lg:text-xs font-bold text-white bg-blue-600 px-3 py-1 rounded-full shadow-sm">
                                   {nextGlobalMatch.label || nextGlobalMatch.format}
                               </span>
                               
@@ -1127,33 +1145,33 @@ const getOvrBadgeStyle = (ovr) => {
                                   <div className="flex flex-col gap-2 mt-3 w-full">
                                       <button 
                                         onClick={() => handleStartMyMatch('manual')} 
-                                        className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg shadow-md transform transition hover:scale-105 flex items-center justify-center gap-2"
+                                        className="w-full px-2 lg:px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-bold text-xs lg:text-base rounded-lg shadow-md transform transition hover:scale-105 flex items-center justify-center gap-2"
                                       >
-                                          <span>🎮</span> 경기 시작 (직접 플레이)
+                                          <span>🎮</span> 경기 시작 (직접)
                                       </button>
                                       
                                       <button 
                                         onClick={() => handleStartMyMatch('auto')} 
-                                        className="w-full px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-lg shadow-md transform transition hover:scale-105 flex items-center justify-center gap-2"
+                                        className="w-full px-2 lg:px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs lg:text-base rounded-lg shadow-md transform transition hover:scale-105 flex items-center justify-center gap-2"
                                       >
-                                          <span>📺</span> 경기 시작 (AI 시뮬)
+                                          <span>📺</span> 경기 시작 (AI)
                                       </button>
                                   </div>
                               ) : (
-                                  <div className="mt-3 text-sm font-bold text-gray-400 bg-white px-3 py-1 rounded border">
-                                      상단바의 [⏩ 다음 경기 진행]을 눌러주세요
+                                  <div className="mt-3 text-[10px] lg:text-sm font-bold text-gray-400 bg-white px-3 py-1 rounded border">
+                                      상단바 [⏩] 버튼 클릭
                                   </div>
                               )}
                             </div>
                           ) : <div className="text-xs font-bold text-blue-600">{isSeasonOver ? '시즌 종료' : '대진 생성 대기 중'}</div>}
                         </div>
                         <div className="text-center w-1/3">
-                            <div className="text-4xl font-black text-gray-800 mb-2">{t2 ? t2.name : '?'}</div>
+                            <div className="text-2xl lg:text-4xl font-black text-gray-800 mb-2">{t2 ? t2.name : '?'}</div>
                         </div>
                      </div>
                   </div>
                   
-                  <div className="col-span-12 lg:col-span-4 flex flex-col h-full max-h-[500px]">
+                  <div className="col-span-1 lg:col-span-4 flex flex-col h-full max-h-[400px] lg:max-h-[500px]">
                      {hasDrafted ? (
                        <div className="bg-white rounded-lg border shadow-sm p-4 h-full overflow-y-auto flex flex-col">
                           
@@ -1249,13 +1267,13 @@ const getOvrBadgeStyle = (ovr) => {
                      )}
                   </div>
   
-                  <div className="col-span-12 bg-white rounded-lg border shadow-sm flex flex-col min-h-[500px]">
-                    <div className="p-5 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
-                      <div className="flex items-center gap-4"><div className="w-12 h-12 rounded-full flex items-center justify-center font-bold text-white shadow-sm" style={{backgroundColor: viewingTeam.colors.primary}}>{viewingTeam.name}</div><div><h2 className="text-2xl font-black text-gray-800">{viewingTeam.fullName}</h2><p className="text-xs font-bold text-gray-500 uppercase tracking-wide">로스터 요약</p></div></div>
-                      <button onClick={()=>setActiveTab('roster')} className="text-sm font-bold text-blue-600 hover:underline">상세 정보 보기 →</button>
+                  <div className="col-span-1 lg:col-span-12 bg-white rounded-lg border shadow-sm flex flex-col min-h-[300px] lg:min-h-[500px]">
+                    <div className="p-3 lg:p-5 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
+                      <div className="flex items-center gap-4"><div className="w-10 h-10 lg:w-12 lg:h-12 rounded-full flex items-center justify-center font-bold text-white shadow-sm" style={{backgroundColor: viewingTeam.colors.primary}}>{viewingTeam.name}</div><div><h2 className="text-lg lg:text-2xl font-black text-gray-800">{viewingTeam.fullName}</h2><p className="text-[10px] lg:text-xs font-bold text-gray-500 uppercase tracking-wide">로스터 요약</p></div></div>
+                      <button onClick={()=>setActiveTab('roster')} className="text-xs lg:text-sm font-bold text-blue-600 hover:underline">상세 정보 보기 →</button>
                     </div>
                     <div className="p-0 overflow-x-auto">
-                      <table className="w-full text-xs table-fixed text-left">
+                      <table className="w-full text-xs table-fixed text-left min-w-[600px] lg:min-w-0">
                           <thead className="bg-white text-gray-400 uppercase font-bold border-b">
                               <tr>
                                   <th className="py-2 px-1 w-[8%] text-center">라인</th>
