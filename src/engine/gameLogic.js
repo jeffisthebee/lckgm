@@ -751,145 +751,152 @@ const picksToFullObj = (simplePicks, team) => {
 };
 
 export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampionList = []) => {
-  const safeChampList = (currentChampionList && currentChampionList.length > 0) ? currentChampionList : championList; 
-  const targetWins = format === 'BO5' ? 3 : 2;
-  let winsA = 0; let winsB = 0; let matchHistory = []; let currentSet = 1;
-  let globalBanList = []; 
-
-  while (winsA < targetWins && winsB < targetWins) {
-      const currentFearlessBans = [...globalBanList];
-      const draftResult = runDraftSimulation(teamA, teamB, currentFearlessBans, safeChampList);
-      
-      const picksA = draftResult.picks.A || []; const picksB = draftResult.picks.B || [];
-      const mockBuffs = { dragonStacks: { infernal: 0 }, grubs: 0, herald: false, baron: false, elder: false, soul: null };
-      
-      // Calculate Power
-      const pA_25 = calculateTeamPower(picksToFullObj(picksA, teamA), 25, mockBuffs, 0, [], 1500);
-      const pB_25 = calculateTeamPower(picksToFullObj(picksB, teamB), 25, mockBuffs, 0, [], 1500);
-      
-      // Determine Winner (Power + Random Upset Chance)
-      const avgPowerA = pA_25 / Math.max(1, (picksA.length || 5)); 
-      const avgPowerB = pB_25 / Math.max(1, (picksB.length || 5));
-
-      // [FIX START] Hybrid Win Calculation (Ratio + Linear Bonus)
-      // 1. Base Ratio (Natural Baseline)
-      const baseRatio = avgPowerA / (avgPowerA + avgPowerB || 1);
-      
-      // 2. Linear Bonus (Aggressive Skill Reward)
-      // We add 2% win chance for every 1 point of power difference
-      const powerDiff = avgPowerA - avgPowerB;
-      const linearBonus = powerDiff * 0.02; 
-
-      let winChanceA = baseRatio + linearBonus;
-
-      // 3. Variance Damping
-      // If the gap is huge (>8), we reduce randomness to protect the favorite.
-      let varianceRange = 0.10; // Default: +/- 5% random swing
-      if (Math.abs(powerDiff) > 8) {
-          varianceRange = 0.02; // Stomp protection: +/- 1% only
-      }
-
-      const randomNoise = (Math.random() * varianceRange) - (varianceRange / 2);
-      winChanceA += randomNoise;
-
-      // 4. Hard Clamping (Safety)
-      if (winChanceA > 0.99) winChanceA = 0.99;
-      if (winChanceA < 0.01) winChanceA = 0.01;
-      // [FIX END]
-      
-      const isWinA = Math.random() < winChanceA;
-      const winner = isWinA ? teamA : teamB;
-      if (isWinA) winsA++; else winsB++;
-
-      // [FIX] Determine Game Type (Stomp, Close, Fiesta) with Power Scaling
-      const absDiff = Math.abs(powerDiff);
-      let varianceType = 'CLOSE';
-      const roll = Math.random();
-      
-      // If skill gap is massive (>10), high chance of stomp
-      if (absDiff > 10) {
-          if (roll > 0.2) varianceType = 'STOMP'; // 80% chance of stomp
-          else varianceType = 'CLOSE';            // 20% chance they survive a bit
-      } 
-      // If skill gap is moderate (>5), moderate chance of stomp
-      else if (absDiff > 5) {
-          if (roll > 0.5) varianceType = 'STOMP'; // 50% chance of stomp
-          else if (roll > 0.8) varianceType = 'FIESTA';
-          else varianceType = 'CLOSE';
-      }
-      // If teams are even (<5), random chaos
-      else {
-          if (roll > 0.8) varianceType = 'FIESTA'; // 20% chance of a bloodbath
-          else if (roll > 0.6) varianceType = 'STOMP';  // Random stomps still happen
-          else varianceType = 'CLOSE';
-      }
-
-      // Randomize Time based on Game Type
-      let baseTime = 30;
-      if (varianceType === 'STOMP') baseTime = 24 + Math.random() * 5;
-      else if (varianceType === 'FIESTA') baseTime = 35 + Math.random() * 10;
-      else baseTime = 28 + Math.random() * 12;
-      
-      const gameTime = baseTime; 
-      
-      // [FIX] Top-Down Score Generation (Ensures Kills < 35 & K=D consistency)
-      let winnerKills = 0;
-      let loserKills = 0;
-
-      if (varianceType === 'STOMP') {
-          winnerKills = 15 + Math.floor(Math.random() * 10); // 15-25 (Max 25)
-          loserKills = Math.floor(Math.random() * 5); // 0-4
-      } else if (varianceType === 'FIESTA') {
-          winnerKills = 20 + Math.floor(Math.random() * 15); // 20-35
-          loserKills = 10 + Math.floor(Math.random() * 15); // 10-25
-      } else { // CLOSE
-          winnerKills = 10 + Math.floor(Math.random() * 10); // 10-20
-          loserKills = winnerKills - (1 + Math.floor(Math.random() * 5)); // Slightly less
-          if (loserKills < 0) loserKills = 0;
-      }
-
-      // Hard Cap at 36 (User requested max 35 +-1)
-      if (winnerKills > 36) winnerKills = 36;
-      if (loserKills > 36) loserKills = 36;
-
-      // Distribute Stats
-      const winnerAssists = Math.floor(winnerKills * (1.5 + Math.random()));
-      const loserAssists = Math.floor(loserKills * (1.5 + Math.random()));
-
-      const statsA = isWinA 
-          ? distributeTeamStats(teamA, picksA, winnerKills, loserKills, winnerAssists, gameTime, true)
-          : distributeTeamStats(teamA, picksA, loserKills, winnerKills, loserAssists, gameTime, false);
-      
-      const statsB = !isWinA 
-          ? distributeTeamStats(teamB, picksB, winnerKills, loserKills, winnerAssists, gameTime, true)
-          : distributeTeamStats(teamB, picksB, loserKills, winnerKills, loserAssists, gameTime, false);
-
-      const winningPicks = isWinA ? statsA : statsB;
-      
-      if (draftResult.usedChamps) {
-          globalBanList = [...globalBanList, ...draftResult.usedChamps];
-      }
-      
-      const pogPlayer = calculatePog(winningPicks, gameTime);
-      const pogText = pogPlayer ? `🏅 POG: ${pogPlayer.playerName} (${pogPlayer.champName})` : '';
-
-      // [PRESERVED Fix] Calculate Total Kills for Scoreboard
-      const totalKillsA = isWinA ? winnerKills : loserKills;
-      const totalKillsB = !isWinA ? winnerKills : loserKills;
-
-      matchHistory.push({
-          setNumber: currentSet, winner: winner?.name,
-          picks: { A: statsA, B: statsB },
-          bans: draftResult.bans, 
-          pogPlayer: pogPlayer,
-          gameTime: `${Math.floor(gameTime)}분 ${Math.floor((gameTime % 1) * 60)}초`,
-          totalMinutes: Math.floor(gameTime),
-          scores: { A: totalKillsA, B: totalKillsB },
-          fearlessBans: currentFearlessBans,
-          logs: [`[SIM] Set ${currentSet} - Winner: ${winner?.name}`, `Game Pace: ${varianceType}`, pogText], 
-          resultSummary: `Winner: ${winner?.name}`
-      });
-      currentSet++;
-  }
-  return { winner: winsA > winsB ? teamA?.name : teamB?.name, scoreString: `${winsA}:${winsB}`, scoreA: winsA, scoreB: winsB, history: matchHistory };
-};
+    const safeChampList = (currentChampionList && currentChampionList.length > 0) ? currentChampionList : championList; 
+    const targetWins = format === 'BO5' ? 3 : 2;
+    let winsA = 0; let winsB = 0; let matchHistory = []; let currentSet = 1;
+    let globalBanList = []; 
+  
+    while (winsA < targetWins && winsB < targetWins) {
+        const currentFearlessBans = [...globalBanList];
+        const draftResult = runDraftSimulation(teamA, teamB, currentFearlessBans, safeChampList);
+        
+        const picksA = draftResult.picks.A || []; const picksB = draftResult.picks.B || [];
+        const fullPicksA = picksToFullObj(picksA, teamA);
+        const fullPicksB = picksToFullObj(picksB, teamB);
+  
+        // --- PHASE 1: LANING PHASE (14 Minutes) ---
+        // Checks raw laning stats. Winner gets small gold lead.
+        const pA_14 = calculateTeamPower(fullPicksA, 14, { dragonStacks: {}, grubs: 0 }, 0, [], 840);
+        const pB_14 = calculateTeamPower(fullPicksB, 14, { dragonStacks: {}, grubs: 0 }, 0, [], 840);
+        
+        const phase1Diff = (pA_14 - pB_14);
+        const phase1WinChance = 0.5 + (phase1Diff * 0.02); // 2% per point
+        const winPhase1 = Math.random() < phase1WinChance; // True = A wins, False = B wins
+        
+        const goldLead1 = winPhase1 ? 2000 : -2000; // 2k Gold Lead for winner
+  
+        // --- PHASE 2: MID GAME (25 Minutes) ---
+        // Includes Gold Lead from Phase 1. Winner gets Map Control (Soul point/Baron setup).
+        // We simulate this by giving a "Virtual Gold" bonus to the power calc
+        const pA_25 = calculateTeamPower(fullPicksA, 25, { dragonStacks: {}, grubs: 0 }, goldLead1, [], 1500);
+        const pB_25 = calculateTeamPower(fullPicksB, 25, { dragonStacks: {}, grubs: 0 }, -goldLead1, [], 1500);
+  
+        const phase2Diff = (pA_25 - pB_25);
+        const phase2WinChance = 0.5 + (phase2Diff * 0.025); // Slightly higher weight in mid game
+        const winPhase2 = Math.random() < phase2WinChance;
+        
+        const snowballLead = winPhase2 ? (goldLead1 + 4000) : (goldLead1 - 4000); // Snowball grows
+  
+        // --- PHASE 3: LATE GAME / ENDING (30+ Minutes) ---
+        // This is the Decider. It includes all previous snowballs.
+        const pA_End = calculateTeamPower(fullPicksA, 35, { dragonStacks: {}, grubs: 0 }, snowballLead, [], 2100);
+        const pB_End = calculateTeamPower(fullPicksB, 35, { dragonStacks: {}, grubs: 0 }, -snowballLead, [], 2100);
+  
+        // [FIX] Hybrid Win Calculation for Final Check
+        const avgPowerA = pA_End / Math.max(1, (picksA.length || 5)); 
+        const avgPowerB = pB_End / Math.max(1, (picksB.length || 5));
+        const baseRatio = avgPowerA / (avgPowerA + avgPowerB || 1);
+        const finalDiff = avgPowerA - avgPowerB;
+        const linearBonus = finalDiff * 0.03; // Heavy weight on stats at the end
+  
+        let winChanceA = baseRatio + linearBonus;
+  
+        // Variance Damping (If snowballed hard, reduce randomness)
+        let varianceRange = 0.10; 
+        if (Math.abs(finalDiff) > 10 || (winPhase1 === winPhase2 && winPhase2 === (finalDiff > 0))) {
+            // If stats are huge OR one team won both previous phases -> Low Variance
+            varianceRange = 0.02; 
+        }
+        
+        winChanceA += (Math.random() * varianceRange) - (varianceRange / 2);
+        if (winChanceA > 0.99) winChanceA = 0.99;
+        if (winChanceA < 0.01) winChanceA = 0.01;
+  
+        const isWinA = Math.random() < winChanceA;
+        const winner = isWinA ? teamA : teamB;
+        if (isWinA) winsA++; else winsB++;
+  
+        // --- RESULT NARRATIVE GENERATION ---
+        let varianceType = 'CLOSE';
+        
+        // If winner won all 3 phases (Laning, Mid, End) -> STOMP
+        const winnerWonP1 = isWinA ? winPhase1 : !winPhase1;
+        const winnerWonP2 = isWinA ? winPhase2 : !winPhase2;
+        
+        if (winnerWonP1 && winnerWonP2) {
+            varianceType = 'STOMP';
+        } else if (!winnerWonP1 && !winnerWonP2) {
+            // Winner lost early and mid but won late -> COMEBACK/FIESTA
+            varianceType = 'FIESTA';
+        } else {
+            varianceType = 'CLOSE';
+        }
+  
+        // Randomize Time based on Narrative
+        let baseTime = 30;
+        if (varianceType === 'STOMP') baseTime = 23 + Math.random() * 5; // Fast game
+        else if (varianceType === 'FIESTA') baseTime = 35 + Math.random() * 12; // Long game
+        else baseTime = 28 + Math.random() * 8; // Normal
+        
+        const gameTime = baseTime; 
+        
+        // Score Generation (Consistent with Narrative)
+        let winnerKills = 0;
+        let loserKills = 0;
+  
+        if (varianceType === 'STOMP') {
+            winnerKills = 18 + Math.floor(Math.random() * 8); 
+            loserKills = 2 + Math.floor(Math.random() * 6); 
+        } else if (varianceType === 'FIESTA') {
+            winnerKills = 25 + Math.floor(Math.random() * 10); 
+            loserKills = 18 + Math.floor(Math.random() * 10); 
+        } else { // CLOSE
+            winnerKills = 12 + Math.floor(Math.random() * 10); 
+            loserKills = winnerKills - (2 + Math.floor(Math.random() * 5)); 
+            if (loserKills < 0) loserKills = 0;
+        }
+        // Safety Cap
+        if (winnerKills > 36) winnerKills = 36;
+        if (loserKills > 36) loserKills = 36;
+  
+        // Distribute Stats
+        const winnerAssists = Math.floor(winnerKills * (1.5 + Math.random()));
+        const loserAssists = Math.floor(loserKills * (1.5 + Math.random()));
+  
+        const statsA = isWinA 
+            ? distributeTeamStats(teamA, picksA, winnerKills, loserKills, winnerAssists, gameTime, true)
+            : distributeTeamStats(teamA, picksA, loserKills, winnerKills, loserAssists, gameTime, false);
+        
+        const statsB = !isWinA 
+            ? distributeTeamStats(teamB, picksB, winnerKills, loserKills, winnerAssists, gameTime, true)
+            : distributeTeamStats(teamB, picksB, loserKills, winnerKills, loserAssists, gameTime, false);
+  
+        const winningPicks = isWinA ? statsA : statsB;
+        
+        if (draftResult.usedChamps) {
+            globalBanList = [...globalBanList, ...draftResult.usedChamps];
+        }
+        
+        const pogPlayer = calculatePog(winningPicks, gameTime);
+        const pogText = pogPlayer ? `🏅 POG: ${pogPlayer.playerName} (${pogPlayer.champName})` : '';
+  
+        // [PRESERVED Fix] Calculate Total Kills for Scoreboard
+        const totalKillsA = isWinA ? winnerKills : loserKills;
+        const totalKillsB = !isWinA ? winnerKills : loserKills;
+  
+        matchHistory.push({
+            setNumber: currentSet, winner: winner?.name,
+            picks: { A: statsA, B: statsB },
+            bans: draftResult.bans, 
+            pogPlayer: pogPlayer,
+            gameTime: `${Math.floor(gameTime)}분 ${Math.floor((gameTime % 1) * 60)}초`,
+            totalMinutes: Math.floor(gameTime),
+            scores: { A: totalKillsA, B: totalKillsB },
+            fearlessBans: currentFearlessBans,
+            logs: [`[SIM] Set ${currentSet} - Winner: ${winner?.name}`, `Type: ${varianceType}`, pogText], 
+            resultSummary: `Winner: ${winner?.name}`
+        });
+        currentSet++;
+    }
+    return { winner: winsA > winsB ? teamA?.name : teamB?.name, scoreString: `${winsA}:${winsB}`, scoreA: winsA, scoreB: winsB, history: matchHistory };
+  };
