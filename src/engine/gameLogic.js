@@ -4,15 +4,15 @@ import { GAME_RULES, SIDES, MAP_LANES, championList, SIM_CONSTANTS } from '../da
 // [FIX] Import Draft Helpers so we can re-export them
 import { 
     runDraftSimulation, 
-    selectPickFromTop3,        // <--- Added import
-    selectBanFromProbabilities // <--- Added import
+    selectPickFromTop3,        
+    selectBanFromProbabilities 
 } from './draftLogic';
 
 // [FIX] Import Mechanics Helpers so we can re-export them
 import { 
   calculateTeamPower, 
   resolveCombat, 
-  calculateIndividualIncome, // <--- Added import
+  calculateIndividualIncome, 
   calculateDeathTimer, 
   getChampionClass 
 } from './mechanics';
@@ -770,24 +770,59 @@ export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampion
       // Determine Winner (Power + Random Upset Chance)
       const avgPowerA = pA_25 / Math.max(1, (picksA.length || 5)); 
       const avgPowerB = pB_25 / Math.max(1, (picksB.length || 5));
-      let winChanceA = avgPowerA / (avgPowerA + avgPowerB || 1);
+
+      // [FIX START] Hybrid Win Calculation (Ratio + Linear Bonus)
+      // 1. Base Ratio (Natural Baseline)
+      const baseRatio = avgPowerA / (avgPowerA + avgPowerB || 1);
       
-      // Add slight randomness (Upsets happen!)
-      winChanceA += (Math.random() * 0.10 - 0.05); 
+      // 2. Linear Bonus (Aggressive Skill Reward)
+      // We add 2% win chance for every 1 point of power difference
+      const powerDiff = avgPowerA - avgPowerB;
+      const linearBonus = powerDiff * 0.02; 
+
+      let winChanceA = baseRatio + linearBonus;
+
+      // 3. Variance Damping
+      // If the gap is huge (>8), we reduce randomness to protect the favorite.
+      let varianceRange = 0.10; // Default: +/- 5% random swing
+      if (Math.abs(powerDiff) > 8) {
+          varianceRange = 0.02; // Stomp protection: +/- 1% only
+      }
+
+      const randomNoise = (Math.random() * varianceRange) - (varianceRange / 2);
+      winChanceA += randomNoise;
+
+      // 4. Hard Clamping (Safety)
+      if (winChanceA > 0.99) winChanceA = 0.99;
+      if (winChanceA < 0.01) winChanceA = 0.01;
+      // [FIX END]
       
       const isWinA = Math.random() < winChanceA;
       const winner = isWinA ? teamA : teamB;
       if (isWinA) winsA++; else winsB++;
 
-      // [FIX] Determine Game Type (Stomp, Close, Fiesta)
-      const powerDiff = Math.abs(avgPowerA - avgPowerB);
+      // [FIX] Determine Game Type (Stomp, Close, Fiesta) with Power Scaling
+      const absDiff = Math.abs(powerDiff);
       let varianceType = 'CLOSE';
       const roll = Math.random();
       
-      if (powerDiff > 10 && roll > 0.3) varianceType = 'STOMP'; // Big gap = likely stomp
-      else if (roll > 0.8) varianceType = 'FIESTA'; // 20% chance of a bloodbath
-      else if (roll > 0.5) varianceType = 'STOMP';  // Random stomps happen
-      else varianceType = 'CLOSE';
+      // If skill gap is massive (>10), high chance of stomp
+      if (absDiff > 10) {
+          if (roll > 0.2) varianceType = 'STOMP'; // 80% chance of stomp
+          else varianceType = 'CLOSE';            // 20% chance they survive a bit
+      } 
+      // If skill gap is moderate (>5), moderate chance of stomp
+      else if (absDiff > 5) {
+          if (roll > 0.5) varianceType = 'STOMP'; // 50% chance of stomp
+          else if (roll > 0.8) varianceType = 'FIESTA';
+          else varianceType = 'CLOSE';
+      }
+      // If teams are even (<5), random chaos
+      else {
+          if (roll > 0.8) varianceType = 'FIESTA'; // 20% chance of a bloodbath
+          else if (roll > 0.6) varianceType = 'STOMP';  // Random stomps still happen
+          else varianceType = 'CLOSE';
+      }
 
       // Randomize Time based on Game Type
       let baseTime = 30;
