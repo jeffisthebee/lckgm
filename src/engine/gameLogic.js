@@ -777,7 +777,6 @@ export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampion
   
         // --- PHASE 2: MID GAME (25 Minutes) ---
         // Includes Gold Lead from Phase 1. Winner gets Map Control (Soul point/Baron setup).
-        // We simulate this by giving a "Virtual Gold" bonus to the power calc
         const pA_25 = calculateTeamPower(fullPicksA, 25, { dragonStacks: {}, grubs: 0 }, goldLead1, [], 1500);
         const pB_25 = calculateTeamPower(fullPicksB, 25, { dragonStacks: {}, grubs: 0 }, -goldLead1, [], 1500);
   
@@ -840,24 +839,31 @@ export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampion
         
         const gameTime = baseTime; 
         
-        // Score Generation (Consistent with Narrative)
+        // [FIX] Adjusted Score Generation (Lower Kill Counts & Smaller Gaps)
         let winnerKills = 0;
         let loserKills = 0;
   
         if (varianceType === 'STOMP') {
-            winnerKills = 18 + Math.floor(Math.random() * 8); 
-            loserKills = 2 + Math.floor(Math.random() * 6); 
+            // Previously: Winner ~22, Loser ~5 (Gap 17)
+            // New: Winner ~19, Loser ~6 (Gap 13)
+            winnerKills = 16 + Math.floor(Math.random() * 7); // Range: 16-22
+            loserKills = 4 + Math.floor(Math.random() * 5);   // Range: 4-8
         } else if (varianceType === 'FIESTA') {
-            winnerKills = 25 + Math.floor(Math.random() * 10); 
-            loserKills = 18 + Math.floor(Math.random() * 10); 
+            // Previously: Winner ~30, Loser ~23 (Total ~53)
+            // New: Winner ~24, Loser ~18 (Total ~42)
+            winnerKills = 20 + Math.floor(Math.random() * 8); // Range: 20-27
+            loserKills = 15 + Math.floor(Math.random() * 8);  // Range: 15-22
         } else { // CLOSE
-            winnerKills = 12 + Math.floor(Math.random() * 10); 
-            loserKills = winnerKills - (2 + Math.floor(Math.random() * 5)); 
+            // Previously: Winner ~17, Loser ~14
+            // New: Winner ~14, Loser ~11
+            winnerKills = 10 + Math.floor(Math.random() * 8); // Range: 10-17
+            loserKills = winnerKills - (1 + Math.floor(Math.random() * 4)); // Gap: 1-4 kills
             if (loserKills < 0) loserKills = 0;
         }
-        // Safety Cap
-        if (winnerKills > 36) winnerKills = 36;
-        if (loserKills > 36) loserKills = 36;
+        
+        // Safety Cap (Lowered from 36 to 32 to prevent outliers)
+        if (winnerKills > 32) winnerKills = 32;
+        if (loserKills > 32) loserKills = 32;
   
         // Distribute Stats
         const winnerAssists = Math.floor(winnerKills * (1.5 + Math.random()));
