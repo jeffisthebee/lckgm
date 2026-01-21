@@ -207,22 +207,30 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                       blueTeam = isUserTeamA ? teamB_Active : teamA_Active;
                   }
               } else if (currentSet === 1) {
-                  const myId = userTeam.id; 
-                  let userIsBlue = true;
-                  
-                  if (match.blueSidePriority) {
-                      if (match.blueSidePriority === 'coin') userIsBlue = Math.random() < 0.5;
-                      else userIsBlue = Number(match.blueSidePriority) === Number(myId);
-                  } else {
-                      userIsBlue = Math.random() < 0.5;
-                  }
-                  
-                  const userTeamObj = isUserTeamA ? teamA_Active : teamB_Active;
-                  const cpuTeamObj = isUserTeamA ? teamB_Active : teamA_Active;
+                  // [FIXED] Respect Schedule's T1 assignment as Blue Side
+                  const teamAId = teamA.id || teamA.name;
+                  const priorityId = match.blueSidePriority;
 
-                  blueTeam = userIsBlue ? userTeamObj : cpuTeamObj;
-                  redTeam = userIsBlue ? cpuTeamObj : userTeamObj;
+                  let isTeamABlue = true;
+                  
+                  if (priorityId && priorityId !== 'coin') {
+                      // If schedule specifies a priority ID (t1's ID), compare
+                      isTeamABlue = String(priorityId) === String(teamAId);
+                  } else {
+                      // Fallback coin flip (only if schedule logic didn't provide priority)
+                      isTeamABlue = Math.random() < 0.5;
+                  }
+
+                  if (isTeamABlue) {
+                      blueTeam = isUserTeamA ? teamA_Active : teamB_Active;
+                      redTeam = isUserTeamA ? teamB_Active : teamA_Active;
+                  } else {
+                      redTeam = isUserTeamA ? teamA_Active : teamB_Active;
+                      blueTeam = isUserTeamA ? teamB_Active : teamA_Active;
+                  }
+
               } else {
+                  // Loser Side Selection for Sets 2+
                   const lastGame = matchHistory[matchHistory.length - 1];
                   const lastWinnerName = lastGame.winner;
                   const previousLoser = (lastWinnerName === teamA.name) ? teamB : teamA;
@@ -284,7 +292,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
               try { onClose && onClose(); } catch { /* swallow */ }
           }
       }, 500);
-    }, [currentSet, teamA, teamB, globalBanList, simOptions, onClose, matchHistory, isManualMode, activeUserRoster, preselectedSide, isUserTeamA, userTeam, cpuTeam]);
+    }, [currentSet, teamA, teamB, globalBanList, simOptions, onClose, matchHistory, isManualMode, activeUserRoster, preselectedSide, isUserTeamA, userTeam, cpuTeam, match]);
 
     useEffect(() => {
       if (phase === 'READY') startSet();
@@ -351,11 +359,12 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 }, 1000);
                 return () => clearInterval(timer);
             } else {
+                // Player turn timer
                 const timer = setInterval(() => {
                     setDraftTimer(prev => {
                         if (prev <= 0) {
                             clearInterval(timer);
-                            handleCpuTurn(stepInfo, actingTeamObj, actingTeamSide); 
+                            handleCpuTurn(stepInfo, actingTeamObj, actingTeamSide); // Auto-pick on timeout
                             return 30;
                         }
                         return prev - 1;
@@ -505,6 +514,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         const mapToEngineFormat = (sidePicks, roster, teamSide) => {
             return ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(pos => {
                 const c = sidePicks[pos];
+                // Fallback for incomplete drafts (prevents crash)
                 const safeChamp = c || activeChampionList.find(ch => ch.role === pos) || activeChampionList[0];
                 const p = (roster || []).find(pl => pl.포지션 === pos);
                 
@@ -542,8 +552,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             const picksRedDetailed = mapToEngineFormat(manualPicks.red || {}, manualTeams.red?.roster || [], 'RED');
         
             if (picksBlueDetailed.length < 5 || picksRedDetailed.length < 5) {
-                alert('Draft Error: Incomplete teams (Must pick 5 champions).');
-                return;
+                // If fallback failed for some reason
+                alert('Draft Error: Incomplete teams. Filling randoms...');
             }
         
             const safeOptions = simOptions || { difficulty: 'normal', playerTeamName: '' };
@@ -596,6 +606,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         } catch (error) {
             console.error("CRITICAL SIMULATION ERROR:", error);
             alert(`Simulation Failed: ${error?.message || error}`);
+            // Force safe exit
+            onClose && onClose();
         }
     };
 
@@ -630,13 +642,26 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         });
     };
 
-    // [NEW FUNCTION] Advance one step instantly
+    // [FIXED] Advance one step 
     const advanceDraft = () => {
-        if (!simulationData || draftStep >= DRAFT_SEQUENCE.length) {
-             setPhase('GAME');
+        // Stop if we are already done
+        if (draftStep >= DRAFT_SEQUENCE.length) {
+             if (isManualMode) finalizeManualDraft();
+             else setPhase('GAME');
+             return;
+        }
+
+        // [BUG FIX] Manual Mode "Next" Logic
+        if (isManualMode) {
+             // Instead of skipping to phase 'GAME', we trigger the current draft step to resolve immediately.
+             // This is done by setting the timer to 0, which triggers the useEffect hook to pick/ban.
+             setDraftTimer(0);
              return;
         }
         
+        // Auto Mode Logic (Simulation Data exists)
+        if (!simulationData) return; 
+
         const stepInfo = DRAFT_SEQUENCE[draftStep];
         const logEntry = (simulationData.logs || []).find(l => l && l.startsWith && l.startsWith(`[${stepInfo.order}]`));
         
@@ -644,7 +669,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             processDraftStepLog(stepInfo, logEntry);
         }
         setDraftStep(prev => prev + 1);
-        setDraftTimer(15); // Reset visual timer
+        setDraftTimer(15); 
     };
 
     const skipDraft = () => {
@@ -657,7 +682,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
 
     // --- GAME PHASE TICK (Unchanged) ---
     useEffect(() => {
-      if (phase !== 'GAME' || !simulationData || playbackSpeed === 0) return;
+      // [FIX] Guardrail: Don't start ticking if simulationData is missing or invalid
+      if (phase !== 'GAME' || !simulationData || !simulationData.logs || playbackSpeed === 0) return;
       
       const finalSec = Number(simulationData.totalSeconds || simulationData.totalSeconds === 0 ? simulationData.totalSeconds : (simulationData.totalMinutes ? simulationData.totalMinutes * 60 : 1800));
       const intervalMs = 1000 / Math.max(0.1, playbackSpeed);
