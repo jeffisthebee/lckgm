@@ -1299,20 +1299,20 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                             {/* Calculate POS on the fly */}
                             {(() => {
                                 const winnerName = displayWinsA > displayWinsB ? teamA.name : teamB.name;
-                                const posPlayer = calculatePOS(matchHistory, simulationData, winnerName);
+                                const posData = calculatePOS(matchHistory, simulationData, winnerName);
                                 return (
                                     <>
                                         <div className="w-12 h-12 sm:w-16 sm:h-16 lg:w-24 lg:h-24 rounded-full bg-purple-800 border-2 border-purple-300 mb-1 sm:mb-2 lg:mb-4 flex items-center justify-center shadow-[0_0_15px_rgba(168,85,247,0.5)]">
                                             <span className="text-xl sm:text-2xl lg:text-3xl">👑</span>
                                         </div>
-                                        <div className="text-sm sm:text-base lg:text-2xl font-black text-white">{posPlayer?.playerName || 'Unknown'}</div>
-                                        <div className="text-[10px] sm:text-xs lg:text-sm text-purple-300 mb-1 lg:mb-2">{posPlayer?.playerData?.포지션 || 'Player'}</div>
+                                        <div className="text-sm sm:text-base lg:text-2xl font-black text-white">{posData?.playerName || 'Unknown'}</div>
+                                        <div className="text-[10px] sm:text-xs lg:text-sm text-purple-300 mb-1 lg:mb-2">{posData?.playerData?.포지션 || 'Player'}</div>
                                         <div className="mt-1 lg:mt-2 text-center text-gray-300 text-[10px] sm:text-sm italic">
                                             "Series MVP"
                                         </div>
                                         <div className="mt-2 lg:mt-4 bg-black/40 px-2 lg:px-4 py-1 lg:py-2 rounded text-purple-200 font-mono text-[10px] sm:text-xs lg:text-sm flex justify-between w-full">
                                             <span>Score</span>
-                                            <span>{posPlayer?.totalScore ? posPlayer.totalScore.toFixed(1) : 'N/A'}</span>
+                                            <span>{posData?.totalScore ? posData.totalScore.toFixed(1) : 'N/A'}</span>
                                         </div>
                                     </>
                                 );
@@ -1323,67 +1323,81 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                
                <button 
                 onClick={() => {
+                    // [CRITICAL FIX] Avoid soft-lock on button click by wrapping in try/catch
+                    // and resetting state if needed.
                     if (resultProcessed) return;
                     setResultProcessed(true);
 
-                    // Use strict trimming for comparison
-                    const winnerIsA = simulationData?.winnerName?.trim() === teamA.name?.trim();
-                    const newA = winsA + (winnerIsA ? 1 : 0);
-                    const newB = winsB + (winnerIsA ? 0 : 1);
-                    
-                    setWinsA(newA); 
-                    setWinsB(newB);
-                    
-                    const isBlueA = (simulationData?.blueTeam?.name === teamA.name);
-                    const killsA = isBlueA ? (liveStatsRef.current?.kills?.BLUE ?? 0) : (liveStatsRef.current?.kills?.RED ?? 0);
-                    const killsB = isBlueA ? (liveStatsRef.current?.kills?.RED ?? 0) : (liveStatsRef.current?.kills?.BLUE ?? 0);
+                    try {
+                        const winnerIsA = simulationData?.winnerName?.trim() === teamA.name?.trim();
+                        const newA = winsA + (winnerIsA ? 1 : 0);
+                        const newB = winsB + (winnerIsA ? 0 : 1);
+                        
+                        setWinsA(newA); 
+                        setWinsB(newB);
+                        
+                        const isBlueA = (simulationData?.blueTeam?.name === teamA.name);
+                        const killsA = isBlueA ? (liveStatsRef.current?.kills?.BLUE ?? 0) : (liveStatsRef.current?.kills?.RED ?? 0);
+                        const killsB = isBlueA ? (liveStatsRef.current?.kills?.RED ?? 0) : (liveStatsRef.current?.kills?.BLUE ?? 0);
 
-                    const histItem = { 
-                        set: currentSet, 
-                        winner: simulationData?.winnerName, 
-                        picks: simulationData?.picks, 
-                        bans: simulationData?.bans, 
-                        logs: simulationData?.logs,
-                        pogPlayer: simulationData?.pogPlayer,
-                        gameTime: simulationData?.gameTime || `${simulationData?.totalMinutes || 30}분 00초`,
-                        totalMinutes: simulationData?.totalMinutes || 30,
-                        scores: { A: killsA, B: killsB },
-                        usedChamps: simulationData?.usedChamps || [] 
-                    };
+                        const histItem = { 
+                            set: currentSet, 
+                            winner: simulationData?.winnerName, 
+                            picks: simulationData?.picks, 
+                            bans: simulationData?.bans, 
+                            logs: simulationData?.logs,
+                            pogPlayer: simulationData?.pogPlayer,
+                            gameTime: simulationData?.gameTime || `${simulationData?.totalMinutes || 30}분 00초`,
+                            totalMinutes: simulationData?.totalMinutes || 30,
+                            scores: { A: killsA, B: killsB },
+                            usedChamps: simulationData?.usedChamps || [] 
+                        };
 
-                    const newHist = [...matchHistory, histItem];
-                    setMatchHistory(newHist);
-                    
-                    setGlobalBanList(prev => [...prev, ...(simulationData?.usedChamps||[])]);
-                    
-                    if(newA >= targetWins || newB >= targetWins) {
-                        const winnerName = newA > newB ? teamA.name : teamB.name;
-                        let posData = null;
-                        if (isBo5) {
-                            posData = calculatePOS(newHist, null, winnerName);
-                        }
+                        const newHist = [...matchHistory, histItem];
+                        setMatchHistory(newHist);
+                        setGlobalBanList(prev => [...prev, ...(simulationData?.usedChamps||[])]);
+                        
+                        // Check Match Finish Condition
+                        if(newA >= targetWins || newB >= targetWins) {
+                            const winnerName = newA > newB ? teamA.name : teamB.name;
+                            let posData = null;
+                            if (isBo5) {
+                                posData = calculatePOS(newHist, null, winnerName);
+                            }
 
-                        try {
-                            onMatchComplete && onMatchComplete(match, { 
-                                winner: winnerName, 
-                                scoreString: `${newA}:${newB}`, 
-                                history: newHist,
-                                posPlayer: posData
-                            });
-                        } catch (err) { console.warn("onMatchComplete error:", err); }
-                    } else {
-                        // --- NEXT SET LOGIC ---
-                        setCurrentSet(s => s+1);
-                        const loserName = winnerIsA ? teamB.name : teamA.name;
-                        const isUserLoser = loserName === userTeam.name;
-
-                        if (isUserLoser) {
-                            setPhase('SIDE_SELECTION');
+                            try {
+                                onMatchComplete && onMatchComplete(match, { 
+                                    winner: winnerName, 
+                                    scoreString: `${newA}:${newB}`, 
+                                    history: newHist,
+                                    posPlayer: posData
+                                });
+                            } catch (err) { console.warn("onMatchComplete error:", err); }
                         } else {
-                            const aiPicksBlue = Math.random() < 0.90;
-                            setPreselectedSide(aiPicksBlue ? 'RED' : 'BLUE');
-                            setPhase('ROSTER_SELECTION');
+                            // --- NEXT SET LOGIC ---
+                            // [FIX] Explicitly clear previous simulation data so the next render 
+                            // doesn't think it's still showing the old game.
+                            setSimulationData(null); 
+                            setLiveStats({ kills: { BLUE: 0, RED: 0 }, gold: { BLUE: 2500, RED: 2500 }, towers: { BLUE: 0, RED: 0 }, players: [] });
+                            
+                            setCurrentSet(s => s+1);
+                            
+                            const loserName = winnerIsA ? teamB.name : teamA.name;
+                            const isUserLoser = loserName === userTeam.name;
+
+                            if (isUserLoser) {
+                                setPhase('SIDE_SELECTION');
+                            } else {
+                                const aiPicksBlue = Math.random() < 0.90;
+                                setPreselectedSide(aiPicksBlue ? 'RED' : 'BLUE');
+                                setPhase('ROSTER_SELECTION');
+                            }
                         }
+                    } catch (err) {
+                        console.error("Next Set Error:", err);
+                        // [FIX] Unlock button if error occurs
+                        setResultProcessed(false);
+                        alert("Error proceeding to next set. Please click again.");
                     }
                 }} 
                 className="px-6 sm:px-8 lg:px-12 py-3 sm:py-5 bg-white text-black rounded-full font-black text-xl sm:text-2xl hover:scale-105 transition shadow-xl"
