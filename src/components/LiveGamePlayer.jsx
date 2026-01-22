@@ -35,7 +35,11 @@ const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
         const picksA = game.picks?.A || [];
         const picksB = game.picks?.B || [];
         // Heuristic: Check if picksA belongs to the winner
-        const isTeamA = picksA[0]?.playerData?.팀 === winningTeamName || (picksA[0]?.playerData?.팀 === undefined && game.winner === winningTeamName && picksA[0]);
+        // Use trim to ensure matching handles spaces
+        const winName = winningTeamName?.trim();
+        const teamAName = picksA[0]?.playerData?.팀?.trim();
+        
+        const isTeamA = teamAName === winName || (game.winner?.trim() === winName && picksA[0]);
         const winningPicks = isTeamA ? picksA : picksB;
 
         (winningPicks || []).forEach(p => {
@@ -150,7 +154,10 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
   
     const [globalBanList, setGlobalBanList] = useState(Array.isArray(externalGlobalBans) ? externalGlobalBans.slice() : []);
     const [matchHistory, setMatchHistory] = useState([]);
-    const targetWins = match?.format === 'BO5' ? 3 : 2;
+
+    // [FIX] Robust BO5 Detection
+    const isBo5 = match?.format && String(match.format).toUpperCase().includes('BO5');
+    const targetWins = isBo5 ? 3 : 2;
 
     const safeArray = (v) => Array.isArray(v) ? v : [];
     
@@ -821,6 +828,12 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     }
     const pog = simulationData?.pogPlayer || simulationData?.gameResult?.pogPlayer || null;
 
+    // [FIX] Current Wins logic for Display
+    const currentWinnerIsA = simulationData?.winnerName?.trim() === teamA.name.trim();
+    const displayWinsA = winsA + ((phase === 'SET_RESULT' && currentWinnerIsA) ? 1 : 0);
+    const displayWinsB = winsB + ((phase === 'SET_RESULT' && !currentWinnerIsA && simulationData?.winnerName) ? 1 : 0);
+    const isMatchFinished = displayWinsA >= targetWins || displayWinsB >= targetWins;
+
     return (
       <div className="fixed inset-0 bg-gray-900 z-[200] flex flex-col text-white font-sans">
         
@@ -839,7 +852,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                    <div className="flex items-center gap-2 sm:gap-3 lg:gap-4 mb-0 sm:mb-2">
                       <div className="text-lg sm:text-2xl lg:text-4xl font-black text-blue-500">{currentBlueTeam?.name || 'BLUE'}</div>
                       <div className="flex gap-1 sm:gap-2">
-                          {Array(match?.format === 'BO5' ? 3 : 2).fill(0).map((_,i) => (
+                          {Array(targetWins).fill(0).map((_,i) => (
                               <div key={i} className={`w-2 h-2 sm:w-3 sm:h-3 rounded-full ${i < blueTeamWins ? 'bg-blue-500' : 'bg-gray-700'}`}></div>
                           ))}
                       </div>
@@ -896,7 +909,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
               <div className="flex flex-col w-full sm:w-1/3 items-center sm:items-end order-3">
                    <div className="flex items-center gap-2 sm:gap-3 lg:gap-4 mb-0 sm:mb-2">
                       <div className="flex gap-1 sm:gap-2">
-                          {Array(match?.format === 'BO5' ? 3 : 2).fill(0).map((_,i) => (
+                          {Array(targetWins).fill(0).map((_,i) => (
                               <div key={i} className={`w-2 h-2 sm:w-3 sm:h-3 rounded-full ${i < redTeamWins ? 'bg-red-500' : 'bg-gray-700'}`}></div>
                           ))}
                       </div>
@@ -936,7 +949,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 </div>
             )}
 
-            {/* 2. ROSTER SELECTION UI (FIXED FOR LANDSCAPE) */}
+            {/* 2. ROSTER SELECTION UI */}
             {phase === 'ROSTER_SELECTION' && (
                 <div className="flex-1 flex flex-col items-center justify-start sm:justify-center bg-gray-900 p-2 sm:p-4 lg:p-8 overflow-y-auto">
                     <h2 className="text-lg sm:text-2xl lg:text-3xl font-black mb-1 sm:mb-2 text-center mt-2 sm:mt-0">선발 라인업 확정</h2>
@@ -993,7 +1006,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 </div>
             )}
 
-            {/* 3. DRAFT UI (RESPONSIVE: COMPACT FOR LANDSCAPE, BIG FOR DESKTOP) */}
+            {/* 3. DRAFT UI */}
             {phase === 'DRAFT' && (
              <div className="flex-1 flex flex-col sm:flex-row bg-gray-900 p-1 sm:p-2 lg:p-8 gap-1 sm:gap-2 lg:gap-8 items-center justify-center relative overflow-hidden">
                  <div className="absolute inset-0 bg-gradient-to-r from-blue-900/20 to-red-900/20 pointer-events-none"></div>
@@ -1017,7 +1030,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                      ))}
                  </div>
 
-                 {/* Center Draft Board (Fits in short height) */}
+                 {/* Center Draft Board */}
                  <div className="w-full sm:flex-1 flex flex-col items-center justify-center z-20 h-full relative">
                      {isUserTurn ? (
                          <div className="bg-gray-800 rounded-lg lg:rounded-xl shadow-2xl border border-gray-700 w-full max-w-3xl lg:max-w-4xl h-full lg:h-[600px] flex flex-col overflow-hidden">
@@ -1035,7 +1048,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                      ))}
                                  </div>
                                  
-                                 {/* Search Input */}
                                  <input 
                                     type="text" 
                                     placeholder="Search Champ..." 
@@ -1117,7 +1129,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                          <div className="flex flex-col items-center justify-center h-full gap-4">
                              <div className="text-4xl sm:text-7xl lg:text-9xl font-black text-white opacity-30 select-none">VS</div>
                              
-                             {/* [CHANGED] Next Step Button */}
                              <button 
                                 onClick={advanceDraft}
                                 className="bg-yellow-500 hover:bg-yellow-400 text-black font-black py-3 px-8 sm:py-4 sm:px-12 rounded-full text-xl sm:text-2xl shadow-[0_0_20px_rgba(234,179,8,0.5)] transition transform hover:scale-105 animate-pulse"
@@ -1125,7 +1136,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                  NEXT ⏩
                              </button>
 
-                             {/* [CHANGED] Secondary Skip All Button */}
                              <button 
                                 onClick={skipDraft}
                                 className="text-gray-500 hover:text-white text-xs sm:text-sm underline decoration-gray-500 hover:decoration-white"
@@ -1157,18 +1167,18 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
              </div>
             )}
             
-            {/* 4. GAME PLAYBACK UI (FIXED FOR LANDSCAPE) */}
+            {/* 4. GAME PLAYBACK UI */}
             {phase === 'GAME' && (
                 <div className="flex-1 flex flex-col sm:flex-row overflow-hidden relative">
                     
-                {/* [NEW] Mobile Tabs (Hidden on sm/Landscape) */}
+                {/* Mobile Tabs */}
                 <div className="sm:hidden flex shrink-0 bg-gray-800 text-white font-bold text-sm">
                     <button onClick={()=>setMobileTab('BLUE')} className={`flex-1 py-3 ${mobileTab==='BLUE'?'bg-blue-600':'hover:bg-gray-700'}`}>BLUE TEAM</button>
                     <button onClick={()=>setMobileTab('LOGS')} className={`flex-1 py-3 ${mobileTab==='LOGS'?'bg-gray-600':'hover:bg-gray-700'}`}>LOGS</button>
                     <button onClick={()=>setMobileTab('RED')} className={`flex-1 py-3 ${mobileTab==='RED'?'bg-red-600':'hover:bg-gray-700'}`}>RED TEAM</button>
                 </div>
 
-                {/* GAME UI: Left (Blue) - Compact for landscape, Big for Desktop */}
+                {/* GAME UI: Left (Blue) */}
                 <div className={`${mobileTab === 'BLUE' ? 'flex' : 'hidden'} sm:flex w-full sm:w-40 lg:w-80 bg-gray-900 border-r border-gray-800 flex-col pt-1 sm:pt-2`}>
                     {liveStats.players.filter(p => p.side === 'BLUE').map((p, i) => (
                         <div key={i} className="flex-1 border-b border-gray-800 relative p-1 lg:p-2 flex items-center gap-2 lg:gap-3">
@@ -1217,7 +1227,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                     </div>
                 </div>
         
-                {/* GAME UI: Right (Red) - Compact for landscape, Big for Desktop */}
+                {/* GAME UI: Right (Red) */}
                 <div className={`${mobileTab === 'RED' ? 'flex' : 'hidden'} sm:flex w-full sm:w-40 lg:w-80 bg-gray-900 border-l border-gray-800 flex-col pt-1 sm:pt-2`}>
                     {liveStats.players.filter(p => p.side === 'RED').map((p, i) => (
                         <div key={i} className="flex-1 border-b border-gray-800 relative p-1 lg:p-2 flex flex-row-reverse items-center gap-2 lg:gap-3 text-right">
@@ -1280,9 +1290,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                    </div>
 
                    {/* POS CARD (Only if Series Ends & BO5) */}
-                   {match?.format === 'BO5' && 
-                     (winsA + ((simulationData?.winnerName === teamA.name) ? 1 : 0) >= targetWins || 
-                      winsB + ((simulationData?.winnerName === teamB.name) ? 1 : 0) >= targetWins) && (
+                   {isBo5 && isMatchFinished && (
                         <div className="bg-gradient-to-br from-purple-900 to-indigo-900 border border-purple-400 p-3 sm:p-4 lg:p-6 rounded-xl lg:rounded-2xl shadow-2xl w-1/2 lg:w-1/3 flex flex-col items-center relative overflow-hidden animate-pulse-slow">
                             <div className="absolute top-0 right-0 bg-purple-500 text-white font-bold px-2 py-0.5 lg:px-3 lg:py-1 text-[8px] sm:text-[10px] lg:text-xs rounded-bl-lg z-10">
                                 SERIES MVP
@@ -1290,7 +1298,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                             
                             {/* Calculate POS on the fly */}
                             {(() => {
-                                const winnerName = (winsA + ((simulationData?.winnerName === teamA.name) ? 1 : 0) >= targetWins) ? teamA.name : teamB.name;
+                                const winnerName = displayWinsA > displayWinsB ? teamA.name : teamB.name;
                                 const posPlayer = calculatePOS(matchHistory, simulationData, winnerName);
                                 return (
                                     <>
@@ -1318,7 +1326,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                     if (resultProcessed) return;
                     setResultProcessed(true);
 
-                    const winnerIsA = simulationData?.winnerName === teamA.name;
+                    // Use strict trimming for comparison
+                    const winnerIsA = simulationData?.winnerName?.trim() === teamA.name?.trim();
                     const newA = winsA + (winnerIsA ? 1 : 0);
                     const newB = winsB + (winnerIsA ? 0 : 1);
                     
@@ -1350,7 +1359,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                     if(newA >= targetWins || newB >= targetWins) {
                         const winnerName = newA > newB ? teamA.name : teamB.name;
                         let posData = null;
-                        if (match?.format === 'BO5') {
+                        if (isBo5) {
                             posData = calculatePOS(newHist, null, winnerName);
                         }
 
@@ -1379,10 +1388,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 }} 
                 className="px-6 sm:px-8 lg:px-12 py-3 sm:py-5 bg-white text-black rounded-full font-black text-xl sm:text-2xl hover:scale-105 transition shadow-xl"
             >
-                {(winsA + ((simulationData?.winnerName === teamA.name) ? 1 : 0) >= targetWins) || 
-                (winsB + ((simulationData?.winnerName === teamB.name) ? 1 : 0) >= targetWins)
-                    ? '매치 종료 (Finish Match)' 
-                    : '다음 세트 (Next Set)'}
+                {isMatchFinished ? '매치 종료 (Finish Match)' : '다음 세트 (Next Set)'}
             </button>
            </div>
         )}
