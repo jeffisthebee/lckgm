@@ -1,5 +1,50 @@
 // src/components/DetailedMatchResultModal.jsx
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+
+// --- HELPER: Calculate POS (Player of the Series) locally if missing ---
+// This ensures AI matches (simulated in background) still show a POS/MVP.
+const calculateComputedPos = (history, winningTeamName) => {
+    if (!history || history.length === 0) return null;
+
+    const playerScores = {};
+    const winName = winningTeamName?.trim();
+
+    history.forEach(game => {
+        const picksA = game.picks?.A || [];
+        const picksB = game.picks?.B || [];
+        
+        // Determine which picks belong to the series winner
+        // We assume picks.A maps to the Team A name in the context, but we verify with metadata if possible
+        const teamAName = picksA[0]?.playerData?.팀?.trim();
+        
+        // If the game winner matches the series winner, we take that team's picks.
+        // Or if picks A belongs to the series winner.
+        let winningPicks = [];
+        
+        if (teamAName && winName && teamAName === winName) {
+            winningPicks = picksA;
+        } else if (game.winner?.trim() === winName) {
+            // Fallback: The winner of this specific game is the series winner? 
+            // (Only true if they won this game, but POS tracks stats across ALL games for the winning team)
+            // Actually, we want stats for the *Series Winner* regardless of whether they lost a specific set.
+            // So we need to find which side the Series Winner was on for this set.
+            
+            // Heuristic: Check team names in picks
+            const teamBName = picksB[0]?.playerData?.팀?.trim();
+            if (teamAName === winName) winningPicks = picksA;
+            else if (teamBName === winName) winningPicks = picksB;
+            else {
+                // If names are missing, rely on the game winner logic (imperfect if they lost this set)
+                // Assuming picks.A is Team A and picks.B is Team B from parent props:
+                // We'll handle this inside the component body where we have teamA/teamB props.
+                winningPicks = []; // Handled in main loop below
+            }
+        }
+    });
+
+    // We do a second pass inside the component to pass the correct team objects
+    return null; 
+};
 
 export default function DetailedMatchResultModal({ result, onClose, teamA, teamB }) {
     const [activeSet, setActiveSet] = useState(0); 
@@ -12,12 +57,55 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
     let matchScoreB = 0;
     if (result.score && typeof result.score === 'string' && result.score.includes(':')) {
         const parts = result.score.split(':');
-        matchScoreA = parts[0];
-        matchScoreB = parts[1];
+        matchScoreA = parseInt(parts[0], 10);
+        matchScoreB = parseInt(parts[1], 10);
     } else {
         matchScoreA = result.scoreA || 0;
         matchScoreB = result.scoreB || 0;
     }
+
+    // --- [NEW] Calculate POS (MVP) for AI matches if missing ---
+    const posPlayer = useMemo(() => {
+        if (result.posPlayer) return result.posPlayer;
+
+        // Only calculate for BO3/BO5 winners
+        if (matchScoreA === matchScoreB) return null; // Draw
+        const winnerName = matchScoreA > matchScoreB ? teamA.name : teamB.name;
+        
+        const playerScores = {};
+        
+        result.history.forEach(game => {
+            // We assume picks.A belongs to teamA and picks.B to teamB based on the modal props structure
+            const isTeamA = matchScoreA > matchScoreB; 
+            const targetPicks = isTeamA ? (game.picks?.A || []) : (game.picks?.B || []);
+
+            targetPicks.forEach(p => {
+                if (!p) return;
+                if (!playerScores[p.playerName]) playerScores[p.playerName] = { ...p, totalScore: 0, games: 0 };
+                
+                const stats = p.stats || { kills: p.k || 0, deaths: p.d || 0, assists: p.a || 0, damage: 0 };
+                const k = stats.kills || p.k || 0;
+                const d = (stats.deaths === 0 ? 1 : (stats.deaths || p.d || 1));
+                const a = stats.assists || p.a || 0;
+                const gold = p.currentGold || 0;
+                const damage = stats.damage || 0; // Simulated matches might not have damage, defaults to 0
+                
+                // Scoring Formula (Matches LiveGamePlayer.jsx)
+                let score = ((k + a) / d * 3) + (damage / 3000) + (gold / 1000) + (a * 1);
+                
+                const role = p.playerData?.포지션 || p.role || 'MID';
+                if (['JGL', '정글', 'Jungle'].includes(role)) score *= 1.07;
+                if (['SUP', '서포터', 'Support'].includes(role)) score *= 1.10;
+
+                playerScores[p.playerName].totalScore += score;
+                playerScores[p.playerName].games += 1;
+            });
+        });
+
+        const sorted = Object.values(playerScores).sort((a, b) => b.totalScore - a.totalScore);
+        return sorted.length > 0 ? sorted[0] : null;
+
+    }, [result, matchScoreA, matchScoreB, teamA.name, teamB.name]);
 
     const currentSetData = result.history[activeSet];
     const picksBlue = currentSetData.picks.A || [];
@@ -27,7 +115,6 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
     const fearlessBans = currentSetData.fearlessBans || [];
     
     const pogPlayer = currentSetData.pogPlayer; 
-    const posPlayer = result.posPlayer; 
     
     const gameTimeStr = currentSetData.gameTime || 
         (currentSetData.totalMinutes ? `${currentSetData.totalMinutes}분` : 'Unknown Time');
@@ -63,7 +150,7 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                     </div>
                     {/* MODIFIED: Show Score on Phone Mode now */}
                     <div className="flex flex-col justify-center ml-1 lg:ml-0 pl-2 lg:pl-0 border-l border-purple-500/50 lg:border-none">
-                            <span className="hidden lg:inline text-xs text-gray-300">{posPlayer.playerData?.포지션 || 'Player'}</span>
+                            <span className="hidden lg:inline text-xs text-gray-300">{posPlayer.playerData?.포지션 || posPlayer.role || 'Player'}</span>
                             <span className="text-[9px] lg:text-[10px] text-purple-200 lg:text-purple-400 font-mono font-bold whitespace-nowrap">Score: {posPlayer.totalScore?.toFixed(1)}</span>
                     </div>
                 </div>
