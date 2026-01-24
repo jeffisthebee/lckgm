@@ -1,49 +1,67 @@
 // src/components/DetailedMatchResultModal.jsx
 import React, { useState, useMemo } from 'react';
 
-// --- HELPER: Calculate POS (Player of the Series) locally if missing ---
-// This ensures AI matches (simulated in background) still show a POS/MVP.
-const calculateComputedPos = (history, winningTeamName) => {
-    if (!history || history.length === 0) return null;
+// --- HELPER: Calculate POS (Player of the Series) ---
+// Adapted for DetailedMatchResultModal to calculate on the fly for AI matches
+const calculatePOS = (history, winningTeamName) => {
+    if (!history || !Array.isArray(history) || history.length === 0) return null;
 
     const playerScores = {};
-    const winName = winningTeamName?.trim();
 
     history.forEach(game => {
         const picksA = game.picks?.A || [];
         const picksB = game.picks?.B || [];
         
-        // Determine which picks belong to the series winner
-        // We assume picks.A maps to the Team A name in the context, but we verify with metadata if possible
+        // Determine which picks belong to the winning team for this specific game
+        // (We accumulate stats for the Series Winner's players across all games)
+        const winName = winningTeamName?.trim();
+        
+        // Heuristic: Identify if picksA is the Series Winner
+        // We look at the first player's team name in picksA
         const teamAName = picksA[0]?.playerData?.팀?.trim();
         
-        // If the game winner matches the series winner, we take that team's picks.
-        // Or if picks A belongs to the series winner.
-        let winningPicks = [];
+        // Check if Team A is the Series Winner
+        const isTeamASeriesWinner = teamAName === winName;
         
-        if (teamAName && winName && teamAName === winName) {
-            winningPicks = picksA;
-        } else if (game.winner?.trim() === winName) {
-            // Fallback: The winner of this specific game is the series winner? 
-            // (Only true if they won this game, but POS tracks stats across ALL games for the winning team)
-            // Actually, we want stats for the *Series Winner* regardless of whether they lost a specific set.
-            // So we need to find which side the Series Winner was on for this set.
-            
-            // Heuristic: Check team names in picks
-            const teamBName = picksB[0]?.playerData?.팀?.trim();
-            if (teamAName === winName) winningPicks = picksA;
-            else if (teamBName === winName) winningPicks = picksB;
-            else {
-                // If names are missing, rely on the game winner logic (imperfect if they lost this set)
-                // Assuming picks.A is Team A and picks.B is Team B from parent props:
-                // We'll handle this inside the component body where we have teamA/teamB props.
-                winningPicks = []; // Handled in main loop below
+        // We only care about the Series Winner's performance for POS
+        const targetPicks = isTeamASeriesWinner ? picksA : picksB;
+
+        (targetPicks || []).forEach(p => {
+            if (!p) return;
+            if (!playerScores[p.playerName]) {
+                playerScores[p.playerName] = { 
+                    ...p, 
+                    totalScore: 0, 
+                    games: 0,
+                    // Preserve specific fields needed for display
+                    playerData: p.playerData 
+                };
             }
-        }
+            
+            // Safe Stat Extraction
+            const stats = p.stats || { kills: p.k || 0, deaths: p.d || 0, assists: p.a || 0, damage: 0 };
+            const k = stats.kills ?? p.k ?? 0;
+            const d = (stats.deaths ?? p.d) || 0;
+            const safeD = d === 0 ? 1 : d;
+            const a = stats.assists ?? p.a ?? 0;
+            const gold = p.currentGold || 0;
+            const damage = stats.damage || 0;
+            
+            // POS Formula
+            let score = ((k + a) / safeD * 3) + (damage / 3000) + (gold / 1000) + (a * 1);
+            
+            // Role Multipliers
+            const role = p.playerData?.포지션 || p.role || 'MID';
+            if (['JGL', '정글'].includes(role)) score *= 1.07;
+            if (['SUP', '서포터'].includes(role)) score *= 1.10;
+
+            playerScores[p.playerName].totalScore += score;
+            playerScores[p.playerName].games += 1;
+        });
     });
 
-    // We do a second pass inside the component to pass the correct team objects
-    return null; 
+    const sorted = Object.values(playerScores).sort((a, b) => b.totalScore - a.totalScore);
+    return sorted[0]; 
 };
 
 export default function DetailedMatchResultModal({ result, onClose, teamA, teamB }) {
@@ -64,48 +82,23 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
         matchScoreB = result.scoreB || 0;
     }
 
-    // --- [NEW] Calculate POS (MVP) for AI matches if missing ---
+    // [FIX 3] POS Calculation Logic (AI Matches / Sim Matches)
+    // Only calculate if BO5 (Score reaches 3) or explicitly marked as BO5
+    const isBo5 = (matchScoreA === 3 || matchScoreB === 3) || (result.format === 'BO5');
+    
     const posPlayer = useMemo(() => {
+        // 1. If explicitly passed (e.g. from LiveGamePlayer), use it
         if (result.posPlayer) return result.posPlayer;
 
-        // Only calculate for BO3/BO5 winners
-        if (matchScoreA === matchScoreB) return null; // Draw
-        const winnerName = matchScoreA > matchScoreB ? teamA.name : teamB.name;
-        
-        const playerScores = {};
-        
-        result.history.forEach(game => {
-            // We assume picks.A belongs to teamA and picks.B to teamB based on the modal props structure
-            const isTeamA = matchScoreA > matchScoreB; 
-            const targetPicks = isTeamA ? (game.picks?.A || []) : (game.picks?.B || []);
+        // 2. If not passed, but it is a BO5, calculate it on the fly
+        if (isBo5) {
+            const winnerName = matchScoreA > matchScoreB ? teamA.name : teamB.name;
+            return calculatePOS(result.history, winnerName);
+        }
 
-            targetPicks.forEach(p => {
-                if (!p) return;
-                if (!playerScores[p.playerName]) playerScores[p.playerName] = { ...p, totalScore: 0, games: 0 };
-                
-                const stats = p.stats || { kills: p.k || 0, deaths: p.d || 0, assists: p.a || 0, damage: 0 };
-                const k = stats.kills || p.k || 0;
-                const d = (stats.deaths === 0 ? 1 : (stats.deaths || p.d || 1));
-                const a = stats.assists || p.a || 0;
-                const gold = p.currentGold || 0;
-                const damage = stats.damage || 0; // Simulated matches might not have damage, defaults to 0
-                
-                // Scoring Formula (Matches LiveGamePlayer.jsx)
-                let score = ((k + a) / d * 3) + (damage / 3000) + (gold / 1000) + (a * 1);
-                
-                const role = p.playerData?.포지션 || p.role || 'MID';
-                if (['JGL', '정글', 'Jungle'].includes(role)) score *= 1.07;
-                if (['SUP', '서포터', 'Support'].includes(role)) score *= 1.10;
+        return null;
+    }, [result, isBo5, matchScoreA, matchScoreB, teamA.name, teamB.name]);
 
-                playerScores[p.playerName].totalScore += score;
-                playerScores[p.playerName].games += 1;
-            });
-        });
-
-        const sorted = Object.values(playerScores).sort((a, b) => b.totalScore - a.totalScore);
-        return sorted.length > 0 ? sorted[0] : null;
-
-    }, [result, matchScoreA, matchScoreB, teamA.name, teamB.name]);
 
     const currentSetData = result.history[activeSet];
     const picksBlue = currentSetData.picks.A || [];
@@ -138,19 +131,18 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                 <div className="text-3xl lg:text-5xl font-black text-red-500">{matchScoreB}</div>
             </div>
 
-            {/* POS DISPLAY (Series MVP) */}
+            {/* POS DISPLAY (Series MVP) - Only for BO5 */}
             {posPlayer && (
-                <div className="flex items-center gap-2 lg:gap-4 bg-purple-900/80 border border-purple-500 px-3 py-1 lg:px-6 lg:py-2 rounded-lg lg:rounded-xl shadow-[0_0_15px_rgba(168,85,247,0.4)]">
+                <div className="flex items-center gap-2 lg:gap-4 bg-purple-900/80 border border-purple-500 px-3 py-1 lg:px-6 lg:py-2 rounded-lg lg:rounded-xl shadow-[0_0_15px_rgba(168,85,247,0.4)] animate-pulse-slow">
                     <div className="flex flex-col items-end">
-                        <span className="text-[8px] lg:text-[10px] text-purple-300 font-bold tracking-widest">MVP</span>
+                        <span className="text-[8px] lg:text-[10px] text-purple-300 font-bold tracking-widest">SERIES MVP</span>
                         <span className="text-xs lg:text-xl font-black text-white truncate max-w-[120px] lg:max-w-none">{posPlayer.playerName}</span>
                     </div>
                     <div className="w-6 h-6 lg:w-10 lg:h-10 rounded-full bg-purple-600 flex items-center justify-center border-2 border-white shadow-lg text-xs lg:text-lg shrink-0">
                         👑
                     </div>
-                    {/* MODIFIED: Show Score on Phone Mode now */}
                     <div className="flex flex-col justify-center ml-1 lg:ml-0 pl-2 lg:pl-0 border-l border-purple-500/50 lg:border-none">
-                            <span className="hidden lg:inline text-xs text-gray-300">{posPlayer.playerData?.포지션 || posPlayer.role || 'Player'}</span>
+                            <span className="hidden lg:inline text-xs text-gray-300">{posPlayer.playerData?.포지션 || 'Player'}</span>
                             <span className="text-[9px] lg:text-[10px] text-purple-200 lg:text-purple-400 font-mono font-bold whitespace-nowrap">Score: {posPlayer.totalScore?.toFixed(1)}</span>
                     </div>
                 </div>
