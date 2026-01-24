@@ -134,9 +134,9 @@ export const generateSchedule = (baronIds, elderIds) => {
         const coin = Math.random() < 0.5;
         return {
             ...m,
-            t1: coin ? m.t1 : m.t2, 
-            t2: coin ? m.t2 : m.t1,
-            blueSidePriority: 'coin'
+            t1: coin ? m.t1 : m.t2, // t1 will be BLUE side initially
+            t2: coin ? m.t2 : m.t1, // t2 will be RED side initially
+            // [FIX] Do NOT set 'coin' here permanently. We will set the final priority ID after balancing.
         };
     });
 
@@ -176,6 +176,13 @@ export const generateSchedule = (baronIds, elderIds) => {
         }
         safety++;
     }
+
+    // [FIX] Explicitly lock the side priority to t1 (Blue)
+    // This tells the frontend "t1 IS the blue team, do not flip a coin"
+    allScheduled = allScheduled.map(m => ({
+        ...m,
+        blueSidePriority: m.t1 
+    }));
 
     // --- 5. Formatting ---
     allScheduled = allScheduled.map(m => {

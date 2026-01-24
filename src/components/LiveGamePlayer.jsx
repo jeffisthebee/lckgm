@@ -222,6 +222,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                   
                   if (priorityId && priorityId !== 'coin') {
                       // If schedule specifies a priority ID (t1's ID), compare
+                      // Handle both numeric and string IDs safely
                       isTeamABlue = String(priorityId) === String(teamAId);
                   } else {
                       // Fallback coin flip (only if schedule logic didn't provide priority)
@@ -840,10 +841,11 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         {/* TOP BAR (Always Visible except for special phases maybe?) */}
         {phase !== 'ROSTER_SELECTION' && phase !== 'SIDE_SELECTION' && (
         <div className="bg-black border-b border-gray-800 flex flex-col shrink-0">
+            {/* [FIXED] FEARLESS BANS UI: Horizontal scroll for mobile */}
             {globalBanList.length > 0 && (
-              <div className="bg-purple-900/50 text-purple-200 text-[10px] text-center py-0.5 sm:py-1 font-bold border-b border-purple-900 flex justify-center gap-4">
-                  <span className="opacity-70">FEARLESS BANS:</span>
-                  {globalBanList.map((b, idx) => <span key={idx} className="text-white">{b}</span>)}
+              <div className="bg-purple-900/50 text-purple-200 text-[10px] text-center py-0.5 sm:py-1 font-bold border-b border-purple-900 flex items-center overflow-x-auto whitespace-nowrap px-2 gap-2 sm:gap-4 no-scrollbar">
+                  <span className="opacity-70 shrink-0 sticky left-0 bg-purple-900/90 pl-1 pr-2">FEARLESS BANS:</span>
+                  {globalBanList.map((b, idx) => <span key={idx} className="text-white inline-block">{b}</span>)}
               </div>
             )}
 
