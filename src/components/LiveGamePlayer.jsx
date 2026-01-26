@@ -134,6 +134,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     const [searchTerm, setSearchTerm] = useState(''); 
     const [draftLogs, setDraftLogs] = useState([]);
     const [userSelectedRole, setUserSelectedRole] = useState(false); 
+    // New: track which side the USER is on (BLUE/RED) in manual mode to avoid name-compare errors
+    const [manualUserSide, setManualUserSide] = useState(null);
     // -------------------------
 
     // --- DRAFT STATE ---
@@ -196,6 +198,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
       setSelectedChampion(null);
       setUserSelectedRole(false);
       setSearchTerm('');
+      setManualUserSide(null);
 
       setTimeout(() => {
           try {
@@ -235,19 +238,19 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
               } else {
                   // --- SET 2+: LOSER SELECTION / USER SELECTION ---
                   if (preselectedSide) {
-                      // User explicitly chose a side (Phase: SIDE_SELECTION)
-                      // preselectedSide is 'BLUE' or 'RED' relative to the USER.
+                      // preselectedSide is stored as 'BLUE' or 'RED' relative to the USER.
+                      // Derive whether Team A should be blue from that and which team the user is.
+                      // If Team A is the user's team and they chose BLUE -> Team A is BLUE.
+                      // If Team B is the user's team and they chose BLUE -> Team B is BLUE -> Team A is RED.
                       if (isUserTeamA) {
-                          // User is Team A. User chose Blue -> A is Blue.
                           isTeamABlue = (preselectedSide === 'BLUE');
                       } else {
-                          // User is Team B. User chose Blue -> B is Blue -> A is Red (false).
                           isTeamABlue = (preselectedSide !== 'BLUE');
                       }
                   } else {
                       // CPU Choice (Loser Picks)
                       const lastGame = matchHistory[matchHistory.length - 1];
-                      const winnerName = lastGame.winner;
+                      const winnerName = lastGame?.winner;
                       const isAWinner = winnerName === teamA.name;
 
                       // Loser picks side. Loser usually picks Blue (90% prob).
@@ -277,8 +280,12 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
               }
               // ------------------------
 
+              // Determine and store which side the USER is on (BLUE/RED) for manual mode.
+              const userSideForThisSet = (isTeamABlue === isUserTeamA) ? 'BLUE' : 'RED';
+
               if (isManualMode) {
                   setManualTeams({ blue: blueTeam, red: redTeam });
+                  setManualUserSide(userSideForThisSet);
                   setPhase('DRAFT');
               } else {
                   // AUTO: Run Full Simulation Upfront
@@ -346,6 +353,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     };
 
     const handleSideSelection = (side) => {
+        // side param is 'blue' or 'red' from the UI -> convert to 'BLUE'/'RED' relative to the user
         setPreselectedSide(side === 'blue' ? 'BLUE' : 'RED');
         setPhase('ROSTER_SELECTION');
     };
@@ -367,7 +375,9 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             const stepInfo = DRAFT_SEQUENCE[draftStep];
             const actingTeamSide = stepInfo.side; 
             const actingTeamObj = actingTeamSide === 'BLUE' ? manualTeams.blue : manualTeams.red;
-            const isPlayerTurn = actingTeamObj?.name === simOptions?.playerTeamName;
+
+            // Use manualUserSide instead of name-comparisons to determine player's turn.
+            const isPlayerTurn = manualUserSide ? (actingTeamSide === manualUserSide) : (actingTeamObj?.name === simOptions?.playerTeamName);
 
             if (isPlayerTurn && stepInfo.type === 'PICK' && !userSelectedRole) {
                 const myPicks = actingTeamSide === 'BLUE' ? manualPicks.blue : manualPicks.red;
@@ -425,7 +435,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             return () => clearInterval(timer);
         }
 
-    }, [phase, draftStep, simulationData, isManualMode, manualTeams, manualPicks, filterRole, userSelectedRole]);
+    }, [phase, draftStep, simulationData, isManualMode, manualTeams, manualPicks, filterRole, userSelectedRole, manualUserSide]);
 
     // --- MANUAL MODE HELPER FUNCTIONS ---
     const handleCpuTurn = (stepInfo, team, side) => {
@@ -625,6 +635,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 gold: { BLUE: 2500, RED: 2500 },
                 towers: { BLUE: 0, RED: 0 },
                 players: [...picksBlueDetailed, ...picksRedDetailed].map(p => ({
+
                     ...p,
                     k: 0, d: 0, a: 0, lvl: 1, xp: 0, currentGold: 500, stats: p.stats || { kills:0, deaths:0, assists:0, damage:0, takenDamage:0 }
                 }))
@@ -841,9 +852,12 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     const blueTeamWins = isBlueTeamA ? winsA : winsB;
     const redTeamWins = isBlueTeamA ? winsB : winsA;
     const currentStepInfo = isManualMode ? DRAFT_SEQUENCE[draftStep] : null;
-    const isUserTurn = isManualMode && currentStepInfo && 
-        ((currentStepInfo.side === 'BLUE' && manualTeams.blue?.name === simOptions?.playerTeamName) ||
-         (currentStepInfo.side === 'RED' && manualTeams.red?.name === simOptions?.playerTeamName));
+
+    // Use manualUserSide to determine if it's the user's turn in UI rendering.
+    const isUserTurn = isManualMode && currentStepInfo && manualUserSide ? (currentStepInfo.side === manualUserSide) : (isManualMode && currentStepInfo && (
+        (currentStepInfo.side === 'BLUE' && manualTeams.blue?.name === simOptions?.playerTeamName) ||
+         (currentStepInfo.side === 'RED' && manualTeams.red?.name === simOptions?.playerTeamName)
+    ));
     
     let recommendedChamp = null;
     if (isManualMode && isUserTurn) {
@@ -905,7 +919,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                              <div className="text-[6px] sm:text-[8px] lg:text-[10px] font-bold text-gray-400 text-center leading-tight break-words">{draftState.redBans[i]}</div>
                                           ) : <div className="w-full h-full bg-red-900/20"></div>}
                                       </div>
-                                  ))}
+                                  ))} 
                               </div>
                           </div>
                           <div className="text-[10px] sm:text-xs text-gray-400 font-mono animate-pulse">{draftState.currentAction}</div>
@@ -1090,7 +1104,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                      {isUserTurn ? (
                          <div className="bg-gray-800 rounded-lg lg:rounded-xl shadow-2xl border border-gray-700 w-full max-w-3xl lg:max-w-4xl h-full lg:h-[600px] flex flex-col overflow-hidden">
                              {/* Role Filters & Status & Search */}
-                             <div className="p-1 sm:p-2 lg:p-4 bg-gray-900 border-b border-gray-700 flex flex-wrap gap-2 justify-between items-center shrink-0">
+                             <div className="p-1 sm:p-2 lg:p-4 bg-gray-900 border-b border-gray-700 flex flex-wrap gap-2 justify-between items_center shrink-0">
                                  <div className="flex gap-1 lg:gap-2">
                                      {['TOP','JGL','MID','ADC','SUP'].map(r => (
                                          <button 
@@ -1413,7 +1427,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                         const newHist = [...matchHistory, histItem];
                         setMatchHistory(newHist);
                         setGlobalBanList(prev => [...prev, ...(simulationData?.usedChamps||[])]);
-                        
+
                         // Check Match Finish Condition
                         if(newA >= targetWins || newB >= targetWins) {
                             const winnerName = newA > newB ? teamA.name : teamB.name;
