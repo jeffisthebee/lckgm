@@ -1,3 +1,4 @@
+// src/engine/BracketManager.js
 import { teams } from '../data/teams';
 
 // This function takes the league data and calculates wins/losses for every team
@@ -256,11 +257,36 @@ export const createPlayInBracket = (league, standings, teams, baronWins, elderWi
     const seed4 = playInSeeds[3].id;
     const seed5 = playInSeeds[4].id;
 
+    // [FIX] Explicitly added 'blueSidePriority' to these matches.
+    // Higher seed (seed3 and seed4) are 't1', so we set priority to them.
     const newMatches = [
-        { id: Date.now() + 1, t1: seed3, t2: seed6, date: '2.6 (금)', time: '17:00', type: 'playin', format: 'BO3', status: 'pending', round: 1, label: '플레이-인 1라운드' },
-        { id: Date.now() + 2, t1: seed4, t2: seed5, date: '2.6 (금)', time: '19:30', type: 'playin', format: 'BO3', status: 'pending', round: 1, label: '플레이-인 1라운드' }
+        { 
+            id: Date.now() + 1, 
+            t1: seed3, 
+            t2: seed6, 
+            blueSidePriority: seed3, // Force Seed 3 to Blue
+            date: '2.6 (금)', 
+            time: '17:00', 
+            type: 'playin', 
+            format: 'BO3', 
+            status: 'pending', 
+            round: 1, 
+            label: '플레이-인 1라운드' 
+        },
+        { 
+            id: Date.now() + 2, 
+            t1: seed4, 
+            t2: seed5, 
+            blueSidePriority: seed4, // Force Seed 4 to Blue
+            date: '2.6 (금)', 
+            time: '19:30', 
+            type: 'playin', 
+            format: 'BO3', 
+            status: 'pending', 
+            round: 1, 
+            label: '플레이-인 1라운드' 
+        }
     ];
 
     return { newMatches, playInSeeds, seasonSummary };
 };
-
