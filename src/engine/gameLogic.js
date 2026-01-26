@@ -1,5 +1,6 @@
 // src/engine/gameLogic.js
 import { GAME_RULES, SIDES, MAP_LANES, championList, SIM_CONSTANTS } from '../data/constants';
+import { SYNERGIES } from '../data/synergies'; // <--- [NEW] Import Synergies
 
 // [FIX] Import Draft Helpers so we can re-export them
 import { 
@@ -143,6 +144,29 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
         p.side = 'RED'; p.currentGold = GAME_RULES.GOLD.START; p.level = p.level || 1; p.xp = p.xp || 0; p.deadUntil = 0;
         p.stats = p.stats || { kills: 0, deaths: 0, assists: 0, damage: 0, takenDamage: 0 }; p.flashEndTime = p.flashEndTime || 0;
     });
+
+    // --- [NEW] SYNERGY CHECK LOGGING ---
+    const checkAndLogSynergies = (teamSide, teamName, picks) => {
+        const activeNames = picks.map(p => p.champName || p.name);
+        
+        SYNERGIES.forEach(syn => {
+            // Check if every champion in the synergy exists in this team
+            const isActive = syn.champions.every(c => activeNames.includes(c));
+            
+            if (isActive) {
+                // Add a special log event at 0:00 (Korean)
+                logs.push({
+                    sec: 0,
+                    abs: 0,
+                    message: `✨ [${teamName}] 시너지 발동! : ${syn.champions.join(' + ')} (전투력 ${Math.round((syn.multiplier - 1) * 100)}% 상승)`
+                });
+            }
+        });
+    };
+
+    checkAndLogSynergies('BLUE', teamBlue?.name || 'BLUE', picksBlue);
+    checkAndLogSynergies('RED', teamRed?.name || 'RED', picksRed);
+    // -----------------------------------
   
     const simulateDamage = (winnerSide, powerA, powerB, currentAbsTime) => {
         const winningPicks = winnerSide === 'BLUE' ? picksBlue : picksRed;
