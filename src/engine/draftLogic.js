@@ -12,24 +12,45 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
 
   if (pool.length === 0) return null;
 
+  // Create a quick lookup set for availability to speed up the loop
+  const availableNames = new Set(availableChampions.map(c => c.name));
+
   const scoredChamps = pool.map(champ => {
     const mastery = playerData?.pool?.find(m => m.name === champ.name);
     let score = calculateChampionScore(player, champ, mastery);
 
-    // --- [STEP 1] Synergy Bonus ---
+    // --- [STEP 1] Existing Active Synergy Bonus ---
     let synergyBonus = 1.0;
     const hypotheticalTeam = [...currentTeamPicks, champ.name];
 
     SYNERGIES.forEach(syn => {
       const involvesChamp = syn.champions.includes(champ.name);
-      const isActive = syn.champions.every(c => hypotheticalTeam.includes(c));
-      if (involvesChamp && isActive) {
+      // Case A: Completes an existing synergy (Immediate Power)
+      const isCompleted = syn.champions.every(c => hypotheticalTeam.includes(c));
+      
+      if (involvesChamp && isCompleted) {
         synergyBonus *= syn.multiplier; 
+      }
+
+      // --- [STRATEGY 2] Potential Synergy Bonus (Planning Ahead) ---
+      // If I pick this champ, is their partner still available to be picked later?
+      else if (involvesChamp) {
+          // Find the partner(s) in this synergy that I don't have yet
+          const partners = syn.champions.filter(c => c !== champ.name);
+          // Check if ALL partners are currently available in the pool
+          const partnersAvailable = partners.every(p => availableNames.has(p));
+          
+          if (partnersAvailable) {
+              // Give a small "Potential" bonus (e.g., 25% of the full synergy value)
+              // If synergy is 1.08 (8%), potential bonus is ~1.02
+              const potentialBoost = 1 + ((syn.multiplier - 1) * 0.25);
+              synergyBonus *= potentialBoost;
+          }
       }
     });
     score *= synergyBonus; 
 
-    // --- [STEP 2] Counter Logic ---
+    // --- [STEP 2] Counter Logic (Existing) ---
     let counterBonus = 1.0;
     enemyTeamPicks.forEach(enemy => {
         if (champ.counters && champ.counters.includes(enemy.name)) {
@@ -59,7 +80,6 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
   return top3[0];
 }
 
-// [STEP 5 UPDATE] Added myTeamPicks argument for Counter Bans
 export function selectBanFromProbabilities(opponentTeam, availableChampions, targetRoles, opponentPicks = [], myTeamPicks = []) {
   let candidates = [];
   
@@ -72,38 +92,49 @@ export function selectBanFromProbabilities(opponentTeam, availableChampions, tar
            const mastery = playerData?.pool?.find(m => m.name === c.name);
            let banScore = calculateChampionScore(player, c, mastery);
 
-           // --- [STEP 4] Ban Synergy Check (Enemy Synergies) ---
+           // --- [STRATEGY 3] Denial Bans (Smart Counter-Synergy) ---
            let synergyMultiplier = 1.0;
+           
+           // Check if this champion would complete a synergy for the ENEMY
+           // Create hypothetical enemy team including this ban candidate
            const hypotheticalEnemyTeam = [...opponentPicks, c.name];
 
            SYNERGIES.forEach(syn => {
-              if (syn.champions.includes(c.name) && syn.champions.every(n => hypotheticalEnemyTeam.includes(n))) {
-                  synergyMultiplier *= syn.multiplier; 
+              // 1. Does the enemy ALREADY have the other part(s)?
+              // We check if the synergy WOULD be active if they picked 'c', 
+              // AND 'c' is the only missing piece.
+              const involvesChamp = syn.champions.includes(c.name);
+              
+              if (involvesChamp) {
+                  // Check if the enemy already has the PARTNERS
+                  const partners = syn.champions.filter(n => n !== c.name);
+                  const enemyHasPartners = partners.every(p => opponentPicks.includes(p));
+
+                  if (enemyHasPartners) {
+                      // CRITICAL THREAT: They have Xayah, and 'c' is Rakan.
+                      // Massive Ban Priority Bonus
+                      synergyMultiplier *= 2.0; 
+                  } 
+                  else if (syn.champions.every(n => hypotheticalEnemyTeam.includes(n))) {
+                      // Standard Synergy Check (just in case logic overlaps)
+                      synergyMultiplier *= syn.multiplier; 
+                  }
               }
            });
+           
            banScore *= synergyMultiplier;
+           // --------------------------------------------------------
 
-           // --- [STEP 5 LOGIC] Ban Counter Check (My Safety) ---
+           // --- [STEP 5] Ban Counter Logic (My Safety) ---
            let counterMultiplier = 1.0;
            myTeamPicks.forEach(myPickName => {
-               // 1. THREAT (1.1): This candidate counters one of MY existing picks.
-               // We want to ban it to protect our team.
-               // (Check if candidate's counters list contains my pick)
-               // Note: We need the full object for 'myPick' to check its counters efficiently, 
-               // but typically we check if 'c' (candidate) lists 'myPickName' as a victim.
+               // THREAT: This candidate counters ME. Ban it.
                if (c.counters && c.counters.includes(myPickName)) {
                    counterMultiplier *= 1.1;
                }
-
-               // 2. SAFE (0.9): I already counter this candidate.
-               // If I have a champion that counters 'c', I don't need to ban 'c'.
-               // We can't easily check myPick's counters list here without the object, 
-               // but we can assume standard counter logic if available. 
-               // For now, we focus on the Threat Check which is most important for bans.
            });
            
            banScore *= counterMultiplier;
-           // ----------------------------------------------------
 
            return { 
                champ: c, 
@@ -159,11 +190,8 @@ export function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChamp
       const opponentSide = step.side === 'BLUE' ? 'RED' : 'BLUE';
       const opponentOpenRoles = remainingRoles[opponentSide];
       const currentOpponentPicks = Object.values(picks[opponentSide]).map(c => c.name);
-
-      // [STEP 5 UPDATE] Get MY current picks to pass to ban logic
       const currentMySidePicks = Object.values(picks[mySide]).map(c => c.name);
 
-      // Pass BOTH opponent picks (for synergies) and my picks (for counters)
       const banCandidate = selectBanFromProbabilities(opponentTeam, availableChamps, opponentOpenRoles, currentOpponentPicks, currentMySidePicks);
       
       if (banCandidate) {
