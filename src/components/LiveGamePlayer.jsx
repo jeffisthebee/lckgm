@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { calculateIndividualIncome, simulateSet, runGameTickEngine, selectPickFromTop3, selectBanFromProbabilities } from '../engine/simEngine';
 import { DRAFT_SEQUENCE, championList } from '../data/constants'; 
 import { validateLineup, getDefaultLineup } from '../engine/rosterLogic';
+import { SYNERGIES } from '../data/synergies'; // <--- [NEW] Import Synergies
 
 // --- HELPER: Simple Scoring for Recommendation (Frontend Version) ---
 const getRecommendedChampion = (role, currentChamps, availableChamps) => {
@@ -137,6 +138,9 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         currentAction: 'Starting Draft...'
     });
 
+    // --- [NEW] ACTIVE SYNERGY MESSAGES STATE ---
+    const [activeSynergyMsgs, setActiveSynergyMsgs] = useState([]);
+
     const [gameTime, setGameTime] = useState(0);
     const [playbackSpeed, setPlaybackSpeed] = useState(1);
     const [liveStats, setLiveStats] = useState({
@@ -174,6 +178,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
       setDraftStep(0);
       setDraftTimer(isManualMode ? 25 : 15);
       setDraftLogs([]);
+      setActiveSynergyMsgs([]); // Clear previous synergies
       
       setDraftState({
           blueBans: [], redBans: [], 
@@ -201,30 +206,12 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
               let blueTeam, redTeam;
               let teamA_is_Blue = true; // Default
 
-              // --- CRITICAL SIDE SELECTION LOGIC FIX ---
-              if (preselectedSide) {
-                  // If explicit side was chosen (e.g., Set 2+ loser selection)
-                  teamA_is_Blue = (preselectedSide === 'BLUE' && isUserTeamA) || (preselectedSide === 'RED' && !isUserTeamA);
-                  // Actually simpler:
-                  if (preselectedSide === 'BLUE') {
-                      // Whoever is selecting picked Blue.
-                      // If User was selecting, User is Blue.
-                      // This logic is handled by handleSideSelection setting 'BLUE'/'RED' relative to USER.
-                      // So if preselectedSide is set, we need to know WHO picked it.
-                      // Wait, handleSideSelection just sets string.
-                      // Let's rely on standard logic below for sets > 1.
-                  }
-              }
-              
               if (currentSet === 1) {
                   // [FIXED] SCHEDULE PRIORITY CHECK
-                  // The schedule object (match) has blueSidePriority which is the ID of the Blue Team.
                   const priorityId = match.blueSidePriority;
                   const t1Id = teamA.id || teamA.name;
                   
                   if (priorityId && priorityId !== 'coin') {
-                      // Compare IDs (as strings to be safe)
-                      // Also check Name just in case IDs are missing in some objects
                       if (String(priorityId) === String(t1Id) || String(priorityId) === String(teamA.name)) {
                           teamA_is_Blue = true;
                       } else {
@@ -239,7 +226,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                   if (isUserTeamA) {
                       teamA_is_Blue = (preselectedSide === 'BLUE');
                   } else {
-                      // User is Team B. If User picked Blue, then Team B is Blue -> Team A is Red (false).
                       teamA_is_Blue = (preselectedSide !== 'BLUE');
                   }
               } else {
@@ -248,27 +234,16 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                   const lastWinnerName = lastGame.winner;
                   const winnerIsA = lastWinnerName === teamA.name;
                   
-                  // Loser gets to pick.
-                  // If A won, B is loser. B picks.
-                  // If B won, A is loser. A picks.
-                  
-                  // Simple Logic: Loser picks Blue 90% of the time.
+                  // Loser picks Blue 90% of the time.
                   const loserPicksBlue = Math.random() < 0.90;
                   
                   if (winnerIsA) {
-                      // Loser is B.
-                      // If B picks Blue -> A is Red (false).
-                      // If B picks Red -> A is Blue (true).
                       teamA_is_Blue = !loserPicksBlue;
                   } else {
-                      // Loser is A.
-                      // If A picks Blue -> A is Blue (true).
                       teamA_is_Blue = loserPicksBlue;
                   }
               }
 
-              // --- FINAL ASSIGNMENT ---
-              // This is the clean assignment that was buggy before.
               if (teamA_is_Blue) {
                   blueTeam = teamA_Active;
                   redTeam = teamB_Active;
@@ -276,7 +251,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                   blueTeam = teamB_Active;
                   redTeam = teamA_Active;
               }
-              // ------------------------
 
               if (isManualMode) {
                   setManualTeams({ blue: blueTeam, red: redTeam });
@@ -350,6 +324,48 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         setPreselectedSide(side === 'blue' ? 'BLUE' : 'RED');
         setPhase('ROSTER_SELECTION');
     };
+
+    // --- [NEW] REAL-TIME SYNERGY CHECKER ---
+    useEffect(() => {
+        if (phase !== 'DRAFT') return;
+
+        const checkSynergies = (teamPicks, teamName) => {
+            const activeNames = teamPicks.filter(p => p && p.champName).map(p => p.champName);
+            const msgs = [];
+            
+            SYNERGIES.forEach(syn => {
+                const isActive = syn.champions.every(c => activeNames.includes(c));
+                if (isActive) {
+                    // Unique ID for the message to avoid duplicates in the UI
+                    msgs.push({
+                        id: `${teamName}-${syn.champions.join('-')}`,
+                        text: `✨ [${teamName}] 시너지 발동! ${syn.champions.join(' + ')} (▲${Math.round((syn.multiplier - 1) * 100)}%)`,
+                        side: teamName // Store side for color coding
+                    });
+                }
+            });
+            return msgs;
+        };
+
+        // Determine Team Names based on current data
+        const blueName = (isManualMode ? manualTeams.blue?.name : simulationData?.blueTeam?.name) || 'BLUE';
+        const redName = (isManualMode ? manualTeams.red?.name : simulationData?.redTeam?.name) || 'RED';
+
+        const blueMsgs = checkSynergies(draftState.bluePicks, blueName);
+        const redMsgs = checkSynergies(draftState.redPicks, redName);
+
+        // Update state if there are any messages
+        const allMsgs = [...blueMsgs, ...redMsgs];
+        
+        // Only update if changed to prevent loops (simple length check or JSON stringify)
+        setActiveSynergyMsgs(prev => {
+            const prevStr = JSON.stringify(prev);
+            const newStr = JSON.stringify(allMsgs);
+            return prevStr === newStr ? prev : allMsgs;
+        });
+
+    }, [draftState.bluePicks, draftState.redPicks, phase, isManualMode, manualTeams, simulationData]);
+    // ----------------------------------------
 
     // --- DRAFT PHASE LOGIC ---
     useEffect(() => {
@@ -909,7 +925,21 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                   ))}
                               </div>
                           </div>
-                          <div className="text-[10px] sm:text-xs text-gray-400 font-mono animate-pulse">{draftState.currentAction}</div>
+                          
+                          {/* [NEW] ACTIVE SYNERGY MESSAGES */}
+                          {activeSynergyMsgs.length > 0 ? (
+                             <div className="flex flex-col gap-1 w-full max-w-[200px] sm:max-w-xs animate-slide-down">
+                                 {activeSynergyMsgs.map((msg, idx) => (
+                                     <div key={msg.id || idx} className={`text-[8px] sm:text-[10px] lg:text-xs font-bold px-2 py-0.5 rounded text-center shadow-lg ${msg.side === currentBlueTeam?.name ? 'bg-blue-900/80 text-blue-200 border border-blue-500' : 'bg-red-900/80 text-red-200 border border-red-500'}`}>
+                                         {msg.text}
+                                     </div>
+                                 ))}
+                             </div>
+                          ) : (
+                             <div className="text-[10px] sm:text-xs text-gray-400 font-mono animate-pulse">{draftState.currentAction}</div>
+                          )}
+                          {/* ------------------------------- */}
+
                           {!isManualMode && <button onClick={skipDraft} className="absolute -bottom-6 sm:-bottom-8 text-[10px] text-gray-500 hover:text-white underline">SKIP DRAFT ⏩</button>}
                       </div>
                   ) : (
