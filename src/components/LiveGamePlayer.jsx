@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { calculateIndividualIncome, simulateSet, runGameTickEngine, selectPickFromTop3, selectBanFromProbabilities } from '../engine/simEngine';
 import { DRAFT_SEQUENCE, championList } from '../data/constants'; 
-import { SYNERGIES } from '../data/synergies'; // <--- [NEW] Import Synergies
+import { SYNERGIES } from '../data/synergies'; 
 import { validateLineup, getDefaultLineup } from '../engine/rosterLogic';
 
 // --- HELPER: Simple Scoring for Recommendation (Frontend Version) ---
@@ -211,32 +211,33 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
               let blueTeam, redTeam;
               let teamA_is_Blue = true; // Default
 
-              // --- CRITICAL SIDE SELECTION LOGIC FIX ---
-              if (preselectedSide) {
-                  // If explicit side was chosen (e.g., Set 2+ loser selection)
-                  teamA_is_Blue = (preselectedSide === 'BLUE' && isUserTeamA) || (preselectedSide === 'RED' && !isUserTeamA);
-              }
-              
+              // --- CRITICAL SIDE SELECTION LOGIC ---
               if (currentSet === 1) {
-                  // [FIXED] SCHEDULE PRIORITY CHECK
-                  // The schedule object (match) has blueSidePriority which is the ID of the Blue Team.
+                  // [FIXED] STRICT PRIORITY CHECK
+                  // We must check if blueSidePriority matches teamA's ID or Name strictly.
                   const priorityId = match.blueSidePriority;
-                  const t1Id = teamA.id || teamA.name;
                   
-                  if (priorityId && priorityId !== 'coin') {
-                      // Compare IDs (as strings to be safe)
-                      // Also check Name just in case IDs are missing in some objects
-                      if (String(priorityId) === String(t1Id) || String(priorityId) === String(teamA.name)) {
-                          teamA_is_Blue = true;
-                      } else {
-                          teamA_is_Blue = false;
-                      }
+                  const isTeamAPriority = (String(priorityId) === String(teamA.id)) || (String(priorityId) === String(teamA.name));
+                  const isTeamBPriority = (String(priorityId) === String(teamB.id)) || (String(priorityId) === String(teamB.name));
+
+                  if (isTeamAPriority) {
+                      teamA_is_Blue = true;
+                  } else if (isTeamBPriority) {
+                      teamA_is_Blue = false;
                   } else {
-                      // Fallback Coin Flip
-                      teamA_is_Blue = Math.random() < 0.5;
+                      // Fallback: If priorityId is missing or doesn't match either (rare), flip coin
+                      // But if priorityId exists (e.g. 'coin' string or garbage), treat as random
+                      if (priorityId === 'coin' || !priorityId) {
+                          teamA_is_Blue = Math.random() < 0.5;
+                      } else {
+                          // If we have an ID but it didn't match strict equality, try loosely or default
+                          // Prefer assuming the data is correct and maybe we missed a string conversion
+                          console.warn("Priority ID found but no strict match. ID:", priorityId, "TeamA:", teamA.id, "TeamB:", teamB.id);
+                          teamA_is_Blue = Math.random() < 0.5;
+                      }
                   }
               } else if (preselectedSide) {
-                  // User selected a side for the next set
+                  // User selected a side for the next set (manual selection)
                   if (isUserTeamA) {
                       teamA_is_Blue = (preselectedSide === 'BLUE');
                   } else {
@@ -873,7 +874,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
               </div>
             )}
 
-            <div className="min-h-10 sm:min-h-12 lg:min-h-24 py-1 sm:py-2 flex flex-col sm:flex-row items-center justify-between px-2 sm:px-4 lg:px-8 gap-1 sm:gap-2">
+            <div className="min-h-10 sm:min-h-12 lg:min-h-24 py-1 sm:py-2 flex flex-col sm:flex-row items-center justify-between px-2 sm:px-4 lg:px-8 gap-1 sm:gap-2 relative">
               <div className="flex flex-col w-full sm:w-1/3 items-center sm:items-start order-2 sm:order-1">
                    <div className="flex items-center gap-2 sm:gap-3 lg:gap-4 mb-0 sm:mb-2">
                       <div className="text-lg sm:text-2xl lg:text-4xl font-black text-blue-500">{currentBlueTeam?.name || 'BLUE'}</div>
@@ -1037,8 +1038,36 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
              <div className="flex-1 flex flex-col sm:flex-row bg-gray-900 p-1 sm:p-2 lg:p-8 gap-1 sm:gap-2 lg:gap-8 items-center justify-center relative overflow-hidden">
                  <div className="absolute inset-0 bg-gradient-to-r from-blue-900/20 to-red-900/20 pointer-events-none"></div>
 
-                 {/* Blue Picks List & Synergies */}
-                 <div className="hidden sm:flex flex-col w-1/5 sm:w-1/6 lg:w-1/4 h-full justify-start space-y-4 z-10">
+                 {/* [MOVED] SYNERGY HEADS UP DISPLAY */}
+                 <div className="absolute top-0 left-0 w-full flex justify-between px-4 py-2 pointer-events-none z-30">
+                     {/* Blue Synergies */}
+                     <div className="flex flex-col items-start space-y-1">
+                         {getRealtimeSynergies(draftState.bluePicks).map((syn, idx) => (
+                             <div key={idx} className="bg-blue-900/80 text-blue-100 px-3 py-1 rounded-r-lg border-l-4 border-blue-400 backdrop-blur-md shadow-lg flex items-center gap-2 animate-slide-in-left">
+                                 <span className="text-lg">✨</span>
+                                 <div className="flex flex-col leading-none">
+                                     <span className="font-bold text-xs sm:text-sm">{syn.champions.join(' + ')}</span>
+                                     <span className="text-[10px] opacity-80">Synergy Active (+{Math.round((syn.multiplier-1)*100)}%)</span>
+                                 </div>
+                             </div>
+                         ))}
+                     </div>
+                     {/* Red Synergies */}
+                     <div className="flex flex-col items-end space-y-1">
+                         {getRealtimeSynergies(draftState.redPicks).map((syn, idx) => (
+                             <div key={idx} className="bg-red-900/80 text-red-100 px-3 py-1 rounded-l-lg border-r-4 border-red-400 backdrop-blur-md shadow-lg flex flex-row-reverse items-center gap-2 animate-slide-in-right">
+                                 <span className="text-lg">✨</span>
+                                 <div className="flex flex-col items-end leading-none">
+                                     <span className="font-bold text-xs sm:text-sm">{syn.champions.join(' + ')}</span>
+                                     <span className="text-[10px] opacity-80">Synergy Active (+{Math.round((syn.multiplier-1)*100)}%)</span>
+                                 </div>
+                             </div>
+                         ))}
+                     </div>
+                 </div>
+
+                 {/* Blue Picks List */}
+                 <div className="hidden sm:flex flex-col w-1/5 sm:w-1/6 lg:w-1/4 h-full justify-start space-y-4 z-10 pt-8">
                     <div className="space-y-1 sm:space-y-2 lg:space-y-4">
                      {draftState.bluePicks.map((pick, i) => (
                          <div key={i} className={`h-10 sm:h-12 lg:h-24 border-l-2 lg:border-l-4 ${pick ? 'border-blue-500 bg-blue-900/30' : 'border-gray-700 bg-gray-800/50'} rounded-r lg:rounded-r-lg flex items-center p-1 sm:p-2 lg:p-4 transition-all duration-500`}>
@@ -1056,26 +1085,10 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                          </div>
                      ))}
                     </div>
-
-                    {/* BLUE SYNERGIES */}
-                    {getRealtimeSynergies(draftState.bluePicks).length > 0 && (
-                        <div className="mt-2 lg:mt-4 p-2 bg-blue-900/40 rounded border border-blue-500/50 backdrop-blur-sm animate-fade-in">
-                            <div className="text-[8px] lg:text-[10px] text-blue-300 font-bold mb-1 uppercase tracking-widest border-b border-blue-700 pb-1">Active Synergies</div>
-                            <div className="space-y-1">
-                                {getRealtimeSynergies(draftState.bluePicks).map((syn, idx) => (
-                                    <div key={idx} className="text-[8px] sm:text-[10px] lg:text-xs text-white flex items-center gap-1.5 font-bold">
-                                        <span className="text-yellow-400">✨</span>
-                                        <span>{syn.champions.join(' + ')}</span>
-                                        <span className="text-blue-200 opacity-70">({Math.round((syn.multiplier-1)*100)}%)</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
                  </div>
 
                  {/* Center Draft Board */}
-                 <div className="w-full sm:flex-1 flex flex-col items-center justify-center z-20 h-full relative">
+                 <div className="w-full sm:flex-1 flex flex-col items-center justify-center z-20 h-full relative pt-8">
                      {isUserTurn ? (
                          <div className="bg-gray-800 rounded-lg lg:rounded-xl shadow-2xl border border-gray-700 w-full max-w-3xl lg:max-w-4xl h-full lg:h-[600px] flex flex-col overflow-hidden">
                              {/* Role Filters & Status & Search */}
@@ -1190,8 +1203,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                      )}
                  </div>
 
-                 {/* Red Picks List & Synergies */}
-                 <div className="hidden sm:flex flex-col w-1/5 sm:w-1/6 lg:w-1/4 h-full justify-start space-y-4 z-10">
+                 {/* Red Picks List */}
+                 <div className="hidden sm:flex flex-col w-1/5 sm:w-1/6 lg:w-1/4 h-full justify-start space-y-4 z-10 pt-8">
                     <div className="space-y-1 sm:space-y-2 lg:space-y-4">
                      {draftState.redPicks.map((pick, i) => (
                          <div key={i} className={`h-10 sm:h-12 lg:h-24 border-r-2 lg:border-r-4 ${pick ? 'border-red-500 bg-red-900/30' : 'border-gray-700 bg-gray-800/50'} rounded-l lg:rounded-l-lg flex flex-row-reverse items-center p-1 sm:p-2 lg:p-4 transition-all duration-500`}>
@@ -1209,22 +1222,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                          </div>
                      ))}
                     </div>
-
-                    {/* RED SYNERGIES */}
-                    {getRealtimeSynergies(draftState.redPicks).length > 0 && (
-                        <div className="mt-2 lg:mt-4 p-2 bg-red-900/40 rounded border border-red-500/50 backdrop-blur-sm animate-fade-in text-right">
-                            <div className="text-[8px] lg:text-[10px] text-red-300 font-bold mb-1 uppercase tracking-widest border-b border-red-700 pb-1">Active Synergies</div>
-                            <div className="space-y-1 flex flex-col items-end">
-                                {getRealtimeSynergies(draftState.redPicks).map((syn, idx) => (
-                                    <div key={idx} className="text-[8px] sm:text-[10px] lg:text-xs text-white flex flex-row-reverse items-center gap-1.5 font-bold">
-                                        <span className="text-yellow-400">✨</span>
-                                        <span>{syn.champions.join(' + ')}</span>
-                                        <span className="text-red-200 opacity-70">({Math.round((syn.multiplier-1)*100)}%)</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
                  </div>
              </div>
             )}
