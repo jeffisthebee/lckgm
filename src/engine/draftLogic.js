@@ -1,9 +1,11 @@
-// src/engine/draftEngine.js
+// src/engine/draftLogic.js
 import { DRAFT_SEQUENCE } from '../data/constants';
 import { MASTERY_MAP, calculateChampionScore } from './mechanics';
+import { SYNERGIES } from '../data/synergies';
 
 // --- DRAFT LOGIC ---
-export function selectPickFromTop3(player, availableChampions) {
+
+export function selectPickFromTop3(player, availableChampions, currentTeamPicks = [], enemyTeamPicks = []) {
   const playerData = MASTERY_MAP[player.이름];
   const roleChamps = availableChampions.filter(c => c.role === player.포지션);
   const pool = roleChamps.length > 0 ? roleChamps : availableChampions;
@@ -12,7 +14,33 @@ export function selectPickFromTop3(player, availableChampions) {
 
   const scoredChamps = pool.map(champ => {
     const mastery = playerData?.pool?.find(m => m.name === champ.name);
-    const score = calculateChampionScore(player, champ, mastery);
+    let score = calculateChampionScore(player, champ, mastery);
+
+    // --- [STEP 1] Synergy Bonus ---
+    let synergyBonus = 1.0;
+    const hypotheticalTeam = [...currentTeamPicks, champ.name];
+
+    SYNERGIES.forEach(syn => {
+      const involvesChamp = syn.champions.includes(champ.name);
+      const isActive = syn.champions.every(c => hypotheticalTeam.includes(c));
+      if (involvesChamp && isActive) {
+        synergyBonus *= syn.multiplier; 
+      }
+    });
+    score *= synergyBonus; 
+
+    // --- [STEP 2] Counter Logic ---
+    let counterBonus = 1.0;
+    enemyTeamPicks.forEach(enemy => {
+        if (champ.counters && champ.counters.includes(enemy.name)) {
+            counterBonus *= 0.9;
+        }
+        if (enemy.counters && enemy.counters.includes(champ.name)) {
+            counterBonus *= 1.1;
+        }
+    });
+    score *= counterBonus;
+
     return { ...champ, mastery, score };
   });
 
@@ -31,7 +59,8 @@ export function selectPickFromTop3(player, availableChampions) {
   return top3[0];
 }
 
-export function selectBanFromProbabilities(opponentTeam, availableChampions, targetRoles) {
+// [STEP 5 UPDATE] Added myTeamPicks argument for Counter Bans
+export function selectBanFromProbabilities(opponentTeam, availableChampions, targetRoles, opponentPicks = [], myTeamPicks = []) {
   let candidates = [];
   
   const targetPlayers = opponentTeam.roster.filter(p => targetRoles.includes(p.포지션));
@@ -41,9 +70,44 @@ export function selectBanFromProbabilities(opponentTeam, availableChampions, tar
       const roleChamps = availableChampions.filter(c => c.role === player.포지션);
       const scored = roleChamps.map(c => {
            const mastery = playerData?.pool?.find(m => m.name === c.name);
+           let banScore = calculateChampionScore(player, c, mastery);
+
+           // --- [STEP 4] Ban Synergy Check (Enemy Synergies) ---
+           let synergyMultiplier = 1.0;
+           const hypotheticalEnemyTeam = [...opponentPicks, c.name];
+
+           SYNERGIES.forEach(syn => {
+              if (syn.champions.includes(c.name) && syn.champions.every(n => hypotheticalEnemyTeam.includes(n))) {
+                  synergyMultiplier *= syn.multiplier; 
+              }
+           });
+           banScore *= synergyMultiplier;
+
+           // --- [STEP 5 LOGIC] Ban Counter Check (My Safety) ---
+           let counterMultiplier = 1.0;
+           myTeamPicks.forEach(myPickName => {
+               // 1. THREAT (1.1): This candidate counters one of MY existing picks.
+               // We want to ban it to protect our team.
+               // (Check if candidate's counters list contains my pick)
+               // Note: We need the full object for 'myPick' to check its counters efficiently, 
+               // but typically we check if 'c' (candidate) lists 'myPickName' as a victim.
+               if (c.counters && c.counters.includes(myPickName)) {
+                   counterMultiplier *= 1.1;
+               }
+
+               // 2. SAFE (0.9): I already counter this candidate.
+               // If I have a champion that counters 'c', I don't need to ban 'c'.
+               // We can't easily check myPick's counters list here without the object, 
+               // but we can assume standard counter logic if available. 
+               // For now, we focus on the Threat Check which is most important for bans.
+           });
+           
+           banScore *= counterMultiplier;
+           // ----------------------------------------------------
+
            return { 
                champ: c, 
-               score: calculateChampionScore(player, c, mastery),
+               score: banScore,
                player: player
            };
       });
@@ -94,7 +158,13 @@ export function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChamp
     if (step.type === 'BAN') {
       const opponentSide = step.side === 'BLUE' ? 'RED' : 'BLUE';
       const opponentOpenRoles = remainingRoles[opponentSide];
-      const banCandidate = selectBanFromProbabilities(opponentTeam, availableChamps, opponentOpenRoles);
+      const currentOpponentPicks = Object.values(picks[opponentSide]).map(c => c.name);
+
+      // [STEP 5 UPDATE] Get MY current picks to pass to ban logic
+      const currentMySidePicks = Object.values(picks[mySide]).map(c => c.name);
+
+      // Pass BOTH opponent picks (for synergies) and my picks (for counters)
+      const banCandidate = selectBanFromProbabilities(opponentTeam, availableChamps, opponentOpenRoles, currentOpponentPicks, currentMySidePicks);
       
       if (banCandidate) {
         localBans.add(banCandidate.name);
@@ -108,10 +178,15 @@ export function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChamp
       let bestPick = null;
       let bestPickRole = '';
       let roleCandidates = [];
+
+      const currentMySidePicks = Object.values(picks[mySide]).map(c => c.name);
+      const opponentSide = step.side === 'BLUE' ? 'RED' : 'BLUE';
+      const currentEnemyPicks = Object.values(picks[opponentSide]); 
+
       remainingRoles[mySide].forEach(role => {
           const player = actingTeam.roster.find(p => p.포지션 === role);
           if (player) {
-            const candidateChamp = selectPickFromTop3(player, availableChamps);
+            const candidateChamp = selectPickFromTop3(player, availableChamps, currentMySidePicks, currentEnemyPicks);
             if (candidateChamp) {
                roleCandidates.push({ role, champ: candidateChamp, score: candidateChamp.score });
             }

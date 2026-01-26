@@ -1,6 +1,7 @@
 // src/engine/mechanics.js
 import { SIM_CONSTANTS, GAME_RULES, SIDES } from '../data/constants';
 import playerList from '../data/players.json';
+import { SYNERGIES } from '../data/synergies'; // <--- [NEW] Import Synergies
 
 // --- HELPER LOGIC ---
 export const getChampionClass = (champ, position) => {
@@ -149,6 +150,27 @@ export function calculateTeamPower(teamPicks, time, activeBuffs, goldDiff, enemy
     const posWeight = positionWeights[roleKey] || 0.2; 
     totalPower += (combatPower * posWeight * 5);
   });
+
+  // --- [NEW] SYNERGY CALCULATION ---
+  // Maps current team's champions to a list of names for easy lookup
+  const activeChampNames = teamPicks.map(p => p.champName || p.name);
+  let synergyMultiplier = 1.0;
+
+  SYNERGIES.forEach(syn => {
+      // Check if EVERY champion required for this synergy is present
+      const isSynergyActive = syn.champions.every(requiredName => 
+          activeChampNames.includes(requiredName)
+      );
+      
+      if (isSynergyActive) {
+          synergyMultiplier *= syn.multiplier;
+          // Note: If you want to log this later, you can return a synergy object
+      }
+  });
+  
+  // Apply total synergy bonus to the team power
+  totalPower *= synergyMultiplier;
+  // ---------------------------------
 
   if (adCount >= 4 || apCount >= 4) totalPower *= (time < 15 ? 1.0 : (time < 28 ? 0.95 : 0.75));
   return totalPower;
