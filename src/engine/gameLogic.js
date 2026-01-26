@@ -144,19 +144,19 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
         p.side = 'RED'; p.currentGold = GAME_RULES.GOLD.START; p.level = p.level || 1; p.xp = p.xp || 0; p.deadUntil = 0;
         p.stats = p.stats || { kills: 0, deaths: 0, assists: 0, damage: 0, takenDamage: 0 }; p.flashEndTime = p.flashEndTime || 0;
     });
-  
+
     // --- [NEW] SYNERGY CHECK LOGGING ---
-    // Checks both teams at 0:00 and logs any active synergies in Korean
+    // This runs at Time 0:00 to announce active synergies
     const checkAndLogSynergies = (teamSide, teamName, picks) => {
-        // Create a list of champion names for the current team
+        // Create list of active champion names for this team
         const activeNames = picks.map(p => p.champName || p.name);
         
         SYNERGIES.forEach(syn => {
-            // Check if every champion in the synergy exists in this team
+            // Check if every champion required for the synergy is present
             const isActive = syn.champions.every(c => activeNames.includes(c));
             
             if (isActive) {
-                // Add a special log event at 0:00
+                // Log the synergy event in Korean
                 logs.push({
                     sec: 0,
                     abs: 0,
@@ -166,11 +166,11 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
         });
     };
 
-    // Run the check for both teams before the loop starts
-    checkAndLogSynergies('BLUE', teamBlue?.name || 'BLUE TEAM', picksBlue);
-    checkAndLogSynergies('RED', teamRed?.name || 'RED TEAM', picksRed);
-    // -----------------------------------
-
+    // Run the check for both teams
+    checkAndLogSynergies('BLUE', teamBlue?.name || 'BLUE', picksBlue);
+    checkAndLogSynergies('RED', teamRed?.name || 'RED', picksRed);
+    // ------------------------------------
+  
     const simulateDamage = (winnerSide, powerA, powerB, currentAbsTime) => {
         const winningPicks = winnerSide === 'BLUE' ? picksBlue : picksRed;
         const losingPicks = winnerSide === 'BLUE' ? picksRed : picksBlue;
@@ -933,4 +933,3 @@ export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampion
     }
     return { winner: winsA > winsB ? teamA?.name : teamB?.name, scoreString: `${winsA}:${winsB}`, scoreA: winsA, scoreB: winsB, history: matchHistory };
   };
-}
