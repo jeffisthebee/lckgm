@@ -209,68 +209,66 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                   : teamB;
 
               let blueTeam, redTeam;
-              let teamA_is_Blue = true; // Default
+              let isTeamABlue = true; // Default assumption
 
-              // --- CRITICAL SIDE SELECTION LOGIC ---
               if (currentSet === 1) {
-                  // [FIXED] STRICT PRIORITY CHECK
-                  // We must check if blueSidePriority matches teamA's ID or Name strictly.
-                  const priorityId = match.blueSidePriority;
-                  
-                  const isTeamAPriority = (String(priorityId) === String(teamA.id)) || (String(priorityId) === String(teamA.name));
-                  const isTeamBPriority = (String(priorityId) === String(teamB.id)) || (String(priorityId) === String(teamB.name));
+                  // --- SET 1: STRICT SCHEDULE PRIORITY ---
+                  // In scheduleLogic, blueSidePriority is explicitly the ID of the Blue team.
+                  const targetBlueId = match.blueSidePriority;
 
-                  if (isTeamAPriority) {
-                      teamA_is_Blue = true;
-                  } else if (isTeamBPriority) {
-                      teamA_is_Blue = false;
-                  } else {
-                      // Fallback: If priorityId is missing or doesn't match either (rare), flip coin
-                      // But if priorityId exists (e.g. 'coin' string or garbage), treat as random
-                      if (priorityId === 'coin' || !priorityId) {
-                          teamA_is_Blue = Math.random() < 0.5;
+                  if (targetBlueId && targetBlueId !== 'coin') {
+                      // Normalize IDs to strings to ensure safe comparison
+                      const tA_ID = String(teamA.id || teamA.name);
+                      const tBlue_ID = String(targetBlueId);
+                      
+                      // If Team A's ID matches the schedule's Blue ID, Team A is Blue.
+                      // Otherwise, Team B must be Blue.
+                      if (tA_ID === tBlue_ID) {
+                          isTeamABlue = true;
                       } else {
-                          // If we have an ID but it didn't match strict equality, try loosely or default
-                          // Prefer assuming the data is correct and maybe we missed a string conversion
-                          console.warn("Priority ID found but no strict match. ID:", priorityId, "TeamA:", teamA.id, "TeamB:", teamB.id);
-                          teamA_is_Blue = Math.random() < 0.5;
+                          isTeamABlue = false;
                       }
-                  }
-              } else if (preselectedSide) {
-                  // User selected a side for the next set (manual selection)
-                  if (isUserTeamA) {
-                      teamA_is_Blue = (preselectedSide === 'BLUE');
                   } else {
-                      // User is Team B. If User picked Blue, then Team B is Blue -> Team A is Red (false).
-                      teamA_is_Blue = (preselectedSide !== 'BLUE');
+                      // Fallback: 50/50 Coin Flip if data is missing
+                      isTeamABlue = Math.random() < 0.5;
                   }
               } else {
-                  // CPU Loser Side Selection for Sets 2+
-                  const lastGame = matchHistory[matchHistory.length - 1];
-                  const lastWinnerName = lastGame.winner;
-                  const winnerIsA = lastWinnerName === teamA.name;
-                  
-                  // Loser gets to pick.
-                  // If A won, B is loser. B picks.
-                  // If B won, A is loser. A picks.
-                  
-                  // Simple Logic: Loser picks Blue 90% of the time.
-                  const loserPicksBlue = Math.random() < 0.90;
-                  
-                  if (winnerIsA) {
-                      // Loser is B.
-                      // If B picks Blue -> A is Red (false).
-                      // If B picks Red -> A is Blue (true).
-                      teamA_is_Blue = !loserPicksBlue;
+                  // --- SET 2+: LOSER SELECTION / USER SELECTION ---
+                  if (preselectedSide) {
+                      // User explicitly chose a side (Phase: SIDE_SELECTION)
+                      // preselectedSide is 'BLUE' or 'RED' relative to the USER.
+                      if (isUserTeamA) {
+                          // User is Team A. User chose Blue -> A is Blue.
+                          isTeamABlue = (preselectedSide === 'BLUE');
+                      } else {
+                          // User is Team B. User chose Blue -> B is Blue -> A is Red (false).
+                          isTeamABlue = (preselectedSide !== 'BLUE');
+                      }
                   } else {
-                      // Loser is A.
-                      // If A picks Blue -> A is Blue (true).
-                      teamA_is_Blue = loserPicksBlue;
+                      // CPU Choice (Loser Picks)
+                      const lastGame = matchHistory[matchHistory.length - 1];
+                      const winnerName = lastGame.winner;
+                      const isAWinner = winnerName === teamA.name;
+
+                      // Loser picks side. Loser usually picks Blue (90% prob).
+                      const loserPicksBlue = Math.random() < 0.9; 
+
+                      if (isAWinner) {
+                          // Loser is B.
+                          // B picks Blue -> A is Red (false).
+                          // B picks Red -> A is Blue (true).
+                          isTeamABlue = !loserPicksBlue;
+                      } else {
+                          // Loser is A.
+                          // A picks Blue -> A is Blue (true).
+                          // A picks Red -> A is Red (false).
+                          isTeamABlue = loserPicksBlue;
+                      }
                   }
               }
 
               // --- FINAL ASSIGNMENT ---
-              if (teamA_is_Blue) {
+              if (isTeamABlue) {
                   blueTeam = teamA_Active;
                   redTeam = teamB_Active;
               } else {
@@ -1038,7 +1036,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
              <div className="flex-1 flex flex-col sm:flex-row bg-gray-900 p-1 sm:p-2 lg:p-8 gap-1 sm:gap-2 lg:gap-8 items-center justify-center relative overflow-hidden">
                  <div className="absolute inset-0 bg-gradient-to-r from-blue-900/20 to-red-900/20 pointer-events-none"></div>
 
-                 {/* [MOVED] SYNERGY HEADS UP DISPLAY */}
+                 {/* [NEW] SYNERGY HEADS UP DISPLAY */}
                  <div className="absolute top-0 left-0 w-full flex justify-between px-4 py-2 pointer-events-none z-30">
                      {/* Blue Synergies */}
                      <div className="flex flex-col items-start space-y-1">
