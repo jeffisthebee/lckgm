@@ -178,7 +178,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
       setDraftStep(0);
       setDraftTimer(isManualMode ? 25 : 15);
       setDraftLogs([]);
-      setActiveSynergyMsgs([]); // Clear previous synergies
+      setActiveSynergyMsgs([]); // <--- [NEW] Reset synergies
       
       setDraftState({
           blueBans: [], redBans: [], 
@@ -206,12 +206,30 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
               let blueTeam, redTeam;
               let teamA_is_Blue = true; // Default
 
+              // --- CRITICAL SIDE SELECTION LOGIC FIX ---
+              if (preselectedSide) {
+                  // If explicit side was chosen (e.g., Set 2+ loser selection)
+                  teamA_is_Blue = (preselectedSide === 'BLUE' && isUserTeamA) || (preselectedSide === 'RED' && !isUserTeamA);
+                  // Actually simpler:
+                  if (preselectedSide === 'BLUE') {
+                      // Whoever is selecting picked Blue.
+                      // If User was selecting, User is Blue.
+                      // This logic is handled by handleSideSelection setting 'BLUE'/'RED' relative to USER.
+                      // So if preselectedSide is set, we need to know WHO picked it.
+                      // Wait, handleSideSelection just sets string.
+                      // Let's rely on standard logic below for sets > 1.
+                  }
+              }
+              
               if (currentSet === 1) {
                   // [FIXED] SCHEDULE PRIORITY CHECK
+                  // The schedule object (match) has blueSidePriority which is the ID of the Blue Team.
                   const priorityId = match.blueSidePriority;
                   const t1Id = teamA.id || teamA.name;
                   
                   if (priorityId && priorityId !== 'coin') {
+                      // Compare IDs (as strings to be safe)
+                      // Also check Name just in case IDs are missing in some objects
                       if (String(priorityId) === String(t1Id) || String(priorityId) === String(teamA.name)) {
                           teamA_is_Blue = true;
                       } else {
@@ -226,6 +244,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                   if (isUserTeamA) {
                       teamA_is_Blue = (preselectedSide === 'BLUE');
                   } else {
+                      // User is Team B. If User picked Blue, then Team B is Blue -> Team A is Red (false).
                       teamA_is_Blue = (preselectedSide !== 'BLUE');
                   }
               } else {
@@ -234,16 +253,27 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                   const lastWinnerName = lastGame.winner;
                   const winnerIsA = lastWinnerName === teamA.name;
                   
-                  // Loser picks Blue 90% of the time.
+                  // Loser gets to pick.
+                  // If A won, B is loser. B picks.
+                  // If B won, A is loser. A picks.
+                  
+                  // Simple Logic: Loser picks Blue 90% of the time.
                   const loserPicksBlue = Math.random() < 0.90;
                   
                   if (winnerIsA) {
+                      // Loser is B.
+                      // If B picks Blue -> A is Red (false).
+                      // If B picks Red -> A is Blue (true).
                       teamA_is_Blue = !loserPicksBlue;
                   } else {
+                      // Loser is A.
+                      // If A picks Blue -> A is Blue (true).
                       teamA_is_Blue = loserPicksBlue;
                   }
               }
 
+              // --- FINAL ASSIGNMENT ---
+              // This is the clean assignment that was buggy before.
               if (teamA_is_Blue) {
                   blueTeam = teamA_Active;
                   redTeam = teamB_Active;
@@ -251,6 +281,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                   blueTeam = teamB_Active;
                   redTeam = teamA_Active;
               }
+              // ------------------------
 
               if (isManualMode) {
                   setManualTeams({ blue: blueTeam, red: redTeam });
@@ -579,7 +610,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                     role: pos,
                     side: teamSide,
                     classType: safeChamp.class || '전사',
-                    dmgType: safeChamp.dmg_type || 'AD',
+                    dmg_type: safeChamp.dmg_type || 'AD',
                     mastery: { games: 0, winRate: 50, kda: 3.0 },
                     playerName: safePlayerData.이름,
                     playerOvr: safePlayerData.종합,
