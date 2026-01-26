@@ -30,7 +30,8 @@ const computeSetPlayerScore = (p) => {
 
 export default function StatsTab({ league }) {
   const [posFilter, setPosFilter] = useState('ALL');
-  const [regularOnly, setRegularOnly] = useState(false);
+  // Changed from regularOnly boolean to a stage string filter
+  const [stageFilter, setStageFilter] = useState('ALL'); // 'ALL', 'PLAYIN', 'REGULAR', 'PLAYOFF'
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSection, setActiveSection] = useState('POG'); // 'POG', 'RATING', 'META', 'KDA'
 
@@ -57,8 +58,16 @@ export default function StatsTab({ league }) {
     for (const match of league.matches) {
       if (!match || match.status !== 'finished') continue;
       
-      // [FIX] Include 'super' (Super Week) matches as part of Regular Season
-      if (regularOnly && match.type !== 'regular' && match.type !== 'super') continue;
+      // === STAGE FILTER LOGIC ===
+      // Match types are assumed to be: 'playin', 'regular', 'super', 'playoff'
+      if (stageFilter === 'REGULAR') {
+        if (match.type !== 'regular' && match.type !== 'super') continue;
+      } else if (stageFilter === 'PLAYIN') {
+        if (match.type !== 'playin') continue;
+      } else if (stageFilter === 'PLAYOFF') {
+        if (match.type !== 'playoff') continue;
+      }
+      // If 'ALL', we don't skip anything
 
       const history = safeArray(match.result?.history);
       // Count series-level POS as POG
@@ -159,7 +168,7 @@ export default function StatsTab({ league }) {
     }
 
     return { players, champions, championStats, totalPicks, totalBans, totalGames };
-  }, [league, regularOnly]);
+  }, [league, stageFilter]);
 
   // Derived leaderboards
   const pogLeaderboard = useMemo(() => {
@@ -244,10 +253,34 @@ export default function StatsTab({ league }) {
           <h2 className="text-xl sm:text-2xl font-black text-gray-800 whitespace-nowrap">📊 통계 센터</h2>
           
           <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
-            <label className="flex items-center gap-2 text-xs sm:text-sm font-bold text-gray-600 cursor-pointer select-none bg-gray-50 px-2 py-1 rounded">
-              <input type="checkbox" checked={regularOnly} onChange={(e) => setRegularOnly(e.target.checked)} className="rounded text-blue-600 focus:ring-blue-500" />
-              <span>정규 시즌만</span>
-            </label>
+            
+            {/* STAGE FILTERS */}
+            <div className="flex bg-gray-100 p-1 rounded-lg">
+                <button 
+                  onClick={() => setStageFilter('ALL')}
+                  className={`px-3 py-1 text-xs sm:text-sm font-bold rounded-md transition-all ${stageFilter === 'ALL' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  전체
+                </button>
+                <button 
+                  onClick={() => setStageFilter('PLAYIN')}
+                  className={`px-3 py-1 text-xs sm:text-sm font-bold rounded-md transition-all ${stageFilter === 'PLAYIN' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  플레이인
+                </button>
+                <button 
+                  onClick={() => setStageFilter('REGULAR')}
+                  className={`px-3 py-1 text-xs sm:text-sm font-bold rounded-md transition-all ${stageFilter === 'REGULAR' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  정규시즌
+                </button>
+                <button 
+                  onClick={() => setStageFilter('PLAYOFF')}
+                  className={`px-3 py-1 text-xs sm:text-sm font-bold rounded-md transition-all ${stageFilter === 'PLAYOFF' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  플레이오프
+                </button>
+            </div>
             
             <div className="h-4 w-px bg-gray-300 hidden sm:block"></div>
             
