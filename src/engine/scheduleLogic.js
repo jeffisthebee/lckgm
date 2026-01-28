@@ -1,5 +1,17 @@
 // src/engine/scheduleLogic.js
 
+// [NEW] Helper to compare dates correctly (e.g., "2.7" vs "2.11")
+const compareDates = (dateA, dateB) => {
+    if (!dateA || !dateB) return 0;
+    
+    // Split "2.7 (Sat)" -> "2.7" -> ["2", "7"]
+    const [monthA, dayA] = dateA.split(' ')[0].split('.').map(Number);
+    const [monthB, dayB] = dateB.split(' ')[0].split('.').map(Number);
+    
+    if (monthA !== monthB) return monthA - monthB;
+    return dayA - dayB;
+};
+
 // Helper to shuffle array (Fisher-Yates)
 const shuffle = (array) => {
     let currentIndex = array.length, randomIndex;
@@ -136,7 +148,6 @@ export const generateSchedule = (baronIds, elderIds) => {
             ...m,
             t1: coin ? m.t1 : m.t2, // t1 will be BLUE side initially
             t2: coin ? m.t2 : m.t1, // t2 will be RED side initially
-            // [FIX] Do NOT set 'coin' here permanently. We will set the final priority ID after balancing.
         };
     });
 
@@ -178,7 +189,6 @@ export const generateSchedule = (baronIds, elderIds) => {
     }
 
     // [FIX] Explicitly lock the side priority to t1 (Blue)
-    // This tells the frontend "t1 IS the blue team, do not flip a coin"
     allScheduled = allScheduled.map(m => ({
         ...m,
         blueSidePriority: m.t1 
@@ -196,17 +206,11 @@ export const generateSchedule = (baronIds, elderIds) => {
         };
     });
 
-    // Sort Chronologically
-    const parseDate = (d) => {
-        if (!d) return 99999;
-        const parts = d.split(' ')[0].split('.');
-        return parseInt(parts[0])*100 + parseInt(parts[1]);
-    };
-    
-    allScheduled.sort((a,b) => {
-        const da = parseDate(a.date);
-        const db = parseDate(b.date);
-        if (da !== db) return da - db;
+    // [FIX] Sort Chronologically using the robust compareDates helper
+    allScheduled.sort((a, b) => {
+        const dateDiff = compareDates(a.date, b.date);
+        if (dateDiff !== 0) return dateDiff;
+        // If same date, sort by time (17:00 vs 19:30)
         return a.time.localeCompare(b.time);
     });
 
