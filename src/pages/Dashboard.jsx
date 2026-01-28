@@ -20,7 +20,7 @@ import ScheduleTab from '../components/ScheduleTab';
 import PlayoffTab from '../components/PlayoffTab';
 import StatsTab from '../components/TEMP_StatsTab';
 import {updateLeague, getLeagueById } from '../engine/storage';
-g
+
 
 // --- HELPER FUNCTIONS ---
 const getOvrBadgeStyle = (ovr) => {
