@@ -30,7 +30,8 @@ const getRealtimeSynergies = (currentPicks) => {
 };
 
 // --- HELPER: Calculate POS (Player of the Series) ---
-const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
+// [FIXED] Updated to use roster matching for reliable team identification
+const calculatePOS = (matchHistory, currentSetData, winningTeamName, winningTeamRoster = []) => {
     const allGames = [...(matchHistory || [])];
     if (currentSetData) {
         allGames.push({
@@ -40,17 +41,22 @@ const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
     }
 
     const playerScores = {};
+    const winnerRosterNames = new Set(winningTeamRoster.map(p => p.이름 || p.name));
 
     allGames.forEach(game => {
         const picksA = game.picks?.A || [];
         const picksB = game.picks?.B || [];
-        const winName = winningTeamName?.trim();
-        const teamAName = picksA[0]?.playerData?.팀?.trim();
         
-        const isTeamA = teamAName === winName || (game.winner?.trim() === winName && picksA[0]);
-        const winningPicks = isTeamA ? picksA : picksB;
+        // Determine which side corresponds to the Series Winner
+        // We check if the first player of Side A is in the Series Winner's roster
+        const playerA = picksA[0]?.playerName;
+        const isSideA_TheWinnerTeam = playerA && winnerRosterNames.has(playerA);
+        
+        // Always select the picks of the Series Winner, regardless of who won this specific game
+        // (We want to sum the scores of the MVP candidates across ALL games)
+        const targetPicks = isSideA_TheWinnerTeam ? picksA : picksB;
 
-        (winningPicks || []).forEach(p => {
+        (targetPicks || []).forEach(p => {
             if (!p) return;
             if (!playerScores[p.playerName]) playerScores[p.playerName] = { ...p, totalScore: 0, games: 0 };
             
@@ -819,6 +825,19 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
               const finalKills = simulationData?.gameResult?.finalKills || liveStatsRef.current?.kills || { BLUE: 0, RED: 0 };
               setLiveStats(st => ({ ...st, kills: finalKills }));
               
+              // [FIXED] Manual Mode Stats Persistence
+              // Update simulationData with the final stats so calculatePOS and History use the correct values (not 0)
+              if (isManualMode) {
+                const finalPlayers = liveStatsRef.current.players;
+                const finalPicksA = finalPlayers.filter(p => p.side === 'BLUE');
+                const finalPicksB = finalPlayers.filter(p => p.side === 'RED');
+                
+                setSimulationData(prev => ({
+                    ...prev,
+                    picks: { A: finalPicksA, B: finalPicksB }
+                }));
+              }
+              
               if (isManualMode && !simulationData?.pogPlayer) {
                    const manualPog = calculateManualPog(
                        liveStatsRef.current.players?.filter(p => p.side === 'BLUE') || [],
@@ -1422,7 +1441,10 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                             {/* Calculate POS on the fly */}
                             {(() => {
                                 const winnerName = displayWinsA > displayWinsB ? teamA.name : teamB.name;
-                                const posData = calculatePOS(matchHistory, simulationData, winnerName);
+                                const winnerTeamObj = displayWinsA > displayWinsB ? teamA : teamB;
+                                
+                                // Pass the winner's roster to help identify team in history even if they lost a specific game
+                                const posData = calculatePOS(matchHistory, simulationData, winnerName, winnerTeamObj.roster);
                                 return (
                                     <>
                                         <div className="w-12 h-12 sm:w-16 sm:h-16 lg:w-24 lg:h-24 rounded-full bg-purple-800 border-2 border-purple-300 mb-1 sm:mb-2 lg:mb-4 flex items-center justify-center shadow-[0_0_15px_rgba(168,85,247,0.5)]">
@@ -1483,9 +1505,12 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                         // Check Match Finish Condition
                         if(newA >= targetWins || newB >= targetWins) {
                             const winnerName = newA > newB ? teamA.name : teamB.name;
+                            const winnerTeamObj = newA > newB ? teamA : teamB;
+
                             let posData = null;
                             if (isBo5) {
-                                posData = calculatePOS(newHist, null, winnerName);
+                                // Pass Roster here as well
+                                posData = calculatePOS(newHist, null, winnerName, winnerTeamObj.roster);
                             }
 
                             try {
