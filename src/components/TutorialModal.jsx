@@ -14,12 +14,17 @@ const tutorialSteps = [
   {
     title: "드래프트 시스템",
     content: "시즌은 '바론'과 '장로' 그룹으로 나뉩니다. 젠지와 한화생명을 제외한 팀들은 드래프트를 통해 그룹이 결정됩니다.",
+    icon: "🎲"
+  },
+  {
+    title: "밴픽과 전략 (수동 모드)",
+    content: "수동 모드에선 정교한 밴픽 순서(블루 1픽 등), 챔피언 티어, 그리고 조합 시너지가 승패를 가릅니다. 당신의 전략으로 전력 차이를 극복하세요.",
     icon: "⚔️"
   },
   {
-    title: "경기 진행",
-    content: "직접 밴픽을 하거나 AI에게 맡길 수 있습니다. 선수들의 컨디션과 메타를 분석하여 최적의 로스터를 구성하세요.",
-    icon: "🎮"
+    title: "재정과 상금",
+    content: "구단 운영의 핵심은 자금입니다. 높은 순위를 기록해 상금을 획득하고, 이를 통해 선수단과 팀을 유지해야 합니다. 파산에 주의하세요!",
+    icon: "💰"
   }
 ];
 
@@ -30,7 +35,7 @@ export default function TutorialModal({ onClose, onDoNotShowAgain }) {
     if (currentStep < tutorialSteps.length - 1) {
       setCurrentStep(prev => prev + 1);
     } else {
-      onClose(); // Just close, don't save "seen" state
+      onClose(); 
     }
   };
 
@@ -50,7 +55,6 @@ export default function TutorialModal({ onClose, onDoNotShowAgain }) {
         {/* Header - Fixed */}
         <div className="bg-blue-600 p-4 sm:p-5 text-white flex justify-between items-center shrink-0">
           <h2 className="text-lg sm:text-xl font-black">가이드 ({currentStep + 1}/{tutorialSteps.length})</h2>
-          {/* This X button just closes it for now */}
           <button onClick={onClose} className="text-blue-200 hover:text-white font-bold px-2">✕</button>
         </div>
 
