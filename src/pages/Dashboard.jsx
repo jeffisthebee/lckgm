@@ -8,7 +8,7 @@ import { getFullTeamRoster } from '../engine/rosterLogic';
 import LiveGamePlayer from '../components/LiveGamePlayer';
 import DetailedMatchResultModal from '../components/DetailedMatchResultModal';
 import playerList from '../data/players.json';
-import { computeStandings, calculateFinalStandings, calculateGroupPoints, sortGroupByStandings, createPlayInBracket } from '../engine/BracketManager';
+import { computeStandings, calculateFinalStandings, calculateGroupPoints, sortGroupByStandings, createPlayInBracket, createPlayInRound2Matches, createPlayInFinalMatch } from '../engine/BracketManager';
 import { updateChampionMeta, generateSuperWeekMatches } from '../engine/SeasonManager';
 import FinalStandingsModal from '../components/FinalStandingsModal';
 import MatchupBox from '../components/MatchupBox';
@@ -267,21 +267,11 @@ const getOvrBadgeStyle = (ovr) => {
     const finalExists = matches.some(m => m.type === 'playin' && m.round === 3);
   
     if (r2Finished && !finalExists) {
-        const losers = r2Matches.map(m => {
-           const winnerName = m.result.winner;
-           const t1Id = typeof m.t1 === 'object' ? m.t1.id : m.t1;
-           const t2Id = typeof m.t2 === 'object' ? m.t2.id : m.t2;
-           const t1Obj = teams.find(t => t.id === t1Id);
-           const t2Obj = teams.find(t => t.id === t2Id);
-           return t1Obj.name === winnerName ? t2Obj : t1Obj;
-        });
-  
-        const finalMatch = { id: Date.now() + 200, t1: losers[0].id, t2: losers[1].id, date: '2.8 (일)', time: '17:00', type: 'playin', format: 'BO5', status: 'pending', round: 3, label: '플레이-인 최종전', blueSidePriority: 'coin' };
-        const newMatches = [...matches, finalMatch].sort((a,b) => parseFloat(a.date.split(' ')[0]) - parseFloat(b.date.split(' ')[0]));
-        updateLeague(league.id, { matches: newMatches });
-        setLeague(prev => ({ ...prev, matches: newMatches }));
-        alert("🛡️ 플레이-인 최종전(2라운드 패자 대결) 대진이 완성되었습니다!");
-    }
+      const newMatches = createPlayInFinalMatch(matches, teams);
+      updateLeague(league.id, { matches: newMatches });
+      setLeague(prev => ({ ...prev, matches: newMatches }));
+      alert("🛡️ 플레이-인 최종전(2라운드 패자 대결) 대진이 완성되었습니다!");
+  }
   };
   
   const checkAndGenerateNextPlayoffRound = (currentMatches) => {

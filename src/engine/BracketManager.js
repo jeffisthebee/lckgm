@@ -290,3 +290,37 @@ export const createPlayInBracket = (league, standings, teams, baronWins, elderWi
 
     return { newMatches, playInSeeds, seasonSummary };
 };
+
+export const createPlayInFinalMatch = (currentMatches, teams) => {
+    const r2Matches = currentMatches.filter(m => m.type === 'playin' && m.round === 2);
+    
+    // Determine the losers of Round 2
+    const losers = r2Matches.map(m => {
+       const winnerName = m.result.winner;
+       // Safety check for object vs ID
+       const t1Id = typeof m.t1 === 'object' ? m.t1.id : m.t1;
+       const t2Id = typeof m.t2 === 'object' ? m.t2.id : m.t2;
+       
+       const t1Obj = teams.find(t => t.id === t1Id);
+       const t2Obj = teams.find(t => t.id === t2Id);
+       
+       return t1Obj.name === winnerName ? t2Obj : t1Obj;
+    });
+
+    const finalMatch = { 
+        id: Date.now() + 200, 
+        t1: losers[0].id, 
+        t2: losers[1].id, 
+        date: '2.8 (일)', 
+        time: '17:00', 
+        type: 'playin', 
+        format: 'BO5', 
+        status: 'pending', 
+        round: 3, 
+        label: '플레이-인 최종전', 
+        blueSidePriority: 'coin' 
+    };
+    
+    // Return new match list sorted by date
+    return [...currentMatches, finalMatch].sort((a,b) => parseFloat(a.date.split(' ')[0]) - parseFloat(b.date.split(' ')[0]));
+};
