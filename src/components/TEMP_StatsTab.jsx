@@ -24,7 +24,7 @@ const computeSetPlayerScore = (p) => {
   const assists = p.stats?.assists ?? p.a ?? 0;
   const damage = p.stats?.damage ?? 0;
   const gold = p.currentGold ?? 0;
-  const score = ((kills + assists) / safeD) * 3 + (damage / 3000) + (gold / 1000) + (assists * 1);
+  const score = ((kills + assists) / safeD) * 3 + (damage / 3000) + (gold / 1000) + (assists * 0.75);
   return { score, kills, deaths, assists, damage, gold };
 };
 
