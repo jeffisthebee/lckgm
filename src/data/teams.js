@@ -22,6 +22,6 @@ export const teamFinanceData = {
   "NS": { "total_expenditure": 51.0, "cap_expenditure": 50.0, "luxury_tax": 2.5 },
   "BNK": { "total_expenditure": 15.5, "cap_expenditure": 14.15, "luxury_tax": 0.0 },
   "BRO": { "total_expenditure": 16.0, "cap_expenditure": 16.0, "luxury_tax": 0.0 },
-  "DRX": { "total_expenditure": 19.0, "cap_expenditure": 20.0, "luxury_tax": 0.0 },
+  "DRX": { "total_expenditure": 20.0, "cap_expenditure": 20.0, "luxury_tax": 0.0 },
   "DNS": { "total_expenditure": 29.5, "cap_expenditure": 25.5, "luxury_tax": 0.0 }
 };
