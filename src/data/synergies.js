@@ -211,5 +211,44 @@ export const SYNERGIES = [
   { champions: ['칼리스타', '아무무', '야스오'], multiplier: 1.10 },
   { champions: ['사이온', '질리언', '말자하'], multiplier: 1.08 },
   { champions: ['헤카림', '시비르', '카르마', '제이스'], multiplier: 1.10 },
-  { champions: ['애쉬', '리산드라', '세주아니', '브라움'], multiplier: 1.09 }
+  { champions: ['애쉬', '리산드라', '세주아니', '브라움'], multiplier: 1.09 },
+  { champions: ['오리아나', '녹턴'], multiplier: 1.07 }, // Ball Delivery System
+  { champions: ['애쉬', '브라움'], multiplier: 1.06 }, // Passive Stacking Synergy
+  { champions: ['애쉬', '세라핀'], multiplier: 1.05 }, // Slow procs Seraphine's Root automatically
+  { champions: ['이즈리얼', '레오나'], multiplier: 1.03 }, // Aggressive Lane
+  { champions: ['카이사', '알리스타'], multiplier: 1.05 }, // CC adds Plasma stacks
+  { champions: ['칼리스타', '니코'], multiplier: 1.07 }, // Ult Delivery (R -> R)
+  { champions: ['미스 포츈', '자르반 4세'], multiplier: 1.06 }, // Cataclysm + Bullet Time
+  { champions: ['헤카림', '유미'], multiplier: 1.08 }, // High Speed Engage
+  { champions: ['트위치', '라칸'], multiplier: 1.05 }, // Stealth Delivery
+  { champions: ['닐라', '유미'], multiplier: 1.06 }, // Heal/Shield Amp + XP Synergy
+  { champions: ['자르반 4세', '직스'], multiplier: 1.05 }, // Cataclysm + Mega Inferno Bomb
+  { champions: ['사미라', '타릭'], multiplier: 1.05 }, // E dash delivers Dazzle stun
+  { champions: ['우디르', '아이번'], multiplier: 1.06 },
+  { champions: ['카시오페아', '트위치'], multiplier: 1.07 }, 
+  { champions: ['카시오페아', '티모'], multiplier: 1.06 },
+
+  // Terrain Creation (Wall Condemn/Stun Synergies)
+  { champions: ['베인', '애니비아'], multiplier: 1.06 }, // Condemn into Crystallize
+  { champions: ['뽀삐', '애니비아'], multiplier: 1.06 }, // Heroic Charge into Crystallize
+  { champions: ['베인', '자르반 4세'], multiplier: 1.05 }, // Condemn into Cataclysm
+  { champions: ['뽀삐', '자르반 4세'], multiplier: 1.05 }, // Heroic Charge into Cataclysm
+  { champions: ['라이즈', '누누와 윌럼프'], multiplier: 1.09 }, 
+  { champions: ['세나', '초가스'], multiplier: 1.06 }, 
+  { champions: ['세나', '사이온'], multiplier: 1.05 },
+  { champions: ['케이틀린', '마오카이'], multiplier: 1.05 }, // Root -> Trap
+  { champions: ['케이틀린', '바드'], multiplier: 1.06 }, // Tempered Fate -> Trap under feet
+  { champions: ['진', '스웨인'], multiplier: 1.05 }, // CC Chain (Root + Pull)
+  { champions: ['칼리스타', '케넨'], multiplier: 1.07 }, // Fate's Call -> Slicing Maelstrom
+  { champions: ['오리아나', '알리스타'], multiplier: 1.06 }, // Ball Delivery (Headbutt/Pulverize)
+  { champions: ['쉔', '트위치'], multiplier: 1.06 }, // "Submarine" (Stealth Shen Ult delivery)
+  { champions: ['킨드레드', '타릭'], multiplier: 1.08 }, // Lamb's Respite + Cosmic Radiance stacking
+  { champions: ['마스터 이', '룰루'], multiplier: 1.07 }, // Classic Funnel Synergy
+  { champions: ['마스터 이', '모르가나'], multiplier: 1.06 }, // Black Shield prevents CC (Yi's weakness)
+  { champions: ['미스 포츈', '소나'], multiplier: 1.06 }, // Crescendo + Bullet Time
+  { champions: ['미스 포츈', '세라핀'], multiplier: 1.05 }, // Encore + Bullet Time
+  { champions: ['야스오', '요네'], multiplier: 1.06 }, // Brother Synergy (Knockup chaining)
+  { champions: ['트리스타나', '레오나'], multiplier: 1.06 }, // Burst All-in
+  { champions: ['드레이븐', '잔나'], multiplier: 1.05 }, // Shield gives AD -> Stronger Axes
+  { champions: ['루시안', '밀리오'], multiplier: 1.06 }, // Range extension + Passive procs // Gap close support for Udyr
 ];

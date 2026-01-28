@@ -20,6 +20,7 @@ import ScheduleTab from '../components/ScheduleTab';
 import PlayoffTab from '../components/PlayoffTab';
 import StatsTab from '../components/TEMP_StatsTab';
 import {updateLeague, getLeagueById } from '../engine/storage';
+import DraftModal from '../components/DraftModal';
 
 
 
@@ -53,10 +54,7 @@ const getOvrBadgeStyle = (ovr) => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
     // 드래프트 상태
-    const [isDrafting, setIsDrafting] = useState(false);
-    const [draftPool, setDraftPool] = useState([]);
-    const [draftGroups, setDraftGroups] = useState({ baron: [], elder: [] });
-    const [draftTurn, setDraftTurn] = useState('user');
+    const [showDraftModal, setShowDraftModal] = useState(false);
     const draftTimeoutRef = useRef(null);
   
     // 메타 분석 탭 상태
