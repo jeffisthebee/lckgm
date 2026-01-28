@@ -8,7 +8,7 @@ import { getFullTeamRoster } from '../engine/rosterLogic';
 import LiveGamePlayer from '../components/LiveGamePlayer';
 import DetailedMatchResultModal from '../components/DetailedMatchResultModal';
 import playerList from '../data/players.json';
-import { computeStandings, calculateFinalStandings, calculateGroupPoints, sortGroupByStandings, createPlayInBracket, createPlayInRound2Matches, createPlayInFinalMatch } from '../engine/BracketManager';
+import { computeStandings, calculateFinalStandings, calculateGroupPoints, sortGroupByStandings, createPlayInBracket, createPlayInRound2Matches, createPlayInFinalMatch, createPlayoffRound2Matches, createPlayoffRound3Matches, createPlayoffLoserRound3Match, createPlayoffQualifierMatch, createPlayoffFinalMatch } from '../engine/BracketManager';
 import { updateChampionMeta, generateSuperWeekMatches } from '../engine/SeasonManager';
 import FinalStandingsModal from '../components/FinalStandingsModal';
 import MatchupBox from '../components/MatchupBox';
@@ -199,17 +199,13 @@ const getOvrBadgeStyle = (ovr) => {
     };
   
     const generatePlayInRound2 = (matches, seed1, seed2, pickedTeam, remainingTeam) => {
-        const r2Matches = [
-            { id: Date.now() + 100, t1: seed1.id, t2: pickedTeam.id, date: '2.7 (토)', time: '17:00', type: 'playin', format: 'BO3', status: 'pending', round: 2, label: '플레이-인 2라운드' },
-            { id: Date.now() + 101, t1: seed2.id, t2: remainingTeam.id, date: '2.7 (토)', time: '19:30', type: 'playin', format: 'BO3', status: 'pending', round: 2, label: '플레이-인 2라운드' }
-        ];
-        
-        const newMatches = [...matches, ...r2Matches].sort((a,b) => parseFloat(a.date.split(' ')[0]) - parseFloat(b.date.split(' ')[0]));
-        updateLeague(league.id, { matches: newMatches });
-        setLeague(prev => ({ ...prev, matches: newMatches }));
-        alert("플레이-인 2라운드 대진이 완성되었습니다!");
-        setOpponentChoice(null);
-    };
+      const newMatches = createPlayInRound2Matches(matches, seed1, seed2, pickedTeam, remainingTeam);
+      
+      updateLeague(league.id, { matches: newMatches });
+      setLeague(prev => ({ ...prev, matches: newMatches }));
+      alert("플레이-인 2라운드 대진이 완성되었습니다!");
+      setOpponentChoice(null);
+  };
   
   const checkAndGenerateNextPlayInRound = (matches) => {
     // 1. Check if Round 1 is finished
@@ -293,22 +289,23 @@ const getOvrBadgeStyle = (ovr) => {
         const seed2 = league.playoffSeeds.find(s => s.seed === 2).id;
   
         const generateR2Matches = (pickedWinner) => {
-            const remainingWinner = r1Winners.find(w => w.id !== pickedWinner.id).id;
-            
-            const newPlayoffMatches = [
-                // R2 Winners (Higher Seeds are t1 -> Blue Side)
-                { id: Date.now() + 400, round: 2, match: 1, label: '승자조 2R', t1: seed1, t2: pickedWinner.id, date: '2.13 (금)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' },
-                { id: Date.now() + 401, round: 2, match: 2, label: '승자조 2R', t1: seed2, t2: remainingWinner, date: '2.13 (금)', time: '19:30', type: 'playoff', format: 'BO5', status: 'pending' },
-                // R2 Losers (Random priority for losers bracket R1)
-                { id: Date.now() + 402, round: 2.1, match: 1, label: '패자조 1R', t1: r1Losers[0].id, t2: r1Losers[1].id, date: '2.14 (토)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: 'coin' },
-            ];
-            
-            const allMatches = [...currentMatches, ...newPlayoffMatches];
-            updateLeague(league.id, { matches: allMatches });
-            setLeague(prev => ({ ...prev, matches: allMatches }));
-            alert("👑 플레이오프 2라운드 대진이 완성되었습니다!");
-            setOpponentChoice(null);
-        };
+          const remainingWinner = r1Winners.find(w => w.id !== pickedWinner.id).id;
+          
+          const newMatches = createPlayoffRound2Matches(
+              currentMatches,
+              seed1,
+              seed2,
+              pickedWinner.id,
+              remainingWinner,
+              r1Losers[0].id,
+              r1Losers[1].id
+          );
+          
+          updateLeague(league.id, { matches: newMatches });
+          setLeague(prev => ({ ...prev, matches: newMatches }));
+          alert("👑 플레이오프 2라운드 대진이 완성되었습니다!");
+          setOpponentChoice(null);
+      };
   
         if (seed1 === myTeam.id) {
             setOpponentChoice({
@@ -332,53 +329,28 @@ const getOvrBadgeStyle = (ovr) => {
         }
         return; 
     }
-  
-    // --- R2 -> R3 ---
-    const r2wMatches = currentMatches.filter(m => m.type === 'playoff' && m.round === 2);
-    const r2lMatch = currentMatches.find(m => m.type === 'playoff' && m.round === 2.1);
-    const r2Finished = r2wMatches.length === 2 && r2wMatches.every(m => m.status === 'finished') && r2lMatch?.status === 'finished';
-    const r3Exists = currentMatches.some(m => m.type === 'playoff' && m.round === 3);
-  
-    if (r2Finished && !r3Exists) {
-        const r2wWinners = r2wMatches.map(m => getWinner(m));
-        const r2wLosers = r2wMatches.map(m => ({ id: getLoser(m), seed: (league.playoffSeeds.find(s => s.id === getLoser(m)) || {seed: 99}).seed }));
-        r2wLosers.sort((a,b) => a.seed - b.seed); 
-        
-        const r2lWinner = getWinner(r2lMatch);
-  
-        const newPlayoffMatches = [
-            // Winner Bracket Final
-            { id: Date.now() + 500, round: 3, match: 1, label: '승자조 결승', t1: r2wWinners[0], t2: r2wWinners[1], date: '2.18 (수)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: 'coin' },
-            // Loser Bracket R2
-            { id: Date.now() + 501, round: 2.2, match: 1, label: '패자조 2R', t1: r2wLosers[1].id, t2: r2lWinner, date: '2.15 (일)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' },
-        ];
-  
-        const allMatches = [...currentMatches, ...newPlayoffMatches];
-        updateLeague(league.id, { matches: allMatches });
-        setLeague(prev => ({ ...prev, matches: allMatches }));
-        alert("👑 플레이오프 3라운드 승자조 및 2라운드 패자조 경기가 생성되었습니다!");
-        return;
-    }
+
+  const r2wMatches = currentMatches.filter(m => m.type === 'playoff' && m.round === 2);
+  const r2lMatch = currentMatches.find(m => m.type === 'playoff' && m.round === 2.1);
+  const r2Finished = r2wMatches.length === 2 && r2wMatches.every(m => m.status === 'finished') && r2lMatch?.status === 'finished';
+  const r3Exists = currentMatches.some(m => m.type === 'playoff' && m.round === 3);
+
+  if (r2Finished && !r3Exists) {
+      const newMatches = createPlayoffRound3Matches(currentMatches, league.playoffSeeds, teams);
+      updateLeague(league.id, { matches: newMatches });
+      setLeague(prev => ({ ...prev, matches: newMatches }));
+      alert("👑 플레이오프 3라운드 승자조 및 2라운드 패자조 경기가 생성되었습니다!");
+      return;
+  }
     
-    // --- R2.2 & R3 -> R3 Loser ---
     const r2_2Match = currentMatches.find(m => m.type === 'playoff' && m.round === 2.2);
     const r3wMatch = currentMatches.find(m => m.type === 'playoff' && m.round === 3);
     const r3lExists = currentMatches.some(m => m.type === 'playoff' && m.round === 3.1);
-  
+
     if (r2_2Match?.status === 'finished' && r3wMatch?.status === 'finished' && !r3lExists) {
-        const r2wMatchesFinished = currentMatches.filter(m => m.round === 2 && m.status === 'finished');
-        const r2wLosers = r2wMatchesFinished.map(m => ({ id: getLoser(m), seed: (league.playoffSeeds.find(s => s.id === getLoser(m)) || {seed: 99}).seed }));
-        r2wLosers.sort((a,b) => a.seed - b.seed); 
-        
-        // Highest seed loser from Winner bracket R2 waits here
-        const highestSeedLoser = r2wLosers[0].id;
-        const r2_2Winner = getWinner(r2_2Match);
-  
-        const newMatch = { id: Date.now() + 600, round: 3.1, match: 1, label: '패자조 3R', t1: highestSeedLoser, t2: r2_2Winner, date: '2.19 (목)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' };
-        
-        const allMatches = [...currentMatches, newMatch];
-        updateLeague(league.id, { matches: allMatches });
-        setLeague(prev => ({ ...prev, matches: allMatches }));
+        const newMatches = createPlayoffLoserRound3Match(currentMatches, league.playoffSeeds, teams);
+        updateLeague(league.id, { matches: newMatches });
+        setLeague(prev => ({ ...prev, matches: newMatches }));
         alert("👑 플레이오프 3라운드 패자조 경기가 생성되었습니다!");
         return;
     }
@@ -386,33 +358,22 @@ const getOvrBadgeStyle = (ovr) => {
     // --- R4 Qualifier (Loser Bracket Final) ---
     const r3lMatch = currentMatches.find(m => m.type === 'playoff' && m.round === 3.1);
     const r4Exists = currentMatches.some(m => m.type === 'playoff' && m.round === 4);
-  
+
     if (r3lMatch?.status === 'finished' && r3wMatch?.status === 'finished' && !r4Exists) {
-        const r3wLoser = getLoser(r3wMatch); 
-        const r3lWinner = getWinner(r3lMatch);
-  
-        const newMatch = { id: Date.now() + 700, round: 4, match: 1, label: '결승 진출전', t1: r3wLoser, t2: r3lWinner, date: '2.21 (토)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' };
-        
-        const allMatches = [...currentMatches, newMatch];
-        updateLeague(league.id, { matches: allMatches });
-        setLeague(prev => ({ ...prev, matches: allMatches }));
+        const newMatches = createPlayoffQualifierMatch(currentMatches, teams);
+        updateLeague(league.id, { matches: newMatches });
+        setLeague(prev => ({ ...prev, matches: newMatches }));
         alert("👑 플레이오프 결승 진출전이 생성되었습니다!");
         return;
     }
   
-    // --- Grand Final ---
     const r4Match = currentMatches.find(m => m.type === 'playoff' && m.round === 4);
     const finalExists = currentMatches.some(m => m.type === 'playoff' && m.round === 5);
-  
+
     if (r4Match?.status === 'finished' && r3wMatch?.status === 'finished' && !finalExists) {
-        const r3wWinner = getWinner(r3wMatch); // Winner Bracket Champion
-        const r4Winner = getWinner(r4Match);   // Loser Bracket Champion
-  
-        const newMatch = { id: Date.now() + 800, round: 5, match: 1, label: '결승전', t1: r3wWinner, t2: r4Winner, date: '2.22 (일)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' };
-        
-        const allMatches = [...currentMatches, newMatch];
-        updateLeague(league.id, { matches: allMatches });
-        setLeague(prev => ({ ...prev, matches: allMatches }));
+        const newMatches = createPlayoffFinalMatch(currentMatches, teams);
+        updateLeague(league.id, { matches: newMatches });
+        setLeague(prev => ({ ...prev, matches: newMatches }));
         alert("🏆 대망의 결승전이 생성되었습니다!");
         return;
     }

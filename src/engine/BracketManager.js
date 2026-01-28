@@ -291,6 +291,41 @@ export const createPlayInBracket = (league, standings, teams, baronWins, elderWi
     return { newMatches, playInSeeds, seasonSummary };
 };
 
+export const createPlayInRound2Matches = (currentMatches, seed1, seed2, pickedTeam, remainingTeam) => {
+    const r2Matches = [
+        { 
+            id: Date.now() + 100, 
+            t1: seed1.id, 
+            t2: pickedTeam.id, 
+            date: '2.7 (토)', 
+            time: '17:00', 
+            type: 'playin', 
+            format: 'BO3', 
+            status: 'pending', 
+            round: 2, 
+            label: '플레이-인 2라운드' 
+        },
+        { 
+            id: Date.now() + 101, 
+            t1: seed2.id, 
+            t2: remainingTeam.id, 
+            date: '2.7 (토)', 
+            time: '19:30', 
+            type: 'playin', 
+            format: 'BO3', 
+            status: 'pending', 
+            round: 2, 
+            label: '플레이-인 2라운드' 
+        }
+    ];
+    
+    // Return existing matches + new matches, sorted by date
+    return [...currentMatches, ...r2Matches].sort((a, b) => {
+        const parseDate = (d) => parseFloat(d.split(' ')[0]);
+        return parseDate(a.date) - parseDate(b.date);
+    });
+};
+
 export const createPlayInFinalMatch = (currentMatches, teams) => {
     const r2Matches = currentMatches.filter(m => m.type === 'playin' && m.round === 2);
     
@@ -323,4 +358,137 @@ export const createPlayInFinalMatch = (currentMatches, teams) => {
     
     // Return new match list sorted by date
     return [...currentMatches, finalMatch].sort((a,b) => parseFloat(a.date.split(' ')[0]) - parseFloat(b.date.split(' ')[0]));
+};
+
+export const createPlayoffRound2Matches = (currentMatches, seed1, seed2, pickedWinnerId, remainingWinnerId, loser1Id, loser2Id) => {
+    const newPlayoffMatches = [
+        // R2 Winners (Higher Seeds are t1 -> Blue Side)
+        { id: Date.now() + 400, round: 2, match: 1, label: '승자조 2R', t1: seed1, t2: pickedWinnerId, date: '2.13 (금)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' },
+        { id: Date.now() + 401, round: 2, match: 2, label: '승자조 2R', t1: seed2, t2: remainingWinnerId, date: '2.13 (금)', time: '19:30', type: 'playoff', format: 'BO5', status: 'pending' },
+        // R2 Losers (Random priority for losers bracket R1)
+        { id: Date.now() + 402, round: 2.1, match: 1, label: '패자조 1R', t1: loser1Id, t2: loser2Id, date: '2.14 (토)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: 'coin' },
+    ];
+    
+    return [...currentMatches, ...newPlayoffMatches].sort((a,b) => parseFloat(a.date.split(' ')[0]) - parseFloat(b.date.split(' ')[0]));
+};
+
+// src/engine/BracketManager.js
+
+export const createPlayoffRound3Matches = (currentMatches, playoffSeeds, teams) => {
+    // Helper to resolve Winner ID from Name
+    const getWinnerId = (m) => {
+        const winnerName = m.result.winner;
+        const team = teams.find(t => t.name === winnerName);
+        return team ? team.id : null;
+    };
+    // Helper to get Loser ID
+    const getLoserId = (m, winnerId) => (m.t1 === winnerId ? m.t2 : m.t1);
+
+    const r2wMatches = currentMatches.filter(m => m.type === 'playoff' && m.round === 2);
+    const r2lMatch = currentMatches.find(m => m.type === 'playoff' && m.round === 2.1);
+
+    const r2wWinners = r2wMatches.map(m => getWinnerId(m));
+    
+    // Sort losers by seed (Higher seed goes to L2)
+    const r2wLosers = r2wMatches.map(m => {
+        const wId = getWinnerId(m);
+        const lId = getLoserId(m, wId);
+        const seedObj = playoffSeeds.find(s => s.id === lId) || { seed: 99 };
+        return { id: lId, seed: seedObj.seed };
+    });
+    r2wLosers.sort((a,b) => a.seed - b.seed); 
+
+    const r2lWinner = getWinnerId(r2lMatch);
+
+    const newPlayoffMatches = [
+        // Winner Bracket Final
+        { id: Date.now() + 500, round: 3, match: 1, label: '승자조 결승', t1: r2wWinners[0], t2: r2wWinners[1], date: '2.18 (수)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: 'coin' },
+        // Loser Bracket R2
+        { id: Date.now() + 501, round: 2.2, match: 1, label: '패자조 2R', t1: r2wLosers[1].id, t2: r2lWinner, date: '2.15 (일)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' },
+    ];
+
+    return [...currentMatches, ...newPlayoffMatches].sort((a,b) => parseFloat(a.date.split(' ')[0]) - parseFloat(b.date.split(' ')[0]));
+};
+
+// src/engine/BracketManager.js
+
+export const createPlayoffLoserRound3Match = (currentMatches, playoffSeeds, teams) => {
+    const getWinnerId = (m) => teams.find(t => t.name === m.result.winner).id;
+    const getLoserId = (m, winnerId) => (m.t1 === winnerId ? m.t2 : m.t1);
+
+    const r2wMatchesFinished = currentMatches.filter(m => m.round === 2 && m.status === 'finished');
+    const r2_2Match = currentMatches.find(m => m.type === 'playoff' && m.round === 2.2);
+    
+    // Sort losers by seed to find the highest seed loser from Winner Bracket R2
+    // Note: The logic in your original file implies this step determines who waits in R3.1
+    const r2wLosers = r2wMatchesFinished.map(m => {
+        const wId = getWinnerId(m);
+        const lId = getLoserId(m, wId);
+        const seedObj = playoffSeeds.find(s => s.id === lId) || { seed: 99 };
+        return { id: lId, seed: seedObj.seed };
+    });
+    r2wLosers.sort((a,b) => a.seed - b.seed); 
+    
+    const highestSeedLoser = r2wLosers[0].id;
+    const r2_2Winner = getWinnerId(r2_2Match);
+
+    const newMatch = { id: Date.now() + 600, round: 3.1, match: 1, label: '패자조 3R', t1: highestSeedLoser, t2: r2_2Winner, date: '2.19 (목)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' };
+    
+    return [...currentMatches, newMatch].sort((a,b) => parseFloat(a.date.split(' ')[0]) - parseFloat(b.date.split(' ')[0]));
+};
+
+// src/engine/BracketManager.js
+
+export const createPlayoffQualifierMatch = (currentMatches, teams) => {
+    const getWinnerId = (m) => teams.find(t => t.name === m.result.winner).id;
+    const getLoserId = (m, winnerId) => (m.t1 === winnerId ? m.t2 : m.t1);
+
+    const r3wMatch = currentMatches.find(m => m.type === 'playoff' && m.round === 3);
+    const r3lMatch = currentMatches.find(m => m.type === 'playoff' && m.round === 3.1);
+
+    const r3wWinner = getWinnerId(r3wMatch);
+    const r3wLoser = getLoserId(r3wMatch, r3wWinner);
+    const r3lWinner = getWinnerId(r3lMatch);
+
+    const newMatch = { 
+        id: Date.now() + 700, 
+        round: 4, 
+        match: 1, 
+        label: '결승 진출전', 
+        t1: r3wLoser, 
+        t2: r3lWinner, 
+        date: '2.21 (토)', 
+        time: '17:00', 
+        type: 'playoff', 
+        format: 'BO5', 
+        status: 'pending' 
+    };
+    
+    return [...currentMatches, newMatch];
+};
+
+export const createPlayoffFinalMatch = (currentMatches, teams) => {
+    const getWinnerId = (m) => teams.find(t => t.name === m.result.winner).id;
+
+    const r3wMatch = currentMatches.find(m => m.type === 'playoff' && m.round === 3);
+    const r4Match = currentMatches.find(m => m.type === 'playoff' && m.round === 4);
+
+    const r3wWinner = getWinnerId(r3wMatch); // Winner Bracket Champion
+    const r4Winner = getWinnerId(r4Match);   // Loser Bracket Champion
+
+    const newMatch = { 
+        id: Date.now() + 800, 
+        round: 5, 
+        match: 1, 
+        label: '결승전', 
+        t1: r3wWinner, 
+        t2: r4Winner, 
+        date: '2.22 (일)', 
+        time: '17:00', 
+        type: 'playoff', 
+        format: 'BO5', 
+        status: 'pending' 
+    };
+    
+    return [...currentMatches, newMatch];
 };
