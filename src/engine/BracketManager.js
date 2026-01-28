@@ -1,6 +1,18 @@
 // src/engine/BracketManager.js
 import { teams } from '../data/teams';
 
+// [NEW] Helper to compare dates correctly (e.g., "2.7" vs "2.11")
+const compareDates = (dateA, dateB) => {
+    if (!dateA || !dateB) return 0;
+    
+    // Split "2.7 (Sat)" -> "2.7" -> ["2", "7"]
+    const [monthA, dayA] = dateA.split(' ')[0].split('.').map(Number);
+    const [monthB, dayB] = dateB.split(' ')[0].split('.').map(Number);
+    
+    if (monthA !== monthB) return monthA - monthB;
+    return dayA - dayB;
+};
+
 // This function takes the league data and calculates wins/losses for every team
 export const computeStandings = (league) => {
     // 1. Initialize standings for all teams
@@ -156,7 +168,7 @@ export const calculateGroupPoints = (league, groupType) => {
     }).reduce((acc, m) => acc + (m.type === 'super' ? 2 : 1), 0);
 };
 
-// [NEW] Sort a list of team IDs based on standings (Wins > Diff)
+// Sort a list of team IDs based on standings (Wins > Diff)
 export const sortGroupByStandings = (groupIds, standings) => {
     if (!groupIds) return [];
     
@@ -319,11 +331,8 @@ export const createPlayInRound2Matches = (currentMatches, seed1, seed2, pickedTe
         }
     ];
     
-    // Return existing matches + new matches, sorted by date
-    return [...currentMatches, ...r2Matches].sort((a, b) => {
-        const parseDate = (d) => parseFloat(d.split(' ')[0]);
-        return parseDate(a.date) - parseDate(b.date);
-    });
+    // [FIX] Used compareDates for correct sorting
+    return [...currentMatches, ...r2Matches].sort((a, b) => compareDates(a.date, b.date));
 };
 
 export const createPlayInFinalMatch = (currentMatches, teams) => {
@@ -356,8 +365,8 @@ export const createPlayInFinalMatch = (currentMatches, teams) => {
         blueSidePriority: 'coin' 
     };
     
-    // Return new match list sorted by date
-    return [...currentMatches, finalMatch].sort((a,b) => parseFloat(a.date.split(' ')[0]) - parseFloat(b.date.split(' ')[0]));
+    // [FIX] Used compareDates for correct sorting
+    return [...currentMatches, finalMatch].sort((a, b) => compareDates(a.date, b.date));
 };
 
 export const createPlayoffRound2Matches = (currentMatches, seed1, seed2, pickedWinnerId, remainingWinnerId, loser1Id, loser2Id) => {
@@ -369,10 +378,9 @@ export const createPlayoffRound2Matches = (currentMatches, seed1, seed2, pickedW
         { id: Date.now() + 402, round: 2.1, match: 1, label: '패자조 1R', t1: loser1Id, t2: loser2Id, date: '2.14 (토)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: 'coin' },
     ];
     
-    return [...currentMatches, ...newPlayoffMatches].sort((a,b) => parseFloat(a.date.split(' ')[0]) - parseFloat(b.date.split(' ')[0]));
+    // [FIX] Used compareDates for correct sorting
+    return [...currentMatches, ...newPlayoffMatches].sort((a, b) => compareDates(a.date, b.date));
 };
-
-// src/engine/BracketManager.js
 
 export const createPlayoffRound3Matches = (currentMatches, playoffSeeds, teams) => {
     // Helper to resolve Winner ID from Name
@@ -407,10 +415,9 @@ export const createPlayoffRound3Matches = (currentMatches, playoffSeeds, teams) 
         { id: Date.now() + 501, round: 2.2, match: 1, label: '패자조 2R', t1: r2wLosers[1].id, t2: r2lWinner, date: '2.15 (일)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' },
     ];
 
-    return [...currentMatches, ...newPlayoffMatches].sort((a,b) => parseFloat(a.date.split(' ')[0]) - parseFloat(b.date.split(' ')[0]));
+    // [FIX] Used compareDates for correct sorting
+    return [...currentMatches, ...newPlayoffMatches].sort((a, b) => compareDates(a.date, b.date));
 };
-
-// src/engine/BracketManager.js
 
 export const createPlayoffLoserRound3Match = (currentMatches, playoffSeeds, teams) => {
     const getWinnerId = (m) => teams.find(t => t.name === m.result.winner).id;
@@ -434,10 +441,9 @@ export const createPlayoffLoserRound3Match = (currentMatches, playoffSeeds, team
 
     const newMatch = { id: Date.now() + 600, round: 3.1, match: 1, label: '패자조 3R', t1: highestSeedLoser, t2: r2_2Winner, date: '2.19 (목)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' };
     
-    return [...currentMatches, newMatch].sort((a,b) => parseFloat(a.date.split(' ')[0]) - parseFloat(b.date.split(' ')[0]));
+    // [FIX] Used compareDates for correct sorting
+    return [...currentMatches, newMatch].sort((a, b) => compareDates(a.date, b.date));
 };
-
-// src/engine/BracketManager.js
 
 export const createPlayoffQualifierMatch = (currentMatches, teams) => {
     const getWinnerId = (m) => teams.find(t => t.name === m.result.winner).id;
@@ -464,7 +470,8 @@ export const createPlayoffQualifierMatch = (currentMatches, teams) => {
         status: 'pending' 
     };
     
-    return [...currentMatches, newMatch];
+    // [FIX] Used compareDates for correct sorting
+    return [...currentMatches, newMatch].sort((a, b) => compareDates(a.date, b.date));
 };
 
 export const createPlayoffFinalMatch = (currentMatches, teams) => {
@@ -490,5 +497,6 @@ export const createPlayoffFinalMatch = (currentMatches, teams) => {
         status: 'pending' 
     };
     
-    return [...currentMatches, newMatch];
+    // [FIX] Used compareDates for correct sorting
+    return [...currentMatches, newMatch].sort((a, b) => compareDates(a.date, b.date));
 };
