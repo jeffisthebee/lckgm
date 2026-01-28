@@ -46,6 +46,9 @@ function calculatePog(winningPicks, gameMinutes) {
         if (['JGL', '정글'].includes(role)) {
             pogScore *= 1.07;
         }
+        if (['TOP', '탑'].includes(role)) {
+            pogScore *= 1.05;
+        }
         if (['SUP', '서포터'].includes(role)) {
             pogScore *= 1.10;
         }

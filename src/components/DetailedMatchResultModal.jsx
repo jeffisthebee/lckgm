@@ -52,6 +52,7 @@ const calculatePOS = (history, winningTeamName) => {
             
             // Role Multipliers
             const role = p.playerData?.포지션 || p.role || 'MID';
+            if (['TOP', '탑'].includes(role)) score *= 1.05;
             if (['JGL', '정글'].includes(role)) score *= 1.07;
             if (['SUP', '서포터'].includes(role)) score *= 1.10;
 
