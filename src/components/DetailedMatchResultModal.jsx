@@ -48,7 +48,7 @@ const calculatePOS = (history, winningTeamName) => {
             const damage = stats.damage || 0;
             
             // POS Formula
-            let score = ((k + a) / safeD * 3) + (damage / 3000) + (gold / 1000) + (a * 0.70);
+            let score = ((k + a) / safeD * 3) + (damage / 3000) + (gold / 1000) + (a * 0.65);
             
             // Role Multipliers
             const role = p.playerData?.포지션 || p.role || 'MID';

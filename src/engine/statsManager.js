@@ -78,7 +78,7 @@ export function computeStatsForLeague(league, options = {}) {
       const damage = safeNum(p.stats?.damage ?? p.damage ?? 0);
       const gold = safeNum(p.currentGold ?? p.gold ?? 0);
       const safeD = d === 0 ? 1 : d;
-      let score = ((k + a) / safeD) * 3 + (damage / 3000) + (gold / 1000) + (a * 0.7);
+      let score = ((k + a) / safeD) * 3 + (damage / 3000) + (gold / 1000) + (a * 0.65);
       const role = normalizeRole(p.playerData?.포지션 || p.role || p.position);
       if (['TOP', '탑'].includes(role)) score *= 1.05;
       if (['JGL', '정글'].includes(role)) score *= 1.07;

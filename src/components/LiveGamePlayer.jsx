@@ -61,7 +61,7 @@ const calculatePOS = (matchHistory, currentSetData, winningTeamName) => {
             const gold = p.currentGold || 0;
             const damage = stats.damage || 0;
             
-            let score = ((k + a) / d * 3) + (damage / 3000) + (gold / 1000) + (a * 0.70);
+            let score = ((k + a) / d * 3) + (damage / 3000) + (gold / 1000) + (a * 0.65);
             
             const role = p.playerData?.포지션 || 'MID';
             if (['TOP', '탑'].includes(role)) score *= 1.05;
@@ -90,7 +90,7 @@ const calculateManualPog = (picksBlue = [], picksRed = [], winnerSide = 'BLUE', 
         
         const dpm = damage / (gameMinutes || 1);
         
-        let score = ((k + a) / d * 3) + (dpm / 100) + ((p.currentGold || 0) / 1000) + (a * 0.70);
+        let score = ((k + a) / d * 3) + (dpm / 100) + ((p.currentGold || 0) / 1000) + (a * 0.65);
         
         const role = p.playerData?.포지션;
         if (['TOP', '탑'].includes(role)) score *= 1.05;
