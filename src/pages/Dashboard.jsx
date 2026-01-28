@@ -22,6 +22,7 @@ import StatsTab from '../components/TEMP_StatsTab';
 import {updateLeague, getLeagueById } from '../engine/storage';
 
 
+
 // --- HELPER FUNCTIONS ---
 const getOvrBadgeStyle = (ovr) => {
     if (ovr >= 95) return 'bg-red-100 text-red-700 border-red-300 ring-red-200';
@@ -52,7 +53,10 @@ const getOvrBadgeStyle = (ovr) => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
     // 드래프트 상태
-    const [showDraftModal, setShowDraftModal] = useState(false);
+    const [isDrafting, setIsDrafting] = useState(false);
+    const [draftPool, setDraftPool] = useState([]);
+    const [draftGroups, setDraftGroups] = useState({ baron: [], elder: [] });
+    const [draftTurn, setDraftTurn] = useState('user');
     const draftTimeoutRef = useRef(null);
   
     // 메타 분석 탭 상태
