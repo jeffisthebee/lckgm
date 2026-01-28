@@ -842,6 +842,27 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     const getActivePlayerName = (pos) => activeUserRoster[pos]?.이름 || "선택 안됨";
     const getActivePlayerOvr = (pos) => activeUserRoster[pos]?.종합 || "-";
 
+    const getLogStyle = (log) => {
+        if (!log) return 'text-gray-400';
+        
+        // 1. Check if the log belongs to a specific team name (often used for towers/objectives)
+        const blueName = simulationData?.blueTeam?.name;
+        const redName = simulationData?.redTeam?.name;
+        
+        if (blueName && log.includes(blueName)) return 'text-blue-300';
+        if (redName && log.includes(redName)) return 'text-red-300';
+        
+        // 2. Check if the log contains a player name and match to side
+        // Iterate players to find which one is mentioned first or involved
+        const playerMention = liveStats.players.find(p => log.includes(p.playerName));
+        if (playerMention) {
+            return playerMention.side === 'BLUE' ? 'text-blue-300' : 'text-red-300';
+        }
+
+        // 3. Fallback/Neutral
+        return 'text-gray-400';
+    };
+
     // --- LOADING SCREEN ---
     if ((!simulationData && !isManualMode && phase !== 'SET_RESULT' && phase !== 'ROSTER_SELECTION' && phase !== 'SIDE_SELECTION' && phase !== 'LOADING') || (isManualMode && !manualTeams.blue && phase !== 'ROSTER_SELECTION' && phase !== 'SIDE_SELECTION')) {
         return <div className="fixed inset-0 bg-black text-white flex items-center justify-center z-[200] font-bold text-3xl">경기 로딩 중...</div>;
@@ -1091,7 +1112,12 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                         <div className="font-bold text-[6px] sm:text-[8px] lg:text-xs text-center break-words leading-tight">{pick.champName}</div>
                                     </div>
                                     <div className="ml-2 lg:ml-4 overflow-hidden">
-                                        <div className="text-xs sm:text-sm lg:text-2xl font-black text-white truncate">{pick.champName}</div>
+                                        <div className="flex items-baseline gap-1 truncate">
+                                            <span className="text-xs sm:text-sm lg:text-2xl font-black text-white">{pick.champName}</span>
+                                            <span className="text-[8px] sm:text-[10px] lg:text-sm text-blue-200/70 font-normal">
+                                                {pick.tier ? `${pick.tier}티어` : ''}
+                                            </span>
+                                        </div>
                                         <div className="text-[8px] sm:text-[10px] lg:text-sm text-blue-300 font-bold truncate">{pick.playerName}</div>
                                     </div>
                                  </>
@@ -1228,7 +1254,12 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                         <div className="font-bold text-[6px] sm:text-[8px] lg:text-xs text-center break-words leading-tight">{pick.champName.substring(0,3)}</div>
                                     </div>
                                     <div className="mr-2 lg:mr-4 overflow-hidden text-right">
-                                        <div className="text-xs sm:text-sm lg:text-2xl font-black text-white truncate">{pick.champName}</div>
+                                        <div className="flex flex-row-reverse items-baseline gap-1 truncate">
+                                            <span className="text-xs sm:text-sm lg:text-2xl font-black text-white">{pick.champName}</span>
+                                            <span className="text-[8px] sm:text-[10px] lg:text-sm text-red-200/70 font-normal">
+                                                {pick.tier ? `${pick.tier}티어` : ''}
+                                            </span>
+                                        </div>
                                         <div className="text-[8px] sm:text-[10px] lg:text-sm text-red-300 font-bold truncate">{pick.playerName}</div>
                                     </div>
                                  </>
@@ -1279,7 +1310,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 <div className={`${mobileTab === 'LOGS' ? 'flex' : 'hidden'} sm:flex flex-1 flex-col bg-black/95 relative`}>
                     <div className="flex-1 p-2 lg:p-4 space-y-1 lg:space-y-2 overflow-y-auto font-mono text-[10px] sm:text-xs lg:text-sm pb-12 sm:pb-16 lg:pb-20 scrollbar-hide">
                         {displayLogs.map((log, i) => (
-                            <div key={i} className={`py-0.5 lg:py-1 px-1 lg:px-2 rounded ${log?.includes('⚔️') ? 'bg-red-900/20 text-red-200 border-l-2 border-red-500' : (log?.includes('🐛') || log?.includes('🐉') ? 'bg-purple-900/20 text-purple-200' : 'text-gray-400')}`}>
+                            <div key={i} className={`py-0.5 lg:py-1 px-1 lg:px-2 rounded ${getLogStyle(log)} ${log?.includes('⚔️') ? 'bg-red-900/10 border-l-2 border-red-500/50' : (log?.includes('🐛') || log?.includes('🐉') ? 'bg-purple-900/20' : '')}`}>
                                 {log}
                             </div>
                         ))}

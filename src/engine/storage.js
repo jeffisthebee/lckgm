@@ -1,10 +1,8 @@
 // src/engine/storage.js
-
 export const getLeagues = () => { 
     const s = localStorage.getItem('lckgm_leagues'); 
     return s ? JSON.parse(s) : []; 
   };
-  
   export const updateLeague = (id, u) => { 
     const leagues = getLeagues(); 
     const index = leagues.findIndex(l => l.id === id); 
