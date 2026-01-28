@@ -40,7 +40,7 @@ function calculatePog(winningPicks, gameMinutes) {
         const kda = (k + a) / safeD;
         const dpm = dmg / (Math.max(1, gameMinutes)); // Prevent divide by zero
         
-        let pogScore = (kda * 3) + (dpm / 100) + ((p.currentGold || 0) / 1000) + (a * 0.75);
+        let pogScore = (kda * 3) + (dpm / 100) + ((p.currentGold || 0) / 1000) + (a * 0.7);
         
         const role = p.playerData?.포지션 || 'MID';
         if (['JGL', '정글'].includes(role)) {
