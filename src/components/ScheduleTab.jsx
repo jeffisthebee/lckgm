@@ -1,6 +1,21 @@
 // src/components/ScheduleTab.jsx
 import React from 'react';
 
+// [NEW] Helper to force correct date sorting (e.g., 2.7 before 2.11)
+const compareDates = (a, b) => {
+    if (!a.date || !b.date) return 0;
+    // Split "2.7 (Sat)" -> "2.7" -> ["2", "7"]
+    const [monthA, dayA] = a.date.split(' ')[0].split('.').map(Number);
+    const [monthB, dayB] = b.date.split(' ')[0].split('.').map(Number);
+    
+    if (monthA !== monthB) return monthA - monthB;
+    if (dayA !== dayB) return dayA - dayB;
+    
+    // If same day, sort by time if available
+    if (a.time && b.time) return a.time.localeCompare(b.time);
+    return 0;
+};
+
 const ScheduleTab = ({ 
     activeTab, 
     league, 
@@ -19,6 +34,7 @@ const ScheduleTab = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 pb-4">
                     {league.matches
                         .filter(m => activeTab === 'schedule' || (m.t1 === myTeam.id || m.t2 === myTeam.id))
+                        .sort(compareDates) // <--- THIS WAS MISSING!
                         .map((m, i) => {
                             const t1 = m.t1 ? teams.find(t => t.id === m.t1) : { name: 'TBD' };
                             const t2 = m.t2 ? teams.find(t => t.id === m.t2) : { name: 'TBD' };
