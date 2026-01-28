@@ -19,7 +19,7 @@ import FinanceTab from '../components/FinanceTab';
 import ScheduleTab from '../components/ScheduleTab';
 import PlayoffTab from '../components/PlayoffTab';
 import StatsTab from '../components/TEMP_StatsTab';
-import { getLeagues, updateLeague, getLeagueById } from '../engine/storage';
+import {updateLeague, getLeagueById } from '../engine/storage';
 
 
 

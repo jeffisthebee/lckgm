@@ -520,7 +520,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 const chosenRole = champ.role || filterRole || 'MID';
 
                 const playerName = (team?.roster || []).find(p => p.포지션 === chosenRole)?.이름 || 'Unknown';
-                const pickObj = { champName: champ.name, playerName, tier: champ.tier, role: chosenRole };
+                const pickObj = { champName: champ.name, tier: champ.tier, role: chosenRole, playerName }; // Saving tier here
 
                 if (emptyIdx !== -1) {
                     teamPicks[emptyIdx] = pickObj;
@@ -842,24 +842,37 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     const getActivePlayerName = (pos) => activeUserRoster[pos]?.이름 || "선택 안됨";
     const getActivePlayerOvr = (pos) => activeUserRoster[pos]?.종합 || "-";
 
+    // --- HELPER: Get Log Style based on Team Side ---
     const getLogStyle = (log) => {
-        if (!log) return 'text-gray-400';
-        
-        // 1. Check if the log belongs to a specific team name (often used for towers/objectives)
-        const blueName = simulationData?.blueTeam?.name;
-        const redName = simulationData?.redTeam?.name;
-        
-        if (blueName && log.includes(blueName)) return 'text-blue-300';
-        if (redName && log.includes(redName)) return 'text-red-300';
-        
-        // 2. Check if the log contains a player name and match to side
-        // Iterate players to find which one is mentioned first or involved
-        const playerMention = liveStats.players.find(p => log.includes(p.playerName));
-        if (playerMention) {
-            return playerMention.side === 'BLUE' ? 'text-blue-300' : 'text-red-300';
+        // Collect current players by side for name matching
+        const bluePlayers = liveStats.players.filter(p => p.side === 'BLUE').map(p => p.playerName);
+        const redPlayers = liveStats.players.filter(p => p.side === 'RED').map(p => p.playerName);
+        const blueTeamName = simulationData?.blueTeam?.name || 'BLUE';
+        const redTeamName = simulationData?.redTeam?.name || 'RED';
+
+        // Extract the "actor" (first name in log usually) or check inclusion
+        // Simple heuristic: Does the log contain a Blue player/team name?
+        const hasBlue = bluePlayers.some(name => log.includes(name)) || log.includes(blueTeamName);
+        const hasRed = redPlayers.some(name => log.includes(name)) || log.includes(redTeamName);
+
+        // Conflict resolution for kills (e.g. "BluePlayer killed RedPlayer")
+        // We usually want the 'Killer's' color. The killer typically appears first in "Killer ➜ Victim".
+        if (hasBlue && hasRed) {
+            const parts = log.split('➜');
+            if (parts.length > 1) {
+                const firstPart = parts[0];
+                if (bluePlayers.some(n => firstPart.includes(n)) || firstPart.includes(blueTeamName)) return 'bg-blue-900/30 text-blue-200 border-l-2 border-blue-500';
+                return 'bg-red-900/30 text-red-200 border-l-2 border-red-500';
+            }
         }
 
-        // 3. Fallback/Neutral
+        if (hasBlue) return 'bg-blue-900/20 text-blue-300';
+        if (hasRed) return 'bg-red-900/20 text-red-300';
+
+        // Neutral or System logs
+        if (log.includes('⚔️')) return 'text-gray-300'; // Fallback for kills if names not found
+        if (log.includes('🐛') || log.includes('🐉') || log.includes('Baron')) return 'bg-purple-900/20 text-purple-300';
+        
         return 'text-gray-400';
     };
 
@@ -1104,7 +1117,13 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                  {/* Blue Picks List */}
                  <div className="hidden sm:flex flex-col w-1/5 sm:w-1/6 lg:w-1/4 h-full justify-start space-y-4 z-10 pt-8">
                     <div className="space-y-1 sm:space-y-2 lg:space-y-4">
-                     {draftState.bluePicks.map((pick, i) => (
+                     {draftState.bluePicks.map((pick, i) => {
+                         // Find tier if not present (for auto mode)
+                         let tierDisplay = pick?.tier;
+                         if (!tierDisplay && pick?.champName) {
+                             tierDisplay = activeChampionList.find(c => c.name === pick.champName)?.tier || '-';
+                         }
+                         return (
                          <div key={i} className={`h-10 sm:h-12 lg:h-24 border-l-2 lg:border-l-4 ${pick ? 'border-blue-500 bg-blue-900/30' : 'border-gray-700 bg-gray-800/50'} rounded-r lg:rounded-r-lg flex items-center p-1 sm:p-2 lg:p-4 transition-all duration-500`}>
                              {pick ? (
                                  <>
@@ -1112,18 +1131,15 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                         <div className="font-bold text-[6px] sm:text-[8px] lg:text-xs text-center break-words leading-tight">{pick.champName}</div>
                                     </div>
                                     <div className="ml-2 lg:ml-4 overflow-hidden">
-                                        <div className="flex items-baseline gap-1 truncate">
-                                            <span className="text-xs sm:text-sm lg:text-2xl font-black text-white">{pick.champName}</span>
-                                            <span className="text-[8px] sm:text-[10px] lg:text-sm text-blue-200/70 font-normal">
-                                                {pick.tier ? `${pick.tier}티어` : ''}
-                                            </span>
+                                        <div className="text-xs sm:text-sm lg:text-2xl font-black text-white truncate">
+                                            {pick.champName} <span className="text-[10px] lg:text-sm text-blue-200 font-normal">({tierDisplay}티어)</span>
                                         </div>
                                         <div className="text-[8px] sm:text-[10px] lg:text-sm text-blue-300 font-bold truncate">{pick.playerName}</div>
                                     </div>
                                  </>
                              ) : <div className="text-gray-600 font-bold text-[10px] sm:text-xs lg:text-lg">Pick {i+1}</div>}
                          </div>
-                     ))}
+                     )})}
                     </div>
                  </div>
 
@@ -1246,7 +1262,13 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                  {/* Red Picks List */}
                  <div className="hidden sm:flex flex-col w-1/5 sm:w-1/6 lg:w-1/4 h-full justify-start space-y-4 z-10 pt-8">
                     <div className="space-y-1 sm:space-y-2 lg:space-y-4">
-                     {draftState.redPicks.map((pick, i) => (
+                     {draftState.redPicks.map((pick, i) => {
+                         // Find tier if not present (for auto mode)
+                         let tierDisplay = pick?.tier;
+                         if (!tierDisplay && pick?.champName) {
+                             tierDisplay = activeChampionList.find(c => c.name === pick.champName)?.tier || '-';
+                         }
+                         return (
                          <div key={i} className={`h-10 sm:h-12 lg:h-24 border-r-2 lg:border-r-4 ${pick ? 'border-red-500 bg-red-900/30' : 'border-gray-700 bg-gray-800/50'} rounded-l lg:rounded-l-lg flex flex-row-reverse items-center p-1 sm:p-2 lg:p-4 transition-all duration-500`}>
                              {pick ? (
                                  <>
@@ -1254,18 +1276,15 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                         <div className="font-bold text-[6px] sm:text-[8px] lg:text-xs text-center break-words leading-tight">{pick.champName.substring(0,3)}</div>
                                     </div>
                                     <div className="mr-2 lg:mr-4 overflow-hidden text-right">
-                                        <div className="flex flex-row-reverse items-baseline gap-1 truncate">
-                                            <span className="text-xs sm:text-sm lg:text-2xl font-black text-white">{pick.champName}</span>
-                                            <span className="text-[8px] sm:text-[10px] lg:text-sm text-red-200/70 font-normal">
-                                                {pick.tier ? `${pick.tier}티어` : ''}
-                                            </span>
+                                        <div className="text-xs sm:text-sm lg:text-2xl font-black text-white truncate">
+                                            {pick.champName} <span className="text-[10px] lg:text-sm text-red-200 font-normal">({tierDisplay}티어)</span>
                                         </div>
                                         <div className="text-[8px] sm:text-[10px] lg:text-sm text-red-300 font-bold truncate">{pick.playerName}</div>
                                     </div>
                                  </>
                              ) : <div className="text-gray-600 font-bold text-[10px] sm:text-xs lg:text-lg">Pick {i+1}</div>}
                          </div>
-                     ))}
+                     )})}
                     </div>
                  </div>
              </div>
@@ -1310,7 +1329,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 <div className={`${mobileTab === 'LOGS' ? 'flex' : 'hidden'} sm:flex flex-1 flex-col bg-black/95 relative`}>
                     <div className="flex-1 p-2 lg:p-4 space-y-1 lg:space-y-2 overflow-y-auto font-mono text-[10px] sm:text-xs lg:text-sm pb-12 sm:pb-16 lg:pb-20 scrollbar-hide">
                         {displayLogs.map((log, i) => (
-                            <div key={i} className={`py-0.5 lg:py-1 px-1 lg:px-2 rounded ${getLogStyle(log)} ${log?.includes('⚔️') ? 'bg-red-900/10 border-l-2 border-red-500/50' : (log?.includes('🐛') || log?.includes('🐉') ? 'bg-purple-900/20' : '')}`}>
+                            <div key={i} className={`py-0.5 lg:py-1 px-1 lg:px-2 rounded ${getLogStyle(log)}`}>
                                 {log}
                             </div>
                         ))}
