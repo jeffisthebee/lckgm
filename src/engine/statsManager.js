@@ -340,15 +340,7 @@ export function computeStatsForLeague(league, options = {}) {
   
   export default computeStatsForLeague;
 
-  // src/engine/statsManager.js
-import { computeStatsForLeague } from './statsManager'; // Self-import to reuse logic if needed, or just append this function at the bottom
 
-// ... [Keep existing computeStatsForLeague code] ...
-
-/**
- * Compute Season Awards (MVP & All-Pro)
- * Formula: Avg Score + (POG Count * 10) + Team Standing Points
- */
 export function computeAwards(league, teams) {
     const stats = computeStatsForLeague(league, { regularOnly: true });
     
