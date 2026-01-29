@@ -454,7 +454,7 @@ export function computePlayoffAwards(league, teams) {
   // Create a temporary league object for stats
   const playoffLeague = { ...league, matches: playoffMatches };
   
-  // Compute stats for ALL playoff matches to get averages and totals
+  // Compute stats for ALL playoff matches
   const stats = computeStatsForLeague(playoffLeague, { regularOnly: false });
 
   // 2. Identify Key Players
@@ -463,18 +463,29 @@ export function computePlayoffAwards(league, teams) {
   const pogLeader = stats.pogLeaderboard[0] || null;
   const pogLeaderName = pogLeader?.playerName;
 
-  // B. Finals MVP Logic
-  const finalMatch = playoffMatches.find(m => m.round === 5);
-  let finalsMvpName = finalMatch?.result?.posPlayer || null; 
+  // B. Finals MVP Logic - ROBUST FIX
+  // Instead of hardcoding round 5, find the match with the highest round number
+  let finalMatch = null;
+  let maxRound = 0;
+  playoffMatches.forEach(m => {
+      if (m.round > maxRound) {
+          maxRound = m.round;
+          finalMatch = m;
+      }
+  });
 
-  // [FALLBACK] If Finals MVP data is missing, calculate highest score
+  // Normalize name helper (trim and lowercase for comparison safety)
+  const normalize = (n) => String(n || '').trim();
+
+  let finalsMvpName = normalize(finalMatch?.result?.posPlayer || finalMatch?.result?.pogPlayer); 
+
+  // [FALLBACK] If Finals MVP data is missing in the result object, calculate it
   if (!finalsMvpName && finalMatch && finalMatch.result) {
       
-      // FIX 1: Hydrate with Loose ID Matching (String vs Number safety)
+      // Hydrate with Loose ID Matching
       const t1Id = (typeof finalMatch.t1 === 'object') ? finalMatch.t1.id : finalMatch.t1;
       const t2Id = (typeof finalMatch.t2 === 'object') ? finalMatch.t2.id : finalMatch.t2;
       
-      // Ensure we find the team regardless of whether ID is number or string
       const t1Obj = teams.find(t => String(t.id) === String(t1Id)) || { name: 'Unknown 1' };
       const t2Obj = teams.find(t => String(t.id) === String(t2Id)) || { name: 'Unknown 2' };
 
@@ -484,34 +495,23 @@ export function computePlayoffAwards(league, teams) {
       const finalMatchStats = computeStatsForLeague({ ...league, matches: [hydratedMatch] }, { regularOnly: false });
       const winnerName = finalMatch.result.winner;
       
-      // FIX 2: Robust Candidate Selection
-      // First, try to find players strictly on the winning team
+      // Find candidates on the winning team
       let candidates = finalMatchStats.playerRatings.filter(p => p.teams.includes(winnerName));
       
-      // Safety Net 1: Loose Name Matching (e.g. "T1" vs "T1 Esports")
-      if (candidates.length === 0) {
-           candidates = finalMatchStats.playerRatings.filter(p => 
-              p.teams.some(t => String(t).includes(winnerName) || String(winnerName).includes(t))
-          );
-      }
-
-      // Safety Net 2: "Nuclear Option"
-      // If we still can't match the winner name, just take ALL players in the final match.
-      // The MVP is usually the highest scorer in the server anyway.
+      // Safety Net: If team name matching failed, take ALL players from finals
       if (candidates.length === 0) {
           candidates = finalMatchStats.playerRatings;
       }
 
-      // Sort by Score Descending (Highest Rating in Finals)
+      // Sort by Score Descending
       candidates.sort((a, b) => b.avgScore - a.avgScore);
       
-      // Pick the top player
       if (candidates.length > 0) {
-          finalsMvpName = candidates[0].playerName;
+          finalsMvpName = normalize(candidates[0].playerName);
       }
   }
 
-  // 3. Calculate Playoff Team Standings (Bracket Based)
+  // 3. Calculate Playoff Team Standings
   const teamRankPoints = new Map();
   teams.forEach(t => teamRankPoints.set(t.id, 0)); 
 
@@ -524,24 +524,33 @@ export function computePlayoffAwards(league, teams) {
   };
 
   if (finalMatch) {
-      teamRankPoints.set(getWinnerId(finalMatch), 100); 
-      teamRankPoints.set(getLoserId(finalMatch), 80);   
+      const wId = getWinnerId(finalMatch);
+      const lId = getLoserId(finalMatch);
+      if (wId) teamRankPoints.set(wId, 100); 
+      if (lId) teamRankPoints.set(lId, 80);   
   }
-  const r4 = playoffMatches.find(m => m.round === 4); 
-  if (r4) teamRankPoints.set(getLoserId(r4), 70); 
 
-  const r3_loser = playoffMatches.find(m => m.round === 3.1); 
-  if (r3_loser) teamRankPoints.set(getLoserId(r3_loser), 60); 
+  // Dynamic filtering for 3rd/4th based on rounds relative to Final
+  // Assuming Semis are (FinalRound - 1)
+  const semiRound = maxRound > 1 ? maxRound - 1 : 0;
+  
+  // Just a basic heuristic for other ranks based on the provided logic
+  // You might need to adjust "round === 4" logic if your rounds are dynamic
+  playoffMatches.forEach(m => {
+      if (m === finalMatch) return; // Skip finals
 
-  playoffMatches.filter(m => m.round === 2 || m.round === 2.1 || m.round === 2.2).forEach(m => {
-      const lid = getLoserId(m);
-      // Only overwrite if 0 (higher rounds take precedence)
-      if (teamRankPoints.get(lid) === 0) teamRankPoints.set(lid, 40);
-  });
+      const loserId = getLoserId(m);
+      if (!loserId) return;
 
-  playoffMatches.filter(m => m.round === 1).forEach(m => {
-      const lid = getLoserId(m);
-      if (teamRankPoints.get(lid) === 0) teamRankPoints.set(lid, 20);
+      // Assign points if they haven't been assigned a higher value yet
+      let points = 0;
+      if (m.round === 4 || m.round === semiRound) points = 70; // Semis loser
+      else if (String(m.round).includes('3')) points = 60; // Quarters loser
+      else if (String(m.round).includes('2')) points = 40;
+      else if (m.round === 1) points = 20;
+
+      const current = teamRankPoints.get(loserId) || 0;
+      if (points > current) teamRankPoints.set(loserId, points);
   });
 
   // 4. Score Players & Apply Bonuses
@@ -556,10 +565,12 @@ export function computePlayoffAwards(league, teams) {
       const pogEntry = stats.pogLeaderboard.find(p => p.playerName === player.playerName);
       const pogCount = pogEntry ? pogEntry.pogs : 0;
       
-      // Bonuses
+      // Bonuses - USING NORMALIZED COMPARISON
       let bonusScore = 0;
-      const isFinalsMvp = finalsMvpName === player.playerName;
-      const isPogLeader = pogLeaderName === player.playerName;
+      
+      // Compare normalized strings
+      const isFinalsMvp = finalsMvpName && (normalize(player.playerName) === finalsMvpName);
+      const isPogLeader = pogLeaderName && (normalize(player.playerName) === normalize(pogLeaderName));
 
       if (isFinalsMvp) bonusScore += 20;
       if (isPogLeader) bonusScore += 20;
@@ -579,7 +590,7 @@ export function computePlayoffAwards(league, teams) {
           pogCount,
           rankPoints,
           bonusScore,
-          isFinalsMvp,
+          isFinalsMvp, // Boolean flag for UI
           isPogLeader,
           finalScore,
           role: primaryRole,
@@ -602,8 +613,8 @@ export function computePlayoffAwards(league, teams) {
   });
 
   return {
-      finalsMvp: allProCandidates.find(p => p.isFinalsMvp),
-      pogLeader: allProCandidates.find(p => p.isPogLeader),
+      finalsMvp: allProCandidates.find(p => p.isFinalsMvp) || null,
+      pogLeader: allProCandidates.find(p => p.isPogLeader) || null,
       allProTeams
   };
 }
