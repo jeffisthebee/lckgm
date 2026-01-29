@@ -170,7 +170,8 @@ export function computeStatsForLeague(league, options = {}) {
       redTeamName: match.redTeam?.name || match.teamB?.name || (typeof match.t2 === 'object' ? match.t2.name : undefined),
       teamAName: match.blueTeam?.name || undefined,
       teamBName: match.redTeam?.name || undefined,
-      t1: match.t1, t2: match.t2
+      t1Name: (typeof match.t1 === 'object' ? match.t1.name : match.t1),
+      t2Name: (typeof match.t2 === 'object' ? match.t2.name : match.t2)
     };
 
     sets.forEach((set) => {
@@ -228,13 +229,13 @@ export function computeStatsForLeague(league, options = {}) {
           const playerName = p.playerName || p.player || p.playerName === 0 ? String(p.playerName) : (p.player || p.playerName || '').trim();
           if (playerName) {
             const score = computePlayerScoreFromStats(p);
-            if (score && !Number.isNaN(score)) {
+            if (typeof score === 'number' && !Number.isNaN(score)) {
               const entry = playerRatingAgg.get(playerName) || { sumScore: 0, games: 0, roles: {}, teams: new Set() };
               entry.sumScore += score;
               entry.games += 1;
               const rKey = pickRole || 'UNKNOWN';
               entry.roles[rKey] = (entry.roles[rKey] || 0) + 1;
-              const teamNameFromPick = p.playerData?.팀 || p.team || p.teamName || (side === 'A' ? (matchContext.blueTeamName || matchContext.teamAName) : (matchContext.redTeamName || matchContext.teamBName));
+              const teamNameFromPick = p.playerData?.팀 || p.team || p.teamName || (side === 'A' ? matchContext.blueTeamName : matchContext.redTeamName);
               if (teamNameFromPick) entry.teams.add(teamNameFromPick);
               playerRatingAgg.set(playerName, entry);
             }
@@ -248,7 +249,7 @@ export function computeStatsForLeague(league, options = {}) {
             kEntry.deaths += d;
             kEntry.assists += a;
             kEntry.games += 1;
-            const teamNameFromPick2 = p.playerData?.팀 || p.team || p.teamName || (side === 'A' ? (matchContext.blueTeamName || matchContext.teamAName) : (matchContext.redTeamName || matchContext.teamBName));
+            const teamNameFromPick2 = p.playerData?.팀 || p.team || p.teamName || (side === 'A' ? matchContext.blueTeamName : matchContext.redTeamName);
             if (teamNameFromPick2) kEntry.teams.add(teamNameFromPick2);
             kdaAgg.set(playerName, kEntry);
           }
@@ -258,7 +259,7 @@ export function computeStatsForLeague(league, options = {}) {
       // POG
       const pog = extractPog(set);
       if (pog) {
-        const pname = String(pog.playerName || pog.player || pog || '').trim();
+        const pname = String(pog.playerName || pog.player || pog.name || pog || '').trim();
         if (pname) {
           const prev = pogCounts.get(pname) || { count: 0, lastScore: null, teams: new Set() };
           prev.count += 1;
@@ -497,29 +498,27 @@ export function computePlayoffAwards(league, teams) {
       const hydratedMatch = { ...finalMatch, t1: t1Obj || finalMatch.t1, t2: t2Obj || finalMatch.t2 };
       const finalMatchStats = computeStatsForLeague({ ...league, matches: [hydratedMatch] }, { regularOnly: false });
       
-      let candidates = [];
-
-      // Filter players who belong to the winning team
-      if (winnerTeamObj) {
-          candidates = finalMatchStats.playerRatings.filter(p => 
-              p.teams.includes(winnerName) || 
-              p.teams.includes(winnerTeamObj.name)
-          );
-      } else {
-           // If we can't map the object, look for any player whose team matches the winner string
-           candidates = finalMatchStats.playerRatings.filter(p => p.teams.includes(winnerName));
-      }
-
-      // Sort by Score Descending
-      candidates.sort((a, b) => b.avgScore - a.avgScore);
-      
-      // Pick the top player
+      // First, try to use POG counts from the final series
+      let candidates = finalMatchStats.pogLeaderboard.filter(p => 
+        p.teams.includes(winnerName) || (winnerTeamObj && p.teams.includes(winnerTeamObj.name))
+      );
       if (candidates.length > 0) {
+        candidates.sort((a, b) => b.pogs - a.pogs || (b.lastScore || 0) - (a.lastScore || 0));
+        finalsMvpName = candidates[0].playerName;
+      } else {
+        // If no POG data, fallback to highest rated player
+        candidates = finalMatchStats.playerRatings.filter(p => 
+          p.teams.includes(winnerName) || (winnerTeamObj && p.teams.includes(winnerTeamObj.name))
+        );
+        if (candidates.length > 0) {
+          candidates.sort((a, b) => b.avgScore - a.avgScore);
           finalsMvpName = candidates[0].playerName;
-      } else if (finalMatchStats.playerRatings.length > 0) {
+        } else if (finalMatchStats.playerRatings.length > 0) {
           // Absolute fallback: Just take the highest rated player in the game, regardless of team
           // (Only happens if team names are totally mismatched)
+          finalMatchStats.playerRatings.sort((a, b) => b.avgScore - a.avgScore);
           finalsMvpName = finalMatchStats.playerRatings[0].playerName;
+        }
       }
   }
 
@@ -653,8 +652,8 @@ export function computePlayoffAwards(league, teams) {
   });
 
   return {
-      finalsMvp: allProCandidates.find(p => p.isFinalsMvp),
-      pogLeader: allProCandidates.find(p => p.isPogLeader),
+      finalsMvp: allProCandidates.find(p => p.isFinalsMvp) || null,
+      pogLeader: allProCandidates.find(p => p.isPogLeader) || null,
       allProTeams
   };
 }
