@@ -87,6 +87,9 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
     // Only calculate if BO5 (Score reaches 3) or explicitly marked as BO5
     const isBo5 = (matchScoreA === 3 || matchScoreB === 3) || (result.format === 'BO5');
     
+    // [NEW] Check if it's the Finals (Round 5 -> Index 4)
+    const isFinals = result.roundIndex === 4;
+
     const posPlayer = useMemo(() => {
         // 1. If explicitly passed (e.g. from LiveGamePlayer), use it
         if (result.posPlayer) return result.posPlayer;
@@ -136,7 +139,10 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
             {posPlayer && (
                 <div className="flex items-center gap-2 lg:gap-4 bg-purple-900/80 border border-purple-500 px-3 py-1 lg:px-6 lg:py-2 rounded-lg lg:rounded-xl shadow-[0_0_15px_rgba(168,85,247,0.4)] animate-pulse-slow">
                     <div className="flex flex-col items-end">
-                        <span className="text-[8px] lg:text-[10px] text-purple-300 font-bold tracking-widest">SERIES MVP</span>
+                        {/* MODIFIED: Show '파이널 MVP' for Round 5, 'SERIES MVP' otherwise */}
+                        <span className="text-[8px] lg:text-[10px] text-purple-300 font-bold tracking-widest">
+                            {isFinals ? "파이널 MVP" : "SERIES MVP"}
+                        </span>
                         <span className="text-xs lg:text-xl font-black text-white truncate max-w-[120px] lg:max-w-none">{posPlayer.playerName}</span>
                     </div>
                     <div className="w-6 h-6 lg:w-10 lg:h-10 rounded-full bg-purple-600 flex items-center justify-center border-2 border-white shadow-lg text-xs lg:text-lg shrink-0">
