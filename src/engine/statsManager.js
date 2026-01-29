@@ -467,15 +467,15 @@ export function computePlayoffAwards(league, teams) {
   const finalMatch = playoffMatches.find(m => m.round === 5);
   let finalsMvpName = finalMatch?.result?.posPlayer || null; 
 
-  // [FALLBACK] If Finals MVP data is missing, calculate highest score on winning team
+  // [FALLBACK] If Finals MVP data is missing, calculate highest score
   if (!finalsMvpName && finalMatch && finalMatch.result) {
       
-      // FIX: Hydrate the match with actual team objects so stats engine knows the team names
+      // FIX 1: Hydrate with Loose ID Matching (String vs Number safety)
       const t1Id = (typeof finalMatch.t1 === 'object') ? finalMatch.t1.id : finalMatch.t1;
       const t2Id = (typeof finalMatch.t2 === 'object') ? finalMatch.t2.id : finalMatch.t2;
       
-      const t1Obj = teams.find(t => t.id === t1Id) || { name: 'Unknown 1' };
-      const t2Obj = teams.find(t => t.id === t2Id) || { name: 'Unknown 2' };
+      const t1Obj = teams.find(t => String(t.id) === String(t1Id)) || { name: 'Unknown 1' };
+      const t2Obj = teams.find(t => String(t.id) === String(t2Id)) || { name: 'Unknown 2' };
 
       const hydratedMatch = { ...finalMatch, t1: t1Obj, t2: t2Obj };
 
@@ -483,20 +483,21 @@ export function computePlayoffAwards(league, teams) {
       const finalMatchStats = computeStatsForLeague({ ...league, matches: [hydratedMatch] }, { regularOnly: false });
       const winnerName = finalMatch.result.winner;
       
-      // Find players on winning team
-      // We check if the player's recorded team list includes the winner's name
-      let winnerPlayers = finalMatchStats.playerRatings.filter(p => p.teams.includes(winnerName));
+      // FIX 2: Robust Candidate Selection
+      // First, try to find players strictly on the winning team
+      let candidates = finalMatchStats.playerRatings.filter(p => p.teams.includes(winnerName));
       
-      // Safety: If exact name match fails (rare), just take the top scorer of the match
-      if (winnerPlayers.length === 0) {
-          winnerPlayers = finalMatchStats.playerRatings;
+      // Safety Net: If name matching fails (e.g. "T1" vs "T1 team"), just take ALL players in the finals
+      if (candidates.length === 0) {
+          candidates = finalMatchStats.playerRatings;
       }
 
       // Sort by Score Descending (Highest Rating in Finals)
-      winnerPlayers.sort((a, b) => b.avgScore - a.avgScore);
+      candidates.sort((a, b) => b.avgScore - a.avgScore);
       
-      if (winnerPlayers.length > 0) {
-          finalsMvpName = winnerPlayers[0].playerName;
+      // Pick the top player
+      if (candidates.length > 0) {
+          finalsMvpName = candidates[0].playerName;
       }
   }
 
@@ -524,6 +525,7 @@ export function computePlayoffAwards(league, teams) {
 
   playoffMatches.filter(m => m.round === 2 || m.round === 2.1 || m.round === 2.2).forEach(m => {
       const lid = getLoserId(m);
+      // Only overwrite if 0 (higher rounds take precedence)
       if (teamRankPoints.get(lid) === 0) teamRankPoints.set(lid, 40);
   });
 
