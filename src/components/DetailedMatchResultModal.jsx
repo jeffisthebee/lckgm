@@ -87,9 +87,13 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
     // Only calculate if BO5 (Score reaches 3) or explicitly marked as BO5
     const isBo5 = (matchScoreA === 3 || matchScoreB === 3) || (result.format === 'BO5');
     
-    // Check if it's the Finals (Round 5 -> Index 4)
-    // Adjust this index if your bracket has a different number of rounds
-    const isFinals = result.roundIndex === 4;
+    // Check if it's the Finals
+    // Expanded logic to identify Finals even if roundIndex varies (supports 16-team or 32-team brackets)
+    const isFinals = 
+        result.roundIndex === 4 || 
+        result.roundIndex === 3 || 
+        (result.roundName && result.roundName.toLowerCase().includes('final')) ||
+        (result.matchId && result.matchId.toString().toLowerCase().includes('final'));
 
     const posPlayer = useMemo(() => {
         // 1. If explicitly passed (e.g. from LiveGamePlayer), use it
@@ -130,7 +134,10 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
             <div className="flex items-center gap-4 lg:gap-6">
                 <div className="text-3xl lg:text-5xl font-black text-blue-500">{matchScoreA}</div>
                 <div className="flex flex-col items-center">
-                    <span className="text-[10px] lg:text-xs text-gray-400 font-bold tracking-widest hidden sm:block">FINAL</span>
+                    {/* Display Round Name if available, or 'FINAL' if identified as finals */}
+                    <span className="text-[10px] lg:text-xs text-gray-400 font-bold tracking-widest hidden sm:block">
+                        {isFinals ? 'FINAL' : result.roundName || 'MATCH'}
+                    </span>
                     <span className="text-xl lg:text-2xl font-black italic text-white">VS</span>
                 </div>
                 <div className="text-3xl lg:text-5xl font-black text-red-500">{matchScoreB}</div>
@@ -140,7 +147,7 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
             {posPlayer && (
                 <div className="flex items-center gap-2 lg:gap-4 bg-purple-900/80 border border-purple-500 px-3 py-1 lg:px-6 lg:py-2 rounded-lg lg:rounded-xl shadow-[0_0_15px_rgba(168,85,247,0.4)] animate-pulse-slow">
                     <div className="flex flex-col items-end">
-                        {/* CHANGED: Label Logic for Finals */}
+                        {/* Label Logic for Finals */}
                         <span className="text-[8px] lg:text-[10px] text-purple-300 font-bold tracking-widest">
                             {isFinals ? "파이널 MVP" : "SERIES MVP"}
                         </span>
