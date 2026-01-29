@@ -340,107 +340,105 @@ export function computeStatsForLeague(league, options = {}) {
   
   export default computeStatsForLeague;
 
+  // src/engine/statsManager.js
+import { computeStatsForLeague } from './statsManager'; // Self-import to reuse logic if needed, or just append this function at the bottom
+
+// ... [Keep existing computeStatsForLeague code] ...
+
+/**
+ * Compute Season Awards (MVP & All-Pro)
+ * Formula: Avg Score + (POG Count * 10) + Team Standing Points
+ */
 export function computeAwards(league, teams) {
-  // 1. Get Base Stats
-  const stats = computeStatsForLeague(league, { regularOnly: true });
-  
-  // 2. Calculate Regular Season Team Standings (Unified Table)
-  // We need to rank all 10 teams by Wins -> Diff -> Wins (Head-to-head simulated by Wins for simplicity)
-  const teamStats = new Map(); // teamId -> { wins, loss, diff }
-  
-  teams.forEach(t => teamStats.set(t.id, { id: t.id, wins: 0, loss: 0, diff: 0 }));
+    const stats = computeStatsForLeague(league, { regularOnly: true });
+    
+    // 1. Calculate Regular Season Team Standings
+    const teamStats = new Map();
+    teams.forEach(t => teamStats.set(t.id, { id: t.id, wins: 0, diff: 0 }));
 
-  if (league.matches) {
-      league.matches.filter(m => m.type === 'regular' && m.status === 'finished').forEach(m => {
-           const t1 = typeof m.t1 === 'object' ? m.t1.id : m.t1;
-           const t2 = typeof m.t2 === 'object' ? m.t2.id : m.t2;
-           
-           // Parse Score (e.g., "2:1")
-           const parts = m.result.score.split(':');
-           const s1 = parseInt(parts[0]);
-           const s2 = parseInt(parts[1]);
-           
-           const winnerId = m.result.winner === teams.find(t => t.id === t1)?.name ? t1 : t2;
-           const loserId = winnerId === t1 ? t2 : t1;
+    if (league.matches) {
+        league.matches.filter(m => m.type === 'regular' && m.status === 'finished').forEach(m => {
+             const t1 = typeof m.t1 === 'object' ? m.t1.id : m.t1;
+             const t2 = typeof m.t2 === 'object' ? m.t2.id : m.t2;
+             
+             const parts = m.result.score.split(':');
+             const s1 = parseInt(parts[0]);
+             const s2 = parseInt(parts[1]);
+             
+             const winnerId = m.result.winner === teams.find(t => t.id === t1)?.name ? t1 : t2;
+             const loserId = winnerId === t1 ? t2 : t1;
 
-           const wStat = teamStats.get(winnerId);
-           const lStat = teamStats.get(loserId);
+             const wStat = teamStats.get(winnerId);
+             const lStat = teamStats.get(loserId);
 
-           if (wStat) { wStat.wins++; wStat.diff += (Math.max(s1, s2) - Math.min(s1, s2)); }
-           if (lStat) { lStat.loss++; lStat.diff -= (Math.max(s1, s2) - Math.min(s1, s2)); }
-      });
-  }
+             if (wStat) { wStat.wins++; wStat.diff += (Math.max(s1, s2) - Math.min(s1, s2)); }
+             if (lStat) { lStat.diff -= (Math.max(s1, s2) - Math.min(s1, s2)); }
+        });
+    }
 
-  // Sort Teams: Wins Desc > Diff Desc
-  const rankedTeams = Array.from(teamStats.values()).sort((a, b) => {
-      if (b.wins !== a.wins) return b.wins - a.wins;
-      return b.diff - a.diff;
-  });
+    // Sort Teams
+    const rankedTeams = Array.from(teamStats.values()).sort((a, b) => {
+        if (b.wins !== a.wins) return b.wins - a.wins;
+        return b.diff - a.diff;
+    });
 
-  // Create Map for Team Points (1st=100, 2nd=80...)
-  const teamRankPoints = new Map();
-  rankedTeams.forEach((t, index) => {
-      const points = Math.max(0, 100 - (index * 10)); // 100, 90, 80... actually user asked for 100, 80, 70?
-      // User pattern: 100, 80, 70, 60... (Gap of 20 between 1st and 2nd, then 10)
-      // Let's implement strict user array:
-      const pointDistribution = [100, 80, 70, 60, 50, 40, 30, 20, 10, 0];
-      teamRankPoints.set(t.id, pointDistribution[index] || 0);
-  });
+    // Points: 1st=100, 2nd=80, 3rd=70...
+    const teamRankPoints = new Map();
+    const pointDistribution = [100, 80, 70, 60, 50, 40, 30, 20, 10, 0];
+    rankedTeams.forEach((t, index) => {
+        teamRankPoints.set(t.id, pointDistribution[index] || 0);
+    });
 
-  // 3. Calculate All-Pro Score for every player
-  const allProCandidates = [];
+    // 2. Score Players
+    const allProCandidates = [];
 
-  stats.playerRatings.forEach(player => {
-      // Find Player's Team ID
-      // Note: player.teams is a Set of team NAMES. We need to map name back to ID.
-      const teamName = player.teams[0]; 
-      const teamObj = teams.find(t => t.name === teamName);
-      if (!teamObj) return;
+    stats.playerRatings.forEach(player => {
+        const teamName = player.teams[0]; 
+        const teamObj = teams.find(t => t.name === teamName);
+        if (!teamObj) return;
 
-      const rankPoints = teamRankPoints.get(teamObj.id) || 0;
-      
-      // Find POG Count
-      const pogEntry = stats.pogLeaderboard.find(p => p.playerName === player.playerName);
-      const pogCount = pogEntry ? pogEntry.pogs : 0;
+        const rankPoints = teamRankPoints.get(teamObj.id) || 0;
+        const pogEntry = stats.pogLeaderboard.find(p => p.playerName === player.playerName);
+        const pogCount = pogEntry ? pogEntry.pogs : 0;
 
-      // FORMULA: AvgScore + (POG * 10) + RankPoints
-      // Note: AvgScore is usually ~10-20. POG*10 is ~0-150. Rank is 0-100.
-      const finalScore = player.avgScore + (pogCount * 10) + rankPoints;
+        // Formula
+        const finalScore = player.avgScore + (pogCount * 10) + rankPoints;
 
-      // Determine Primary Role (most played)
-      let primaryRole = 'MID';
-      let maxGames = 0;
-      Object.entries(player.roles).forEach(([r, count]) => {
-          if (count > maxGames) { maxGames = count; primaryRole = r; }
-      });
+        // Determine Primary Role
+        let primaryRole = 'MID';
+        let maxGames = 0;
+        if (player.roles) {
+            Object.entries(player.roles).forEach(([r, count]) => {
+                if (count > maxGames) { maxGames = count; primaryRole = r; }
+            });
+        }
 
-      allProCandidates.push({
-          ...player,
-          pogCount,
-          rankPoints,
-          finalScore,
-          role: primaryRole,
-          teamObj
-      });
-  });
+        allProCandidates.push({
+            ...player,
+            pogCount,
+            rankPoints,
+            finalScore,
+            role: primaryRole,
+            teamObj
+        });
+    });
 
-  // 4. Sort and Fill Teams
-  const roles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
-  const allProTeams = { 1: {}, 2: {}, 3: {} }; // { 1: { TOP: player, JGL: player... } }
+    // 3. Select Teams (1st, 2nd, 3rd)
+    const roles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
+    const allProTeams = { 1: {}, 2: {}, 3: {} }; 
 
-  roles.forEach(role => {
-      const rolePlayers = allProCandidates
-          .filter(p => p.role === role)
-          .sort((a, b) => b.finalScore - a.finalScore); // Highest Score first
-      
-      if (rolePlayers[0]) allProTeams[1][role] = rolePlayers[0];
-      if (rolePlayers[1]) allProTeams[2][role] = rolePlayers[1];
-      if (rolePlayers[2]) allProTeams[3][role] = rolePlayers[2];
-  });
+    roles.forEach(role => {
+        const rolePlayers = allProCandidates
+            .filter(p => p.role === role)
+            .sort((a, b) => b.finalScore - a.finalScore);
+        
+        if (rolePlayers[0]) allProTeams[1][role] = rolePlayers[0];
+        if (rolePlayers[1]) allProTeams[2][role] = rolePlayers[1];
+        if (rolePlayers[2]) allProTeams[3][role] = rolePlayers[2];
+    });
 
-  return {
-      seasonMvp: stats.pogLeaderboard[0], // Highest POG
-      allProTeams,
-      candidates: allProCandidates
-  };
+    return {
+        seasonMvp: stats.pogLeaderboard[0],
+        allProTeams
+    };
 }

@@ -1327,7 +1327,7 @@ const getOvrBadgeStyle = (ovr) => {
             )} 
 
 {activeTab === 'awards' && (
-    <AwardsTab league={league} teams={teams} />
+    <AwardsTab league={league} teams={teams} playerList={playerList} />
 )}
   
             </div>
