@@ -22,15 +22,14 @@ const RoleBadge = ({ role }) => {
 // Helper: Player Card
 const PlayerCard = ({ player, rank, playerList }) => {
     if (!player) return (
-        <div className="min-w-[140px] h-[180px] bg-gray-50 rounded-xl border border-dashed border-gray-300 flex items-center justify-center text-xs text-gray-400">
+        <div className="min-w-[160px] h-[220px] bg-gray-50 rounded-xl border border-dashed border-gray-300 flex items-center justify-center text-xs text-gray-400">
             N/A
         </div>
     );
     
     // Look up Korean Real Name
-    // Assumes playerList has { "이름": "Zeus", "실명": "최우제" ... }
     const playerData = playerList.find(p => p.이름 === player.playerName);
-    const koreanName = playerData ? playerData.실명 : player.playerName; // Fallback to IGN if no match
+    const koreanName = playerData ? playerData.실명 : player.playerName; 
     const ign = player.playerName;
 
     const rankStyles = {
@@ -40,28 +39,40 @@ const PlayerCard = ({ player, rank, playerList }) => {
     };
 
     return (
-        <div className={`relative min-w-[150px] w-[150px] lg:w-full p-3 rounded-xl border shadow-sm flex flex-col items-center gap-3 shrink-0 snap-center ${rankStyles[rank]}`}>
+        <div className={`relative min-w-[160px] w-[160px] lg:w-full p-3 rounded-xl border shadow-sm flex flex-col items-center gap-2 shrink-0 snap-center ${rankStyles[rank]}`}>
             {/* Role Badge Top Left */}
             <div className="absolute top-2 left-2 opacity-80 scale-90 origin-top-left">
                 <RoleBadge role={player.role} />
             </div>
 
             {/* Team Logo */}
-            <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-md mt-4" 
+            <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-md mt-4" 
                  style={{ backgroundColor: player.teamObj?.colors?.primary || '#333' }}>
                 {player.teamObj?.name || 'FA'}
             </div>
 
             {/* Name Section */}
-            <div className="text-center">
+            <div className="text-center mb-1">
                 <div className="font-black text-gray-900 text-base leading-tight">{koreanName}</div>
-                <div className="text-xs text-gray-500 font-bold uppercase tracking-wide">{ign}</div>
+                <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wide">{ign}</div>
             </div>
 
-            {/* Stats */}
-            <div className="w-full text-center mt-auto border-t pt-2 border-gray-200/50">
-                <div className="text-[10px] text-gray-400 font-bold uppercase">Total Score</div>
-                <div className="text-xl font-black text-gray-800 leading-none">{player.finalScore.toFixed(0)}</div>
+            {/* Score Section */}
+            <div className="w-full text-center mt-auto bg-white/50 rounded-lg p-2 border border-gray-100">
+                <div className="text-2xl font-black text-gray-800 leading-none mb-1">{player.finalScore.toFixed(0)}</div>
+                <div className="text-[10px] text-gray-400 font-bold mb-2">총 점수</div>
+                
+                {/* Detailed Breakdown */}
+                <div className="text-[9px] text-gray-500 border-t border-gray-200 pt-1 mt-1">
+                    <span className="font-bold">(세부 점수)</span>
+                    <div className="flex justify-center gap-1 mt-0.5 whitespace-nowrap">
+                        <span title="팀 성적 점수">팀 {player.rankPoints}</span>
+                        <span>+</span>
+                        <span title="POG 포인트">POG {player.pogCount * 10}</span>
+                        <span>+</span>
+                        <span title="스탯 평점">지표 {player.avgScore.toFixed(0)}</span>
+                    </div>
+                </div>
             </div>
         </div>
     );
@@ -71,7 +82,6 @@ const PlayerCard = ({ player, rank, playerList }) => {
 const TeamSection = ({ title, rank, players, playerList }) => {
     const roles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
     
-    // Styles for the header badge
     const headerStyles = {
         1: 'bg-yellow-500 text-white border-yellow-600',
         2: 'bg-gray-400 text-white border-gray-500',
@@ -123,7 +133,6 @@ export default function AwardsTab({ league, teams, playerList }) {
             {/* MVP Showcase */}
             <div className="flex justify-center">
                 <div className="relative w-full max-w-lg bg-gradient-to-b from-gray-900 to-gray-800 text-white p-6 lg:p-8 rounded-2xl shadow-2xl border border-gray-700 overflow-hidden group">
-                    {/* Background decoration */}
                     <div className="absolute top-0 right-0 p-8 opacity-5 text-[150px] font-black leading-none pointer-events-none select-none">MVP</div>
                     
                     <div className="relative z-10 flex flex-col items-center text-center">
