@@ -131,6 +131,7 @@ const getOvrBadgeStyle = (ovr) => {
       }
     }, [league]);
   
+  // [CRITICAL FIX] handleMatchClick now injects round info for old saves
   const handleMatchClick = (match) => {
     if (!match || match.status !== 'finished' || !match.result) return;
     
@@ -143,8 +144,16 @@ const getOvrBadgeStyle = (ovr) => {
     const teamA = teams.find(t => t.id === t1Id);
     const teamB = teams.find(t => t.id === t2Id);
 
+    // We merge the match metadata (round, label) into the result object
+    // This ensures DetailedMatchResultModal knows it's the Finals
     setMyMatchResult({
-        resultData: match.result, 
+        resultData: {
+            ...match.result,
+            round: match.round,
+            roundIndex: match.roundIndex,
+            roundName: match.label || match.roundName || (match.round === 5 ? 'Grand Final' : undefined),
+            matchId: match.id
+        }, 
         teamA: teamA,
         teamB: teamB
     });
@@ -1171,7 +1180,7 @@ const getOvrBadgeStyle = (ovr) => {
                                                               const summary = league.seasonSummary;
                                                               const poInfo = summary.poTeams.find(pt => pt.id === id);
                                                               const piInfo = summary.playInTeams.find(pit => pit.id === id);
-  
+                                                              
                                                               if (poInfo) statusBadge = <span className="text-[10px] bg-yellow-100 text-yellow-700 px-1 rounded ml-1 font-bold whitespace-nowrap">PO {poInfo.seed}시드</span>;
                                                               else if (piInfo) statusBadge = <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1 rounded ml-1 font-bold whitespace-nowrap">PI {piInfo.seed}시드</span>;
                                                               else if (summary.eliminated === id) statusBadge = <span className="text-[10px] bg-gray-200 text-gray-500 px-1 rounded ml-1 font-bold whitespace-nowrap">OUT</span>;
