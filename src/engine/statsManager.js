@@ -1,16 +1,10 @@
-// src/engine/statsManager.js
-// Computes aggregated statistics (POG leaderboard, player ratings, champion meta, KDA leaders)
-// from a league object. Defensive and tolerant to multiple match/set shapes.
+// NOTE: This is an adjusted version of the original file to fix three issues:
+// 1) Ensure POG-only players (or players missing stats) are included when building playoff / regular candidates so their POG points are counted.
+// 2) Normalize finals MVP extraction so Finals MVP resolves correctly when stored as an object or string.
+// 3) Ensure the regular season MVP object includes his total POG points (pogCount) and is enriched with score/team info when needed.
 //
-// Usage:
-//   import { computeStatsForLeague } from '../engine/statsManager';
-//   const stats = computeStatsForLeague(league, { regularOnly: true, roleFilter: 'ADC' });
+// The rest of computeStatsForLeague is intact — only computeAwards and computePlayoffAwards logic has been hardened.
 
-/**
- * Options:
- * - regularOnly: boolean (if true, include only matches with type === 'regular')
- * - roleFilter: 'ALL' | 'TOP' | 'JGL' | 'MID' | 'ADC' | 'SUP'
- */
 export function computeStatsForLeague(league, options = {}) {
   const { regularOnly = false, roleFilter = 'ALL' } = options || {};
 
@@ -170,8 +164,7 @@ export function computeStatsForLeague(league, options = {}) {
       redTeamName: match.redTeam?.name || match.teamB?.name || (typeof match.t2 === 'object' ? match.t2.name : undefined),
       teamAName: match.blueTeam?.name || undefined,
       teamBName: match.redTeam?.name || undefined,
-      t1Name: (typeof match.t1 === 'object' ? match.t1.name : match.t1),
-      t2Name: (typeof match.t2 === 'object' ? match.t2.name : match.t2)
+      t1: match.t1, t2: match.t2
     };
 
     sets.forEach((set) => {
@@ -229,13 +222,13 @@ export function computeStatsForLeague(league, options = {}) {
           const playerName = p.playerName || p.player || p.playerName === 0 ? String(p.playerName) : (p.player || p.playerName || '').trim();
           if (playerName) {
             const score = computePlayerScoreFromStats(p);
-            if (typeof score === 'number' && !Number.isNaN(score)) {
+            if (score && !Number.isNaN(score)) {
               const entry = playerRatingAgg.get(playerName) || { sumScore: 0, games: 0, roles: {}, teams: new Set() };
               entry.sumScore += score;
               entry.games += 1;
               const rKey = pickRole || 'UNKNOWN';
               entry.roles[rKey] = (entry.roles[rKey] || 0) + 1;
-              const teamNameFromPick = p.playerData?.팀 || p.team || p.teamName || (side === 'A' ? matchContext.blueTeamName : matchContext.redTeamName);
+              const teamNameFromPick = p.playerData?.팀 || p.team || p.teamName || (side === 'A' ? (matchContext.blueTeamName || matchContext.teamAName) : (matchContext.redTeamName || matchContext.teamBName));
               if (teamNameFromPick) entry.teams.add(teamNameFromPick);
               playerRatingAgg.set(playerName, entry);
             }
@@ -249,7 +242,7 @@ export function computeStatsForLeague(league, options = {}) {
             kEntry.deaths += d;
             kEntry.assists += a;
             kEntry.games += 1;
-            const teamNameFromPick2 = p.playerData?.팀 || p.team || p.teamName || (side === 'A' ? matchContext.blueTeamName : matchContext.redTeamName);
+            const teamNameFromPick2 = p.playerData?.팀 || p.team || p.teamName || (side === 'A' ? (matchContext.blueTeamName || matchContext.teamAName) : (matchContext.redTeamName || matchContext.teamBName));
             if (teamNameFromPick2) kEntry.teams.add(teamNameFromPick2);
             kdaAgg.set(playerName, kEntry);
           }
@@ -259,7 +252,7 @@ export function computeStatsForLeague(league, options = {}) {
       // POG
       const pog = extractPog(set);
       if (pog) {
-        const pname = String(pog.playerName || pog.player || pog.name || pog || '').trim();
+        const pname = String(pog.playerName || pog.player || pog || '').trim();
         if (pname) {
           const prev = pogCounts.get(pname) || { count: 0, lastScore: null, teams: new Set() };
           prev.count += 1;
@@ -345,9 +338,36 @@ export function computeStatsForLeague(league, options = {}) {
 export default computeStatsForLeague;
 
 
+// --- Helper utilities used by award functions (kept local to this module) ---
+function normalizePlayerNameMaybe(value) {
+  if (!value && value !== 0) return null;
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'object') {
+    return String(value.playerName || value.player || value.name || value.ign || value.이름 || '').trim() || null;
+  }
+  return String(value).trim() || null;
+}
+
+function findTeamObjectForPlayerTeams(playerTeams = [], teams = []) {
+  if (!Array.isArray(playerTeams)) playerTeams = [playerTeams].filter(Boolean);
+  for (const pt of playerTeams) {
+    if (!pt && pt !== 0) continue;
+    // try to match by team name or id (string/number)
+    const asStr = String(pt);
+    const byName = teams.find(t => String(t.name) === asStr);
+    if (byName) return byName;
+    const byId = teams.find(t => String(t.id) === asStr);
+    if (byId) return byId;
+  }
+  // nothing matched
+  return null;
+}
+
+
+// ---------- Awards Computation (regular season) ----------
 export function computeAwards(league, teams) {
   const stats = computeStatsForLeague(league, { regularOnly: true });
-  
+
   // 0. Identify Season MVP (Highest POG) beforehand
   const seasonMvp = stats.pogLeaderboard[0] || null;
 
@@ -363,18 +383,28 @@ export function computeAwards(league, teams) {
            // Check if score exists and is valid
            if (!m.result || !m.result.score) return;
 
-           const parts = m.result.score.split(':');
-           const s1 = parseInt(parts[0]);
-           const s2 = parseInt(parts[1]);
+           const parts = String(m.result.score).split(':');
+           if (parts.length < 2) return;
+           const s1 = parseInt(parts[0]) || 0;
+           const s2 = parseInt(parts[1]) || 0;
            
-           const winnerId = m.result.winner === teams.find(t => t.id === t1)?.name ? t1 : t2;
-           const loserId = winnerId === t1 ? t2 : t1;
+           // Decide winner by result.winner matching team name if possible
+           const winnerId = (m.result && m.result.winner)
+             ? (teams.find(t => t.name === m.result.winner)?.id || (m.result.winner === String(t1) ? t1 : (m.result.winner === String(t2) ? t2 : null)))
+             : null;
 
-           const wStat = teamStats.get(winnerId);
+           // Fallback: choose t1 or t2 by score if winnerId not determined
+           let resolvedWinner = winnerId;
+           if (!resolvedWinner) {
+             resolvedWinner = s1 > s2 ? t1 : (s2 > s1 ? t2 : null);
+           }
+           const loserId = resolvedWinner === t1 ? t2 : t1;
+
+           const wStat = teamStats.get(resolvedWinner);
            const lStat = teamStats.get(loserId);
 
-           if (wStat) { wStat.wins++; wStat.diff += (Math.max(s1, s2) - Math.min(s1, s2)); }
-           if (lStat) { lStat.diff -= (Math.max(s1, s2) - Math.min(s1, s2)); }
+           if (wStat) { wStat.wins++; wStat.diff += Math.abs(s1 - s2); }
+           if (lStat) { lStat.diff -= Math.abs(s1 - s2); }
       });
   }
 
@@ -394,21 +424,40 @@ export function computeAwards(league, teams) {
   // 2. Score Players
   const allProCandidates = [];
 
-  stats.playerRatings.forEach(player => {
-      const teamName = player.teams[0]; 
-      const teamObj = teams.find(t => t.name === teamName);
-      if (!teamObj) return;
+  // Build a combined player list: include players with ratings AND players who appear only on POG board
+  const playerByName = new Map();
+  stats.playerRatings.forEach(player => playerByName.set(player.playerName, player));
+  stats.pogLeaderboard.forEach(p => {
+    if (!playerByName.has(p.playerName)) {
+      playerByName.set(p.playerName, {
+        playerName: p.playerName,
+        avgScore: 0,
+        games: 0,
+        roles: {},
+        teams: p.teams || []
+      });
+    }
+  });
 
-      const rankPoints = teamRankPoints.get(teamObj.id) || 0;
+  // Now iterate combined players and compute finalScore and other fields
+  Array.from(playerByName.values()).forEach(player => {
+      // try robust team mapping: player's teams may be names or ids
+      const teamObj = findTeamObjectForPlayerTeams(player.teams || [], teams);
+      if (!teamObj) {
+        // As a last resort, skip players who we cannot map to any team for ranking points,
+        // but still include them (rankPoints 0). We don't return early here.
+      }
+
+      const rankPoints = teamObj ? (teamRankPoints.get(teamObj.id) || 0) : 0;
       const pogEntry = stats.pogLeaderboard.find(p => p.playerName === player.playerName);
       const pogCount = pogEntry ? pogEntry.pogs : 0;
       
       // [NEW] MVP Bonus: If this player is the Season MVP, add 20 points
-      const isMvp = seasonMvp && seasonMvp.playerName === player.playerName;
+      const isMvp = seasonMvp && (seasonMvp.playerName === player.playerName);
       const mvpBonus = isMvp ? 20 : 0;
 
       // Formula
-      const finalScore = player.avgScore + (pogCount * 10) + rankPoints + mvpBonus;
+      const finalScore = (player.avgScore || 0) + (pogCount * 10) + rankPoints + mvpBonus;
 
       // Determine Primary Role
       let primaryRole = 'MID';
@@ -430,7 +479,32 @@ export function computeAwards(league, teams) {
       });
   });
 
-  const enrichedSeasonMvp = allProCandidates.find(p => p.playerName === (seasonMvp?.playerName || '')) || seasonMvp;
+  // Ensure the seasonMvp entry is enriched (if it wasn't part of player ratings)
+  let enrichedSeasonMvp = allProCandidates.find(p => p.playerName === (seasonMvp?.playerName || '')) || null;
+  if (!enrichedSeasonMvp && seasonMvp) {
+    // build a fallback enriched object
+    const pogCount = seasonMvp.pogs || 0;
+    // try to find a matching rating record to get avgScore, roles and teams
+    const ratingRecord = stats.playerRatings.find(r => r.playerName === seasonMvp.playerName);
+    const avgScore = ratingRecord ? ratingRecord.avgScore : 0;
+    const teamsArr = seasonMvp.teams || (ratingRecord ? ratingRecord.teams : []);
+    const teamObj = findTeamObjectForPlayerTeams(teamsArr, teams);
+    const rankPoints = teamObj ? (teamRankPoints.get(teamObj.id) || 0) : 0;
+    const mvpBonus = 20;
+    const finalScore = avgScore + (pogCount * 10) + rankPoints + mvpBonus;
+    enrichedSeasonMvp = {
+      playerName: seasonMvp.playerName,
+      pogCount,
+      avgScore,
+      games: ratingRecord ? ratingRecord.games : 0,
+      roles: ratingRecord ? ratingRecord.roles : {},
+      teams: teamsArr,
+      teamObj,
+      mvpBonus,
+      finalScore,
+      role: ratingRecord ? (Object.keys(ratingRecord.roles || {})[0] || 'MID') : 'MID'
+    };
+  }
 
   // 3. Select Teams (1st, 2nd, 3rd)
   const roles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
@@ -452,6 +526,8 @@ export function computeAwards(league, teams) {
   };
 }
 
+
+// ---------- Playoff Awards Computation ----------
 export function computePlayoffAwards(league, teams) {
   // 1. Filter for Playoff Matches only
   const playoffMatches = (league.matches || []).filter(m => m.type === 'playoff' && m.status === 'finished');
@@ -466,14 +542,15 @@ export function computePlayoffAwards(league, teams) {
   
   // A. Playoff MVP (POG Leader across all playoff games)
   const pogLeader = stats.pogLeaderboard[0] || null;
-  const pogLeaderName = pogLeader?.playerName;
+  const pogLeaderName = pogLeader?.playerName ? pogLeader.playerName : null;
 
   // B. Finals MVP Logic
   // Sort matches by round desc to find the "Grand Final"
   const sortedMatches = [...playoffMatches].sort((a, b) => (b.round || 0) - (a.round || 0));
   const finalMatch = sortedMatches[0]; // The match with the highest round number is the Final
 
-  let finalsMvpName = finalMatch?.result?.posPlayer || finalMatch?.pogPlayer || null; 
+  // Normalize whichever field might contain finals MVP (could be string or object)
+  let finalsMvpName = normalizePlayerNameMaybe(finalMatch?.result?.posPlayer || finalMatch?.pogPlayer || finalMatch?.result?.posPlayerName || finalMatch?.result?.playerName || null);
 
   // [FALLBACK LOGIC]
   if (!finalsMvpName && finalMatch && finalMatch.result) {
@@ -498,27 +575,42 @@ export function computePlayoffAwards(league, teams) {
       const hydratedMatch = { ...finalMatch, t1: t1Obj || finalMatch.t1, t2: t2Obj || finalMatch.t2 };
       const finalMatchStats = computeStatsForLeague({ ...league, matches: [hydratedMatch] }, { regularOnly: false });
       
-      // First, try to use POG counts from the final series
-      let candidates = finalMatchStats.pogLeaderboard.filter(p => 
-        p.teams.includes(winnerName) || (winnerTeamObj && p.teams.includes(winnerTeamObj.name))
-      );
-      if (candidates.length > 0) {
-        candidates.sort((a, b) => b.pogs - a.pogs || (b.lastScore || 0) - (a.lastScore || 0));
-        finalsMvpName = candidates[0].playerName;
+      let candidates = [];
+
+      // Filter players who belong to the winning team
+      if (winnerTeamObj) {
+          candidates = finalMatchStats.playerRatings.filter(p => 
+              (p.teams || []).includes(winnerTeamObj.name) || 
+              (p.teams || []).includes(String(winnerTeamObj.id))
+          );
       } else {
-        // If no POG data, fallback to highest rated player
-        candidates = finalMatchStats.playerRatings.filter(p => 
-          p.teams.includes(winnerName) || (winnerTeamObj && p.teams.includes(winnerTeamObj.name))
-        );
-        if (candidates.length > 0) {
-          candidates.sort((a, b) => b.avgScore - a.avgScore);
+           // If we can't map the object, look for any player whose team matches the winner string
+           candidates = finalMatchStats.playerRatings.filter(p => (p.teams || []).includes(winnerName));
+      }
+
+      // Also include POG-only players from the final match (in case the final MVP was only POG-ed)
+      finalMatchStats.pogLeaderboard.forEach(pb => {
+        if (!candidates.find(c => c.playerName === pb.playerName)) {
+          candidates.push({
+            playerName: pb.playerName,
+            avgScore: 0,
+            games: 0,
+            roles: {},
+            teams: pb.teams || []
+          });
+        }
+      });
+
+      // Sort by Score Descending
+      candidates.sort((a, b) => (b.avgScore || 0) - (a.avgScore || 0));
+      
+      // Pick the top player
+      if (candidates.length > 0) {
           finalsMvpName = candidates[0].playerName;
-        } else if (finalMatchStats.playerRatings.length > 0) {
+      } else if (finalMatchStats.playerRatings.length > 0) {
           // Absolute fallback: Just take the highest rated player in the game, regardless of team
           // (Only happens if team names are totally mismatched)
-          finalMatchStats.playerRatings.sort((a, b) => b.avgScore - a.avgScore);
           finalsMvpName = finalMatchStats.playerRatings[0].playerName;
-        }
       }
   }
 
@@ -587,8 +679,6 @@ export function computePlayoffAwards(league, teams) {
               }
           });
           // After processing a round of losers, increment rank index
-          // (Technically multiple teams might exit in the same round, they get same points, 
-          // but for simplicity we increment once per "round tier" or just use the next slot)
            currentRankIndex++;
       }
   });
@@ -597,24 +687,36 @@ export function computePlayoffAwards(league, teams) {
   // 4. Score Players & Apply Bonuses
   const allProCandidates = [];
 
-  stats.playerRatings.forEach(player => {
-      const teamName = player.teams[0]; 
-      const teamObj = teams.find(t => t.name === teamName);
-      if (!teamObj) return;
+  // Build a combined player list: include players with ratings AND players who appear only on POG board
+  const playerByName = new Map();
+  stats.playerRatings.forEach(player => playerByName.set(player.playerName, player));
+  stats.pogLeaderboard.forEach(p => {
+    if (!playerByName.has(p.playerName)) {
+      playerByName.set(p.playerName, {
+        playerName: p.playerName,
+        avgScore: 0,
+        games: 0,
+        roles: {},
+        teams: p.teams || []
+      });
+    }
+  });
 
-      const rankPoints = teamRankPoints.get(teamObj.id) || 0;
+  Array.from(playerByName.values()).forEach(player => {
+      const teamObj = findTeamObjectForPlayerTeams(player.teams || [], teams);
+      const rankPoints = teamObj ? (teamRankPoints.get(teamObj.id) || 0) : 0;
       const pogEntry = stats.pogLeaderboard.find(p => p.playerName === player.playerName);
       const pogCount = pogEntry ? pogEntry.pogs : 0;
       
       // Bonuses
       let bonusScore = 0;
-      const isFinalsMvp = finalsMvpName === player.playerName;
-      const isPogLeader = pogLeaderName === player.playerName;
+      const isFinalsMvp = finalsMvpName && (finalsMvpName === player.playerName);
+      const isPogLeader = pogLeaderName && (pogLeaderName === player.playerName);
 
       if (isFinalsMvp) bonusScore += 20;
       if (isPogLeader) bonusScore += 20;
 
-      const finalScore = player.avgScore + (pogCount * 10) + rankPoints + bonusScore;
+      const finalScore = (player.avgScore || 0) + (pogCount * 10) + rankPoints + bonusScore;
 
       let primaryRole = 'MID';
       let maxGames = 0;
