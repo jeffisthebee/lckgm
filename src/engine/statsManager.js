@@ -1,10 +1,6 @@
 // src/engine/statsManager.js
 // Computes aggregated statistics (POG leaderboard, player ratings, champion meta, KDA leaders)
 // from a league object. Defensive and tolerant to multiple match/set shapes.
-//
-// Usage:
-//   import { computeStatsForLeague } from '../engine/statsManager';
-//   const stats = computeStatsForLeague(league, { regularOnly: true, roleFilter: 'ADC' });
 
 /**
  * Options:
@@ -28,6 +24,12 @@ export function computeStatsForLeague(league, options = {}) {
     return Number.isNaN(n) ? 0 : n;
   };
 
+  // Global name cleaner to fix "Missing 10 points" due to whitespace mismatches
+  const cleanName = (n) => {
+      if (!n) return null;
+      return String(n).trim();
+  };
+
   const normalizeRole = (r) => {
     if (!r) return null;
     const up = String(r).toUpperCase();
@@ -40,8 +42,6 @@ export function computeStatsForLeague(league, options = {}) {
 
   const extractPicks = (set) => {
     if (!set) return { A: [], B: [] };
-    // Common shapes: set.picks = { A: [...], B: [...] }
-    // Some older objects may use lowercase; check both
     const picks = set.picks || set.PICKS || set.picksA || null;
     if (Array.isArray(set.picks?.A) || Array.isArray(set.picks?.B)) {
       return { A: set.picks.A || [], B: set.picks.B || [] };
@@ -49,9 +49,7 @@ export function computeStatsForLeague(league, options = {}) {
     if (Array.isArray(set.A) || Array.isArray(set.B)) {
       return { A: set.A || [], B: set.B || [] };
     }
-    // Fallback: if picks is an array (unlikely), assume it's A
     if (Array.isArray(set.picks)) return { A: set.picks, B: [] };
-
     return { A: [], B: [] };
   };
 
@@ -66,7 +64,6 @@ export function computeStatsForLeague(league, options = {}) {
 
   const extractPog = (set) => {
     if (!set) return null;
-    // Prefer set.pogPlayer, fallback to set.pog or set.posPlayer
     return set.pogPlayer || set.pog || set.posPlayer || null;
   };
 
@@ -87,7 +84,6 @@ export function computeStatsForLeague(league, options = {}) {
   };
 
   const determineWinnerSide = (set, matchContext) => {
-    // Priority 1: explicit numeric scores saved in set.scores (A/B)
     if (set.scores && (set.scores.A !== undefined || set.scores.B !== undefined)) {
       const a = safeNum(set.scores.A);
       const b = safeNum(set.scores.B);
@@ -95,24 +91,20 @@ export function computeStatsForLeague(league, options = {}) {
       if (b > a) return 'B';
       return null;
     }
-    // Priority 2: set.winner string and matchContext mapping
     if (set.winner || set.winnerName) {
       const winnerName = set.winner || set.winnerName;
-      // matchContext may have blueTeam/redTeam names
       if (matchContext) {
         const blueN = matchContext.blueTeamName || matchContext.teamAName || matchContext.t1Name;
         const redN = matchContext.redTeamName || matchContext.teamBName || matchContext.t2Name;
         if (blueN && blueN === winnerName) return 'A';
         if (redN && redN === winnerName) return 'B';
       }
-      // fallback: check if picks include playerData.team that matches
       const picks = extractPicks(set);
       const aHasWinner = (picks.A || []).some(p => (p.playerData?.팀 || p.team || p.teamName) === winnerName);
       const bHasWinner = (picks.B || []).some(p => (p.playerData?.팀 || p.team || p.teamName) === winnerName);
       if (aHasWinner && !bHasWinner) return 'A';
       if (bHasWinner && !aHasWinner) return 'B';
     }
-    // Priority 3: If set includes gameResult with winnerSide
     if (set.winnerSide) {
       const side = String(set.winnerSide).toUpperCase();
       if (side === 'BLUE' || side === 'A') return 'A';
@@ -123,17 +115,9 @@ export function computeStatsForLeague(league, options = {}) {
 
   const getSetsFromMatch = (match) => {
     if (!match) return [];
-
-    // If match.history is array use that
     if (Array.isArray(match.history) && match.history.length > 0) return match.history;
+    if (match.result && Array.isArray(match.result.history) && match.result.history.length > 0) return match.result.history;
 
-    // If match.result?.history exists
-    if (match.result && Array.isArray(match.result.history) && match.result.history.length > 0) {
-      return match.result.history;
-    }
-
-    // Some simulate functions return a 'history' top-level in their returned object (like simulateMatch)
-    // If the match itself contains picks (single-set), convert to one-set object
     const singleSet = {};
     if (match.picks && (Array.isArray(match.picks.A) || Array.isArray(match.picks.B))) {
       singleSet.picks = match.picks;
@@ -141,16 +125,11 @@ export function computeStatsForLeague(league, options = {}) {
       singleSet.pogPlayer = match.pogPlayer || null;
       singleSet.winner = match.result?.winner || match.winner || null;
       singleSet.scores = match.result?.score ? (() => {
-        // score may be "2:1" string for match-level; at set-level we can't derive, so skip
         return match.scores || match.result?.scores || null;
       })() : match.scores || match.result?.scores || null;
       return [singleSet];
     }
-
-    // Another possible shape: match.history was saved under match.sets
     if (Array.isArray(match.sets) && match.sets.length > 0) return match.sets;
-
-    // No usable set-level data
     return [];
   };
 
@@ -164,7 +143,6 @@ export function computeStatsForLeague(league, options = {}) {
     const sets = getSetsFromMatch(match);
     if (!Array.isArray(sets) || sets.length === 0) return;
 
-    // Build light match context for winner name mapping
     const matchContext = {
       blueTeamName: match.blueTeam?.name || match.teamA?.name || (typeof match.t1 === 'object' ? match.t1.name : undefined),
       redTeamName: match.redTeam?.name || match.teamB?.name || (typeof match.t2 === 'object' ? match.t2.name : undefined),
@@ -174,39 +152,36 @@ export function computeStatsForLeague(league, options = {}) {
     };
 
     sets.forEach((set) => {
-      // Only consider finished sets: many set objects don't include status, so we assume presence of picks indicates a finished simulated set.
       const picks = extractPicks(set);
       const bans = extractBans(set);
 
-      // If there are no picks for both sides, skip
       if ((!picks.A || picks.A.length === 0) && (!picks.B || picks.B.length === 0)) return;
 
       totalSets += 1;
 
       // Process bans
       (bans.A || []).forEach(b => {
-        const name = String(b || '').trim();
+        const name = cleanName(b);
         if (!name) return;
         if (!championAgg.has(name)) championAgg.set(name, { pickCount: 0, banCount: 0, winCount: 0 });
         const c = championAgg.get(name);
         c.banCount = (c.banCount || 0) + 1;
       });
       (bans.B || []).forEach(b => {
-        const name = String(b || '').trim();
+        const name = cleanName(b);
         if (!name) return;
         if (!championAgg.has(name)) championAgg.set(name, { pickCount: 0, banCount: 0, winCount: 0 });
         const c = championAgg.get(name);
         c.banCount = (c.banCount || 0) + 1;
       });
 
-      // Determine winner side for win attribution (A or B)
+      // Determine winner side
       const winnerSide = determineWinnerSide(set, matchContext);
 
-      // Process picks for both sides
+      // Process picks
       ['A', 'B'].forEach((side) => {
         const teamPicks = picks[side] || [];
         teamPicks.forEach((p) => {
-          // p can be either simple { champName } or detailed
           const champName = (p.champName || p.champ || p.name || p.champName === 0 ? String(p.champName) : null) || String(p.champ || p.name || '').trim();
           if (champName) {
             if (!championAgg.has(champName)) championAgg.set(champName, { pickCount: 0, banCount: 0, winCount: 0 });
@@ -214,15 +189,10 @@ export function computeStatsForLeague(league, options = {}) {
             c.pickCount = (c.pickCount || 0) + 1;
           }
 
-          // Role filtering: only aggregate player/role stats if roleFilter is ALL or matches pick role
           const pickRole = normalizeRole(p.playerData?.포지션 || p.role || p.position);
-          if (roleFilter !== 'ALL' && normalizeRole(roleFilter) !== pickRole) {
-            // skip per-player and rating contributions for this pick
-            return;
-          }
+          if (roleFilter !== 'ALL' && normalizeRole(roleFilter) !== pickRole) return;
 
-          // PLAYER RATINGS - compute a numeric score when stats present
-          const playerName = p.playerName || p.player || p.playerName === 0 ? String(p.playerName) : (p.player || p.playerName || '').trim();
+          const playerName = cleanName(p.playerName || p.player);
           if (playerName) {
             const score = computePlayerScoreFromStats(p);
             if (score && !Number.isNaN(score)) {
@@ -236,7 +206,6 @@ export function computeStatsForLeague(league, options = {}) {
               playerRatingAgg.set(playerName, entry);
             }
 
-            // KDA Aggregation
             const k = safeNum(p.k ?? p.stats?.kills ?? 0);
             const d = safeNum(p.d ?? p.stats?.deaths ?? 0);
             const a = safeNum(p.a ?? p.stats?.assists ?? 0);
@@ -252,14 +221,13 @@ export function computeStatsForLeague(league, options = {}) {
         });
       });
 
-      // POG
+      // POG - Normalized
       const pog = extractPog(set);
       if (pog && (pog.playerName || pog.player)) {
-        const pname = String(pog.playerName || pog.player || pog.playerName || '').trim();
+        const pname = cleanName(pog.playerName || pog.player);
         if (pname) {
           const prev = pogCounts.get(pname) || { count: 0, lastScore: null, teams: new Set() };
           prev.count += 1;
-          // pogScore may be pog.pogScore or pog.score
           const pscore = safeNum(pog.pogScore ?? pog.score ?? pog.pogScore ?? null);
           if (pscore) prev.lastScore = pscore;
           const teamName = pog.playerData?.팀 || pog.team || pog.teamName || null;
@@ -271,8 +239,6 @@ export function computeStatsForLeague(league, options = {}) {
   });
 
   // Build outputs
-
-  // POG Leaderboard
   const pogLeaderboard = Array.from(pogCounts.entries()).map(([playerName, data]) => ({
     playerName,
     pogs: data.count,
@@ -280,7 +246,6 @@ export function computeStatsForLeague(league, options = {}) {
     teams: Array.from(data.teams)
   })).sort((a, b) => b.pogs - a.pogs || (b.lastScore || 0) - (a.lastScore || 0));
 
-  // Player Ratings (average)
   const playerRatings = Array.from(playerRatingAgg.entries()).map(([playerName, data]) => ({
     playerName,
     avgScore: data.games > 0 ? (data.sumScore / data.games) : 0,
@@ -289,26 +254,16 @@ export function computeStatsForLeague(league, options = {}) {
     teams: Array.from(data.teams)
   })).sort((a, b) => b.avgScore - a.avgScore);
 
-  // Champion meta
   const championMeta = Array.from(championAgg.entries()).map(([champName, data]) => {
     const pickCount = data.pickCount || 0;
     const banCount = data.banCount || 0;
-    const winCount = data.winCount || 0; // note: winCount only accumulates when set winner known (we incremented earlier only when we could)
+    const winCount = data.winCount || 0;
     const pickRate = totalSets > 0 ? (pickCount / totalSets) : 0;
     const banRate = totalSets > 0 ? (banCount / totalSets) : 0;
     const winRate = pickCount > 0 ? (winCount / pickCount) : 0;
-    return {
-      champName,
-      pickCount,
-      banCount,
-      winCount,
-      pickRate,
-      banRate,
-      winRate
-    };
+    return { champName, pickCount, banCount, winCount, pickRate, banRate, winRate };
   }).sort((a, b) => b.pickCount - a.pickCount);
 
-  // KDA Leaders
   const kdaLeaders = Array.from(kdaAgg.entries()).map(([playerName, data]) => {
     const kills = data.kills || 0;
     const deaths = data.deaths || 0;
@@ -317,35 +272,21 @@ export function computeStatsForLeague(league, options = {}) {
     return { playerName, kills, deaths, assists, games: data.games, kda, teams: Array.from(data.teams) };
   });
 
-  const kdaByKills = [...kdaLeaders].sort((a, b) => b.kills - a.kills);
-  const kdaByKDA = [...kdaLeaders].sort((a, b) => b.kda - a.kda);
-  const kdaByAssists = [...kdaLeaders].sort((a, b) => b.assists - a.assists);
-
-  // Final aggregated object
   return {
-    meta: {
-      totalSets,
-      championMeta
-    },
+    meta: { totalSets, championMeta },
     pogLeaderboard,
     playerRatings,
-    kda: {
-      byKills: kdaByKills,
-      byKda: kdaByKDA,
-      byAssists: kdaByAssists
-    },
+    kda: { byKills: [...kdaLeaders].sort((a, b) => b.kills - a.kills), byKda: [...kdaLeaders].sort((a, b) => b.kda - a.kda), byAssists: [...kdaLeaders].sort((a, b) => b.assists - a.assists) },
     optionsApplied: { regularOnly, roleFilter }
   };
 }
-
-export default computeStatsForLeague;
-
 
 export function computeAwards(league, teams) {
   const stats = computeStatsForLeague(league, { regularOnly: true });
   
   // 0. Identify Season MVP (Highest POG) beforehand
-  const seasonMvp = stats.pogLeaderboard[0] || null;
+  // This is the RAW stats entry (just name/count). We need to match it to the Enriched entry later.
+  const rawSeasonMvp = stats.pogLeaderboard[0] || null;
 
   // 1. Calculate Regular Season Team Standings
   const teamStats = new Map();
@@ -356,7 +297,6 @@ export function computeAwards(league, teams) {
            const t1 = typeof m.t1 === 'object' ? m.t1.id : m.t1;
            const t2 = typeof m.t2 === 'object' ? m.t2.id : m.t2;
            
-           // Check if score exists and is valid
            if (!m.result || !m.result.score) return;
 
            const parts = m.result.score.split(':');
@@ -374,13 +314,11 @@ export function computeAwards(league, teams) {
       });
   }
 
-  // Sort Teams
   const rankedTeams = Array.from(teamStats.values()).sort((a, b) => {
       if (b.wins !== a.wins) return b.wins - a.wins;
       return b.diff - a.diff;
   });
 
-  // Points: 1st=100, 2nd=80, 3rd=70... 10th=0
   const teamRankPoints = new Map();
   const pointDistribution = [100, 80, 70, 60, 50, 40, 30, 20, 10, 0];
   rankedTeams.forEach((t, index) => {
@@ -396,17 +334,16 @@ export function computeAwards(league, teams) {
       if (!teamObj) return;
 
       const rankPoints = teamRankPoints.get(teamObj.id) || 0;
+      // Strict name matching for POGs
       const pogEntry = stats.pogLeaderboard.find(p => p.playerName === player.playerName);
       const pogCount = pogEntry ? pogEntry.pogs : 0;
       
-      // [NEW] MVP Bonus: If this player is the Season MVP, add 20 points
-      const isMvp = seasonMvp && seasonMvp.playerName === player.playerName;
+      // MVP Bonus
+      const isMvp = rawSeasonMvp && rawSeasonMvp.playerName === player.playerName;
       const mvpBonus = isMvp ? 20 : 0;
 
-      // Formula
       const finalScore = player.avgScore + (pogCount * 10) + rankPoints + mvpBonus;
 
-      // Determine Primary Role
       let primaryRole = 'MID';
       let maxGames = 0;
       if (player.roles) {
@@ -419,14 +356,14 @@ export function computeAwards(league, teams) {
           ...player,
           pogCount,
           rankPoints,
-          mvpBonus, // Store for UI
+          mvpBonus,
           finalScore,
           role: primaryRole,
           teamObj
       });
   });
 
-  // 3. Select Teams (1st, 2nd, 3rd)
+  // 3. Select Teams
   const roles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
   const allProTeams = { 1: {}, 2: {}, 3: {} }; 
 
@@ -440,101 +377,107 @@ export function computeAwards(league, teams) {
       if (rolePlayers[2]) allProTeams[3][role] = rolePlayers[2];
   });
 
+  // FIX: Return the Enriched MVP Object, not the raw stats one
+  const enrichedSeasonMvp = rawSeasonMvp 
+      ? allProCandidates.find(p => p.playerName === rawSeasonMvp.playerName) 
+      : null;
+
   return {
-      seasonMvp: seasonMvp,
+      seasonMvp: enrichedSeasonMvp, // Pass the one with finalScore/mvpBonus
       allProTeams
   };
 }
 
 export function computePlayoffAwards(league, teams) {
-  // 1. Filter for Playoff Matches only
   const playoffMatches = (league.matches || []).filter(m => m.type === 'playoff' && m.status === 'finished');
-  
-  // Create a temporary league object for stats
   const playoffLeague = { ...league, matches: playoffMatches };
-  
-  // Compute stats for ALL playoff matches to get averages and totals
   const stats = computeStatsForLeague(playoffLeague, { regularOnly: false });
 
-  // 2. Identify Key Players
-  
-  // A. Playoff MVP (POG Leader across all playoff games)
-  const pogLeader = stats.pogLeaderboard[0] || null;
-  const pogLeaderName = pogLeader?.playerName;
+  const rawPogLeader = stats.pogLeaderboard[0] || null;
+  const pogLeaderName = rawPogLeader?.playerName;
 
-  // B. Finals MVP Logic
-  // Sort matches by round desc to find the "Grand Final"
+  // Finals MVP Logic (Robust)
   const sortedMatches = [...playoffMatches].sort((a, b) => (b.round || 0) - (a.round || 0));
-  const finalMatch = sortedMatches[0]; // The match with the highest round number is the Final
+  const finalMatch = sortedMatches[0];
 
-  let finalsMvpName = finalMatch?.result?.posPlayer || finalMatch?.pogPlayer || null; 
+  // Priority 1: Explicit field in result or top level
+  let finalsMvpName = finalMatch?.result?.posPlayer || finalMatch?.pogPlayer || finalMatch?.result?.mvp || null;
 
-  // [FALLBACK LOGIC]
+  // Priority 2: Fallback Calculation (Winner Team -> Best Player)
   if (!finalsMvpName && finalMatch && finalMatch.result) {
-      // If the file doesn't explicitly name a Finals MVP (posPlayer), 
-      // we calculate the best performing player from the winning team in that specific match.
-      
-      // Prepare Helper Data
-      const winnerName = finalMatch.result.winner; // e.g. "T1"
-      
-      // Hydrate Match with Team Objects to ensure we have IDs
+      const winnerName = finalMatch.result.winner; // e.g., "T1" or "A" or "Blue"
+      const winnerSide = finalMatch.result.winnerSide || (finalMatch.result.winner === 'Blue' ? 'BLUE' : (finalMatch.result.winner === 'Red' ? 'RED' : null));
+
+      // Hydrate team objects
       const t1Id = (typeof finalMatch.t1 === 'object') ? finalMatch.t1.id : finalMatch.t1;
       const t2Id = (typeof finalMatch.t2 === 'object') ? finalMatch.t2.id : finalMatch.t2;
-      
       const t1Obj = teams.find(t => String(t.id) === String(t1Id));
       const t2Obj = teams.find(t => String(t.id) === String(t2Id));
 
-      // Determine which team object is the winner
-      // We match by name since result.winner is usually a name
-      const winnerTeamObj = (t1Obj?.name === winnerName) ? t1Obj : ((t2Obj?.name === winnerName) ? t2Obj : null);
+      // Determine Winning Team Object
+      let winnerTeamObj = null;
+      if (t1Obj && t1Obj.name === winnerName) winnerTeamObj = t1Obj;
+      else if (t2Obj && t2Obj.name === winnerName) winnerTeamObj = t2Obj;
+      
+      // If winner is "Blue" or "Red" (not a name), map it
+      if (!winnerTeamObj && winnerSide) {
+           if (winnerSide === 'BLUE') winnerTeamObj = t1Obj; // Assuming T1 is Blue/Left
+           if (winnerSide === 'RED') winnerTeamObj = t2Obj;
+      }
 
-      // Compute stats strictly for this ONE final match
+      // Calculate stats JUST for this match to find performance
       const hydratedMatch = { ...finalMatch, t1: t1Obj || finalMatch.t1, t2: t2Obj || finalMatch.t2 };
       const finalMatchStats = computeStatsForLeague({ ...league, matches: [hydratedMatch] }, { regularOnly: false });
       
       let candidates = [];
-
-      // Filter players who belong to the winning team
+      
       if (winnerTeamObj) {
           candidates = finalMatchStats.playerRatings.filter(p => 
-              p.teams.includes(winnerName) || 
-              p.teams.includes(winnerTeamObj.name)
+              p.teams.includes(winnerTeamObj.name) || 
+              p.teams.includes(winnerName)
           );
       } else {
-           // If we can't map the object, look for any player whose team matches the winner string
-           candidates = finalMatchStats.playerRatings.filter(p => p.teams.includes(winnerName));
+          // Loose filter if no team object (check if team name matches string)
+          candidates = finalMatchStats.playerRatings.filter(p => p.teams.includes(winnerName));
       }
 
-      // Sort by Score Descending
       candidates.sort((a, b) => b.avgScore - a.avgScore);
       
-      // Pick the top player
       if (candidates.length > 0) {
           finalsMvpName = candidates[0].playerName;
       } else if (finalMatchStats.playerRatings.length > 0) {
-          // Absolute fallback: Just take the highest rated player in the game, regardless of team
-          // (Only happens if team names are totally mismatched)
+          // Absolute fallback: Best player in the server
           finalsMvpName = finalMatchStats.playerRatings[0].playerName;
       }
   }
 
-  // 3. Calculate Playoff Team Standings (Dynamic / Reverse Elimination)
-  // Instead of hardcoded round numbers (which might vary), we use a "Reverse Elimination" approach.
-  // The winner of the highest round is #1. The loser is #2.
-  // Then we look at the next highest round, and so on.
-  
+  // Bracket Standings (Reverse Elimination)
   const teamRankPoints = new Map();
   teams.forEach(t => teamRankPoints.set(t.id, 0)); 
   
-  const getWinnerId = (m) => teams.find(t => t.name === m.result.winner)?.id;
+  const getWinnerId = (m) => {
+      const wName = m.result.winner;
+      const wSide = m.result.winnerSide;
+      const t1 = typeof m.t1 === 'object' ? m.t1.id : m.t1;
+      const t2 = typeof m.t2 === 'object' ? m.t2.id : m.t2;
+      // Try Name Match
+      let wObj = teams.find(t => t.name === wName);
+      if (wObj) return wObj.id;
+      // Try Side Match (assuming T1=Blue, T2=Red for simplicty in sim, or check context)
+      // Usually simulator sets m.t1 as Blue.
+      if (wSide === 'BLUE' || wName === 'Blue') return t1;
+      if (wSide === 'RED' || wName === 'Red') return t2;
+      return null; 
+  };
+
   const getLoserId = (m) => {
       const wId = getWinnerId(m);
       const t1 = typeof m.t1 === 'object' ? m.t1.id : m.t1;
       const t2 = typeof m.t2 === 'object' ? m.t2.id : m.t2;
+      if (!wId) return null;
       return wId === t1 ? t2 : t1;
   };
 
-  // Group matches by round
   const matchesByRound = {};
   playoffMatches.forEach(m => {
       const r = m.round || 0;
@@ -542,55 +485,44 @@ export function computePlayoffAwards(league, teams) {
       matchesByRound[r].push(m);
   });
 
-  // Sort rounds descending (Highest round = Final)
   const sortedRounds = Object.keys(matchesByRound).sort((a, b) => Number(b) - Number(a));
-
-  const pointDistribution = [100, 80, 70, 60, 40, 20, 10]; // 1st, 2nd, 3rd...
+  const pointDistribution = [100, 80, 70, 60, 40, 20, 10]; 
   let currentRankIndex = 0;
   const processedTeams = new Set();
 
-  // Process rounds from Final -> Start
   sortedRounds.forEach((round, idx) => {
       const roundMatches = matchesByRound[round];
-      
-      // If it's the very last round (The Grand Final), we award 1st and 2nd place
       if (idx === 0) {
+          // Finals
           roundMatches.forEach(m => {
               const wId = getWinnerId(m);
               const lId = getLoserId(m);
-              
               if (wId && !processedTeams.has(wId)) {
-                  teamRankPoints.set(wId, pointDistribution[0]); // 1st Place (100)
+                  teamRankPoints.set(wId, pointDistribution[0]);
                   processedTeams.add(wId);
-                  currentRankIndex = 1; // Used 0, next is 1
+                  currentRankIndex = 1; 
               }
               if (lId && !processedTeams.has(lId)) {
-                  teamRankPoints.set(lId, pointDistribution[1]); // 2nd Place (80)
+                  teamRankPoints.set(lId, pointDistribution[1]);
                   processedTeams.add(lId);
-                  currentRankIndex = 2; // Used 1, next is 2
+                  currentRankIndex = 2; 
               }
           });
       } else {
-          // For all earlier rounds, the LOSERS are eliminating. 
-          // The winners advanced (and are handled in higher rounds), so we only care about losers here.
+          // Lower rounds
           roundMatches.forEach(m => {
               const lId = getLoserId(m);
               if (lId && !processedTeams.has(lId)) {
-                  // Assign next available point tier
                   const pts = pointDistribution[currentRankIndex] || 10;
                   teamRankPoints.set(lId, pts);
                   processedTeams.add(lId);
               }
           });
-          // After processing a round of losers, increment rank index
-          // (Technically multiple teams might exit in the same round, they get same points, 
-          // but for simplicity we increment once per "round tier" or just use the next slot)
-           currentRankIndex++;
+          currentRankIndex++;
       }
   });
 
-
-  // 4. Score Players & Apply Bonuses
+  // Score Players
   const allProCandidates = [];
 
   stats.playerRatings.forEach(player => {
@@ -602,7 +534,6 @@ export function computePlayoffAwards(league, teams) {
       const pogEntry = stats.pogLeaderboard.find(p => p.playerName === player.playerName);
       const pogCount = pogEntry ? pogEntry.pogs : 0;
       
-      // Bonuses
       let bonusScore = 0;
       const isFinalsMvp = finalsMvpName === player.playerName;
       const isPogLeader = pogLeaderName === player.playerName;
@@ -633,7 +564,6 @@ export function computePlayoffAwards(league, teams) {
       });
   });
 
-  // 5. Select Teams
   const roles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
   const allProTeams = { 1: {}, 2: {}, 3: {} }; 
 
