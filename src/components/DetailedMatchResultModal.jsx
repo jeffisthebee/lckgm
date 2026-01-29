@@ -71,7 +71,7 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
     // Safety check
     if (!result || !result.history || result.history.length === 0) return null;
 
-    // [FIX 1] Parse Match Score (e.g. "2:1") correctly
+    // Parse Match Score (e.g. "2:1") correctly
     let matchScoreA = 0;
     let matchScoreB = 0;
     if (result.score && typeof result.score === 'string' && result.score.includes(':')) {
@@ -83,11 +83,12 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
         matchScoreB = result.scoreB || 0;
     }
 
-    // [FIX 3] POS Calculation Logic (AI Matches / Sim Matches)
+    // POS Calculation Logic (AI Matches / Sim Matches)
     // Only calculate if BO5 (Score reaches 3) or explicitly marked as BO5
     const isBo5 = (matchScoreA === 3 || matchScoreB === 3) || (result.format === 'BO5');
     
-    // [NEW] Check if it's the Finals (Round 5 -> Index 4)
+    // Check if it's the Finals (Round 5 -> Index 4)
+    // Adjust this index if your bracket has a different number of rounds
     const isFinals = result.roundIndex === 4;
 
     const posPlayer = useMemo(() => {
@@ -116,7 +117,7 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
     const gameTimeStr = currentSetData.gameTime || 
         (currentSetData.totalMinutes ? `${currentSetData.totalMinutes}분` : 'Unknown Time');
 
-    // [FIX 2] Get Kill Scores for this specific Set
+    // Get Kill Scores for this specific Set
     const killScoreA = currentSetData.scores?.A || 0;
     const killScoreB = currentSetData.scores?.B || 0;
 
@@ -139,7 +140,7 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
             {posPlayer && (
                 <div className="flex items-center gap-2 lg:gap-4 bg-purple-900/80 border border-purple-500 px-3 py-1 lg:px-6 lg:py-2 rounded-lg lg:rounded-xl shadow-[0_0_15px_rgba(168,85,247,0.4)] animate-pulse-slow">
                     <div className="flex flex-col items-end">
-                        {/* MODIFIED: Show '파이널 MVP' for Round 5, 'SERIES MVP' otherwise */}
+                        {/* CHANGED: Label Logic for Finals */}
                         <span className="text-[8px] lg:text-[10px] text-purple-300 font-bold tracking-widest">
                             {isFinals ? "파이널 MVP" : "SERIES MVP"}
                         </span>
@@ -213,13 +214,12 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                          <span className="text-[9px] lg:text-[10px] font-bold text-yellow-800 bg-yellow-300 px-1.5 rounded">POG</span>
                          <span className="font-bold text-xs lg:text-sm text-gray-800 truncate max-w-[100px] lg:max-w-none">{pogPlayer.playerName}</span>
                          <span className="hidden lg:inline text-xs text-gray-600">({pogPlayer.champName})</span>
-                         {/* MODIFIED: Show Score on Phone Mode */}
                          <span className="text-[9px] lg:text-[10px] font-mono text-gray-500 whitespace-nowrap ml-1">Score: {pogPlayer.pogScore?.toFixed(1)}</span>
                      </div>
                  )}
             </div>
 
-            {/* BANS ROW - FIX: Variable width boxes */}
+            {/* BANS ROW */}
             <div className="grid grid-cols-2 gap-2 lg:gap-8 mb-4 lg:mb-8">
                {/* Blue Bans */}
                <div className="flex items-center gap-1 lg:gap-2 bg-white p-1.5 lg:p-3 rounded-lg border border-blue-100 shadow-sm overflow-hidden">
@@ -266,7 +266,7 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                             {/* Role */}
                             <div className="w-4 lg:w-8 text-center font-bold text-gray-400 text-[8px] lg:text-xs mr-1 lg:mr-2 shrink-0">{['TOP','JGL','MID','ADC','SUP'][i]}</div>
                             
-                            {/* Champ Info - FIX: No truncate, allow wrap */}
+                            {/* Champ Info */}
                             <div className="flex-1">
                               <div className="font-bold text-gray-800 text-xs lg:text-sm flex items-center gap-1 lg:gap-2 whitespace-normal leading-tight">
                                   {p.champName}
@@ -308,7 +308,7 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                             {/* Role */}
                             <div className="w-4 lg:w-8 text-center font-bold text-gray-400 text-[8px] lg:text-xs ml-1 lg:ml-2 shrink-0">{['TOP','JGL','MID','ADC','SUP'][i]}</div>
                             
-                            {/* Champ Info - FIX: No truncate, allow wrap */}
+                            {/* Champ Info */}
                             <div className="flex-1 text-right">
                               <div className="font-bold text-gray-800 text-xs lg:text-sm flex items-center justify-end gap-1 lg:gap-2 whitespace-normal leading-tight">
                                   {isPog && <span className="bg-yellow-400 text-black text-[8px] lg:text-[9px] px-1 lg:px-1.5 py-0.5 rounded font-black shadow-sm shrink-0">POG</span>}
