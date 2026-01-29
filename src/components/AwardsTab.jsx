@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { computeAwards, computePlayoffAwards } from '../engine/statsManager';
 
-// ... [RoleBadge Component - No Change] ...
+// --- RoleBadge Component ---
 const RoleBadge = ({ role }) => {
     const icons = { TOP: '⚔️', JGL: '🌲', MID: '🧙', ADC: '🏹', SUP: '🛡️' };
     const colors = {
@@ -19,7 +19,7 @@ const RoleBadge = ({ role }) => {
     );
 };
 
-// ... [PlayerCard Component - Updated for Playoff Bonuses] ...
+// --- PlayerCard Component ---
 const PlayerCard = ({ player, rank, playerList }) => {
     if (!player) return (
         <div className="min-w-[160px] h-[220px] bg-gray-50 rounded-xl border border-dashed border-gray-300 flex items-center justify-center text-xs text-gray-400">
@@ -66,12 +66,9 @@ const PlayerCard = ({ player, rank, playerList }) => {
                         <span>+</span>
                         <span title="스탯 평점">지표 {player.avgScore.toFixed(0)}</span>
                         
-                        {/* Regular MVP Bonus */}
                         {player.mvpBonus > 0 && (
                              <><span>+</span><span className="text-yellow-600 font-bold">MVP {player.mvpBonus}</span></>
                         )}
-
-                        {/* Playoff Bonuses */}
                         {player.isFinalsMvp && (
                             <><span>+</span><span className="text-blue-600 font-bold">FMVP 20</span></>
                         )}
@@ -88,7 +85,53 @@ const PlayerCard = ({ player, rank, playerList }) => {
     );
 };
 
-// ... [TeamSection Component - No Change] ...
+// --- MvpShowcaseCard Component (New) ---
+const MvpShowcaseCard = ({ player, title, badgeColor, teams, playerList, size = 'large' }) => {
+    if (!player) return (
+        <div className={`relative bg-gray-800 rounded-2xl border border-gray-700 p-8 flex items-center justify-center text-gray-500 font-bold ${size === 'large' ? 'w-full max-w-lg mx-auto' : 'w-full'}`}>
+            데이터 없음
+        </div>
+    );
+
+    const team = teams.find(t => player.teams?.includes(t.name) || (player.teamObj && player.teamObj.id === t.id));
+    const pData = playerList.find(p => p.이름 === player.playerName);
+    const realName = pData ? pData.실명 : player.playerName;
+
+    return (
+        <div className={`relative bg-gradient-to-b from-gray-900 to-gray-800 text-white rounded-2xl shadow-2xl border border-gray-700 overflow-hidden group ${size === 'large' ? 'w-full max-w-lg mx-auto p-8' : 'w-full p-6'}`}>
+            <div className="absolute top-0 right-0 p-6 opacity-5 text-[80px] lg:text-[120px] font-black leading-none pointer-events-none select-none">MVP</div>
+            
+            <div className="relative z-10 flex flex-col items-center text-center">
+                <div className={`inline-block text-black font-black text-xs px-3 py-1 rounded-full mb-4 shadow-lg ${badgeColor}`}>
+                    {title}
+                </div>
+
+                <div className={`rounded-full border-4 flex items-center justify-center font-black shadow-2xl mb-4 relative ${badgeColor.replace('bg-', 'border-')}`}
+                     style={{
+                         backgroundColor: team?.colors?.primary,
+                         width: size === 'large' ? '7rem' : '5rem', 
+                         height: size === 'large' ? '7rem' : '5rem',
+                         fontSize: size === 'large' ? '1.875rem' : '1.5rem'
+                     }}>
+                    {team?.name}
+                </div>
+                
+                <h1 className={`${size === 'large' ? 'text-4xl lg:text-5xl' : 'text-2xl lg:text-3xl'} font-black text-white mb-1 tracking-tight`}>{realName}</h1>
+                <div className={`${size === 'large' ? 'text-xl' : 'text-sm'} text-gray-400 font-bold mb-4`}>{player.playerName}</div>
+                
+                <div className="w-full border-t border-gray-700 pt-3 mt-2">
+                        <div className="text-[10px] text-gray-400 uppercase font-bold mb-1">Total Score</div>
+                        <div className={`font-black ${badgeColor.replace('bg-', 'text-').replace('text-black', '')} ${size === 'large' ? 'text-4xl' : 'text-3xl'}`}>
+                        {player.finalScore?.toFixed(0)}
+                        </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
+// --- TeamSection Component ---
 const TeamSection = ({ title, rank, players, playerList }) => {
     const roles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
     const headerStyles = {
@@ -109,35 +152,23 @@ const TeamSection = ({ title, rank, players, playerList }) => {
     );
 };
 
-// MAIN COMPONENT
+// --- Main Component ---
 export default function AwardsTab({ league, teams, playerList }) {
-    // 1. Check if Playoffs are finished
     const isPlayoffsFinished = useMemo(() => {
         const grandFinal = league.matches?.find(m => m.type === 'playoff' && m.round === 5);
         return grandFinal && grandFinal.status === 'finished';
     }, [league]);
 
-    // 2. Tab State
     const [viewMode, setViewMode] = useState('regular'); // 'regular' | 'playoff'
 
-    // 3. Compute Data based on Tab
     const regularData = useMemo(() => computeAwards(league, teams), [league, teams]);
     const playoffData = useMemo(() => isPlayoffsFinished ? computePlayoffAwards(league, teams) : null, [league, teams, isPlayoffsFinished]);
 
     const activeData = viewMode === 'playoff' ? playoffData : regularData;
     
-    // Safety check
     if (!activeData) return <div className="p-10 text-center text-gray-500">데이터를 불러오는 중입니다...</div>;
 
     const { seasonMvp, finalsMvp, pogLeader, allProTeams } = activeData;
-    
-    // Determine which Main MVP to show
-    const mainMvp = viewMode === 'playoff' ? finalsMvp : seasonMvp;
-    
-    // MVP Helper Data
-    const mvpTeam = mainMvp ? teams.find(t => mainMvp.teams?.includes(t.name) || (mainMvp.teamObj && mainMvp.teamObj.id === t.id)) : null;
-    const mvpPlayerData = mainMvp && playerList ? playerList.find(p => p.이름 === mainMvp.playerName) : null;
-    const mvpRealName = mvpPlayerData ? mvpPlayerData.실명 : mainMvp?.playerName;
 
     return (
         <div className="p-2 lg:p-6 max-w-7xl mx-auto space-y-8">
@@ -154,95 +185,48 @@ export default function AwardsTab({ league, teams, playerList }) {
 
                 {isPlayoffsFinished && (
                     <div className="bg-gray-100 p-1 rounded-lg flex gap-1">
-                        <button 
-                            onClick={() => setViewMode('regular')}
-                            className={`px-4 py-1.5 rounded-md text-sm font-bold transition ${viewMode === 'regular' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
-                        >
-                            정규 시즌
-                        </button>
-                        <button 
-                            onClick={() => setViewMode('playoff')}
-                            className={`px-4 py-1.5 rounded-md text-sm font-bold transition ${viewMode === 'playoff' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
-                        >
-                            플레이오프
-                        </button>
+                        <button onClick={() => setViewMode('regular')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition ${viewMode === 'regular' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>정규 시즌</button>
+                        <button onClick={() => setViewMode('playoff')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition ${viewMode === 'playoff' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>플레이오프</button>
                     </div>
                 )}
             </div>
 
             {/* MVP Showcase Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start justify-center max-w-4xl mx-auto">
-                
-                {/* 1. Main MVP Card (Season MVP or Finals MVP) */}
-                <div className="relative w-full bg-gradient-to-b from-gray-900 to-gray-800 text-white p-6 lg:p-8 rounded-2xl shadow-2xl border border-gray-700 overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-8 opacity-5 text-[150px] font-black leading-none pointer-events-none select-none">MVP</div>
-                    
-                    <div className="relative z-10 flex flex-col items-center text-center">
-                        <div className={`inline-block text-black font-black text-xs px-3 py-1 rounded-full mb-6 shadow-lg ${viewMode === 'playoff' ? 'bg-blue-400' : 'bg-yellow-500'}`}>
-                            {viewMode === 'playoff' ? 'FINALS MVP' : 'SEASON MVP'}
-                        </div>
-
-                        {mainMvp ? (
-                            <>
-                                <div className={`w-28 h-28 bg-gray-700 rounded-full border-4 flex items-center justify-center text-3xl font-black shadow-2xl mb-4 relative ${viewMode === 'playoff' ? 'border-blue-400' : 'border-yellow-400'}`}
-                                     style={{backgroundColor: mvpTeam?.colors?.primary}}>
-                                    {mvpTeam?.name}
-                                </div>
-                                
-                                <h1 className="text-4xl lg:text-5xl font-black text-white mb-1 tracking-tight">{mvpRealName}</h1>
-                                <div className="text-xl text-gray-400 font-bold mb-6">{mainMvp.playerName}</div>
-                                
-                                <div className="w-full border-t border-gray-700 pt-4 mt-2">
-                                     <div className="text-[10px] text-gray-400 uppercase font-bold mb-1">Total Score</div>
-                                     <div className={`text-4xl font-black ${viewMode === 'playoff' ? 'text-blue-400' : 'text-yellow-400'}`}>
-                                        {mainMvp.finalScore?.toFixed(0)}
-                                     </div>
-                                </div>
-                            </>
-                        ) : (
-                            <div className="py-12 text-gray-500 font-bold">데이터 없음</div>
-                        )}
-                    </div>
-                </div>
-
-                {/* 2. Playoff POG Leader (Only visible in Playoff Mode) */}
-                {viewMode === 'playoff' && pogLeader && (
-                     <div className="relative w-full bg-white text-gray-800 p-6 lg:p-8 rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
-                        <div className="absolute top-0 right-0 p-8 opacity-5 text-[100px] font-black leading-none pointer-events-none select-none">POG</div>
-                        
-                        <div className="relative z-10 flex flex-col items-center text-center">
-                            <div className="inline-block bg-green-100 text-green-700 font-black text-xs px-3 py-1 rounded-full mb-6 border border-green-200">
-                                PLAYOFFS POG KING
-                            </div>
-
-                            <div className="w-24 h-24 bg-gray-100 rounded-full border-4 border-green-500 flex items-center justify-center text-2xl font-black shadow-lg mb-4"
-                                    style={{backgroundColor: pogLeader.teamObj?.colors?.primary}}>
-                                {pogLeader.teamObj?.name}
-                            </div>
-                            
-                            {(() => {
-                                const pData = playerList.find(p => p.이름 === pogLeader.playerName);
-                                return <h1 className="text-3xl font-black text-gray-900 mb-1">{pData ? pData.실명 : pogLeader.playerName}</h1>
-                            })()}
-                            
-                            <div className="text-lg text-gray-500 font-bold mb-6">{pogLeader.playerName}</div>
-                            
-                            <div className="grid grid-cols-2 gap-4 w-full border-t border-gray-100 pt-4">
-                                <div>
-                                    <div className="text-3xl font-black text-green-600">{pogLeader.pogCount}</div>
-                                    <div className="text-[10px] text-gray-400 font-bold uppercase">POG Count</div>
-                                </div>
-                                <div>
-                                    <div className="text-3xl font-black text-gray-800">{pogLeader.finalScore?.toFixed(0)}</div>
-                                    <div className="text-[10px] text-gray-400 font-bold uppercase">Total Score</div>
-                                </div>
-                            </div>
-                        </div>
+            <div className="w-full">
+                {viewMode === 'regular' ? (
+                    // Regular Season: One Big Card
+                    <MvpShowcaseCard 
+                        player={seasonMvp} 
+                        title="SEASON MVP" 
+                        badgeColor="bg-yellow-500 text-black" 
+                        teams={teams} 
+                        playerList={playerList} 
+                        size="large"
+                    />
+                ) : (
+                    // Playoffs: Two Medium Cards Side-by-Side
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-8 max-w-5xl mx-auto">
+                        <MvpShowcaseCard 
+                            player={pogLeader} 
+                            title="PLAYOFF MVP" 
+                            badgeColor="bg-green-400 text-black" 
+                            teams={teams} 
+                            playerList={playerList} 
+                            size="medium"
+                        />
+                         <MvpShowcaseCard 
+                            player={finalsMvp} 
+                            title="FINALS MVP" 
+                            badgeColor="bg-blue-400 text-black" 
+                            teams={teams} 
+                            playerList={playerList} 
+                            size="medium"
+                        />
                     </div>
                 )}
             </div>
 
-            {/* All-LCK / All-Playoff Teams */}
+            {/* All Teams */}
             <div>
                 <TeamSection title={viewMode === 'playoff' ? "All-Playoff 1st Team" : "All-LCK 1st Team"} rank={1} players={allProTeams[1]} playerList={playerList} />
                 <TeamSection title={viewMode === 'playoff' ? "All-Playoff 2nd Team" : "All-LCK 2nd Team"} rank={2} players={allProTeams[2]} playerList={playerList} />
