@@ -20,6 +20,7 @@ import ScheduleTab from '../components/ScheduleTab';
 import PlayoffTab from '../components/PlayoffTab';
 import StatsTab from '../components/TEMP_StatsTab';
 import {updateLeague, getLeagueById } from '../engine/storage';
+import AwardsTab from '../components/AwardsTab';
 
 
 
@@ -683,6 +684,7 @@ const getOvrBadgeStyle = (ovr) => {
       { id: 'schedule', name: '전체 일정', icon: '📅' },
       { id: 'team_schedule', name: '팀 일정', icon: '📆' },
       { id: 'stats', name: '리그 통계', icon: '📈' },
+      { id: 'awards', name: '시즌 어워드', icon: '🎖️' },
     ];
     
     const myRecord = computedStandings[myTeam.id] || { w: 0, l: 0, diff: 0 };
@@ -1323,6 +1325,10 @@ const getOvrBadgeStyle = (ovr) => {
                     onMatchClick={handleMatchClick} 
                 />
             )} 
+
+{activeTab === 'awards' && (
+    <AwardsTab league={league} teams={teams} />
+)}
   
             </div>
           </main>
