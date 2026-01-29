@@ -212,6 +212,9 @@ export function computeStatsForLeague(league, options = {}) {
             if (!championAgg.has(champName)) championAgg.set(champName, { pickCount: 0, banCount: 0, winCount: 0 });
             const c = championAgg.get(champName);
             c.pickCount = (c.pickCount || 0) + 1;
+            if (winnerSide === side) {
+              c.winCount = (c.winCount || 0) + 1;
+            }
           }
 
           // Role filtering: only aggregate player/role stats if roleFilter is ALL or matches pick role
@@ -231,7 +234,7 @@ export function computeStatsForLeague(league, options = {}) {
               entry.games += 1;
               const rKey = pickRole || 'UNKNOWN';
               entry.roles[rKey] = (entry.roles[rKey] || 0) + 1;
-              const teamNameFromPick = p.playerData?.팀 || p.team || p.teamName || matchContext.blueTeamName || matchContext.redTeamName;
+              const teamNameFromPick = p.playerData?.팀 || p.team || p.teamName || (side === 'A' ? (matchContext.blueTeamName || matchContext.teamAName) : (matchContext.redTeamName || matchContext.teamBName));
               if (teamNameFromPick) entry.teams.add(teamNameFromPick);
               playerRatingAgg.set(playerName, entry);
             }
@@ -245,7 +248,7 @@ export function computeStatsForLeague(league, options = {}) {
             kEntry.deaths += d;
             kEntry.assists += a;
             kEntry.games += 1;
-            const teamNameFromPick2 = p.playerData?.팀 || p.team || p.teamName || matchContext.blueTeamName || matchContext.redTeamName;
+            const teamNameFromPick2 = p.playerData?.팀 || p.team || p.teamName || (side === 'A' ? (matchContext.blueTeamName || matchContext.teamAName) : (matchContext.redTeamName || matchContext.teamBName));
             if (teamNameFromPick2) kEntry.teams.add(teamNameFromPick2);
             kdaAgg.set(playerName, kEntry);
           }
@@ -254,8 +257,8 @@ export function computeStatsForLeague(league, options = {}) {
 
       // POG
       const pog = extractPog(set);
-      if (pog && (pog.playerName || pog.player)) {
-        const pname = String(pog.playerName || pog.player || pog.playerName || '').trim();
+      if (pog) {
+        const pname = String(pog.playerName || pog.player || pog || '').trim();
         if (pname) {
           const prev = pogCounts.get(pname) || { count: 0, lastScore: null, teams: new Set() };
           prev.count += 1;
@@ -426,6 +429,8 @@ export function computeAwards(league, teams) {
       });
   });
 
+  const enrichedSeasonMvp = allProCandidates.find(p => p.playerName === (seasonMvp?.playerName || '')) || seasonMvp;
+
   // 3. Select Teams (1st, 2nd, 3rd)
   const roles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
   const allProTeams = { 1: {}, 2: {}, 3: {} }; 
@@ -441,7 +446,7 @@ export function computeAwards(league, teams) {
   });
 
   return {
-      seasonMvp: seasonMvp,
+      seasonMvp: enrichedSeasonMvp,
       allProTeams
   };
 }
