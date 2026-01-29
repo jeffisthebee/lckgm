@@ -71,9 +71,26 @@ export default function StatsTab({ league }) {
 
       const history = safeArray(match.result?.history);
 
-      // NOTE: intentionally DO NOT count series-level POS (match.result.posPlayer) as a set-level POG here.
-      // The statsManager output treats series POG separately; counting it here caused double counting / mismatch.
-      // If you want to present series-level POS elsewhere in the UI, display match.result.posPlayer separately.
+      // Series-level POS (Player of the Series) normalization:
+      // - We explicitly do NOT include series-level POS for match types 'playin' or 'regular'.
+      // - Only count it when the match.type === 'playoff' (or when you explicitly want it).
+      const rawSeriesPos = match.result?.posPlayer ?? match.posPlayer ?? match.result?.posPlayerName ?? match.posPlayerName;
+      let seriesPosName = null;
+      if (rawSeriesPos) {
+        if (typeof rawSeriesPos === 'string') {
+          seriesPosName = rawSeriesPos.trim();
+        } else if (typeof rawSeriesPos === 'object') {
+          seriesPosName = (rawSeriesPos.playerName || rawSeriesPos.player || rawSeriesPos.name || rawSeriesPos.이름 || '').trim() || null;
+        } else {
+          seriesPosName = String(rawSeriesPos).trim();
+        }
+      }
+
+      // Only add series POS if this match is a playoff series
+      if (seriesPosName && match.type === 'playoff') {
+        players[seriesPosName] = players[seriesPosName] || { games: 0, totalScore: 0, pog: 0, kills: 0, deaths: 0, assists: 0, champCounts: {} };
+        players[seriesPosName].pog += 1;
+      }
 
       for (const set of history) {
         totalGames++;
@@ -93,10 +110,13 @@ export default function StatsTab({ league }) {
         });
 
         // POG at set level
-        const setPog = set.pogPlayer?.playerName;
+        const setPog = set.pogPlayer?.playerName || set.pogPlayer?.player || set.pog?.playerName || set.pog;
         if (setPog) {
-          players[setPog] = players[setPog] || { games: 0, totalScore: 0, pog: 0, kills: 0, deaths: 0, assists: 0, champCounts: {} };
-          players[setPog].pog += 1;
+          const pname = String(setPog).trim();
+          if (pname) {
+            players[pname] = players[pname] || { games: 0, totalScore: 0, pog: 0, kills: 0, deaths: 0, assists: 0, champCounts: {} };
+            players[pname].pog += 1;
+          }
         }
 
         const winnerName = set.winner;
