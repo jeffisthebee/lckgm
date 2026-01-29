@@ -22,7 +22,7 @@ const RoleBadge = ({ role }) => {
 // --- PlayerCard Component ---
 const PlayerCard = ({ player, rank, playerList }) => {
     if (!player) return (
-        <div className="min-w-[160px] h-[220px] bg-gray-50 rounded-xl border border-dashed border-gray-300 flex items-center justify-center text-xs text-gray-400">
+        <div className="w-full h-[220px] bg-gray-50 rounded-xl border border-dashed border-gray-300 flex items-center justify-center text-xs text-gray-400">
             N/A
         </div>
     );
@@ -38,8 +38,10 @@ const PlayerCard = ({ player, rank, playerList }) => {
     };
 
     return (
-        <div className={`relative min-w-[160px] w-[160px] lg:w-full p-3 rounded-xl border shadow-sm flex flex-col items-center gap-2 shrink-0 snap-center ${rankStyles[rank]}`}>
-            <div className="absolute top-2 left-2 opacity-80 scale-90 origin-top-left">
+        // Changed: Removed fixed width (min-w-[160px]), added w-full to fit grid.
+        // Adjusted padding (p-2 lg:p-3) for better fit on small screens.
+        <div className={`relative w-full p-2 lg:p-3 rounded-xl border shadow-sm flex flex-col items-center gap-2 ${rankStyles[rank]}`}>
+            <div className="absolute top-2 left-2 opacity-80 scale-90 origin-top-left z-10">
                 <RoleBadge role={player.role} />
             </div>
 
@@ -49,16 +51,16 @@ const PlayerCard = ({ player, rank, playerList }) => {
             </div>
 
             <div className="text-center mb-1">
-                <div className="font-black text-gray-900 text-base leading-tight">{koreanName}</div>
-                <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wide">{ign}</div>
+                <div className="font-black text-gray-900 text-sm lg:text-base leading-tight break-keep">{koreanName}</div>
+                <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wide truncate max-w-[100px]">{ign}</div>
             </div>
 
             <div className="w-full text-center mt-auto bg-white/50 rounded-lg p-2 border border-gray-100">
-                <div className="text-2xl font-black text-gray-800 leading-none mb-1">{player.finalScore.toFixed(0)}</div>
+                <div className="text-xl lg:text-2xl font-black text-gray-800 leading-none mb-1">{player.finalScore.toFixed(0)}</div>
                 <div className="text-[10px] text-gray-400 font-bold mb-2">총 점수</div>
                 
                 <div className="text-[9px] text-gray-500 border-t border-gray-200 pt-1 mt-1">
-                    <span className="font-bold">(세부 점수)</span>
+                    <span className="font-bold hidden lg:inline">(세부 점수)</span>
                     <div className="flex justify-center flex-wrap gap-1 mt-0.5 whitespace-nowrap leading-tight">
                         <span title="팀 성적 점수">팀 {player.rankPoints}</span>
                         <span>+</span>
@@ -85,7 +87,7 @@ const PlayerCard = ({ player, rank, playerList }) => {
     );
 };
 
-// --- MvpShowcaseCard Component (New) ---
+// --- MvpShowcaseCard Component (Unchanged) ---
 const MvpShowcaseCard = ({ player, title, badgeColor, teams, playerList, size = 'large' }) => {
     if (!player) return (
         <div className={`relative bg-gray-800 rounded-2xl border border-gray-700 p-8 flex items-center justify-center text-gray-500 font-bold ${size === 'large' ? 'w-full max-w-lg mx-auto' : 'w-full'}`}>
@@ -150,7 +152,9 @@ const TeamSection = ({ title, rank, players, playerList }) => {
                 <div className={`px-3 py-1 rounded-lg font-black text-sm shadow-sm border-b-2 ${headerStyles[rank]}`}>{title}</div>
                 <div className="h-px bg-gray-200 flex-1"></div>
             </div>
-            <div className="flex overflow-x-auto gap-3 pb-4 px-1 -mx-1 snap-x snap-mandatory scrollbar-hide lg:grid lg:grid-cols-5 lg:overflow-visible">
+            {/* Changed from horizontal scroll to Grid */}
+            {/* Mobile (Portrait): 2 Cols | Mobile (Landscape): 5 Cols | Desktop: 5 Cols */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 lg:gap-3 px-1">
                 {roles.map(role => ( <PlayerCard key={role} player={players[role]} rank={rank} playerList={playerList} /> ))}
             </div>
         </div>
@@ -164,7 +168,6 @@ export default function AwardsTab({ league, teams, playerList }) {
         const playoffs = league.matches.filter(m => m.type === 'playoff');
         if (playoffs.length === 0) return false;
 
-        // Check 1: Is there a match explicitly marked as Round 5 or "Final"?
         const explicitFinal = playoffs.find(m => 
             m.round === 5 || 
             String(m.round) === "5" || 
@@ -172,12 +175,10 @@ export default function AwardsTab({ league, teams, playerList }) {
         );
         if (explicitFinal) return explicitFinal.status === 'finished';
 
-        // Check 2: If no explicit round 5, assume the highest round number is the final
         const rounds = playoffs.map(m => Number(m.round) || 0);
         const maxRound = Math.max(...rounds);
         const finalMatches = playoffs.filter(m => (Number(m.round) || 0) === maxRound);
         
-        // If the highest round matches are all finished, we consider playoffs done
         return finalMatches.length > 0 && finalMatches.every(m => m.status === 'finished');
     }, [league]);
 
@@ -186,13 +187,7 @@ export default function AwardsTab({ league, teams, playerList }) {
     const regularData = useMemo(() => computeAwards(league, teams), [league, teams]);
     const playoffData = useMemo(() => isPlayoffsFinished ? computePlayoffAwards(league, teams) : null, [league, teams, isPlayoffsFinished]);
 
-    // If Playoff mode is selected but data isn't ready (e.g. playoffs ongoing), fallback or show partial?
-    // Current logic: if playoffs not finished, playoffData is null.
-    // We can auto-switch to regular if playoff data missing.
     const activeData = (viewMode === 'playoff' && playoffData) ? playoffData : regularData;
-    
-    // Safety check: if user clicked 'playoff' but we have no data, force regular rendering (or loading)
-    // but better to just show activeData (which falls back to regular if logic above is tweaked, but here activeData is strictly one or other)
     
     if (!activeData) return <div className="p-10 text-center text-gray-500">데이터를 불러오는 중입니다...</div>;
 
@@ -223,7 +218,6 @@ export default function AwardsTab({ league, teams, playerList }) {
             {/* MVP Showcase Section */}
             <div className="w-full">
                 {!isPlayoffView ? (
-                    // Regular Season: One Big Card
                     <MvpShowcaseCard 
                         player={seasonMvp} 
                         title="SEASON MVP" 
@@ -233,7 +227,6 @@ export default function AwardsTab({ league, teams, playerList }) {
                         size="large"
                     />
                 ) : (
-                    // Playoffs: Two Medium Cards Side-by-Side
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-8 max-w-5xl mx-auto">
                         <MvpShowcaseCard 
                             player={pogLeader} 
