@@ -155,12 +155,25 @@ const TeamSection = ({ title, rank, players, playerList }) => {
 // --- Main Component ---
 export default function AwardsTab({ league, teams, playerList }) {
     const isPlayoffsFinished = useMemo(() => {
-        // Find any match that looks like a final (Round 5 OR has "Final" in the name/label)
-        const grandFinal = league.matches?.find(m => 
-            m.type === 'playoff' && 
-            (m.round === 5 || String(m.round) === "5" || (m.label && m.label.includes('결승')))
+        if (!league.matches) return false;
+        const playoffs = league.matches.filter(m => m.type === 'playoff');
+        if (playoffs.length === 0) return false;
+
+        // Check 1: Is there a match explicitly marked as Round 5 or "Final"?
+        const explicitFinal = playoffs.find(m => 
+            m.round === 5 || 
+            String(m.round) === "5" || 
+            (m.label && (m.label.includes('결승') || m.label.toLowerCase().includes('final')))
         );
-        return grandFinal && grandFinal.status === 'finished';
+        if (explicitFinal) return explicitFinal.status === 'finished';
+
+        // Check 2: If no explicit round 5, assume the highest round number is the final
+        const rounds = playoffs.map(m => Number(m.round) || 0);
+        const maxRound = Math.max(...rounds);
+        const finalMatches = playoffs.filter(m => (Number(m.round) || 0) === maxRound);
+        
+        // If the highest round matches are all finished, we consider playoffs done
+        return finalMatches.length > 0 && finalMatches.every(m => m.status === 'finished');
     }, [league]);
 
     const [viewMode, setViewMode] = useState('regular'); // 'regular' | 'playoff'
@@ -168,11 +181,18 @@ export default function AwardsTab({ league, teams, playerList }) {
     const regularData = useMemo(() => computeAwards(league, teams), [league, teams]);
     const playoffData = useMemo(() => isPlayoffsFinished ? computePlayoffAwards(league, teams) : null, [league, teams, isPlayoffsFinished]);
 
-    const activeData = viewMode === 'playoff' ? playoffData : regularData;
+    // If Playoff mode is selected but data isn't ready (e.g. playoffs ongoing), fallback or show partial?
+    // Current logic: if playoffs not finished, playoffData is null.
+    // We can auto-switch to regular if playoff data missing.
+    const activeData = (viewMode === 'playoff' && playoffData) ? playoffData : regularData;
+    
+    // Safety check: if user clicked 'playoff' but we have no data, force regular rendering (or loading)
+    // but better to just show activeData (which falls back to regular if logic above is tweaked, but here activeData is strictly one or other)
     
     if (!activeData) return <div className="p-10 text-center text-gray-500">데이터를 불러오는 중입니다...</div>;
 
     const { seasonMvp, finalsMvp, pogLeader, allProTeams } = activeData;
+    const isPlayoffView = viewMode === 'playoff' && playoffData;
 
     return (
         <div className="p-2 lg:p-6 max-w-7xl mx-auto space-y-8">
@@ -183,7 +203,7 @@ export default function AwardsTab({ league, teams, playerList }) {
                         <span className="text-blue-600">2026</span> LCK Awards
                     </h2>
                     <p className="text-gray-500 text-sm font-medium">
-                        {viewMode === 'regular' ? 'Regular Season Performance' : 'Playoffs & Finals Performance'}
+                        {isPlayoffView ? 'Playoffs & Finals Performance' : 'Regular Season Performance'}
                     </p>
                 </div>
 
@@ -197,7 +217,7 @@ export default function AwardsTab({ league, teams, playerList }) {
 
             {/* MVP Showcase Section */}
             <div className="w-full">
-                {viewMode === 'regular' ? (
+                {!isPlayoffView ? (
                     // Regular Season: One Big Card
                     <MvpShowcaseCard 
                         player={seasonMvp} 
@@ -232,9 +252,9 @@ export default function AwardsTab({ league, teams, playerList }) {
 
             {/* All Teams */}
             <div>
-                <TeamSection title={viewMode === 'playoff' ? "All-Playoff 1st Team" : "All-LCK 1st Team"} rank={1} players={allProTeams[1]} playerList={playerList} />
-                <TeamSection title={viewMode === 'playoff' ? "All-Playoff 2nd Team" : "All-LCK 2nd Team"} rank={2} players={allProTeams[2]} playerList={playerList} />
-                <TeamSection title={viewMode === 'playoff' ? "All-Playoff 3rd Team" : "All-LCK 3rd Team"} rank={3} players={allProTeams[3]} playerList={playerList} />
+                <TeamSection title={isPlayoffView ? "All-Playoff 1st Team" : "All-LCK 1st Team"} rank={1} players={allProTeams[1]} playerList={playerList} />
+                <TeamSection title={isPlayoffView ? "All-Playoff 2nd Team" : "All-LCK 2nd Team"} rank={2} players={allProTeams[2]} playerList={playerList} />
+                <TeamSection title={isPlayoffView ? "All-Playoff 3rd Team" : "All-LCK 3rd Team"} rank={3} players={allProTeams[3]} playerList={playerList} />
             </div>
         </div>
     );
