@@ -2,7 +2,6 @@
 import React, { useState, useMemo } from 'react';
 
 // --- HELPER: Calculate POS (Player of the Series) ---
-// Adapted for DetailedMatchResultModal to calculate on the fly for AI matches
 const calculatePOS = (history, winningTeamName) => {
     if (!history || !Array.isArray(history) || history.length === 0) return null;
 
@@ -87,16 +86,16 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
     // Only calculate if BO5 (Score reaches 3) or explicitly marked as BO5
     const isBo5 = (matchScoreA === 3 || matchScoreB === 3) || (result.format === 'BO5');
     
-    // Check if it's the Finals
-    // Expanded logic to identify Finals even if roundIndex varies (supports 16-team or 32-team brackets)
-    // FIX APPLIED HERE: Added checks for Round 5 to match PlayoffTab logic
+    // --- FIX FOR OLD & NEW GAMES ---
+    // 1. Use loose equality (==) to catch "5" (string) vs 5 (number)
+    // 2. Check explicitly for Korean "결승" or English "Final" in the name
     const isFinals = 
-        result.round === 5 || 
-        result.roundIndex === 5 ||
-        result.roundIndex === 4 || 
-        result.roundIndex === 3 || 
-        (result.roundName && result.roundName.toLowerCase().includes('final')) ||
-        (result.matchId && result.matchId.toString().toLowerCase().includes('final'));
+        result.round == 5 || 
+        result.roundIndex == 5 ||
+        result.roundIndex == 4 || 
+        (result.roundName && result.roundName.toString().toUpperCase().includes('FINAL')) ||
+        (result.roundName && result.roundName.toString().includes('결승')) ||
+        (result.matchId && result.matchId.toString().toUpperCase().includes('FINAL'));
 
     const posPlayer = useMemo(() => {
         // 1. If explicitly passed (e.g. from LiveGamePlayer), use it
@@ -358,8 +357,7 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                 </div>
             )}
   
-            {/* LOGS */}
-            <div className="mt-4 lg:mt-6 bg-white rounded-xl p-3 lg:p-4 border border-gray-200 shadow-sm">
+            {/* LOGS */}\r\n            <div className="mt-4 lg:mt-6 bg-white rounded-xl p-3 lg:p-4 border border-gray-200 shadow-sm">
                <h4 className="font-bold text-gray-500 mb-2 text-xs lg:text-sm uppercase">Game Logs</h4>
                <div className="space-y-1 font-mono text-[10px] lg:text-sm h-24 lg:h-32 overflow-y-auto pr-2 custom-scrollbar">
                  {currentSetData.logs.map((l, i) => (
