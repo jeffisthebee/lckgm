@@ -2,7 +2,7 @@
 import React, { useMemo } from 'react';
 import { computeAwards } from '../engine/statsManager';
 
-// Helper: Role Badge
+// ... [RoleBadge component stays the same] ...
 const RoleBadge = ({ role }) => {
     const icons = { TOP: '⚔️', JGL: '🌲', MID: '🧙', ADC: '🏹', SUP: '🛡️' };
     const colors = {
@@ -19,7 +19,6 @@ const RoleBadge = ({ role }) => {
     );
 };
 
-// Helper: Player Card
 const PlayerCard = ({ player, rank, playerList }) => {
     if (!player) return (
         <div className="min-w-[160px] h-[220px] bg-gray-50 rounded-xl border border-dashed border-gray-300 flex items-center justify-center text-xs text-gray-400">
@@ -40,7 +39,7 @@ const PlayerCard = ({ player, rank, playerList }) => {
 
     return (
         <div className={`relative min-w-[160px] w-[160px] lg:w-full p-3 rounded-xl border shadow-sm flex flex-col items-center gap-2 shrink-0 snap-center ${rankStyles[rank]}`}>
-            {/* Role Badge Top Left */}
+            {/* Role Badge */}
             <div className="absolute top-2 left-2 opacity-80 scale-90 origin-top-left">
                 <RoleBadge role={player.role} />
             </div>
@@ -65,12 +64,20 @@ const PlayerCard = ({ player, rank, playerList }) => {
                 {/* Detailed Breakdown */}
                 <div className="text-[9px] text-gray-500 border-t border-gray-200 pt-1 mt-1">
                     <span className="font-bold">(세부 점수)</span>
-                    <div className="flex justify-center gap-1 mt-0.5 whitespace-nowrap">
+                    <div className="flex justify-center flex-wrap gap-1 mt-0.5 whitespace-nowrap leading-tight">
                         <span title="팀 성적 점수">팀 {player.rankPoints}</span>
                         <span>+</span>
                         <span title="POG 포인트">POG {player.pogCount * 10}</span>
                         <span>+</span>
                         <span title="스탯 평점">지표 {player.avgScore.toFixed(0)}</span>
+                        
+                        {/* Show Bonus if exists */}
+                        {player.mvpBonus > 0 && (
+                            <>
+                                <span>+</span>
+                                <span className="text-yellow-600 font-bold" title="시즌 MVP 보너스">MVP {player.mvpBonus}</span>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>
@@ -78,10 +85,9 @@ const PlayerCard = ({ player, rank, playerList }) => {
     );
 };
 
-// Section Component for 1st/2nd/3rd Teams
+// ... [TeamSection and default export AwardsTab stay the same as previous response] ...
 const TeamSection = ({ title, rank, players, playerList }) => {
     const roles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
-    
     const headerStyles = {
         1: 'bg-yellow-500 text-white border-yellow-600',
         2: 'bg-gray-400 text-white border-gray-500',
@@ -97,7 +103,6 @@ const TeamSection = ({ title, rank, players, playerList }) => {
                 <div className="h-px bg-gray-200 flex-1"></div>
             </div>
             
-            {/* Horizontal Scroll Container */}
             <div className="flex overflow-x-auto gap-3 pb-4 px-1 -mx-1 snap-x snap-mandatory scrollbar-hide lg:grid lg:grid-cols-5 lg:overflow-visible">
                 {roles.map(role => (
                     <PlayerCard 
@@ -122,7 +127,6 @@ export default function AwardsTab({ league, teams, playerList }) {
 
     return (
         <div className="p-2 lg:p-6 max-w-7xl mx-auto space-y-10">
-            {/* Header */}
             <div className="text-center space-y-2">
                 <h2 className="text-3xl lg:text-4xl font-black text-gray-900 uppercase tracking-tighter">
                     <span className="text-blue-600">2026</span> LCK Awards
@@ -130,16 +134,13 @@ export default function AwardsTab({ league, teams, playerList }) {
                 <p className="text-gray-500 text-sm font-medium">Regular Season Performance</p>
             </div>
 
-            {/* MVP Showcase */}
             <div className="flex justify-center">
                 <div className="relative w-full max-w-lg bg-gradient-to-b from-gray-900 to-gray-800 text-white p-6 lg:p-8 rounded-2xl shadow-2xl border border-gray-700 overflow-hidden group">
                     <div className="absolute top-0 right-0 p-8 opacity-5 text-[150px] font-black leading-none pointer-events-none select-none">MVP</div>
-                    
                     <div className="relative z-10 flex flex-col items-center text-center">
                         <div className="inline-block bg-yellow-500 text-black font-black text-xs px-3 py-1 rounded-full mb-6 shadow-lg shadow-yellow-500/20">
                             SEASON MVP
                         </div>
-
                         {seasonMvp ? (
                             <>
                                 <div className="w-28 h-28 bg-gray-700 rounded-full border-4 border-yellow-400 flex items-center justify-center text-3xl font-black shadow-2xl mb-4 relative"
@@ -149,10 +150,8 @@ export default function AwardsTab({ league, teams, playerList }) {
                                         {seasonMvp.pogs} POG
                                     </div>
                                 </div>
-                                
                                 <h1 className="text-4xl lg:text-5xl font-black text-white mb-1 tracking-tight">{mvpName}</h1>
                                 <div className="text-xl text-gray-400 font-bold mb-6">{seasonMvp.playerName}</div>
-                                
                                 <div className="grid grid-cols-2 gap-8 w-full max-w-xs border-t border-gray-700 pt-6">
                                     <div>
                                         <div className="text-3xl font-black text-yellow-400">{seasonMvp.pogs * 100}</div>
@@ -171,7 +170,6 @@ export default function AwardsTab({ league, teams, playerList }) {
                 </div>
             </div>
 
-            {/* All-LCK Teams */}
             <div>
                 <TeamSection title="All-LCK 1st Team" rank={1} players={allProTeams[1]} playerList={playerList} />
                 <TeamSection title="All-LCK 2nd Team" rank={2} players={allProTeams[2]} playerList={playerList} />

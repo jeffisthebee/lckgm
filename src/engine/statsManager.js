@@ -341,9 +341,12 @@ export function computeStatsForLeague(league, options = {}) {
   export default computeStatsForLeague;
 
 
-export function computeAwards(league, teams) {
+  export function computeAwards(league, teams) {
     const stats = computeStatsForLeague(league, { regularOnly: true });
     
+    // 0. Identify Season MVP (Highest POG) beforehand
+    const seasonMvp = stats.pogLeaderboard[0] || null;
+
     // 1. Calculate Regular Season Team Standings
     const teamStats = new Map();
     teams.forEach(t => teamStats.set(t.id, { id: t.id, wins: 0, diff: 0 }));
@@ -353,6 +356,9 @@ export function computeAwards(league, teams) {
              const t1 = typeof m.t1 === 'object' ? m.t1.id : m.t1;
              const t2 = typeof m.t2 === 'object' ? m.t2.id : m.t2;
              
+             // Check if score exists and is valid
+             if (!m.result || !m.result.score) return;
+
              const parts = m.result.score.split(':');
              const s1 = parseInt(parts[0]);
              const s2 = parseInt(parts[1]);
@@ -374,7 +380,7 @@ export function computeAwards(league, teams) {
         return b.diff - a.diff;
     });
 
-    // Points: 1st=100, 2nd=80, 3rd=70...
+    // Points: 1st=100, 2nd=80, 3rd=70... 10th=0
     const teamRankPoints = new Map();
     const pointDistribution = [100, 80, 70, 60, 50, 40, 30, 20, 10, 0];
     rankedTeams.forEach((t, index) => {
@@ -392,9 +398,13 @@ export function computeAwards(league, teams) {
         const rankPoints = teamRankPoints.get(teamObj.id) || 0;
         const pogEntry = stats.pogLeaderboard.find(p => p.playerName === player.playerName);
         const pogCount = pogEntry ? pogEntry.pogs : 0;
+        
+        // [NEW] MVP Bonus: If this player is the Season MVP, add 20 points
+        const isMvp = seasonMvp && seasonMvp.playerName === player.playerName;
+        const mvpBonus = isMvp ? 20 : 0;
 
         // Formula
-        const finalScore = player.avgScore + (pogCount * 10) + rankPoints;
+        const finalScore = player.avgScore + (pogCount * 10) + rankPoints + mvpBonus;
 
         // Determine Primary Role
         let primaryRole = 'MID';
@@ -409,6 +419,7 @@ export function computeAwards(league, teams) {
             ...player,
             pogCount,
             rankPoints,
+            mvpBonus, // Store for UI
             finalScore,
             role: primaryRole,
             teamObj
@@ -430,7 +441,7 @@ export function computeAwards(league, teams) {
     });
 
     return {
-        seasonMvp: stats.pogLeaderboard[0],
+        seasonMvp: seasonMvp,
         allProTeams
     };
 }
