@@ -155,7 +155,11 @@ const TeamSection = ({ title, rank, players, playerList }) => {
 // --- Main Component ---
 export default function AwardsTab({ league, teams, playerList }) {
     const isPlayoffsFinished = useMemo(() => {
-        const grandFinal = league.matches?.find(m => m.type === 'playoff' && m.round === 5);
+        // Find any match that looks like a final (Round 5 OR has "Final" in the name/label)
+        const grandFinal = league.matches?.find(m => 
+            m.type === 'playoff' && 
+            (m.round === 5 || String(m.round) === "5" || (m.label && m.label.includes('결승')))
+        );
         return grandFinal && grandFinal.status === 'finished';
     }, [league]);
 
