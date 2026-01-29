@@ -86,16 +86,15 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
     // Only calculate if BO5 (Score reaches 3) or explicitly marked as BO5
     const isBo5 = (matchScoreA === 3 || matchScoreB === 3) || (result.format === 'BO5');
     
-    // --- FIX FOR OLD & NEW GAMES ---
-    // 1. Use loose equality (==) to catch "5" (string) vs 5 (number)
-    // 2. Check explicitly for Korean "결승" or English "Final" in the name
+    // --- FINAL MVP LOGIC (STRICT) ---
+    // 1. Check for Round 5 (The Grand Final)
+    // 2. Check for "Grand Final" in English
+    // 3. Check for "결승전" in Korean (Strictly excludes "결승 진출전")
     const isFinals = 
         result.round == 5 || 
         result.roundIndex == 5 ||
-        result.roundIndex == 4 || 
-        (result.roundName && result.roundName.toString().toUpperCase().includes('FINAL')) ||
-        (result.roundName && result.roundName.toString().includes('결승')) ||
-        (result.matchId && result.matchId.toString().toUpperCase().includes('FINAL'));
+        (result.roundName && result.roundName.toString().toUpperCase().includes('GRAND FINAL')) ||
+        (result.roundName && result.roundName.toString().includes('결승전'));
 
     const posPlayer = useMemo(() => {
         // 1. If explicitly passed (e.g. from LiveGamePlayer), use it
@@ -357,7 +356,8 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
                 </div>
             )}
   
-            {/* LOGS */}\r\n            <div className="mt-4 lg:mt-6 bg-white rounded-xl p-3 lg:p-4 border border-gray-200 shadow-sm">
+            {/* LOGS */}
+            <div className="mt-4 lg:mt-6 bg-white rounded-xl p-3 lg:p-4 border border-gray-200 shadow-sm">
                <h4 className="font-bold text-gray-500 mb-2 text-xs lg:text-sm uppercase">Game Logs</h4>
                <div className="space-y-1 font-mono text-[10px] lg:text-sm h-24 lg:h-32 overflow-y-auto pr-2 custom-scrollbar">
                  {currentSetData.logs.map((l, i) => (
