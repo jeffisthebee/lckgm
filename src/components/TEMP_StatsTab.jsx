@@ -70,12 +70,10 @@ export default function StatsTab({ league }) {
       // If 'ALL', we don't skip anything
 
       const history = safeArray(match.result?.history);
-      // Count series-level POS as POG
-      const seriesPos = match.result?.posPlayer?.playerName;
-      if (seriesPos) {
-        players[seriesPos] = players[seriesPos] || { games: 0, totalScore: 0, pog: 0, kills: 0, deaths: 0, assists: 0, champCounts: {} };
-        players[seriesPos].pog += 1;
-      }
+
+      // NOTE: intentionally DO NOT count series-level POS (match.result.posPlayer) as a set-level POG here.
+      // The statsManager output treats series POG separately; counting it here caused double counting / mismatch.
+      // If you want to present series-level POS elsewhere in the UI, display match.result.posPlayer separately.
 
       for (const set of history) {
         totalGames++;
