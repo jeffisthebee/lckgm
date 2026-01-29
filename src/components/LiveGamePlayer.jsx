@@ -1,5 +1,5 @@
 // src/components/LiveGamePlayer.jsx
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { calculateIndividualIncome, simulateSet, runGameTickEngine, selectPickFromTop3, selectBanFromProbabilities } from '../engine/simEngine';
 import { DRAFT_SEQUENCE, championList } from '../data/constants'; 
 import { SYNERGIES } from '../data/synergies'; 
@@ -173,8 +173,16 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
 
     const isBo5 = match?.format && String(match.format).toUpperCase().includes('BO5');
     
-    // [UPDATED] Check if it is Finals (Round 5 / Index 4 OR Name contains Final/결승)
-    const isFinals = match?.roundIndex === 4 || match?.round === 5 || (match?.name && (match.name.toUpperCase().includes('FINAL') || match.name.includes('결승')));
+    // [FIXED] Robust detection for Finals
+    // Uses loose equality (==) to handle string "5" vs number 5
+    const isFinals = useMemo(() => {
+        if (!match) return false;
+        return (
+            match.round == 5 || 
+            match.roundIndex == 4 || 
+            (match.name && (match.name.toUpperCase().includes('FINAL') || match.name.includes('결승')))
+        );
+    }, [match]);
     
     const targetWins = isBo5 ? 3 : 2;
 
@@ -1527,8 +1535,9 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                     scoreString: `${newA}:${newB}`, 
                                     history: newHist,
                                     posPlayer: posData,
-                                    // [FIXED] Explicitly inject Round 5 if it is Finals so DetailedModal picks it up
-                                    round: isFinals ? 5 : match.round, 
+                                    // [FIXED] Explicitly inject Round 5 if it is Finals
+                                    // AND ensure it is saved as a NUMBER, not a string
+                                    round: isFinals ? 5 : Number(match.round || 0),
                                     roundIndex: match.roundIndex,
                                     roundName: match.name || (isFinals ? 'Grand Final' : 'Match')
                                 });
