@@ -453,6 +453,8 @@ export function computePlayoffAwards(league, teams) {
   
   // Create a temporary league object for stats
   const playoffLeague = { ...league, matches: playoffMatches };
+  
+  // Compute stats for ALL playoff matches to get averages and totals
   const stats = computeStatsForLeague(playoffLeague, { regularOnly: false });
 
   // 2. Identify Key Players
@@ -467,14 +469,30 @@ export function computePlayoffAwards(league, teams) {
 
   // [FALLBACK] If Finals MVP data is missing, calculate highest score on winning team
   if (!finalsMvpName && finalMatch && finalMatch.result) {
+      
+      // FIX: Hydrate the match with actual team objects so stats engine knows the team names
+      const t1Id = (typeof finalMatch.t1 === 'object') ? finalMatch.t1.id : finalMatch.t1;
+      const t2Id = (typeof finalMatch.t2 === 'object') ? finalMatch.t2.id : finalMatch.t2;
+      
+      const t1Obj = teams.find(t => t.id === t1Id) || { name: 'Unknown 1' };
+      const t2Obj = teams.find(t => t.id === t2Id) || { name: 'Unknown 2' };
+
+      const hydratedMatch = { ...finalMatch, t1: t1Obj, t2: t2Obj };
+
       // Run stats engine on JUST the final match
-      const finalMatchStats = computeStatsForLeague({ ...league, matches: [finalMatch] }, { regularOnly: false });
+      const finalMatchStats = computeStatsForLeague({ ...league, matches: [hydratedMatch] }, { regularOnly: false });
       const winnerName = finalMatch.result.winner;
       
       // Find players on winning team
-      const winnerPlayers = finalMatchStats.playerRatings.filter(p => p.teams.includes(winnerName));
+      // We check if the player's recorded team list includes the winner's name
+      let winnerPlayers = finalMatchStats.playerRatings.filter(p => p.teams.includes(winnerName));
       
-      // Sort by Score Descending
+      // Safety: If exact name match fails (rare), just take the top scorer of the match
+      if (winnerPlayers.length === 0) {
+          winnerPlayers = finalMatchStats.playerRatings;
+      }
+
+      // Sort by Score Descending (Highest Rating in Finals)
       winnerPlayers.sort((a, b) => b.avgScore - a.avgScore);
       
       if (winnerPlayers.length > 0) {
