@@ -1,9 +1,4 @@
-// NOTE: This is an adjusted version of the original file to fix three issues:
-// 1) Ensure POG-only players (or players missing stats) are included when building playoff / regular candidates so their POG points are counted.
-// 2) Normalize finals MVP extraction so Finals MVP resolves correctly when stored as an object or string.
-// 3) Ensure the regular season MVP object includes his total POG points (pogCount) and is enriched with score/team info when needed.
-//
-// The rest of computeStatsForLeague is intact — only computeAwards and computePlayoffAwards logic has been hardened.
+
 
 export function computeStatsForLeague(league, options = {}) {
   const { regularOnly = false, roleFilter = 'ALL' } = options || {};
