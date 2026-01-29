@@ -446,17 +446,7 @@ export function computeStatsForLeague(league, options = {}) {
     };
 }
 
-// src/engine/statsManager.js
-import { computeStatsForLeague } from './statsManager';
 
-// ... [Keep existing computeAwards code above] ...
-
-/**
- * NEW: Compute Playoff Awards
- * Unlocks only when season is over.
- * Logic: Finals MVP (from match result) & POG Leader get +20 points.
- * Team Points are bracket-based (Winner=100, Runner-up=80, etc.)
- */
 export function computePlayoffAwards(league, teams) {
     // 1. Filter for Playoff Matches only
     const playoffMatches = (league.matches || []).filter(m => m.type === 'playoff' && m.status === 'finished');
