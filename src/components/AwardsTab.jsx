@@ -117,7 +117,12 @@ const MvpShowcaseCard = ({ player, title, badgeColor, teams, playerList, size = 
                 </div>
                 
                 <h1 className={`${size === 'large' ? 'text-4xl lg:text-5xl' : 'text-2xl lg:text-3xl'} font-black text-white mb-1 tracking-tight`}>{realName}</h1>
-                <div className={`${size === 'large' ? 'text-xl' : 'text-sm'} text-gray-400 font-bold mb-4`}>{player.playerName}</div>
+                <div className={`${size === 'large' ? 'text-xl' : 'text-sm'} text-gray-400 font-bold mb-2`}>{player.playerName}</div>
+                {player.pogCount !== undefined && (
+                    <div className="bg-yellow-500/10 text-yellow-300 font-bold px-3 py-1 rounded-full mb-4 text-sm">
+                        POG Counts: {player.pogCount}
+                    </div>
+                )}
                 
                 <div className="w-full border-t border-gray-700 pt-3 mt-2">
                         <div className="text-[10px] text-gray-400 uppercase font-bold mb-1">Total Score</div>
