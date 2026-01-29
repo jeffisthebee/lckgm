@@ -28,6 +28,16 @@ const computeSetPlayerScore = (p) => {
   return { score, kills, deaths, assists, damage, gold };
 };
 
+// Helper: robust type checks
+const normalizeType = (t) => String(t || '').toLowerCase();
+const isPlayoffType = (t) => normalizeType(t).includes('playoff') || normalizeType(t) === 'playoff';
+const isRegularType = (t) => {
+  const n = normalizeType(t);
+  // treat 'regular' and any 'super' (superweek / super-week / super_week) as regular season
+  return n === 'regular' || n.includes('super') || n === 'super' || n === 'superweek' || n === 'super-week' || n === 'super_week';
+};
+const isPlayinType = (t) => normalizeType(t).includes('playin') || normalizeType(t) === 'playin';
+
 export default function StatsTab({ league }) {
   const [posFilter, setPosFilter] = useState('ALL');
   // Changed from regularOnly boolean to a stage string filter
@@ -59,21 +69,19 @@ export default function StatsTab({ league }) {
       if (!match || match.status !== 'finished') continue;
       
       // === STAGE FILTER LOGIC ===
-      // Match types are assumed to be: 'playin', 'regular', 'super', 'playoff'
+      // Match types may be 'playin', 'regular', 'super', 'superweek', 'playoff', etc.
       if (stageFilter === 'REGULAR') {
-        if (match.type !== 'regular' && match.type !== 'super') continue;
+        if (!isRegularType(match.type)) continue;
       } else if (stageFilter === 'PLAYIN') {
-        if (match.type !== 'playin') continue;
+        if (!isPlayinType(match.type)) continue;
       } else if (stageFilter === 'PLAYOFF') {
-        if (match.type !== 'playoff') continue;
+        if (!isPlayoffType(match.type)) continue;
       }
       // If 'ALL', we don't skip anything
 
       const history = safeArray(match.result?.history);
 
-      // Series-level POS (Player of the Series) normalization:
-      // - We explicitly do NOT include series-level POS for match types 'playin' or 'regular'.
-      // - Only count it when the match.type === 'playoff' (or when you explicitly want it).
+      // Series-level POS normalization (robust)
       const rawSeriesPos = match.result?.posPlayer ?? match.posPlayer ?? match.result?.posPlayerName ?? match.posPlayerName;
       let seriesPosName = null;
       if (rawSeriesPos) {
@@ -86,8 +94,8 @@ export default function StatsTab({ league }) {
         }
       }
 
-      // Only add series POS if this match is a playoff series
-      if (seriesPosName && match.type === 'playoff') {
+      // Only add series POS if this match is a playoff series (explicit)
+      if (seriesPosName && isPlayoffType(match.type)) {
         players[seriesPosName] = players[seriesPosName] || { games: 0, totalScore: 0, pog: 0, kills: 0, deaths: 0, assists: 0, champCounts: {} };
         players[seriesPosName].pog += 1;
       }
@@ -109,14 +117,12 @@ export default function StatsTab({ league }) {
             championStats['ALL'][b].bans += 1;
         });
 
-        // POG at set level
-        const setPog = set.pogPlayer?.playerName || set.pogPlayer?.player || set.pog?.playerName || set.pog;
-        if (setPog) {
-          const pname = String(setPog).trim();
-          if (pname) {
-            players[pname] = players[pname] || { games: 0, totalScore: 0, pog: 0, kills: 0, deaths: 0, assists: 0, champCounts: {} };
-            players[pname].pog += 1;
-          }
+        // POG at set level (robust extraction)
+        const setPogRaw = set.pogPlayer ?? set.pog ?? set.posPlayer;
+        const setPogName = typeof setPogRaw === 'string' ? setPogRaw.trim() : (setPogRaw?.playerName || setPogRaw?.player || '').trim();
+        if (setPogName) {
+          players[setPogName] = players[setPogName] || { games: 0, totalScore: 0, pog: 0, kills: 0, deaths: 0, assists: 0, champCounts: {} };
+          players[setPogName].pog += 1;
         }
 
         const winnerName = set.winner;
@@ -138,7 +144,7 @@ export default function StatsTab({ league }) {
           players[playerName].assists += (assists || 0);
 
           // 2. Champion Stats
-          const champName = p.champName || p.champ || p.champName;
+          const champName = p.champName || p.champ || p.name || p.champName;
           if (champName) {
             totalPicks += 1;
             
