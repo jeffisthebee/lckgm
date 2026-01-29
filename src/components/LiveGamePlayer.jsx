@@ -172,6 +172,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     const [matchHistory, setMatchHistory] = useState([]);
 
     const isBo5 = match?.format && String(match.format).toUpperCase().includes('BO5');
+    // [NEW] Check if it is Finals (Round 5 / Index 4)
+    const isFinals = match?.roundIndex === 4;
     const targetWins = isBo5 ? 3 : 2;
 
     const safeArray = (v) => Array.isArray(v) ? v : [];
@@ -1435,7 +1437,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                    {isBo5 && isMatchFinished && (
                         <div className="bg-gradient-to-br from-purple-900 to-indigo-900 border border-purple-400 p-3 sm:p-4 lg:p-6 rounded-xl lg:rounded-2xl shadow-2xl w-1/2 lg:w-1/3 flex flex-col items-center relative overflow-hidden animate-pulse-slow">
                             <div className="absolute top-0 right-0 bg-purple-500 text-white font-bold px-2 py-0.5 lg:px-3 lg:py-1 text-[8px] sm:text-[10px] lg:text-xs rounded-bl-lg z-10">
-                                SERIES MVP
+                                {isFinals ? "파이널 MVP" : "SERIES MVP"}
                             </div>
                             
                             {/* Calculate POS on the fly */}
@@ -1453,7 +1455,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                         <div className="text-sm sm:text-base lg:text-2xl font-black text-white">{posData?.playerName || 'Unknown'}</div>
                                         <div className="text-[10px] sm:text-xs lg:text-sm text-purple-300 mb-1 lg:mb-2">{posData?.playerData?.포지션 || 'Player'}</div>
                                         <div className="mt-1 lg:mt-2 text-center text-gray-300 text-[10px] sm:text-sm italic">
-                                            "Series MVP"
+                                            "{isFinals ? "Finals MVP" : "Series MVP"}"
                                         </div>
                                         <div className="mt-2 lg:mt-4 bg-black/40 px-2 lg:px-4 py-1 lg:py-2 rounded text-purple-200 font-mono text-[10px] sm:text-xs lg:text-sm flex justify-between w-full">
                                             <span>Score</span>
