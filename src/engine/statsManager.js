@@ -474,6 +474,7 @@ export function computePlayoffAwards(league, teams) {
       const t1Id = (typeof finalMatch.t1 === 'object') ? finalMatch.t1.id : finalMatch.t1;
       const t2Id = (typeof finalMatch.t2 === 'object') ? finalMatch.t2.id : finalMatch.t2;
       
+      // Ensure we find the team regardless of whether ID is number or string
       const t1Obj = teams.find(t => String(t.id) === String(t1Id)) || { name: 'Unknown 1' };
       const t2Obj = teams.find(t => String(t.id) === String(t2Id)) || { name: 'Unknown 2' };
 
@@ -487,7 +488,16 @@ export function computePlayoffAwards(league, teams) {
       // First, try to find players strictly on the winning team
       let candidates = finalMatchStats.playerRatings.filter(p => p.teams.includes(winnerName));
       
-      // Safety Net: If name matching fails (e.g. "T1" vs "T1 team"), just take ALL players in the finals
+      // Safety Net 1: Loose Name Matching (e.g. "T1" vs "T1 Esports")
+      if (candidates.length === 0) {
+           candidates = finalMatchStats.playerRatings.filter(p => 
+              p.teams.some(t => String(t).includes(winnerName) || String(winnerName).includes(t))
+          );
+      }
+
+      // Safety Net 2: "Nuclear Option"
+      // If we still can't match the winner name, just take ALL players in the final match.
+      // The MVP is usually the highest scorer in the server anyway.
       if (candidates.length === 0) {
           candidates = finalMatchStats.playerRatings;
       }
