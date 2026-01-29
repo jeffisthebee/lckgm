@@ -2,6 +2,7 @@
 import React, { useState, useMemo } from 'react';
 
 // --- HELPER: Calculate POS (Player of the Series) ---
+// Adapted for DetailedMatchResultModal to calculate on the fly for AI matches
 const calculatePOS = (history, winningTeamName) => {
     if (!history || !Array.isArray(history) || history.length === 0) return null;
 
@@ -11,9 +12,18 @@ const calculatePOS = (history, winningTeamName) => {
         const picksA = game.picks?.A || [];
         const picksB = game.picks?.B || [];
         
+        // Determine which picks belong to the winning team for this specific game
+        // (We accumulate stats for the Series Winner's players across all games)
         const winName = winningTeamName?.trim();
+        
+        // Heuristic: Identify if picksA is the Series Winner
+        // We look at the first player's team name in picksA
         const teamAName = picksA[0]?.playerData?.팀?.trim();
+        
+        // Check if Team A is the Series Winner
         const isTeamASeriesWinner = teamAName === winName;
+        
+        // We only care about the Series Winner's performance for POS
         const targetPicks = isTeamASeriesWinner ? picksA : picksB;
 
         (targetPicks || []).forEach(p => {
@@ -23,10 +33,12 @@ const calculatePOS = (history, winningTeamName) => {
                     ...p, 
                     totalScore: 0, 
                     games: 0,
+                    // Preserve specific fields needed for display
                     playerData: p.playerData 
                 };
             }
             
+            // Safe Stat Extraction
             const stats = p.stats || { kills: p.k || 0, deaths: p.d || 0, assists: p.a || 0, damage: 0 };
             const k = stats.kills ?? p.k ?? 0;
             const d = (stats.deaths ?? p.d) || 0;
@@ -35,8 +47,10 @@ const calculatePOS = (history, winningTeamName) => {
             const gold = p.currentGold || 0;
             const damage = stats.damage || 0;
             
+            // POS Formula
             let score = ((k + a) / safeD * 3) + (damage / 3000) + (gold / 1000) + (a * 0.65);
             
+            // Role Multipliers
             const role = p.playerData?.포지션 || p.role || 'MID';
             if (['TOP', '탑'].includes(role)) score *= 1.05;
             if (['JGL', '정글'].includes(role)) score *= 1.07;
@@ -57,7 +71,7 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
     // Safety check
     if (!result || !result.history || result.history.length === 0) return null;
 
-    // Parse Match Score
+    // Parse Match Score (e.g. "2:1") correctly
     let matchScoreA = 0;
     let matchScoreB = 0;
     if (result.score && typeof result.score === 'string' && result.score.includes(':')) {
@@ -69,21 +83,26 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
         matchScoreB = result.scoreB || 0;
     }
 
+    // POS Calculation Logic (AI Matches / Sim Matches)
+    // Only calculate if BO5 (Score reaches 3) or explicitly marked as BO5
     const isBo5 = (matchScoreA === 3 || matchScoreB === 3) || (result.format === 'BO5');
     
-    // --- UPDATED LOGIC: Aggressive Finals Detection ---
-    // 1. Checks for specific round indices (3, 4, 5) commonly used for finals
-    // 2. Checks for "final", "결승" (Korean), or "grand" in the round name
-    // 3. Checks for explicit boolean flags if your engine uses them
+    // Check if it's the Finals
+    // Expanded logic to identify Finals even if roundIndex varies (supports 16-team or 32-team brackets)
+    // FIX APPLIED HERE: Added checks for Round 5 to match PlayoffTab logic
     const isFinals = 
-        result.isFinal === true || // Explicit flag
-        result.roundIndex >= 3 || // Catch-all for Round 3 (Semis/Finals in small brackets) or Round 4+
-        (result.roundName && /final|결승|grand/i.test(result.roundName)) ||
-        (result.matchId && /final|결승/i.test(result.matchId.toString()));
+        result.round === 5 || 
+        result.roundIndex === 5 ||
+        result.roundIndex === 4 || 
+        result.roundIndex === 3 || 
+        (result.roundName && result.roundName.toLowerCase().includes('final')) ||
+        (result.matchId && result.matchId.toString().toLowerCase().includes('final'));
 
     const posPlayer = useMemo(() => {
+        // 1. If explicitly passed (e.g. from LiveGamePlayer), use it
         if (result.posPlayer) return result.posPlayer;
 
+        // 2. If not passed, but it is a BO5, calculate it on the fly
         if (isBo5) {
             const winnerName = matchScoreA > matchScoreB ? teamA.name : teamB.name;
             return calculatePOS(result.history, winnerName);
@@ -105,6 +124,7 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
     const gameTimeStr = currentSetData.gameTime || 
         (currentSetData.totalMinutes ? `${currentSetData.totalMinutes}분` : 'Unknown Time');
 
+    // Get Kill Scores for this specific Set
     const killScoreA = currentSetData.scores?.A || 0;
     const killScoreB = currentSetData.scores?.B || 0;
 
@@ -112,25 +132,25 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
       <div className="fixed inset-0 z-[100] bg-gray-900 bg-opacity-95 flex items-center justify-center p-0 lg:p-4">
         <div className="bg-gray-100 rounded-none lg:rounded-2xl w-full max-w-6xl h-full lg:h-[90vh] flex flex-col shadow-2xl overflow-hidden relative">
           
-          {/* === HEADER === */}
+          {/* === HEADER (MATCH SCORE) === */}
           <div className="bg-black text-white p-3 lg:p-6 shrink-0 relative overflow-hidden flex justify-between items-center z-10">
             <div className="flex items-center gap-4 lg:gap-6">
                 <div className="text-3xl lg:text-5xl font-black text-blue-500">{matchScoreA}</div>
                 <div className="flex flex-col items-center">
-                    {/* Display 'FINAL' if detected, otherwise fallback to roundName */}
+                    {/* Display Round Name if available, or 'FINAL' if identified as finals */}
                     <span className="text-[10px] lg:text-xs text-gray-400 font-bold tracking-widest hidden sm:block">
-                        {isFinals ? 'FINAL' : (result.roundName || 'MATCH')}
+                        {isFinals ? 'FINAL' : result.roundName || 'MATCH'}
                     </span>
                     <span className="text-xl lg:text-2xl font-black italic text-white">VS</span>
                 </div>
                 <div className="text-3xl lg:text-5xl font-black text-red-500">{matchScoreB}</div>
             </div>
 
-            {/* POS DISPLAY */}
+            {/* POS DISPLAY (Series MVP) - Only for BO5 */}
             {posPlayer && (
                 <div className="flex items-center gap-2 lg:gap-4 bg-purple-900/80 border border-purple-500 px-3 py-1 lg:px-6 lg:py-2 rounded-lg lg:rounded-xl shadow-[0_0_15px_rgba(168,85,247,0.4)] animate-pulse-slow">
                     <div className="flex flex-col items-end">
-                        {/* LABEL SWITCH: Checks isFinals */}
+                        {/* Label Logic for Finals */}
                         <span className="text-[8px] lg:text-[10px] text-purple-300 font-bold tracking-widest">
                             {isFinals ? "파이널 MVP" : "SERIES MVP"}
                         </span>
