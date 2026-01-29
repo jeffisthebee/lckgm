@@ -172,8 +172,10 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     const [matchHistory, setMatchHistory] = useState([]);
 
     const isBo5 = match?.format && String(match.format).toUpperCase().includes('BO5');
-    // [NEW] Check if it is Finals (Round 5 / Index 4)
-    const isFinals = match?.roundIndex === 4;
+    
+    // [UPDATED] Check if it is Finals (Round 5 / Index 4 OR Name contains Final/결승)
+    const isFinals = match?.roundIndex === 4 || (match?.name && (match.name.toUpperCase().includes('FINAL') || match.name.includes('결승')));
+    
     const targetWins = isBo5 ? 3 : 2;
 
     const safeArray = (v) => Array.isArray(v) ? v : [];
@@ -812,6 +814,10 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             }
             // Passive Income
             nextStats.players.forEach(p => {
+                const calculateIncome = (minute) => {
+                     // Simple passive logic for visual feed (actual logic is in simEngine)
+                     return { gold: 120, xp: 60 + (minute * 5) };
+                };
                 const income = calculateIndividualIncome(p, currentMinute, 1.0); 
                 if (income.gold > 0) p.currentGold = (p.currentGold || 0) + (income.gold / 60);
                 if (income.xp > 0) p.xp = (p.xp || 0) + (income.xp / 60);
