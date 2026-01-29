@@ -174,7 +174,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
     const isBo5 = match?.format && String(match.format).toUpperCase().includes('BO5');
     
     // [UPDATED] Check if it is Finals (Round 5 / Index 4 OR Name contains Final/결승)
-    const isFinals = match?.roundIndex === 4 || (match?.name && (match.name.toUpperCase().includes('FINAL') || match.name.includes('결승')));
+    const isFinals = match?.roundIndex === 4 || match?.round === 5 || (match?.name && (match.name.toUpperCase().includes('FINAL') || match.name.includes('결승')));
     
     const targetWins = isBo5 ? 3 : 2;
 
@@ -1526,7 +1526,11 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                                     winner: winnerName, 
                                     scoreString: `${newA}:${newB}`, 
                                     history: newHist,
-                                    posPlayer: posData
+                                    posPlayer: posData,
+                                    // [FIXED] Explicitly inject Round 5 if it is Finals so DetailedModal picks it up
+                                    round: isFinals ? 5 : match.round, 
+                                    roundIndex: match.roundIndex,
+                                    roundName: match.name || (isFinals ? 'Grand Final' : 'Match')
                                 });
                             } catch (err) { console.warn("onMatchComplete error:", err); }
                         } else {
