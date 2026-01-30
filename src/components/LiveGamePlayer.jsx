@@ -262,6 +262,17 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
         return arr.slice(0,5);
     };
 
+    // Small helper to resolve a player's display name from a roster robustly
+    const resolvePlayerNameForRole = (roster = [], role, preferredName) => {
+        if (preferredName) return preferredName;
+        if (!Array.isArray(roster)) return 'Unknown';
+        const found = roster.find(r => positionMatches(r.포지션, role) || positionMatches(r.position, role));
+        if (found) return found.이름 || found.name || found.playerName || 'Unknown';
+        // fallback: try any with same normalized role string
+        const fallback = roster.find(r => normalizePosition(r.포지션 || r.position) === normalizePosition(role));
+        return fallback ? (fallback.이름 || fallback.name || fallback.playerName || 'Unknown') : 'Unknown';
+    };
+
     // 1. Initialize Set Simulation or Manual Setup
     const startSet = useCallback(() => {
       // ensure result lock is cleared at the very start of a new run
@@ -434,8 +445,30 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                   ...safeArray(safeResult.picks?.A).map(p => enrichPlayer(p, blueTeam.roster, 'BLUE')),
                   ...safeArray(safeResult.picks?.B).map(p => enrichPlayer(p, redTeam.roster, 'RED'))
               ];
-  
-              setSimulationData({ ...safeResult, blueTeam, redTeam }); 
+
+              // --- IMPORTANT PATCH:
+              // Build UI-friendly pick objects that always include playerName (fix opponent SUPPORT 'Unknown' issue)
+              const buildUIPickList = (picksList = [], teamRoster = []) => {
+                  return safeArray(picksList).map(p => {
+                      const champName = p.champName || p.champion || p.name || '';
+                      const champTier = p.tier || activeChampionList.find(c => c.name === champName)?.tier || p.tier || '-';
+                      // prefer an explicit playerName from engine result if present
+                      const enginePlayerName = p.playerName || p.player || p.player_name || null;
+                      const resolvedName = resolvePlayerNameForRole(teamRoster, p.role || p.position || '', enginePlayerName);
+                      return {
+                          ...p,
+                          champName,
+                          tier: champTier,
+                          role: p.role || p.position || '',
+                          playerName: resolvedName
+                      };
+                  });
+              };
+
+              const picksA_UI = buildUIPickList(safeResult.picks?.A, blueTeam.roster || []);
+              const picksB_UI = buildUIPickList(safeResult.picks?.B, redTeam.roster || []);
+
+              setSimulationData({ ...safeResult, blueTeam, redTeam, picks: { A: picksA_UI, B: picksB_UI } }); 
               setLiveStats({
                   kills: { BLUE: 0, RED: 0 },
                   gold: { BLUE: 2500, RED: 2500 },
@@ -794,7 +827,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             } else {
                 const currentPicks = stepInfo.side === 'BLUE' ? prev.bluePicks : prev.redPicks;
                 const teamPicks = stepInfo.side === 'BLUE' ? (simulationData?.picks?.A || []) : (simulationData?.picks?.B || []);
-                const pickData = (teamPicks || []).find(p => p && p.champName === champName);
+                const pickData = (teamPicks || []).find(p => p && (p.champName === champName || p.champion === champName));
                 
                 const emptyIdx = currentPicks.findIndex(p => p === null);
                 if (emptyIdx !== -1 && pickData) {
