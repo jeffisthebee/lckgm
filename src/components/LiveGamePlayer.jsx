@@ -421,23 +421,51 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                   totalSeconds: result.totalSeconds || (result.totalMinutes ? result.totalMinutes * 60 : 30 * 60)
               };
   
+              // Robust enrichPlayer: resolve playerName from engine result or roster (handles SUP/SPT etc.)
               const enrichPlayer = (p, teamRoster, side) => {
                   // roster might use Korean or English keys; be resilient
-                  const findRoster = (roster, playerName) => {
+                  const findRoster = (roster, playerNameCandidate, roleCandidate) => {
                       if (!Array.isArray(roster)) return undefined;
                       return roster.find(r => {
-                          return (r.이름 && r.이름 === playerName) ||
-                                 (r.name && r.name === playerName) ||
-                                 (r.playerName && r.playerName === playerName) ||
-                                 // fallback by role using positionMatches
-                                 (p.role && (positionMatches(r.포지션, p.role) || positionMatches(r.position, p.role)));
+                          // exact-name matches first (various keys)
+                          if (playerNameCandidate) {
+                              if ((r.이름 && r.이름 === playerNameCandidate) ||
+                                  (r.name && r.name === playerNameCandidate) ||
+                                  (r.playerName && r.playerName === playerNameCandidate)) {
+                                  return true;
+                              }
+                          }
+                          // then match by normalized role/position
+                          if (roleCandidate && (positionMatches(r.포지션, roleCandidate) || positionMatches(r.position, roleCandidate))) {
+                              return true;
+                          }
+                          return false;
                       });
                   };
 
-                  const rosterData = findRoster(teamRoster || [], p.playerName) || {};
-                  const safeData = rosterData || { 이름: p.playerName, 포지션: p.role || 'TOP', 상세: { 성장: 50, 라인전: 50, 무력: 50, 안정성: 50, 운영: 50, 한타: 50 } };
+                  const engineName = p.playerName || p.player || p.name || null;
+                  const roleCandidate = p.role || p.position || null;
+                  const rosterData = findRoster(teamRoster || [], engineName, roleCandidate) || null;
+
+                  const safeData = rosterData || { 
+                      이름: engineName || (roleCandidate ? resolvePlayerNameForRole(teamRoster, roleCandidate, null) : `Unknown`),
+                      포지션: roleCandidate || 'TOP', 
+                      상세: { 성장: 50, 라인전: 50, 무력: 50, 안정성: 50, 운영: 50, 한타: 50 } 
+                  };
+
+                  const finalPlayerName = engineName || safeData.이름 || safeData.name || safeData.playerName || 'Unknown';
+
                   return { 
-                      ...p, side: side, k: p.stats?.kills ?? p.k ?? 0, d: p.stats?.deaths ?? p.d ?? 0, a: p.stats?.assists ?? p.a ?? 0, currentGold: p.currentGold || 500, lvl: p.level || 1, xp: p.xp || 0, playerData: safeData 
+                      ...p,
+                      playerName: finalPlayerName,
+                      side: side, 
+                      k: p.stats?.kills ?? p.k ?? 0, 
+                      d: p.stats?.deaths ?? p.d ?? 0, 
+                      a: p.stats?.assists ?? p.a ?? 0, 
+                      currentGold: p.currentGold || 500, 
+                      lvl: p.level || 1, 
+                      xp: p.xp || 0, 
+                      playerData: safeData 
                   };
               };
   
@@ -1461,7 +1489,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                  </div>
              </div>
             )}
-            
+
             {/* 4. GAME PLAYBACK UI */}
             {phase === 'GAME' && (
                 <div className="flex-1 flex flex-col sm:flex-row overflow-hidden relative">
