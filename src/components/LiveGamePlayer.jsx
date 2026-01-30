@@ -29,6 +29,27 @@ const getRealtimeSynergies = (currentPicks) => {
     });
 };
 
+// --- HELPERS: Position normalization & matching (fix SUP/Support variants) ---
+const normalizePosition = (p) => {
+    if (!p && p !== 0) return '';
+    let s = String(p).toUpperCase().trim();
+    // common variants mapping
+    if (s === 'SPT') return 'SUP';
+    if (s === 'SUPP') return 'SUP';
+    if (s === 'SUPPORT' || s === '서포터' || s === '서포' || s === 'SUPPORTER') return 'SUP';
+    if (s === 'TOPLANE' || s === 'TOP' || s === '탑') return 'TOP';
+    if (s === 'JUNGLE' || s === 'JGL' || s === 'JGL.' || s === '정글') return 'JGL';
+    if (s === 'MIDDLE' || s === 'MID' || s === '미드') return 'MID';
+    if (s === 'BOT' || s === 'ADC' || s === 'BOTLANE' || s === '원딜') return 'ADC';
+    // If already one of canonical short codes, return as-is
+    if (['TOP','JGL','MID','ADC','SUP'].includes(s)) return s;
+    // Last resort: try to pick first three letters
+    return s;
+};
+const positionMatches = (rosterPos, targetPos) => {
+    return normalizePosition(rosterPos) === normalizePosition(targetPos);
+};
+
 // --- HELPER: Calculate POS (Player of the Series) ---
 // [FIXED] Updated to use roster matching for reliable team identification
 const calculatePOS = (matchHistory, currentSetData, winningTeamName, winningTeamRoster = []) => {
@@ -348,7 +369,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                           const roster = makeSafeRosterArray(teamObj.roster, teamObj.name);
                           return ['TOP','JGL','MID','ADC','SUP'].map(pos => {
                               const champ = activeChampionList.find(c => c.role === pos) || activeChampionList[0] || { name: 'Unknown', tier: 3 };
-                              const player = roster.find(p => (p.포지션 === pos) || (p.position === pos)) || roster[0] || { 이름: 'Unknown', 포지션: pos };
+                              // use positionMatches here instead of direct equality
+                              const player = roster.find(p => positionMatches(p.포지션, pos) || positionMatches(p.position, pos)) || roster[0] || { 이름: 'Unknown', 포지션: pos };
                               return {
                                   champName: champ.name || 'Unknown',
                                   tier: champ.tier || 3,
@@ -396,7 +418,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                           return (r.이름 && r.이름 === playerName) ||
                                  (r.name && r.name === playerName) ||
                                  (r.playerName && r.playerName === playerName) ||
-                                 (r.포지션 && p.role && r.포지션 === p.role); // fallback by role
+                                 // fallback by role using positionMatches
+                                 (p.role && (positionMatches(r.포지션, p.role) || positionMatches(r.position, p.role)));
                       });
                   };
 
@@ -560,7 +583,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             
             let roleCandidates = [];
             remainingRoles.forEach(role => {
-                const player = team?.roster?.find(p => p.포지션 === role);
+                const player = team?.roster?.find(p => positionMatches(p.포지션, role));
                 if (player) {
                     const candidateChamp = selectPickFromTop3(player, availableChamps);
                     if (candidateChamp) {
@@ -616,7 +639,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 const emptyIdx = teamPicks.findIndex(p => p === null);
                 const chosenRole = champ.role || filterRole || 'MID';
 
-                const playerName = (team?.roster || []).find(p => p.포지션 === chosenRole)?.이름 || 'Unknown';
+                // Use positionMatches to find the player, so SUP variants are handled
+                const playerName = (team?.roster || []).find(p => positionMatches(p.포지션, chosenRole) || positionMatches(p.position, chosenRole))?.이름 || 'Unknown';
                 const pickObj = { champName: champ.name, tier: champ.tier, role: chosenRole, playerName }; // Saving tier here
 
                 if (emptyIdx !== -1) {
@@ -656,7 +680,8 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 const c = sidePicks[pos];
                 // Fallback for incomplete drafts (prevents crash)
                 const safeChamp = c || activeChampionList.find(ch => ch.role === pos) || activeChampionList[0];
-                const p = (roster || []).find(pl => pl.포지션 === pos);
+                // Use positionMatches to match supports regardless of roster pos naming
+                const p = (roster || []).find(pl => positionMatches(pl.포지션, pos) || positionMatches(pl.position, pos));
                 
                 const safePlayerData = p || { 
                     이름: 'Unknown', 
@@ -1043,7 +1068,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                       <div className="flex gap-1 sm:gap-2">
                           {Array(targetWins).fill(0).map((_,i) => (
                               <div key={i} className={`w-2 h-2 sm:w-3 sm:h-3 rounded-full ${i < blueTeamWins ? 'bg-blue-500' : 'bg-gray-700'}`}></div>
-                          ))}
+                          ))} 
                       </div>
                    </div>
               </div>
@@ -1491,7 +1516,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
             )}
         </div>
   
-        {/* 5. RESULT OVERLAY */}
+        {/* 5. RESULT OVERLAY */} 
         {phase === 'SET_RESULT' && (
            <div className="absolute inset-0 bg-black/90 z-50 flex flex-col items-center justify-center animate-fade-in p-4 sm:p-8">
                <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black mb-2 sm:mb-4 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-red-400">
