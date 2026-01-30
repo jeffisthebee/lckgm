@@ -241,7 +241,6 @@ export const SYNERGIES = [
   { champions: ['진', '스웨인'], multiplier: 1.05 }, // CC Chain (Root + Pull)
   { champions: ['칼리스타', '케넨'], multiplier: 1.07 }, // Fate's Call -> Slicing Maelstrom
   { champions: ['오리아나', '알리스타'], multiplier: 1.06 }, // Ball Delivery (Headbutt/Pulverize)
-  { champions: ['쉔', '트위치'], multiplier: 1.06 }, // "Submarine" (Stealth Shen Ult delivery)
   { champions: ['킨드레드', '타릭'], multiplier: 1.08 }, // Lamb's Respite + Cosmic Radiance stacking
   { champions: ['마스터 이', '룰루'], multiplier: 1.07 }, // Classic Funnel Synergy
   { champions: ['마스터 이', '모르가나'], multiplier: 1.06 }, // Black Shield prevents CC (Yi's weakness)
