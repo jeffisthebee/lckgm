@@ -10,6 +10,7 @@ import DetailedMatchResultModal from '../components/DetailedMatchResultModal';
 import playerList from '../data/players.json';
 import { computeStandings, calculateFinalStandings, calculateGroupPoints, sortGroupByStandings, createPlayInBracket, createPlayInRound2Matches, createPlayInFinalMatch, createPlayoffRound2Matches, createPlayoffRound3Matches, createPlayoffLoserRound3Match, createPlayoffQualifierMatch, createPlayoffFinalMatch } from '../engine/BracketManager';
 import { updateChampionMeta, generateSuperWeekMatches } from '../engine/SeasonManager';
+import { computeAwards } from '../engine/statsManager'; // [NEW] Import for MVP calc
 import FinalStandingsModal from '../components/FinalStandingsModal';
 import MatchupBox from '../components/MatchupBox';
 import RosterTab from '../components/RosterTab';
@@ -21,8 +22,8 @@ import PlayoffTab from '../components/PlayoffTab';
 import StatsTab from '../components/TEMP_StatsTab';
 import {updateLeague, getLeagueById } from '../engine/storage';
 import AwardsTab from '../components/AwardsTab';
-// [NEW] Import the Foreign Leagues Tab
-import ForeignLeaguesTab from '../components/TEMP_ForeignLeaguesTab';
+import ForeignLeaguesTab from '../components/ForeignLeaguesTab'; 
+import HistoryTab from '../components/HistoryTab'; // [NEW] Import History Tab
 
 
 
@@ -133,6 +134,69 @@ const getOvrBadgeStyle = (ovr) => {
         setPrizeMoney(earned);
       }
     }, [league]);
+
+    // [NEW] AUTO-ARCHIVE HISTORY EFFECT
+    useEffect(() => {
+        if (!league || !league.matches) return;
+
+        // 1. Check if Season is Finished
+        const grandFinal = league.matches.find(m => m.type === 'playoff' && m.round === 5);
+        const isSeasonFinished = grandFinal && grandFinal.status === 'finished';
+
+        if (isSeasonFinished) {
+            const currentYear = league.year || 2026;
+            const currentSeasonName = league.seasonName || 'LCK CUP';
+
+            // 2. Check if this season is ALREADY in history (Prevent Duplicates)
+            const history = league.history || [];
+            const alreadySaved = history.some(h => h.year === currentYear && h.seasonName === currentSeasonName);
+
+            if (!alreadySaved) {
+                console.log("Auto-Archiving Season History...");
+                
+                // 3. Generate Snapshot Data
+                const finalStandings = calculateFinalStandings(league);
+                const awardsData = computeAwards(league, teams, playerList);
+                
+                // 4. Create History Object
+                const seasonSnapshot = {
+                    year: currentYear,
+                    seasonName: currentSeasonName,
+                    champion: finalStandings[0]?.team, // 1st Place Team Object
+                    runnerUp: finalStandings[1]?.team,
+                    finalStandings: finalStandings,
+                    groupStandings: {
+                        baron: sortGroupByStandings(league.groups.baron, computedStandings).map(id => ({
+                            teamName: teams.find(t=>t.id===id).name,
+                            w: computedStandings[id].w,
+                            l: computedStandings[id].l,
+                            diff: computedStandings[id].diff
+                        })),
+                        elder: sortGroupByStandings(league.groups.elder, computedStandings).map(id => ({
+                            teamName: teams.find(t=>t.id===id).name,
+                            w: computedStandings[id].w,
+                            l: computedStandings[id].l,
+                            diff: computedStandings[id].diff
+                        }))
+                    },
+                    awards: {
+                        mvp: awardsData.mvp, // { name, team, role, points }
+                        allPro: awardsData.allProTeams // { 1: [...], 2: [...], 3: [...] }
+                    }
+                };
+
+                // 5. Save to League State
+                const newHistory = [...history, seasonSnapshot];
+                const updatedLeague = { ...league, history: newHistory };
+                
+                setLeague(updatedLeague);
+                updateLeague(league.id, updatedLeague);
+                
+                // Optional: Notify User
+                // alert("🏆 시즌 기록이 역사에 저장되었습니다! '역대 기록' 탭에서 확인할 수 있습니다.");
+            }
+        }
+    }, [league?.matches]); // Trigger when matches update (e.g. final match finishes)
   
   // [CRITICAL FIX] handleMatchClick now injects round info for old saves
   const handleMatchClick = (match) => {
@@ -687,8 +751,8 @@ const getOvrBadgeStyle = (ovr) => {
       { id: 'team_schedule', name: '팀 일정', icon: '📆' },
       { id: 'stats', name: '리그 통계', icon: '📈' },
       { id: 'awards', name: '시즌 어워드', icon: '🎖️' },
-      // [NEW] Added Foreign Leagues Item
       { id: 'foreign', name: '해외 리그', icon: '🌍' },
+      { id: 'history', name: '역대 기록', icon: '📜' }, // [NEW] Added History Menu
     ];
     
     const myRecord = computedStandings[myTeam.id] || { w: 0, l: 0, diff: 0 };
@@ -1334,9 +1398,13 @@ const getOvrBadgeStyle = (ovr) => {
     <AwardsTab league={league} teams={teams} playerList={playerList} />
 )}
 
-{/* [NEW] Render Foreign Leagues Tab */}
 {activeTab === 'foreign' && (
     <ForeignLeaguesTab />
+)}
+
+{/* [NEW] History Tab Render */}
+{activeTab === 'history' && (
+    <HistoryTab league={league} />
 )}
   
             </div>
