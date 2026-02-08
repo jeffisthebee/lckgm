@@ -1,19 +1,41 @@
 import React, { useState } from 'react';
 import { FOREIGN_LEAGUES } from '../data/foreignLeagues';
 
-// [NEW] Hardcoded colors for visual enhancement (You can eventually move this to JSON)
+// Expanded Color Map for all teams
 const TEAM_COLORS = {
   // LPL
   'BLG': '#e04e9c', 'TES': '#d32f2f', 'AL': '#ff5722', 'JDG': '#c62828', 
   'IG': '#000000', 'WBG': '#e040fb', 'NIP': '#fdd835', 'EDG': '#212121', 
   'WE': '#d50000', 'LGD': '#ef5350', 'UP': '#2962ff', 'TT': '#00b0ff', 
   'LNG': '#1565c0', 'OMG': '#5d4037',
+  
   // LEC
-  'G2': '#000000', 'FNC': '#ff9800', 'KC': '#1a237e', 'VIT': '#fbc02d',
+  'G2': '#000000', 'MKOI': '#C1A057', 'FNC': '#ff9800', 'KC': '#1a237e', 
+  'GX': '#b71c1c', 'VIT': '#fbc02d', 'TH': '#e65100', 'SHFT': '#7b1fa2', 
+  'SK': '#880e4f', 'NAVI': '#ffeb3b', 'LR': '#4a148c', 'KCB': '#4fc3f7',
+
   // LCS
-  'C9': '#00b0ff', 'TL': '#1a237e', 'FLY': '#004d40',
-  // Defaults
+  'FLY': '#004d40', 'SEN': '#f44336', 'SR': '#66bb6a', 'C9': '#00b0ff', 
+  'TL': '#1a237e', 'DSG': '#d32f2f', 'DIG': '#ffca28', 'LYON': '#b71c1c',
+
+  // LCP
+  'CFO': '#7e57c2', 'TSW': '#424242', 'GAM': '#fdd835', 'MVK': '#fbc02d', 
+  'DFM': '#2979ff', 'SHG': '#ffeb3b', 'DCG': '#c62828', 'GZ': '#e53935',
+
+  // CBLOL
+  'VKS': '#673ab7', 'RED': '#d50000', 'PAIN': '#212121', 'LOUD': '#00e676', 
+  'FUR': '#000000', 'LEV': '#1976d2', 'LOS': '#ff5722', 'FX': '#37474f',
+
+  // Fallback
   'DEFAULT': '#607d8b'
+};
+
+const LEAGUE_TITLES = {
+  'LPL': '스플릿 1',
+  'LCP': '스플릿 1',
+  'LEC': '버서스',
+  'LCS': '락 인',
+  'CBLOL': '레전드 컵'
 };
 
 const ForeignLeaguesTab = () => {
@@ -21,6 +43,7 @@ const ForeignLeaguesTab = () => {
   const [currentIndex, setCurrentIndex] = useState(0);
   
   const activeRegion = leagueKeys[currentIndex];
+  const activeTitle = LEAGUE_TITLES[activeRegion];
   const teams = FOREIGN_LEAGUES[activeRegion] || [];
 
   // Navigation Handlers
@@ -35,7 +58,7 @@ const ForeignLeaguesTab = () => {
   // Helper to get color
   const getColor = (name) => TEAM_COLORS[name] || TEAM_COLORS['DEFAULT'];
 
-  // [NEW] LPL Group Logic
+  // LPL Group Logic
   const getLPLGroups = (allTeams) => {
     const groups = {
       '등봉조': ['AL', 'BLG', 'WBG', 'JDG', 'TES', 'IG'],
@@ -49,7 +72,7 @@ const ForeignLeaguesTab = () => {
       if (groups['등봉조'].includes(t.name)) result['등봉조'].push(t);
       else if (groups['인내조'].includes(t.name)) result['인내조'].push(t);
       else if (groups['열반조'].includes(t.name)) result['열반조'].push(t);
-      else result['열반조'].push(t); // Fallback
+      else result['열반조'].push(t); 
     });
 
     return result;
@@ -57,7 +80,7 @@ const ForeignLeaguesTab = () => {
 
   // Render a Standings Table
   const renderTable = (teamList, title = null) => (
-    <div className="mb-6">
+    <div className="mb-6 h-full">
       {title && (
         <div className="flex items-center gap-2 mb-2 px-2">
             <div className={`w-2 h-8 rounded ${
@@ -67,7 +90,7 @@ const ForeignLeaguesTab = () => {
             <h3 className="text-lg font-bold text-gray-700">{title}</h3>
         </div>
       )}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm h-full">
         <table className="w-full text-sm text-left">
             <thead className="bg-gray-50 text-gray-500 font-bold border-b">
                 <tr>
@@ -83,17 +106,17 @@ const ForeignLeaguesTab = () => {
                         <td className="p-3 text-center font-bold text-gray-400">{idx + 1}</td>
                         <td className="p-3 flex items-center gap-3">
                             <div 
-                                className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-sm"
+                                className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-[10px] shadow-sm flex-shrink-0"
                                 style={{backgroundColor: getColor(t.name)}}
                             >
                                 {t.name}
                             </div>
-                            <div className="flex flex-col">
-                                <span className="font-bold text-gray-800">{t.fullName}</span>
+                            <div className="flex flex-col min-w-0">
+                                <span className="font-bold text-gray-800 truncate">{t.fullName}</span>
                                 <span className="text-[10px] text-gray-400">전력 {t.power}</span>
                             </div>
                         </td>
-                        <td className="p-3 text-center font-bold text-gray-600">0승 0패</td>
+                        <td className="p-3 text-center font-bold text-gray-600">0 - 0</td>
                         <td className="p-3 text-center font-bold text-gray-400">0</td>
                     </tr>
                 ))}
@@ -104,25 +127,27 @@ const ForeignLeaguesTab = () => {
   );
 
   return (
-    <div className="bg-gray-50 rounded-xl shadow-sm border border-gray-200 p-6">
+    <div className="bg-gray-50 rounded-xl shadow-sm border border-gray-200 p-6 min-h-[600px]">
       
       {/* Header with Navigation */}
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center mb-8">
         <button 
             onClick={handlePrev}
-            className="w-10 h-10 rounded-full bg-white border border-gray-300 flex items-center justify-center hover:bg-gray-100 transition shadow-sm font-bold text-gray-600"
+            className="w-12 h-12 rounded-full bg-white border border-gray-300 flex items-center justify-center hover:bg-gray-100 hover:border-blue-500 transition shadow-sm font-bold text-gray-600 text-xl"
         >
             &lt;
         </button>
         
         <div className="flex flex-col items-center">
-            <h2 className="text-3xl font-black text-gray-800 tracking-tight">{activeRegion}</h2>
-            <span className="text-xs font-bold text-gray-400 mt-1">SUMMER SPLIT</span>
+            <h2 className="text-4xl font-black text-gray-800 tracking-tight">{activeRegion}</h2>
+            <div className="mt-2 px-4 py-1 bg-gray-900 text-yellow-400 font-bold rounded-full text-sm uppercase tracking-wider shadow-sm">
+                {activeTitle}
+            </div>
         </div>
 
         <button 
             onClick={handleNext}
-            className="w-10 h-10 rounded-full bg-white border border-gray-300 flex items-center justify-center hover:bg-gray-100 transition shadow-sm font-bold text-gray-600"
+            className="w-12 h-12 rounded-full bg-white border border-gray-300 flex items-center justify-center hover:bg-gray-100 hover:border-blue-500 transition shadow-sm font-bold text-gray-600 text-xl"
         >
             &gt;
         </button>
@@ -130,7 +155,7 @@ const ForeignLeaguesTab = () => {
 
       {/* Content Area */}
       {activeRegion === 'LPL' ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
             {/* LPL Special Grouping */}
             {(() => {
                 const groups = getLPLGroups(teams);
@@ -145,7 +170,9 @@ const ForeignLeaguesTab = () => {
         </div>
       ) : (
         /* Standard Standings for other regions */
-        renderTable(teams)
+        <div className="max-w-4xl mx-auto">
+            {renderTable(teams)}
+        </div>
       )}
 
     </div>
