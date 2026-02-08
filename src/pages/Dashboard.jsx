@@ -22,7 +22,7 @@ import PlayoffTab from '../components/PlayoffTab';
 import StatsTab from '../components/TEMP_StatsTab';
 import {updateLeague, getLeagueById } from '../engine/storage';
 import AwardsTab from '../components/AwardsTab';
-import ForeignLeaguesTab from '../components/ForeignLeaguesTab'; 
+import ForeignLeaguesTab from '../components/TEMP_ForeignLeaguesTab'; 
 import HistoryTab from '../components/HistoryTab'; // [NEW] Import History Tab
 
 
