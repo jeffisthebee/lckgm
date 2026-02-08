@@ -1,0 +1,16 @@
+[
+    { "id": "LPL_BLG", "name": "BLG", "fullName": "Bilibili Gaming", "power": 80 },
+    { "id": "LPL_TES", "name": "TES", "fullName": "Top Esports", "power": 80 },
+    { "id": "LPL_AL", "name": "AL", "fullName": "Anyone's Legend", "power": 80 },
+    { "id": "LPL_JDG", "name": "JDG", "fullName": "JD Gaming", "power": 80 },
+    { "id": "LPL_IG", "name": "IG", "fullName": "Invictus Gaming", "power": 80 },
+    { "id": "LPL_WBG", "name": "WBG", "fullName": "Weibo Gaming", "power": 80 },
+    { "id": "LPL_NIP", "name": "NIP", "fullName": "Ninjas in Pyjamas", "power": 80 },
+    { "id": "LPL_EDG", "name": "EDG", "fullName": "EDward Gaming", "power": 80 },
+    { "id": "LPL_WE", "name": "WE", "fullName": "Team WE", "power": 80 },
+    { "id": "LPL_LGD", "name": "LGD", "fullName": "LGD Gaming", "power": 80 },
+    { "id": "LPL_UP", "name": "UP", "fullName": "Ultra Prime", "power": 80 },
+    { "id": "LPL_TT", "name": "TT", "fullName": "ThunderTalk Gaming", "power": 80 },
+    { "id": "LPL_LNG", "name": "LNG", "fullName": "LNG Esports", "power": 80 },
+    { "id": "LPL_OMG", "name": "OMG", "fullName": "OMG", "power": 80 }
+  ]

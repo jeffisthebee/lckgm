@@ -1,0 +1,10 @@
+[
+    { "id": "CBLOL_VKS", "name": "VKS", "fullName": "Vivo Keyd Stars", "power": 80 },
+    { "id": "CBLOL_RED", "name": "RED", "fullName": "RED Canids", "power": 80 },
+    { "id": "CBLOL_PAIN", "name": "PAIN", "fullName": "paiN Gaming", "power": 80 },
+    { "id": "CBLOL_LOUD", "name": "LOUD", "fullName": "LOUD", "power": 80 },
+    { "id": "CBLOL_FUR", "name": "FUR", "fullName": "FURIA", "power": 80 },
+    { "id": "CBLOL_LEV", "name": "LEV", "fullName": "Leviatán", "power": 80 },
+    { "id": "CBLOL_LOS", "name": "LOS", "fullName": "Los Grandes", "power": 80 },
+    { "id": "CBLOL_FX", "name": "FX", "fullName": "Fluxo", "power": 80 }
+  ]

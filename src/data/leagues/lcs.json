@@ -1,0 +1,10 @@
+[
+    { "id": "LCS_FLY", "name": "FLY", "fullName": "FlyQuest", "power": 80 },
+    { "id": "LCS_SEN", "name": "SEN", "fullName": "Sentinels", "power": 80 },
+    { "id": "LCS_SR", "name": "SR", "fullName": "Shopify Rebellion", "power": 80 },
+    { "id": "LCS_C9", "name": "C9", "fullName": "Cloud9", "power": 80 },
+    { "id": "LCS_TL", "name": "TL", "fullName": "Team Liquid", "power": 80 },
+    { "id": "LCS_DSG", "name": "DSG", "fullName": "Disguised", "power": 80 },
+    { "id": "LCS_DIG", "name": "DIG", "fullName": "Dignitas", "power": 80 },
+    { "id": "LCS_LYON", "name": "LYON", "fullName": "Lyon Gaming", "power": 80 }
+  ]

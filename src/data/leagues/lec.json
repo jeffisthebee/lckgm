@@ -1,0 +1,14 @@
+[
+    { "id": "LEC_G2", "name": "G2", "fullName": "G2 Esports", "power": 80 },
+    { "id": "LEC_MKOI", "name": "MKOI", "fullName": "MAD Lions KOI", "power": 80 },
+    { "id": "LEC_FNC", "name": "FNC", "fullName": "Fnatic", "power": 80 },
+    { "id": "LEC_KC", "name": "KC", "fullName": "Karmine Corp", "power": 80 },
+    { "id": "LEC_GX", "name": "GX", "fullName": "GiantX", "power": 80 },
+    { "id": "LEC_VIT", "name": "VIT", "fullName": "Team Vitality", "power": 80 },
+    { "id": "LEC_TH", "name": "TH", "fullName": "Team Heretics", "power": 80 },
+    { "id": "LEC_SHFT", "name": "SHFT", "fullName": "Team Shifty", "power": 80 },
+    { "id": "LEC_SK", "name": "SK", "fullName": "SK Gaming", "power": 80 },
+    { "id": "LEC_NAVI", "name": "NAVI", "fullName": "Natus Vincere", "power": 80 },
+    { "id": "LEC_LR", "name": "LR", "fullName": "Los Ratones", "power": 80 },
+    { "id": "LEC_KCB", "name": "KCB", "fullName": "KC Blue", "power": 80 }
+  ]

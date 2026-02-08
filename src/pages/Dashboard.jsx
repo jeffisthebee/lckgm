@@ -21,6 +21,8 @@ import PlayoffTab from '../components/PlayoffTab';
 import StatsTab from '../components/TEMP_StatsTab';
 import {updateLeague, getLeagueById } from '../engine/storage';
 import AwardsTab from '../components/AwardsTab';
+// [NEW] Import the Foreign Leagues Tab
+import ForeignLeaguesTab from '../components/TEMP_ForeignLeaguesTab';
 
 
 
@@ -685,6 +687,8 @@ const getOvrBadgeStyle = (ovr) => {
       { id: 'team_schedule', name: '팀 일정', icon: '📆' },
       { id: 'stats', name: '리그 통계', icon: '📈' },
       { id: 'awards', name: '시즌 어워드', icon: '🎖️' },
+      // [NEW] Added Foreign Leagues Item
+      { id: 'foreign', name: '해외 리그', icon: '🌍' },
     ];
     
     const myRecord = computedStandings[myTeam.id] || { w: 0, l: 0, diff: 0 };
@@ -1328,6 +1332,11 @@ const getOvrBadgeStyle = (ovr) => {
 
 {activeTab === 'awards' && (
     <AwardsTab league={league} teams={teams} playerList={playerList} />
+)}
+
+{/* [NEW] Render Foreign Leagues Tab */}
+{activeTab === 'foreign' && (
+    <ForeignLeaguesTab />
 )}
   
             </div>

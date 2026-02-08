@@ -1,0 +1,10 @@
+[
+    { "id": "LCP_CFO", "name": "CFO", "fullName": "CTBC Flying Oyster", "power": 80 },
+    { "id": "LCP_TSW", "name": "TSW", "fullName": "Team Secret Whales", "power": 80 },
+    { "id": "LCP_GAM", "name": "GAM", "fullName": "GAM Esports", "power": 80 },
+    { "id": "LCP_MVK", "name": "MVK", "fullName": "Team MVK", "power": 80 },
+    { "id": "LCP_DFM", "name": "DFM", "fullName": "DetonatioN FM", "power": 80 },
+    { "id": "LCP_SHG", "name": "SHG", "fullName": "Fukuoka SoftBank Hawks", "power": 80 },
+    { "id": "LCP_DCG", "name": "DCG", "fullName": "Deep Cross Gaming", "power": 80 },
+    { "id": "LCP_GZ", "name": "GZ", "fullName": "Guangzhou", "power": 80 }
+  ]
