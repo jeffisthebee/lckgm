@@ -138,55 +138,74 @@ const getOvrBadgeStyle = (ovr) => {
     }, [league, isSeasonOver]);
 
     // [NEW] Manual Archive Function
-    const handleManualArchive = () => {
-        if (!league) return;
+    // In src/pages/Dashboard.jsx
 
-        const currentYear = league.year || 2026;
-        const currentSeasonName = league.seasonName || 'LCK CUP';
+// [FIX] Manual Archive Function - Now saves Playoff Awards too!
+const handleManualArchive = () => {
+  if (!league) return;
 
-        console.log("Manually Archiving Season History...");
-        
-        // 1. Generate Snapshot Data
-        const finalStandings = calculateFinalStandings(league);
-        const awardsData = computeAwards(league, teams, playerList);
-        
-        // 2. Create History Object
-        const seasonSnapshot = {
-            year: currentYear,
-            seasonName: currentSeasonName,
-            champion: finalStandings[0]?.team, 
-            runnerUp: finalStandings[1]?.team,
-            finalStandings: finalStandings,
-            groupStandings: {
-                baron: sortGroupByStandings(league.groups.baron, computedStandings).map(id => ({
-                    teamName: teams.find(t=>t.id===id).name,
-                    w: computedStandings[id].w,
-                    l: computedStandings[id].l,
-                    diff: computedStandings[id].diff
-                })),
-                elder: sortGroupByStandings(league.groups.elder, computedStandings).map(id => ({
-                    teamName: teams.find(t=>t.id===id).name,
-                    w: computedStandings[id].w,
-                    l: computedStandings[id].l,
-                    diff: computedStandings[id].diff
-                }))
-            },
-            awards: {
-                mvp: awardsData.mvp,
-                allPro: awardsData.allProTeams
-            }
-        };
+  const currentYear = league.year || 2026;
+  const currentSeasonName = league.seasonName || 'LCK CUP';
 
-        // 3. Save to League State
-        const history = league.history || [];
-        const newHistory = [...history, seasonSnapshot];
-        const updatedLeague = { ...league, history: newHistory };
-        
-        setLeague(updatedLeague);
-        updateLeague(league.id, updatedLeague);
-        
-        alert("✅ 시즌 기록이 성공적으로 저장되었습니다! '역대 기록' 탭을 확인해보세요.");
-    };
+  console.log("Manually Archiving Season History...");
+  
+  // 1. Generate Snapshot Data
+  const finalStandings = calculateFinalStandings(league);
+  
+  // [CRITICAL FIX] Calculate BOTH Regular and Playoff Awards
+  const regularAwards = computeAwards(league, teams, playerList);
+  const playoffAwards = computePlayoffAwards(league, teams, playerList);
+  
+  // 2. Create History Object
+  const seasonSnapshot = {
+      year: currentYear,
+      seasonName: currentSeasonName,
+      champion: finalStandings[0]?.team, 
+      runnerUp: finalStandings[1]?.team,
+      finalStandings: finalStandings,
+      groupStandings: {
+          baron: sortGroupByStandings(league.groups.baron, computedStandings).map(id => ({
+              teamName: teams.find(t=>t.id===id).name,
+              w: computedStandings[id].w,
+              l: computedStandings[id].l,
+              diff: computedStandings[id].diff
+          })),
+          elder: sortGroupByStandings(league.groups.elder, computedStandings).map(id => ({
+              teamName: teams.find(t=>t.id===id).name,
+              w: computedStandings[id].w,
+              l: computedStandings[id].l,
+              diff: computedStandings[id].diff
+          }))
+      },
+      // [CRITICAL FIX] Save specific structures for Regular vs Playoff
+      awards: {
+          regular: {
+              mvp: regularAwards.mvp,       // Regular Season MVP
+              allPro: regularAwards.allProTeams, // All-LCK Teams
+              pogLeader: regularAwards.pogLeader
+          },
+          playoff: {
+              finalsMvp: playoffAwards.finalsMvp,  // Finals MVP
+              playoffMvp: playoffAwards.pogLeader, // Playoff MVP (POG Leader)
+              allPro: playoffAwards.allProTeams    // All-Playoff Teams
+          }
+      }
+  };
+
+  // 3. Save to League State
+  const history = league.history || [];
+  
+  // Filter out if this exact season/year already exists to prevent duplicates
+  const cleanHistory = history.filter(h => !(h.year === currentYear && h.seasonName === currentSeasonName));
+  const newHistory = [...cleanHistory, seasonSnapshot];
+  
+  const updatedLeague = { ...league, history: newHistory };
+  
+  setLeague(updatedLeague);
+  updateLeague(league.id, updatedLeague);
+  
+  alert("✅ 시즌 기록이 성공적으로 저장되었습니다! (Playoff MVP & Finals MVP 포함)");
+};
 
     // [NEW] AUTO-ARCHIVE HISTORY EFFECT (Still kept for future seasons)
     useEffect(() => {
