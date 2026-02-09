@@ -250,4 +250,45 @@ export const SYNERGIES = [
   { champions: ['트리스타나', '레오나'], multiplier: 1.06 }, // Burst All-in
   { champions: ['드레이븐', '잔나'], multiplier: 1.05 }, // Shield gives AD -> Stronger Axes
   { champions: ['루시안', '밀리오'], multiplier: 1.06 }, // Range extension + Passive procs // Gap close support for Udyr
+// ==========================================
+  // 5. NEWLY ADDED SYNERGIES (Mechanical)
+  // ==========================================
+  
+  // Bot Lane & Support (Aggro/Poke/Safety)
+  { champions: ['사미라', '레오나'], multiplier: 1.07 }, // CC Chain for Style Rank
+  { champions: ['사미라', '아무무'], multiplier: 1.06 }, // Curse of the Sad Mummy setup
+  { champions: ['루시안', '유미'], multiplier: 1.05 }, // High mobility + Lightslinger procs
+  { champions: ['루시안', '레오나'], multiplier: 1.06 }, // Burst damage synergy
+  { champions: ['시비르', '룰루'], multiplier: 1.05 }, // Pix on Ricochet + Move speed
+  { champions: ['시비르', '나미'], multiplier: 1.05 }, // Passive speed stacking
+  { champions: ['진', '나미'], multiplier: 1.06 }, // Tidecaller's Blessing slows for W root
+  { champions: ['진', '레오나'], multiplier: 1.05 }, // Lockdown for Curtain Call
+  { champions: ['애쉬', '레오나'], multiplier: 1.06 }, // Chain CC hell
+  { champions: ['애쉬', '밀리오'], multiplier: 1.05 }, // Range extension on slows
+  { champions: ['칼리스타', '블리츠크랭크'], multiplier: 1.08 }, // Hook + Fate's Call safety/engage
+  { champions: ['코그모', '레나타 글라스크'], multiplier: 1.07 }, // Bailout saves hypercarry
+  { champions: ['징크스', '레나타 글라스크'], multiplier: 1.07 }, // Bailout extends fight for Passive
+  { champions: ['자야', '노틸러스'], multiplier: 1.06 }, // Root holds targets for feathers
+  { champions: ['자야', '레오나'], multiplier: 1.06 }, // Lockdown for Bladecaller
+  { champions: ['닐라', '라칸'], multiplier: 1.07 }, // Double Shields + Engage
+  { champions: ['닐라', '카르마'], multiplier: 1.06 }, // Speed/Shield Amp
+  { champions: ['징크스', '브라움'], multiplier: 1.05 }, // Minigun stacks Concussive Blows fast
+  { champions: ['트위치', '브라움'], multiplier: 1.05 }, // Spray and Pray stacks Passive on everyone
+  { champions: ['야스오', '나미'], multiplier: 1.06 }, // Bubble + Tidal Wave
+  { champions: ['야스오', '노틸러스'], multiplier: 1.06 }, // Depth Charge point-click knockup
+  { champions: ['야스오', '초가스'], multiplier: 1.05 }, // Rupture
+  { champions: ['야스오', '자르반 4세'], multiplier: 1.06 }, // EQ Knockup
+  { champions: ['야스오', '아트록스'], multiplier: 1.05 }, // Q Knockups
+  { champions: ['질리언', '다리우스'], multiplier: 1.08 }, // Speed up the Juggernaut
+  { champions: ['질리언', '올라프'], multiplier: 1.07 }, // Ragnarok + Speed
+  { champions: ['질리언', '나서스'], multiplier: 1.06 }, // Wither + Time Warp
+  { champions: ['케인', '유미'], multiplier: 1.07 }, // Blue Kayn Taxi service
+  { champions: ['베이가', '알리스타'], multiplier: 1.06 }, // Headbutt into Event Horizon
+  { champions: ['베이가', '베인'], multiplier: 1.06 }, // Condemn into Event Horizon
+  { champions: ['스웨인', '판테온'], multiplier: 1.06 }, // Point-click Stun -> Passive Pull
+  { champions: ['다이애나', '오리아나'], multiplier: 1.08 }, // Moonfall pulls -> Shockwave
+  { champions: ['렐', '오리아나'], multiplier: 1.08 }, // Magnet Storm -> Shockwave
+  { champions: ['렐', '미스 포츈'], multiplier: 1.09 }, // Magnet Storm -> Bullet Time
+  { champions: ['렐', '케넨'], multiplier: 1.09 }, // Magnet Storm -> Slicing Maelstrom
+  { champions: ['타릭', '리 신'], multiplier: 1.07 }, // Invisible Stun delivery (W->W)
 ];

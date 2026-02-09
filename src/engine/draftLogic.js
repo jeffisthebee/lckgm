@@ -15,10 +15,9 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
   // Create a quick lookup set for availability to speed up the loop
   const availableNames = new Set(availableChampions.map(c => c.name));
   
-  // Extract names for synergy checking (since currentTeamPicks are now Objects)
+  // Extract names for synergy checking
   const currentTeamNames = currentTeamPicks.map(c => c.name);
-  const enemyTeamNames = enemyTeamPicks.map(c => c.name);
-
+  
   // [NEW] Calculate Team Damage Profile
   const currentAD = currentTeamPicks.filter(c => c.damageType === 'AD').length;
   const currentAP = currentTeamPicks.filter(c => c.damageType === 'AP').length;
@@ -27,12 +26,26 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
     const mastery = playerData?.pool?.find(m => m.name === champ.name);
     let score = calculateChampionScore(player, champ, mastery);
 
+    // --- [STEP 0] Tier Weighting (The "Meta" Factor) ---
+    // Tier 1 (Best) -> Tier 5 (Worst). Lower is better.
+    // We apply a heavy multiplier to prioritize OP champs.
+    let tierMultiplier = 1.0;
+    switch (champ.tier) {
+        case 1: tierMultiplier = 1.5; break; // God Tier
+        case 2: tierMultiplier = 1.25; break; // Strong
+        case 3: tierMultiplier = 1.0; break; // Average
+        case 4: tierMultiplier = 0.8; break; // Weak
+        case 5: tierMultiplier = 0.6; break; // Bad
+        default: tierMultiplier = 1.0;
+    }
+    score *= tierMultiplier;
+
     // --- [STEP 1] Damage Profile Balance (5AP/5AD Prevention) ---
     // If we are late in the draft (3+ picks locked), start balancing damage
     if (currentTeamPicks.length >= 3) {
         let compMultiplier = 1.0;
         
-        // Penalize stacking the same damage type
+        // Penalize stacking the same damage type too hard
         if (currentAD >= 3 && champ.damageType === 'AD') compMultiplier = 0.6;
         if (currentAP >= 3 && champ.damageType === 'AP') compMultiplier = 0.6;
 
@@ -49,25 +62,24 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
 
     SYNERGIES.forEach(syn => {
       const involvesChamp = syn.champions.includes(champ.name);
+      
       // Case A: Completes an existing synergy (Immediate Power)
       const isCompleted = syn.champions.every(c => hypotheticalTeam.includes(c));
       
       if (involvesChamp && isCompleted) {
-        synergyBonus *= syn.multiplier; 
+        // Apply the multiplier defined in data (usually 1.05 - 1.15)
+        // We boost it slightly to make synergies matter against Tier difference
+        synergyBonus *= (syn.multiplier * 1.05); 
       }
 
-      // --- [STRATEGY 2] Potential Synergy Bonus (Planning Ahead) ---
-      // If I pick this champ, is their partner still available to be picked later?
+      // Case B: Potential Synergy (Planning Ahead)
       else if (involvesChamp) {
-          // Find the partner(s) in this synergy that I don't have yet
           const partners = syn.champions.filter(c => c !== champ.name);
-          // Check if ALL partners are currently available in the pool
           const partnersAvailable = partners.every(p => availableNames.has(p));
           
           if (partnersAvailable) {
-              // Give a small "Potential" bonus
-              const potentialBoost = 1 + ((syn.multiplier - 1) * 0.25);
-              synergyBonus *= potentialBoost;
+              // Give a small "Potential" bonus (approx 2-3%)
+              synergyBonus *= 1.03;
           }
       }
     });
@@ -75,13 +87,12 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
 
     // --- [STEP 3] Counter Logic ---
     let counterBonus = 1.0;
-    // We iterate over enemyTeamPicks (which are now Objects)
     enemyTeamPicks.forEach(enemy => {
         if (champ.counters && champ.counters.includes(enemy.name)) {
-            counterBonus *= 0.9; // Self is countered by enemy
+            counterBonus *= 0.85; // Hard penalty if self is countered
         }
         if (enemy.counters && enemy.counters.includes(champ.name)) {
-            counterBonus *= 1.1; // Self counters enemy
+            counterBonus *= 1.15; // Boost if self counters enemy
         }
     });
     score *= counterBonus;
@@ -94,6 +105,7 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
    
   if (top3.length === 0) return null;
 
+  // Weighted Random Selection from Top 3
   const totalScore = top3.reduce((sum, c) => sum + c.score, 0);
   let r = Math.random() * totalScore;
    
@@ -109,48 +121,52 @@ export function selectBanFromProbabilities(opponentTeam, availableChampions, tar
   
   const targetPlayers = opponentTeam.roster.filter(p => targetRoles.includes(p.포지션));
   
-  // Convert pick objects to names for easy comparison
   const opponentPickNames = opponentPicks.map(c => c.name);
   const myTeamPickNames = myTeamPicks.map(c => c.name);
 
   targetPlayers.forEach(player => {
       const playerData = MASTERY_MAP[player.이름];
       const roleChamps = availableChampions.filter(c => c.role === player.포지션);
+      
       const scored = roleChamps.map(c => {
            const mastery = playerData?.pool?.find(m => m.name === c.name);
            let banScore = calculateChampionScore(player, c, mastery);
 
-           // --- [STRATEGY 3] Denial Bans (Smart Counter-Synergy) ---
+           // Tier Weighting for Bans (Ban OP champs)
+           let tierWeight = 1.0;
+           switch (c.tier) {
+               case 1: tierWeight = 1.5; break;
+               case 2: tierWeight = 1.2; break;
+               case 3: tierWeight = 1.0; break;
+               case 4: tierWeight = 0.8; break;
+               case 5: tierWeight = 0.6; break;
+           }
+           banScore *= tierWeight;
+
+           // Synergy Denial Logic
            let synergyMultiplier = 1.0;
-           
            const hypotheticalEnemyTeam = [...opponentPickNames, c.name];
 
            SYNERGIES.forEach(syn => {
               const involvesChamp = syn.champions.includes(c.name);
-              
               if (involvesChamp) {
                   const partners = syn.champions.filter(n => n !== c.name);
                   const enemyHasPartners = partners.every(p => opponentPickNames.includes(p));
 
                   if (enemyHasPartners) {
-                      synergyMultiplier *= 2.0; 
+                      synergyMultiplier *= 1.5; // High priority ban if it completes a combo
                   } 
-                  else if (syn.champions.every(n => hypotheticalEnemyTeam.includes(n))) {
-                      synergyMultiplier *= syn.multiplier; 
-                  }
               }
            });
-           
            banScore *= synergyMultiplier;
 
-           // --- [STEP 5] Ban Counter Logic ---
+           // Counter Logic
            let counterMultiplier = 1.0;
            myTeamPickNames.forEach(myPickName => {
                if (c.counters && c.counters.includes(myPickName)) {
-                   counterMultiplier *= 1.1;
+                   counterMultiplier *= 1.2; // Ban things that counter my team
                }
            });
-           
            banScore *= counterMultiplier;
 
            return { 
@@ -203,7 +219,6 @@ export function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChamp
     const mySide = step.side;
     const availableChamps = currentChampionList.filter(c => !localBans.has(c.name));
 
-    // Get current picks as FULL OBJECTS for pick logic
     const currentMySidePicks = Object.values(picks[mySide]);
     const opponentSide = step.side === 'BLUE' ? 'RED' : 'BLUE';
     const currentEnemyPicks = Object.values(picks[opponentSide]); 
@@ -215,8 +230,8 @@ export function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChamp
         opponentTeam, 
         availableChamps, 
         opponentOpenRoles, 
-        currentEnemyPicks, // Pass full objects
-        currentMySidePicks // Pass full objects
+        currentEnemyPicks, 
+        currentMySidePicks 
       );
       
       if (banCandidate) {
@@ -235,7 +250,6 @@ export function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChamp
       remainingRoles[mySide].forEach(role => {
           const player = actingTeam.roster.find(p => p.포지션 === role);
           if (player) {
-            // [UPDATE] We now pass full objects to check damage types
             const candidateChamp = selectPickFromTop3(
               player, 
               availableChamps, 
