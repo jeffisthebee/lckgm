@@ -266,9 +266,26 @@
         const resolvePlayerNameForRole = (roster = [], role, preferredName) => {
             if (preferredName) return preferredName;
             if (!Array.isArray(roster)) return 'Unknown';
-            const found = roster.find(r => positionMatches(r.포지션, role) || positionMatches(r.position, role));
+            
+            // 1. Try exact match by position string
+            let found = roster.find(r => positionMatches(r.포지션, role) || positionMatches(r.position, role));
+            
+            // 2. If not found, try robust "Support" aliases specifically
+            if (!found && normalizePosition(role) === 'SUP') {
+                const supAliases = ['SUP', 'SPT', 'SUPP', 'SUPPORT', '서포터', '서포'];
+                found = roster.find(r => {
+                    const p = normalizePosition(r.포지션 || r.position);
+                    return supAliases.includes(p);
+                });
+                // 3. Last Resort for Support: Check index 4 (standard support slot)
+                if (!found && roster.length > 4) {
+                     found = roster[4];
+                }
+            }
+            
             if (found) return found.이름 || found.name || found.playerName || 'Unknown';
-            // fallback: try any with same normalized role string
+            
+            // 4. Fallback: try any with same normalized role string
             const fallback = roster.find(r => normalizePosition(r.포지션 || r.position) === normalizePosition(role));
             return fallback ? (fallback.이름 || fallback.name || fallback.playerName || 'Unknown') : 'Unknown';
         };
@@ -1411,7 +1428,7 @@
                                  )}
     
                                  {/* Champ Grid */}
-                                 <div className="flex-1 overflow-y-auto p-1 sm:p-2 lg:p-4 grid grid-cols-5 sm:grid-cols-6 md-grid-cols-7 lg-grid-cols-5 gap-1 sm:gap-2 lg:gap-3 content-start pb-12">
+                                 <div className="flex-1 overflow-y-auto p-1 sm:p-2 lg:p-4 grid grid-cols-5 sm:grid-cols-6 md-grid-cols-7 lg-grid-cols-5 gap-1 sm:gap-2 lg:gap-3 content-start pb-40">
                                      {activeChampionList
                                         .filter(c => c.role === (filterRole === 'SUP' ? 'SUP' : filterRole))
                                         .filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())) 
@@ -1434,9 +1451,12 @@
                                                     <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-16 lg:h-16 bg-black rounded mb-0.5 lg:mb-2 flex items-center justify-center text-[6px] sm:text-[8px] lg:text-xs text-gray-400 font-bold overflow-hidden leading-tight break-words p-0.5">
                                                         {champ.name}
                                                     </div>
-                                                    <div className="text-[7px] lg:text-xs font-bold text-center w-full truncate">{champ.name}</div>
-                                                    <div className={`absolute top-0 right-0 w-2.5 h-2.5 lg:w-5 lg:h-5 rounded-bl-md flex items-center justify-center text-[5px] lg:text-[10px] font-bold ${champ.tier === 1 ? 'bg-purple-600 text-white' : 'bg-gray-800 text-gray-400'}`}>
-                                                        {champ.tier}
+                                                    {/* Tier Badge moved inline to prevent cutoff */}
+                                                    <div className="flex flex-col items-center w-full">
+                                                        <div className="text-[7px] lg:text-xs font-bold text-center w-full truncate leading-none">{champ.name}</div>
+                                                        <div className={`mt-0.5 text-[5px] lg:text-[10px] px-1 rounded font-bold ${champ.tier === 1 ? 'bg-purple-600 text-white' : 'bg-gray-800 text-gray-400'}`}>
+                                                            {champ.tier}T
+                                                        </div>
                                                     </div>
                                                 </button>
                                             );
@@ -1772,4 +1792,3 @@
           </div>
         );
     }
-    
