@@ -9,7 +9,6 @@ import DetailedMatchResultModal from '../components/DetailedMatchResultModal';
 import playerList from '../data/players.json';
 import { computeStandings, calculateFinalStandings, calculateGroupPoints, sortGroupByStandings, createPlayInBracket, createPlayInRound2Matches, createPlayInFinalMatch, createPlayoffRound2Matches, createPlayoffRound3Matches, createPlayoffLoserRound3Match, createPlayoffQualifierMatch, createPlayoffFinalMatch } from '../engine/BracketManager';
 import { updateChampionMeta, generateSuperWeekMatches } from '../engine/SeasonManager';
-import { computeAwards } from '../engine/statsManager'; 
 import FinalStandingsModal from '../components/FinalStandingsModal';
 import MatchupBox from '../components/MatchupBox';
 import RosterTab from '../components/RosterTab';
@@ -23,6 +22,7 @@ import {updateLeague, getLeagueById } from '../engine/storage';
 import AwardsTab from '../components/AwardsTab';
 import ForeignLeaguesTab from '../components/TEMP_ForeignLeaguesTab'; 
 import HistoryTab from '../components/HistoryTab'; 
+import { computeAwards, computePlayoffAwards } from '../engine/statsManager';
 
 // --- HELPER FUNCTIONS ---
 const getOvrBadgeStyle = (ovr) => {
@@ -141,20 +141,21 @@ const getOvrBadgeStyle = (ovr) => {
     // In src/pages/Dashboard.jsx
 
 // [FIX] Manual Archive Function - Now saves Playoff Awards too!
+// [FIXED] Manual Archive Function
 const handleManualArchive = () => {
   if (!league) return;
 
   const currentYear = league.year || 2026;
   const currentSeasonName = league.seasonName || 'LCK CUP';
 
-  console.log("Manually Archiving Season History...");
+  console.log("Archiving Season...");
   
   // 1. Generate Snapshot Data
   const finalStandings = calculateFinalStandings(league);
   
-  // [CRITICAL FIX] Calculate BOTH Regular and Playoff Awards
-  const regularAwards = computeAwards(league, teams, playerList);
-  const playoffAwards = computePlayoffAwards(league, teams, playerList);
+  // [CRITICAL] Calculate Awards (Now utilizing the imported function)
+  const regularAwards = computeAwards(league, teams);
+  const playoffAwards = computePlayoffAwards(league, teams); // This was failing before!
   
   // 2. Create History Object
   const seasonSnapshot = {
@@ -177,12 +178,12 @@ const handleManualArchive = () => {
               diff: computedStandings[id].diff
           }))
       },
-      // [CRITICAL FIX] Save specific structures for Regular vs Playoff
+      // [CRITICAL] Save Structure
       awards: {
         regular: {
-            mvp: regularAwards.seasonMvp, // Must use .seasonMvp
+            mvp: regularAwards.seasonMvp, 
             allPro: regularAwards.allProTeams, 
-            pogLeader: regularAwards.pogLeader 
+            pogLeader: regularAwards.pogLeader
         },
         playoff: {
             finalsMvp: playoffAwards.finalsMvp,  
@@ -194,8 +195,6 @@ const handleManualArchive = () => {
 
   // 3. Save to League State
   const history = league.history || [];
-  
-  // Filter out if this exact season/year already exists to prevent duplicates
   const cleanHistory = history.filter(h => !(h.year === currentYear && h.seasonName === currentSeasonName));
   const newHistory = [...cleanHistory, seasonSnapshot];
   
@@ -204,7 +203,7 @@ const handleManualArchive = () => {
   setLeague(updatedLeague);
   updateLeague(league.id, updatedLeague);
   
-  alert("✅ 시즌 기록이 성공적으로 저장되었습니다! (Playoff MVP & Finals MVP 포함)");
+  alert("✅ 시즌 기록 저장 완료! (플레이오프 데이터 포함)");
 };
 
     // [NEW] AUTO-ARCHIVE HISTORY EFFECT (Still kept for future seasons)
