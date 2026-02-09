@@ -1,4 +1,4 @@
-    
+
     import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
     import { calculateIndividualIncome, simulateSet, runGameTickEngine, selectPickFromTop3, selectBanFromProbabilities } from '../engine/simEngine';
     import { DRAFT_SEQUENCE, championList } from '../data/constants'; 
@@ -1138,18 +1138,18 @@
                       {phase === 'DRAFT' ? (
                           <div className="flex flex-col items-center w-full">
                               {/* [FIX] Mobile Draft Picks Summary: Visible only on mobile when sides are hidden */}
-                              <div className="flex sm:hidden w-full justify-between px-4 mb-1">
-                                   <div className="flex gap-0.5">
+                              <div className="flex sm:hidden w-full justify-center gap-8 px-4 mb-1">
+                                   <div className="flex gap-1">
                                        {draftState.bluePicks.map((p,i) => (
-                                           <div key={i} className="w-4 h-4 bg-blue-900/40 border border-blue-500 rounded flex items-center justify-center overflow-hidden">
-                                               <span className="text-[5px] leading-none">{p?.champName?.slice(0,2) || ''}</span>
+                                           <div key={i} className="w-3.5 h-3.5 bg-blue-900/40 border border-blue-500 rounded flex items-center justify-center overflow-hidden">
+                                               <span className="text-[4px] leading-none">{p?.champName?.slice(0,2) || ''}</span>
                                            </div>
                                        ))}
                                    </div>
-                                   <div className="flex gap-0.5">
+                                   <div className="flex gap-1">
                                        {draftState.redPicks.map((p,i) => (
-                                           <div key={i} className="w-4 h-4 bg-red-900/40 border border-red-500 rounded flex items-center justify-center overflow-hidden">
-                                               <span className="text-[5px] leading-none">{p?.champName?.slice(0,2) || ''}</span>
+                                           <div key={i} className="w-3.5 h-3.5 bg-red-900/40 border border-red-500 rounded flex items-center justify-center overflow-hidden">
+                                               <span className="text-[4px] leading-none">{p?.champName?.slice(0,2) || ''}</span>
                                            </div>
                                        ))}
                                    </div>
@@ -1411,7 +1411,7 @@
                                  )}
     
                                  {/* Champ Grid */}
-                                 <div className="flex-1 overflow-y-auto p-1 sm:p-2 lg:p-4 grid grid-cols-5 sm:grid-cols-6 md-grid-cols-7 lg-grid-cols-5 gap-1 sm:gap-2 lg:gap-3 content-start">
+                                 <div className="flex-1 overflow-y-auto p-1 sm:p-2 lg:p-4 grid grid-cols-5 sm:grid-cols-6 md-grid-cols-7 lg-grid-cols-5 gap-1 sm:gap-2 lg:gap-3 content-start pb-12">
                                      {activeChampionList
                                         .filter(c => c.role === (filterRole === 'SUP' ? 'SUP' : filterRole))
                                         .filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())) 
@@ -1425,7 +1425,7 @@
                                                     key={champ.id}
                                                     disabled={isLocked}
                                                     onClick={() => setSelectedChampion({ ...champ, role: filterRole })}
-                                                    className={`relative group flex flex-col items-center p-1 lg:p-2 rounded border transition ${
+                                                    className={`relative group flex flex-col items-center p-0.5 lg:p-2 rounded border transition ${
                                                         isLocked ? 'opacity-30 grayscale cursor-not-allowed border-transparent' : 
                                                         isSelected ? 'bg-yellow-500/20 border-yellow-500' : 
                                                         'bg-gray-700/50 border-gray-600 hover:bg-gray-600 hover:border-gray-400'
@@ -1434,8 +1434,8 @@
                                                     <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-16 lg:h-16 bg-black rounded mb-0.5 lg:mb-2 flex items-center justify-center text-[6px] sm:text-[8px] lg:text-xs text-gray-400 font-bold overflow-hidden leading-tight break-words p-0.5">
                                                         {champ.name}
                                                     </div>
-                                                    <div className="text-[8px] lg:text-xs font-bold text-center w-full truncate">{champ.name}</div>
-                                                    <div className={`absolute top-0.5 right-0.5 lg:top-1 lg:right-1 w-3 h-3 lg:w-5 lg:h-5 rounded-full flex items-center justify-center text-[6px] lg:text-[10px] font-bold border ${champ.tier === 1 ? 'bg-purple-600 border-purple-400 text-white' : 'bg-gray-800 border-gray-500 text-gray-400'}`}>
+                                                    <div className="text-[7px] lg:text-xs font-bold text-center w-full truncate">{champ.name}</div>
+                                                    <div className={`absolute top-0 right-0 w-2.5 h-2.5 lg:w-5 lg:h-5 rounded-bl-md flex items-center justify-center text-[5px] lg:text-[10px] font-bold ${champ.tier === 1 ? 'bg-purple-600 text-white' : 'bg-gray-800 text-gray-400'}`}>
                                                         {champ.tier}
                                                     </div>
                                                 </button>
@@ -1772,3 +1772,4 @@
           </div>
         );
     }
+    
