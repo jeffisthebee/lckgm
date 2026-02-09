@@ -20,18 +20,18 @@ const RoleBadge = ({ role }) => {
     );
 };
 
+// [FIXED] Robust AllProTeamRow that handles Objects and Team Names correctly
 const AllProTeamRow = ({ title, players }) => (
     <div className="mb-4">
         <h4 className="text-xs font-bold text-gray-500 uppercase mb-2 border-b pb-1">{title}</h4>
         <div className="grid grid-cols-5 gap-2">
             {['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(role => {
-                // FIXED: Handle both Array (old saves) and Object (new stats engine) formats
                 let p = null;
+                // Handle both Array (old) and Object (new) formats
                 if (players) {
                     if (Array.isArray(players)) {
                         p = players.find(x => x && x.role === role);
                     } else {
-                        // If it's an object like { TOP: {...}, JGL: {...} }
                         p = players[role];
                     }
                 }
@@ -43,12 +43,17 @@ const AllProTeamRow = ({ title, players }) => (
                     </div>
                 );
                 
-                // FIXED: Handle team name whether it's a string or an object inside 'teamObj'
-                const teamName = p.teamObj ? p.teamObj.name : p.team;
+                // [FIX] Robust Name & Team Extraction
+                const displayName = p.실명 || p.playerName || p.name || "Unknown";
+                
+                // Try finding team name from object, array, or string property
+                let teamName = "FA";
+                if (p.teamObj && p.teamObj.name) teamName = p.teamObj.name;
+                else if (p.team) teamName = p.team;
+                else if (p.teams && p.teams.length > 0) teamName = p.teams[0];
+
                 const teamObj = teams.find(t => t.name === teamName);
-                const teamColor = teamObj?.colors?.primary || '#333';
-                // FIXED: Use Korean name (실명) if available, otherwise player name
-                const displayName = p.실명 || p.playerName || p.name;
+                const teamColor = teamObj?.colors?.primary || '#999';
 
                 return (
                     <div key={role} className="bg-white border rounded-lg p-2 flex flex-col items-center shadow-sm">
@@ -65,9 +70,21 @@ const AllProTeamRow = ({ title, players }) => (
     </div>
 );
 
-// New Helper for MVP Card to avoid code duplication
+// [FIXED] SmallMvpCard now checks .playerName if .name is missing
 const SmallMvpCard = ({ title, player, colorClass }) => {
     if (!player) return null;
+
+    // [CRITICAL FIX] Data usually comes as 'playerName', not 'name'
+    const displayName = player.실명 || player.playerName || player.name || "Unknown";
+    
+    // [CRITICAL FIX] Handle team extraction safely
+    let teamName = "LCK";
+    if (player.teamObj?.name) teamName = player.teamObj.name;
+    else if (player.team) teamName = player.team;
+    else if (Array.isArray(player.teams) && player.teams.length > 0) teamName = player.teams[0];
+
+    const role = player.role || 'Player';
+
     return (
         <div className="bg-white border rounded-xl p-3 shadow-sm flex items-center gap-3 relative overflow-hidden">
             <div className={`absolute top-0 right-0 text-[10px] font-bold px-2 py-1 rounded-bl-lg text-white ${colorClass}`}>
@@ -77,8 +94,8 @@ const SmallMvpCard = ({ title, player, colorClass }) => {
                 🧑‍🚀
             </div>
             <div>
-                <div className="text-sm font-black text-gray-800">{player.name}</div>
-                <div className="text-[10px] text-gray-500 font-bold">{player.team} · {player.role}</div>
+                <div className="text-sm font-black text-gray-800">{displayName}</div>
+                <div className="text-[10px] text-gray-500 font-bold">{teamName} · {role}</div>
             </div>
         </div>
     );
@@ -105,8 +122,7 @@ const HistoryTab = ({ league }) => {
   const handlePrev = () => setCurrentIndex(prev => (prev - 1 + history.length) % history.length);
   const handleNext = () => setCurrentIndex(prev => (prev + 1) % history.length);
 
-  // [LOGIC] Determine which data to show based on new structure
-  // Old saves might have data directly in 'awards', new saves have 'awards.regular' and 'awards.playoff'
+  // Determine if it's the new format (with regular/playoff split)
   const isNewFormat = record.awards?.regular !== undefined;
   
   const regularMvp = isNewFormat ? record.awards.regular?.mvp : record.awards?.mvp;
@@ -115,6 +131,9 @@ const HistoryTab = ({ league }) => {
   const finalsMvp = isNewFormat ? record.awards.playoff?.finalsMvp : null;
   const playoffMvp = isNewFormat ? record.awards.playoff?.playoffMvp : null;
   const playoffAllPro = isNewFormat ? record.awards.playoff?.allPro : null;
+
+  // Safe check for FMVP Name
+  const finalsMvpName = finalsMvp?.실명 || finalsMvp?.playerName || finalsMvp?.name || "";
 
   const championColor = record.champion?.colors?.primary || record.champion?.color || '#333';
 
@@ -147,9 +166,9 @@ const HistoryTab = ({ league }) => {
                   <div className="text-yellow-600 font-bold text-sm uppercase tracking-wide mb-1">Season Champion</div>
                   <div className="text-3xl lg:text-5xl font-black text-gray-900">{record.champion?.fullName || 'Unknown Team'}</div>
                   <div className="flex gap-2 mt-2">
-                       {finalsMvp && (
+                       {finalsMvpName && (
                            <div className="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded-lg border border-blue-200">
-                               FMVP: {finalsMvp.name}
+                               FMVP: {finalsMvpName}
                            </div>
                        )}
                   </div>
@@ -249,43 +268,6 @@ const HistoryTab = ({ league }) => {
               </table>
           </div>
       </div>
-
-      {/* 5. GROUP STANDINGS */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {['baron', 'elder'].map(groupKey => (
-              <div key={groupKey} className="bg-white rounded-xl border shadow-sm p-4">
-                  <h4 className={`text-sm font-black uppercase mb-3 pb-2 border-b flex justify-between ${groupKey === 'baron' ? 'text-purple-600 border-purple-100' : 'text-red-600 border-red-100'}`}>
-                      {groupKey} Group
-                  </h4>
-                  <table className="w-full text-xs">
-                      <thead className="text-gray-400 bg-gray-50">
-                          <tr>
-                              <th className="p-2 text-left">팀</th>
-                              <th className="p-2 text-center">W-L</th>
-                              <th className="p-2 text-center">득실</th>
-                          </tr>
-                      </thead>
-                      <tbody>
-                          {record.groupStandings?.[groupKey] ? (
-                              record.groupStandings[groupKey].map((row, idx) => (
-                                  <tr key={idx} className="border-b last:border-0">
-                                      <td className="p-2 font-bold text-gray-700 flex items-center gap-2">
-                                          <span className="text-gray-400 w-3">{idx + 1}</span>
-                                          {row.teamName}
-                                      </td>
-                                      <td className="p-2 text-center font-bold">{row.w}-{row.l}</td>
-                                      <td className="p-2 text-center text-gray-500">{row.diff}</td>
-                                  </tr>
-                              ))
-                          ) : (
-                              <tr><td colSpan="3" className="p-4 text-center text-gray-400">기록 없음</td></tr>
-                          )}
-                      </tbody>
-                  </table>
-              </div>
-          ))}
-      </div>
-
     </div>
   );
 };

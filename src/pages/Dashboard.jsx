@@ -180,9 +180,9 @@ const handleManualArchive = () => {
       // [CRITICAL FIX] Save specific structures for Regular vs Playoff
       awards: {
         regular: {
-            mvp: regularAwards.seasonMvp, // FIXED: Changed .mvp to .seasonMvp
+            mvp: regularAwards.seasonMvp, // Must use .seasonMvp
             allPro: regularAwards.allProTeams, 
-            pogLeader: regularAwards.pogLeader // Note: this might be undefined for regular season, which is fine
+            pogLeader: regularAwards.pogLeader 
         },
         playoff: {
             finalsMvp: playoffAwards.finalsMvp,  
