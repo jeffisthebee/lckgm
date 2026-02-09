@@ -1430,7 +1430,7 @@
                                  )}
     
                                  {/* Champ Grid */}
-                                 <div className="flex-1 overflow-y-auto p-1 sm:p-2 lg:p-4 grid grid-cols-5 sm:grid-cols-6 md-grid-cols-7 lg-grid-cols-5 gap-1 sm:gap-2 lg:gap-3 content-start pb-48">
+                                 <div className="flex-1 overflow-y-auto p-1 sm:p-2 lg:p-4 grid grid-cols-5 sm:grid-cols-6 md-grid-cols-7 lg-grid-cols-5 gap-1 sm:gap-2 lg:gap-3 content-start pb-72">
                                      {activeChampionList
                                         .filter(c => c.role === (filterRole === 'SUP' ? 'SUP' : filterRole))
                                         .filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())) 
@@ -1513,11 +1513,11 @@
                                         <div className="w-6 h-6 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded border border-red-400 flex items-center justify-center bg-black overflow-hidden shrink-0">
                                             <div className="font-bold text-[6px] sm:text-[8px] lg:text-xs text-center break-words leading-tight">{pick.champName.substring(0,3)}</div>
                                         </div>
-                                        <div className="mr-1 sm:mr-4 overflow-hidden text-right flex flex-col justify-center items-end">
+                                        <div className="mr-1 sm:mr-4 overflow-hidden text-right flex flex-col justify-center items-end pr-1">
                                             {/* Flex row for Name + Tier */}
-                                            <div className="flex flex-wrap-reverse justify-end items-baseline gap-[1px] sm:gap-1 min-w-0">
+                                            <div className="flex flex-wrap justify-end items-baseline gap-[1px] sm:gap-1 min-w-0">
+                                                <div className="text-[5px] sm:text-[8px] lg:text-2xl font-black text-white leading-none break-words whitespace-normal text-right">{pick.champName}</div>
                                                 <div className="text-[5px] sm:text-[8px] lg:text-sm text-red-200 font-normal shrink-0 leading-none whitespace-nowrap">({tierDisplay}티어)</div>
-                                                <div className="text-[5px] sm:text-[8px] lg:text-2xl font-black text-white leading-none break-all whitespace-normal text-right">{pick.champName}</div>
                                             </div>
                                             <div className="text-[6px] sm:text-[10px] lg:text-sm text-red-300 font-bold truncate">{pick.playerName}</div>
                                         </div>
@@ -1794,4 +1794,3 @@
           </div>
         );
     }
-    
