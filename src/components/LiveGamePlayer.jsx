@@ -36,11 +36,11 @@
         // common variants mapping
         if (s === 'SPT') return 'SUP';
         if (s === 'SUPP') return 'SUP';
-        if (s === 'SUPPORT' || s === '서포터' || s === '서포' || s === 'SUPPORTER' || s === 'UTILITY') return 'SUP';
+        if (s === 'SUPPORT' || s === '서포터' || s === '서포' || s === 'SUPPORTER') return 'SUP';
         if (s === 'TOPLANE' || s === 'TOP' || s === '탑') return 'TOP';
         if (s === 'JUNGLE' || s === 'JGL' || s === 'JGL.' || s === '정글') return 'JGL';
         if (s === 'MIDDLE' || s === 'MID' || s === '미드') return 'MID';
-        if (s === 'BOT' || s === 'ADC' || s === 'BOTLANE' || s === '원딜' || s === 'BOTTOM') return 'ADC';
+        if (s === 'BOT' || s === 'ADC' || s === 'BOTLANE' || s === '원딜') return 'ADC';
         // If already one of canonical short codes, return as-is
         if (['TOP','JGL','MID','ADC','SUP'].includes(s)) return s;
         // Last resort: try to pick first three letters
@@ -309,25 +309,13 @@
                 return positionMatches(p, role);
             });
             
-            // 2. If not found or name is empty, and we are looking for support, try robust "Support" aliases
-            if ((!found || (!found.이름 && !found.name && !found.playerName)) && targetPos === 'SUP') {
+            // 2. If not found, and we are looking for support, try robust "Support" aliases
+            if (!found && targetPos === 'SUP') {
                 const supAliases = ['SUP', 'SPT', 'SUPP', 'SUPPORT', '서포터', '서포', 'UTILITY'];
                 found = roster.find(r => {
                     const p = normalizePosition(r.포지션 || r.position || r.role || r.lane);
                     return supAliases.includes(p);
                 });
-            }
-    
-            // 3. Fallback by Index (Standard 5-man order: TOP, JGL, MID, ADC, SUP)
-            // If we still haven't found a valid player, OR the found player has no name
-            // This relies on makeSafeRosterArray guaranteeing a sorted 5-man array
-            if (!found || (!found.이름 && !found.name && !found.playerName)) {
-                 const standardRoles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
-                 const idx = standardRoles.indexOf(targetPos);
-                 // If we found a valid index (0-4) and the roster has a player at that index
-                 if (idx !== -1 && roster[idx]) {
-                     found = roster[idx];
-                 }
             }
             
             return found ? (found.이름 || found.name || found.playerName || 'Unknown') : 'Unknown';
@@ -482,7 +470,8 @@
                   };
       
                   // Robust enrichPlayer: resolve playerName from engine result or roster (handles SUP/SPT etc.)
-                  const enrichPlayer = (p, teamRoster, side) => {
+                  // [FIXED] Added indexInArray param to force link pick[i] -> roster[i] if name fails
+                  const enrichPlayer = (p, teamRoster, side, indexInArray) => {
                       // roster might use Korean or English keys; be resilient
                       const findRoster = (roster, playerNameCandidate, roleCandidate) => {
                           if (!Array.isArray(roster)) return undefined;
@@ -505,15 +494,36 @@
     
                       const engineName = p.playerName || p.player || p.name || null;
                       const roleCandidate = p.role || p.position || null;
-                      const rosterData = findRoster(teamRoster || [], engineName, roleCandidate) || null;
+                      
+                      // Try to find using standard methods
+                      let rosterData = findRoster(teamRoster || [], engineName, roleCandidate) || null;
+                      
+                      let finalPlayerName = engineName || 'Unknown';
+                      
+                      // If we found a roster match, use its name
+                      if (rosterData) {
+                          finalPlayerName = rosterData.이름 || rosterData.name || rosterData.playerName || finalPlayerName;
+                      }
+                      
+                      // [CRITICAL FIX] If name is still Unknown/generic, try to resolve via helper or Index
+                      if (finalPlayerName === 'Unknown' || finalPlayerName === 'Bot') {
+                           // Try role helper
+                           if (roleCandidate) {
+                                finalPlayerName = resolvePlayerNameForRole(teamRoster, roleCandidate, null);
+                           }
+                           // If STILL Unknown, use index fallback (e.g. pick[4] is SUP, take roster[4])
+                           if ((finalPlayerName === 'Unknown' || !finalPlayerName) && teamRoster && teamRoster[indexInArray]) {
+                               const fallbackPlayer = teamRoster[indexInArray];
+                               finalPlayerName = fallbackPlayer.이름 || fallbackPlayer.name || fallbackPlayer.playerName || 'Unknown';
+                               rosterData = fallbackPlayer;
+                           }
+                      }
     
                       const safeData = rosterData || { 
-                          이름: (engineName && engineName !== 'Unknown') ? engineName : (roleCandidate ? resolvePlayerNameForRole(teamRoster, roleCandidate, null) : `Unknown`),
+                          이름: finalPlayerName,
                           포지션: roleCandidate || 'TOP', 
                           상세: { 성장: 50, 라인전: 50, 무력: 50, 안정성: 50, 운영: 50, 한타: 50 } 
                       };
-    
-                      const finalPlayerName = engineName || safeData.이름 || safeData.name || safeData.playerName || 'Unknown';
     
                       return { 
                           ...p,
@@ -530,19 +540,25 @@
                   };
       
                   const initPlayers = [
-                      ...safeArray(safeResult.picks?.A).map(p => enrichPlayer(p, blueTeam.roster, 'BLUE')),
-                      ...safeArray(safeResult.picks?.B).map(p => enrichPlayer(p, redTeam.roster, 'RED'))
+                      ...safeArray(safeResult.picks?.A).map((p, idx) => enrichPlayer(p, blueTeam.roster, 'BLUE', idx)),
+                      ...safeArray(safeResult.picks?.B).map((p, idx) => enrichPlayer(p, redTeam.roster, 'RED', idx))
                   ];
     
                   // --- IMPORTANT PATCH:
                   // Build UI-friendly pick objects that always include playerName (fix opponent SUPPORT 'Unknown' issue)
                   const buildUIPickList = (picksList = [], teamRoster = []) => {
-                      return safeArray(picksList).map(p => {
+                      return safeArray(picksList).map((p, idx) => {
                           const champName = p.champName || p.champion || p.name || '';
                           const champTier = p.tier || activeChampionList.find(c => c.name === champName)?.tier || p.tier || '-';
-                          // prefer an explicit playerName from engine result if present
-                          const enginePlayerName = p.playerName || p.player || p.player_name || null;
-                          const resolvedName = resolvePlayerNameForRole(teamRoster, p.role || p.position || '', enginePlayerName);
+                          
+                          // Use the same robust logic for the UI list
+                          let resolvedName = resolvePlayerNameForRole(teamRoster, p.role || p.position || '', p.playerName);
+                          
+                          // UI List Fallback by index if resolvePlayerNameForRole fails
+                          if ((!resolvedName || resolvedName === 'Unknown') && teamRoster[idx]) {
+                              resolvedName = teamRoster[idx].이름 || teamRoster[idx].name || 'Unknown';
+                          }
+    
                           return {
                               ...p,
                               champName,
@@ -1474,6 +1490,7 @@
                                  )}
     
                                  {/* Champ Grid */}
+                                 {/* [FIXED] Increased padding-bottom to pb-72 to account for browser address bar */}
                                  <div className="flex-1 overflow-y-auto p-1 sm:p-2 lg:p-4 grid grid-cols-5 sm:grid-cols-6 md-grid-cols-7 lg-grid-cols-5 gap-1 sm:gap-2 lg:gap-3 content-start pb-72">
                                      {activeChampionList
                                         .filter(c => c.role === (filterRole === 'SUP' ? 'SUP' : filterRole))
@@ -1840,3 +1857,4 @@
           </div>
         );
     }
+    
