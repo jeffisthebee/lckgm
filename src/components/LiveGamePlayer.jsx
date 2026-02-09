@@ -1516,8 +1516,8 @@
                                         <div className="mr-2 lg:mr-4 overflow-hidden text-right flex flex-col justify-center items-end">
                                             {/* Flex row for Name + Tier */}
                                             <div className="flex flex-row-reverse items-baseline gap-1 min-w-0">
-                                                <div className="text-xs sm:text-sm lg:text-2xl font-black text-white truncate">{pick.champName}</div>
                                                 <div className="text-[10px] lg:text-sm text-red-200 font-normal shrink-0">({tierDisplay}티어)</div>
+                                                <div className="text-xs sm:text-sm lg:text-2xl font-black text-white truncate">{pick.champName}</div>
                                             </div>
                                             <div className="text-[8px] sm:text-[10px] lg:text-sm text-red-300 font-bold truncate">{pick.playerName}</div>
                                         </div>
