@@ -1367,9 +1367,9 @@
                                         </div>
                                         <div className="ml-1 sm:ml-4 overflow-hidden flex flex-col justify-center">
                                             {/* Flex row for Name + Tier so tier is never hidden by truncate */}
-                                            <div className="flex items-baseline gap-[1px] sm:gap-1 min-w-0">
-                                                <div className="text-[6px] sm:text-[10px] lg:text-2xl font-black text-white whitespace-nowrap tracking-tighter leading-none">{pick.champName}</div>
-                                                <div className="text-[6px] sm:text-[9px] lg:text-sm text-blue-200 font-normal shrink-0 leading-none">({tierDisplay}티어)</div>
+                                            <div className="flex flex-wrap items-baseline gap-[1px] sm:gap-1 min-w-0">
+                                                <div className="text-[5px] sm:text-[8px] lg:text-2xl font-black text-white leading-none break-all whitespace-normal">{pick.champName}</div>
+                                                <div className="text-[5px] sm:text-[8px] lg:text-sm text-blue-200 font-normal shrink-0 leading-none whitespace-nowrap">({tierDisplay}티어)</div>
                                             </div>
                                             <div className="text-[6px] sm:text-[10px] lg:text-sm text-blue-300 font-bold truncate">{pick.playerName}</div>
                                         </div>
@@ -1515,9 +1515,9 @@
                                         </div>
                                         <div className="mr-1 sm:mr-4 overflow-hidden text-right flex flex-col justify-center items-end">
                                             {/* Flex row for Name + Tier */}
-                                            <div className="flex flex-row-reverse items-baseline gap-[1px] sm:gap-1 min-w-0">
-                                                <div className="text-[6px] sm:text-[9px] lg:text-sm text-red-200 font-normal shrink-0 leading-none">({tierDisplay}티어)</div>
-                                                <div className="text-[6px] sm:text-[10px] lg:text-2xl font-black text-white whitespace-nowrap tracking-tighter leading-none">{pick.champName}</div>
+                                            <div className="flex flex-wrap-reverse justify-end items-baseline gap-[1px] sm:gap-1 min-w-0">
+                                                <div className="text-[5px] sm:text-[8px] lg:text-sm text-red-200 font-normal shrink-0 leading-none whitespace-nowrap">({tierDisplay}티어)</div>
+                                                <div className="text-[5px] sm:text-[8px] lg:text-2xl font-black text-white leading-none break-all whitespace-normal text-right">{pick.champName}</div>
                                             </div>
                                             <div className="text-[6px] sm:text-[10px] lg:text-sm text-red-300 font-bold truncate">{pick.playerName}</div>
                                         </div>
@@ -1794,3 +1794,4 @@
           </div>
         );
     }
+    
