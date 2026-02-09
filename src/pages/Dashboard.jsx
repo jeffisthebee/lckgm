@@ -1100,12 +1100,20 @@ const handleManualArchive = () => {
           
           <div className="flex items-center gap-2 lg:gap-3 ml-4">
              {/* [NEW] Manual Archive Button for Old Saves */}
-             {isSeasonOver && !isSavedInHistory && (
+             {/* [FIX] Button is now always visible when season is over, allowing "Update" */}
+             {isSeasonOver && (
                 <button 
                   onClick={handleManualArchive} 
-                  className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-gray-900 hover:bg-gray-800 text-green-400 shadow-md flex items-center gap-2 transition border border-green-500 animate-pulse whitespace-nowrap"
+                  className={`px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm shadow-md flex items-center gap-2 transition whitespace-nowrap ${
+                      isSavedInHistory 
+                      ? 'bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-500' // Style for "Update"
+                      : 'bg-gray-900 text-green-400 hover:bg-black border border-green-500 animate-pulse' // Style for "New Save"
+                  }`}
                 >
-                    <span>💾</span> <span className="hidden sm:inline">시즌 기록 저장</span>
+                    <span>💾</span> 
+                    <span className="hidden sm:inline">
+                        {isSavedInHistory ? "시즌 기록 갱신 (Update)" : "시즌 기록 저장"}
+                    </span>
                 </button>
             )}
 
