@@ -20,12 +20,21 @@ const RoleBadge = ({ role }) => {
     );
 };
 
-const AllProTeamRow = ({ title, players = [] }) => (
+const AllProTeamRow = ({ title, players }) => (
     <div className="mb-4">
         <h4 className="text-xs font-bold text-gray-500 uppercase mb-2 border-b pb-1">{title}</h4>
         <div className="grid grid-cols-5 gap-2">
             {['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(role => {
-                const p = players && Array.isArray(players) ? players.find(x => x && x.role === role) : null;
+                // FIXED: Handle both Array (old saves) and Object (new stats engine) formats
+                let p = null;
+                if (players) {
+                    if (Array.isArray(players)) {
+                        p = players.find(x => x && x.role === role);
+                    } else {
+                        // If it's an object like { TOP: {...}, JGL: {...} }
+                        p = players[role];
+                    }
+                }
                 
                 if (!p) return (
                     <div key={role} className="bg-gray-50 rounded p-2 text-center text-xs text-gray-400 flex flex-col items-center justify-center min-h-[80px]">
@@ -34,14 +43,20 @@ const AllProTeamRow = ({ title, players = [] }) => (
                     </div>
                 );
                 
-                const teamObj = teams.find(t => t.name === p.team);
+                // FIXED: Handle team name whether it's a string or an object inside 'teamObj'
+                const teamName = p.teamObj ? p.teamObj.name : p.team;
+                const teamObj = teams.find(t => t.name === teamName);
+                const teamColor = teamObj?.colors?.primary || '#333';
+                // FIXED: Use Korean name (실명) if available, otherwise player name
+                const displayName = p.실명 || p.playerName || p.name;
+
                 return (
                     <div key={role} className="bg-white border rounded-lg p-2 flex flex-col items-center shadow-sm">
                         <RoleBadge role={role} />
-                        <div className="font-bold text-gray-800 text-xs mt-1 truncate w-full text-center">{p.name}</div>
+                        <div className="font-bold text-gray-800 text-xs mt-1 truncate w-full text-center">{displayName}</div>
                         <div className="text-[10px] text-gray-500 font-bold flex items-center gap-1 mt-1">
-                             <div className="w-3 h-3 rounded-full border border-gray-200" style={{backgroundColor: teamObj?.colors?.primary || '#333'}}></div>
-                             {p.team}
+                             <div className="w-3 h-3 rounded-full border border-gray-200" style={{backgroundColor: teamColor}}></div>
+                             {teamName}
                         </div>
                     </div>
                 );

@@ -179,17 +179,17 @@ const handleManualArchive = () => {
       },
       // [CRITICAL FIX] Save specific structures for Regular vs Playoff
       awards: {
-          regular: {
-              mvp: regularAwards.mvp,       // Regular Season MVP
-              allPro: regularAwards.allProTeams, // All-LCK Teams
-              pogLeader: regularAwards.pogLeader
-          },
-          playoff: {
-              finalsMvp: playoffAwards.finalsMvp,  // Finals MVP
-              playoffMvp: playoffAwards.pogLeader, // Playoff MVP (POG Leader)
-              allPro: playoffAwards.allProTeams    // All-Playoff Teams
-          }
-      }
+        regular: {
+            mvp: regularAwards.seasonMvp, // FIXED: Changed .mvp to .seasonMvp
+            allPro: regularAwards.allProTeams, 
+            pogLeader: regularAwards.pogLeader // Note: this might be undefined for regular season, which is fine
+        },
+        playoff: {
+            finalsMvp: playoffAwards.finalsMvp,  
+            playoffMvp: playoffAwards.pogLeader, 
+            allPro: playoffAwards.allProTeams    
+        }
+    }
   };
 
   // 3. Save to League State
