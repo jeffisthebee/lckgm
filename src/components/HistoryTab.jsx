@@ -70,7 +70,6 @@ const AllProTeamRow = ({ title, players }) => (
     </div>
 );
 
-// [FIXED] SmallMvpCard now checks .playerName if .name is missing
 // [FIXED] SmallMvpCard now checks .playerName AND .실명
 const SmallMvpCard = ({ title, player, colorClass }) => {
     if (!player) return null;
@@ -228,7 +227,7 @@ const HistoryTab = ({ league }) => {
           </div>
       </div>
 
-      {/* 4. FINAL STANDINGS */}
+      {/* 4. FINAL STANDINGS (FULL LIST) */}
       <div className="bg-white rounded-xl border shadow-sm p-5">
           <h3 className="text-lg font-black text-gray-800 mb-4 flex items-center gap-2">
               <span className="text-xl">🏅</span> 최종 순위
@@ -244,7 +243,7 @@ const HistoryTab = ({ league }) => {
                   </thead>
                   <tbody>
                       {record.finalStandings && Array.isArray(record.finalStandings) ? (
-                          record.finalStandings.slice(0, 4).map((item, idx) => (
+                          record.finalStandings.map((item, idx) => (
                               <tr key={idx} className="border-b last:border-0 hover:bg-gray-50">
                                   <td className="p-3 text-center font-bold">
                                       {item.rank === 1 ? '🥇' : item.rank === 2 ? '🥈' : item.rank === 3 ? '🥉' : item.rank}
