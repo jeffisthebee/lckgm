@@ -71,18 +71,20 @@ const AllProTeamRow = ({ title, players }) => (
 );
 
 // [FIXED] SmallMvpCard now checks .playerName if .name is missing
+// [FIXED] SmallMvpCard now checks .playerName AND .실명
 const SmallMvpCard = ({ title, player, colorClass }) => {
     if (!player) return null;
 
-    // [CRITICAL FIX] Data usually comes as 'playerName', not 'name'
+    // 1. Robust Name Extraction
     const displayName = player.실명 || player.playerName || player.name || "Unknown";
     
-    // [CRITICAL FIX] Handle team extraction safely
+    // 2. Robust Team Extraction
     let teamName = "LCK";
-    if (player.teamObj?.name) teamName = player.teamObj.name;
+    if (player.teamObj && player.teamObj.name) teamName = player.teamObj.name;
     else if (player.team) teamName = player.team;
     else if (Array.isArray(player.teams) && player.teams.length > 0) teamName = player.teams[0];
 
+    // 3. Robust Role Extraction
     const role = player.role || 'Player';
 
     return (
