@@ -1359,22 +1359,22 @@
                                  tierDisplay = activeChampionList.find(c => c.name === pick.champName)?.tier || '-';
                              }
                              return (
-                             <div key={i} className={`h-10 sm:h-12 lg:h-24 border-l-2 lg:border-l-4 ${pick ? 'border-blue-500 bg-blue-900/30' : 'border-gray-700 bg-gray-800/50'} rounded-r lg:rounded-r-lg flex items-center p-1 sm:p-2 lg:p-4 transition-all duration-500`}>
+                             <div key={i} className={`h-10 sm:h-12 lg:h-24 border-l-2 lg:border-l-4 ${pick ? 'border-blue-500 bg-blue-900/30' : 'border-gray-700 bg-gray-800/50'} rounded-r lg:rounded-r-lg flex items-center p-0.5 sm:p-2 lg:p-4 transition-all duration-500`}>
                                  {pick ? (
                                      <>
-                                        <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded border border-blue-400 flex items-center justify-center bg-black overflow-hidden shrink-0">
+                                        <div className="w-6 h-6 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded border border-blue-400 flex items-center justify-center bg-black overflow-hidden shrink-0">
                                             <div className="font-bold text-[6px] sm:text-[8px] lg:text-xs text-center break-words leading-tight">{pick.champName}</div>
                                         </div>
-                                        <div className="ml-2 lg:ml-4 overflow-hidden flex flex-col justify-center">
+                                        <div className="ml-1 sm:ml-4 overflow-hidden flex flex-col justify-center">
                                             {/* Flex row for Name + Tier so tier is never hidden by truncate */}
-                                            <div className="flex items-baseline gap-0.5 sm:gap-1 min-w-0">
-                                                <div className="text-[9px] sm:text-[10px] lg:text-2xl font-black text-white truncate leading-none">{pick.champName}</div>
-                                                <div className="text-[8px] sm:text-[9px] lg:text-sm text-blue-200 font-normal shrink-0 leading-none">({tierDisplay}티어)</div>
+                                            <div className="flex items-baseline gap-[1px] sm:gap-1 min-w-0">
+                                                <div className="text-[7px] sm:text-[10px] lg:text-2xl font-black text-white truncate leading-none">{pick.champName}</div>
+                                                <div className="text-[6px] sm:text-[9px] lg:text-sm text-blue-200 font-normal shrink-0 leading-none">({tierDisplay}티어)</div>
                                             </div>
-                                            <div className="text-[8px] sm:text-[10px] lg:text-sm text-blue-300 font-bold truncate">{pick.playerName}</div>
+                                            <div className="text-[6px] sm:text-[10px] lg:text-sm text-blue-300 font-bold truncate">{pick.playerName}</div>
                                         </div>
                                      </>
-                                 ) : <div className="text-gray-600 font-bold text-[10px] sm:text-xs lg:text-lg">Pick {i+1}</div>}
+                                 ) : <div className="text-gray-600 font-bold text-[8px] sm:text-xs lg:text-lg">Pick {i+1}</div>}
                              </div>
                          )})}
                         </div>
@@ -1507,22 +1507,22 @@
                                  tierDisplay = activeChampionList.find(c => c.name === pick.champName)?.tier || '-';
                              }
                              return (
-                             <div key={i} className={`h-10 sm:h-12 lg:h-24 border-r-2 lg:border-r-4 ${pick ? 'border-red-500 bg-red-900/30' : 'border-gray-700 bg-gray-800/50'} rounded-l lg:rounded-l-lg flex flex-row-reverse items-center p-1 sm:p-2 lg:p-4 transition-all duration-500`}>
+                             <div key={i} className={`h-10 sm:h-12 lg:h-24 border-r-2 lg:border-r-4 ${pick ? 'border-red-500 bg-red-900/30' : 'border-gray-700 bg-gray-800/50'} rounded-l lg:rounded-l-lg flex flex-row-reverse items-center p-0.5 sm:p-2 lg:p-4 transition-all duration-500`}>
                                  {pick ? (
                                      <>
-                                        <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded border border-red-400 flex items-center justify-center bg-black overflow-hidden shrink-0">
+                                        <div className="w-6 h-6 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded border border-red-400 flex items-center justify-center bg-black overflow-hidden shrink-0">
                                             <div className="font-bold text-[6px] sm:text-[8px] lg:text-xs text-center break-words leading-tight">{pick.champName.substring(0,3)}</div>
                                         </div>
-                                        <div className="mr-2 lg:mr-4 overflow-hidden text-right flex flex-col justify-center items-end">
+                                        <div className="mr-1 sm:mr-4 overflow-hidden text-right flex flex-col justify-center items-end">
                                             {/* Flex row for Name + Tier */}
-                                            <div className="flex flex-row-reverse items-baseline gap-0.5 sm:gap-1 min-w-0">
-                                                <div className="text-[8px] sm:text-[9px] lg:text-sm text-red-200 font-normal shrink-0 leading-none">({tierDisplay}티어)</div>
-                                                <div className="text-[9px] sm:text-[10px] lg:text-2xl font-black text-white truncate leading-none">{pick.champName}</div>
+                                            <div className="flex flex-row-reverse items-baseline gap-[1px] sm:gap-1 min-w-0">
+                                                <div className="text-[6px] sm:text-[9px] lg:text-sm text-red-200 font-normal shrink-0 leading-none">({tierDisplay}티어)</div>
+                                                <div className="text-[7px] sm:text-[10px] lg:text-2xl font-black text-white truncate leading-none">{pick.champName}</div>
                                             </div>
-                                            <div className="text-[8px] sm:text-[10px] lg:text-sm text-red-300 font-bold truncate">{pick.playerName}</div>
+                                            <div className="text-[6px] sm:text-[10px] lg:text-sm text-red-300 font-bold truncate">{pick.playerName}</div>
                                         </div>
                                      </>
-                                 ) : <div className="text-gray-600 font-bold text-[10px] sm:text-xs lg:text-lg">Pick {i+1}</div>}
+                                 ) : <div className="text-gray-600 font-bold text-[8px] sm:text-xs lg:text-lg">Pick {i+1}</div>}
                              </div>
                          )})}
                         </div>
