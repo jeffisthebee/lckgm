@@ -1365,9 +1365,11 @@
                                         <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded border border-blue-400 flex items-center justify-center bg-black overflow-hidden shrink-0">
                                             <div className="font-bold text-[6px] sm:text-[8px] lg:text-xs text-center break-words leading-tight">{pick.champName}</div>
                                         </div>
-                                        <div className="ml-2 lg:ml-4 overflow-hidden">
-                                            <div className="text-xs sm:text-sm lg:text-2xl font-black text-white truncate">
-                                                {pick.champName} <span className="text-[10px] lg:text-sm text-blue-200 font-normal">({tierDisplay}티어)</span>
+                                        <div className="ml-2 lg:ml-4 overflow-hidden flex flex-col justify-center">
+                                            {/* Flex row for Name + Tier so tier is never hidden by truncate */}
+                                            <div className="flex items-baseline gap-1 min-w-0">
+                                                <div className="text-xs sm:text-sm lg:text-2xl font-black text-white truncate">{pick.champName}</div>
+                                                <div className="text-[10px] lg:text-sm text-blue-200 font-normal shrink-0">({tierDisplay}티어)</div>
                                             </div>
                                             <div className="text-[8px] sm:text-[10px] lg:text-sm text-blue-300 font-bold truncate">{pick.playerName}</div>
                                         </div>
@@ -1428,7 +1430,7 @@
                                  )}
     
                                  {/* Champ Grid */}
-                                 <div className="flex-1 overflow-y-auto p-1 sm:p-2 lg:p-4 grid grid-cols-5 sm:grid-cols-6 md-grid-cols-7 lg-grid-cols-5 gap-1 sm:gap-2 lg:gap-3 content-start pb-40">
+                                 <div className="flex-1 overflow-y-auto p-1 sm:p-2 lg:p-4 grid grid-cols-5 sm:grid-cols-6 md-grid-cols-7 lg-grid-cols-5 gap-1 sm:gap-2 lg:gap-3 content-start pb-48">
                                      {activeChampionList
                                         .filter(c => c.role === (filterRole === 'SUP' ? 'SUP' : filterRole))
                                         .filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())) 
@@ -1451,12 +1453,10 @@
                                                     <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-16 lg:h-16 bg-black rounded mb-0.5 lg:mb-2 flex items-center justify-center text-[6px] sm:text-[8px] lg:text-xs text-gray-400 font-bold overflow-hidden leading-tight break-words p-0.5">
                                                         {champ.name}
                                                     </div>
-                                                    {/* Tier Badge moved inline to prevent cutoff */}
-                                                    <div className="flex flex-col items-center w-full">
-                                                        <div className="text-[7px] lg:text-xs font-bold text-center w-full truncate leading-none">{champ.name}</div>
-                                                        <div className={`mt-0.5 text-[5px] lg:text-[10px] px-1 rounded font-bold ${champ.tier === 1 ? 'bg-purple-600 text-white' : 'bg-gray-800 text-gray-400'}`}>
-                                                            {champ.tier}T
-                                                        </div>
+                                                    {/* Reverted to Absolute Badge Style as requested */}
+                                                    <div className="text-[8px] lg:text-xs font-bold text-center w-full truncate">{champ.name}</div>
+                                                    <div className={`absolute top-0 right-0 w-2.5 h-2.5 lg:w-5 lg:h-5 rounded-bl-md flex items-center justify-center text-[5px] lg:text-[10px] font-bold ${champ.tier === 1 ? 'bg-purple-600 text-white' : 'bg-gray-800 text-gray-400'}`}>
+                                                        {champ.tier}
                                                     </div>
                                                 </button>
                                             );
@@ -1513,9 +1513,11 @@
                                         <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded border border-red-400 flex items-center justify-center bg-black overflow-hidden shrink-0">
                                             <div className="font-bold text-[6px] sm:text-[8px] lg:text-xs text-center break-words leading-tight">{pick.champName.substring(0,3)}</div>
                                         </div>
-                                        <div className="mr-2 lg:mr-4 overflow-hidden text-right">
-                                            <div className="text-xs sm:text-sm lg:text-2xl font-black text-white truncate">
-                                                {pick.champName} <span className="text-[10px] lg:text-sm text-red-200 font-normal">({tierDisplay}티어)</span>
+                                        <div className="mr-2 lg:mr-4 overflow-hidden text-right flex flex-col justify-center items-end">
+                                            {/* Flex row for Name + Tier */}
+                                            <div className="flex flex-row-reverse items-baseline gap-1 min-w-0">
+                                                <div className="text-xs sm:text-sm lg:text-2xl font-black text-white truncate">{pick.champName}</div>
+                                                <div className="text-[10px] lg:text-sm text-red-200 font-normal shrink-0">({tierDisplay}티어)</div>
                                             </div>
                                             <div className="text-[8px] sm:text-[10px] lg:text-sm text-red-300 font-bold truncate">{pick.playerName}</div>
                                         </div>
