@@ -271,14 +271,14 @@
             
             const targetPos = normalizePosition(role);
             
-            // 1. Try exact match by position string (checking multiple potential keys)
+            // 1. Try exact match by position string
             let found = roster.find(r => {
                 const p = r.포지션 || r.position || r.role || r.lane || '';
                 return positionMatches(p, role);
             });
             
-            // 2. If not found, and we are looking for support, try robust "Support" aliases
-            if (!found && targetPos === 'SUP') {
+            // 2. If not found or name is empty, and we are looking for support, try robust "Support" aliases
+            if ((!found || (!found.이름 && !found.name && !found.playerName)) && targetPos === 'SUP') {
                 const supAliases = ['SUP', 'SPT', 'SUPP', 'SUPPORT', '서포터', '서포', 'UTILITY'];
                 found = roster.find(r => {
                     const p = normalizePosition(r.포지션 || r.position || r.role || r.lane);
@@ -286,9 +286,9 @@
                 });
             }
     
-            // 3. Fallback by Index: If specifically looking for standard roles and no match found
-            // This is crucial for fixing the "Unknown" support issue if the role name is weird
-            if (!found) {
+            // 3. Fallback by Index (Standard 5-man order: TOP, JGL, MID, ADC, SUP)
+            // If we still haven't found a valid player, OR the found player has no name
+            if (!found || (!found.이름 && !found.name && !found.playerName)) {
                  const standardRoles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
                  const idx = standardRoles.indexOf(targetPos);
                  // If we found a valid index (0-4) and the roster has a player at that index
@@ -1361,7 +1361,7 @@
     
                      {/* Blue Picks List */}
                      {/* [FIXED] Added flex-1, overflow-y-auto, and pb-24 so the 5th pick is scrollable if cut off */}
-                     <div className="hidden sm:flex flex-col w-1/5 sm:w-1/6 lg:w-1/4 h-full justify-start space-y-4 z-10 pt-8 overflow-y-auto pb-24">
+                     <div className="hidden sm:flex flex-col w-1/5 sm:w-1/6 lg:w-1/4 h-full justify-start space-y-4 z-10 pt-8 overflow-y-auto pb-72">
                         <div className="space-y-1 sm:space-y-2 lg:space-y-4">
                          {draftState.bluePicks.map((pick, i) => {
                              // Find tier if not present (for auto mode)
@@ -1511,7 +1511,7 @@
     
                      {/* Red Picks List */}
                      {/* [FIXED] Added flex-1, overflow-y-auto, and pb-24 so the 5th pick is scrollable if cut off */}
-                     <div className="hidden sm:flex flex-col w-1/5 sm:w-1/6 lg:w-1/4 h-full justify-start space-y-4 z-10 pt-8 overflow-y-auto pb-24">
+                     <div className="hidden sm:flex flex-col w-1/5 sm:w-1/6 lg:w-1/4 h-full justify-start space-y-4 z-10 pt-8 overflow-y-auto pb-72">
                         <div className="space-y-1 sm:space-y-2 lg:space-y-4">
                          {draftState.redPicks.map((pick, i) => {
                              // Find tier if not present (for auto mode)
