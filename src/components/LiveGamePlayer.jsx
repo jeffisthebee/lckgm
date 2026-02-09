@@ -36,11 +36,11 @@
         // common variants mapping
         if (s === 'SPT') return 'SUP';
         if (s === 'SUPP') return 'SUP';
-        if (s === 'SUPPORT' || s === '서포터' || s === '서포' || s === 'SUPPORTER') return 'SUP';
+        if (s === 'SUPPORT' || s === '서포터' || s === '서포' || s === 'SUPPORTER' || s === 'UTILITY') return 'SUP';
         if (s === 'TOPLANE' || s === 'TOP' || s === '탑') return 'TOP';
         if (s === 'JUNGLE' || s === 'JGL' || s === 'JGL.' || s === '정글') return 'JGL';
         if (s === 'MIDDLE' || s === 'MID' || s === '미드') return 'MID';
-        if (s === 'BOT' || s === 'ADC' || s === 'BOTLANE' || s === '원딜') return 'ADC';
+        if (s === 'BOT' || s === 'ADC' || s === 'BOTLANE' || s === '원딜' || s === 'BOTTOM') return 'ADC';
         // If already one of canonical short codes, return as-is
         if (['TOP','JGL','MID','ADC','SUP'].includes(s)) return s;
         // Last resort: try to pick first three letters
@@ -51,7 +51,6 @@
     };
     
     // --- HELPER: Calculate POS (Player of the Series) ---
-    // [FIXED] Updated to use roster matching for reliable team identification
     const calculatePOS = (matchHistory, currentSetData, winningTeamName, winningTeamRoster = []) => {
         const allGames = [...(matchHistory || [])];
         if (currentSetData) {
@@ -237,28 +236,61 @@
         }, [draftStep]);
       
         // Utility: Ensure roster array of players (length ~5). Accepts team object rosters in different shapes.
+        // [FIXED] Enforce standard sorting order to guarantee index reliability
         const makeSafeRosterArray = (teamOrRoster, fallbackTeamName) => {
             // teamOrRoster can be an array or an object map
             let arr = [];
-            if (Array.isArray(teamOrRoster)) arr = teamOrRoster.slice();
-            else if (teamOrRoster && typeof teamOrRoster === 'object') {
+            const roleOrder = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
+            
+            if (Array.isArray(teamOrRoster)) {
+                arr = teamOrRoster.slice();
+            } else if (teamOrRoster && typeof teamOrRoster === 'object') {
                 // object mapping of positions -> player objects
-                arr = Object.values(teamOrRoster).filter(Boolean);
+                // Try to map explicitly
+                arr = roleOrder.map(r => {
+                    // Find matching key
+                    const key = Object.keys(teamOrRoster).find(k => normalizePosition(k) === r);
+                    return key ? teamOrRoster[key] : null;
+                }).filter(Boolean);
+                
+                // If explicit mapping failed significantly, just grab values
+                if (arr.length < 3) {
+                    arr = Object.values(teamOrRoster).filter(Boolean);
+                }
             } else {
                 arr = [];
             }
+    
+            // Sort array into standard order if it has position info
+            // This makes sure index 4 is always Support
+            arr.sort((a, b) => {
+                const posA = normalizePosition(a.포지션 || a.position || 'MID');
+                const posB = normalizePosition(b.포지션 || b.position || 'MID');
+                return roleOrder.indexOf(posA) - roleOrder.indexOf(posB);
+            });
+    
             if (arr.length < 5) {
                 const fallback = getDefaultLineup(fallbackTeamName || '');
                 const fallbackArr = Object.values(fallback || {}).filter(Boolean);
                 // fill missing with fallback players up to 5
                 for (let i = 0; i < 5 && arr.length < 5 && i < fallbackArr.length; i++) {
-                    arr.push(fallbackArr[i]);
+                    // Avoid duplicates if possible
+                    if (!arr.some(p => p.이름 === fallbackArr[i].이름)) {
+                        arr.push(fallbackArr[i]);
+                    }
                 }
             }
             // final safety: if still less than 5, create placeholders
             while (arr.length < 5) {
                 arr.push({ 이름: `Unknown${arr.length+1}`, 포지션: ['TOP','JGL','MID','ADC','SUP'][arr.length], 종합: 75 });
             }
+            // Re-sort one last time to be safe
+            arr.sort((a, b) => {
+                const posA = normalizePosition(a.포지션 || a.position || 'MID');
+                const posB = normalizePosition(b.포지션 || b.position || 'MID');
+                return roleOrder.indexOf(posA) - roleOrder.indexOf(posB);
+            });
+    
             return arr.slice(0,5);
         };
     
@@ -288,6 +320,7 @@
     
             // 3. Fallback by Index (Standard 5-man order: TOP, JGL, MID, ADC, SUP)
             // If we still haven't found a valid player, OR the found player has no name
+            // This relies on makeSafeRosterArray guaranteeing a sorted 5-man array
             if (!found || (!found.이름 && !found.name && !found.playerName)) {
                  const standardRoles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
                  const idx = standardRoles.indexOf(targetPos);
@@ -1441,7 +1474,6 @@
                                  )}
     
                                  {/* Champ Grid */}
-                                 {/* [FIXED] Increased padding-bottom to pb-72 to account for browser address bar */}
                                  <div className="flex-1 overflow-y-auto p-1 sm:p-2 lg:p-4 grid grid-cols-5 sm:grid-cols-6 md-grid-cols-7 lg-grid-cols-5 gap-1 sm:gap-2 lg:gap-3 content-start pb-72">
                                      {activeChampionList
                                         .filter(c => c.role === (filterRole === 'SUP' ? 'SUP' : filterRole))
