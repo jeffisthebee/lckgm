@@ -6,7 +6,7 @@ export const teams = [
   { id: 3, name: 'KT', fullName: '케이티 (KT)', power: 88, description: '공격적인 플레이 스타일', colors: { primary: '#FF4444', secondary: '#FFFFFF' } },
   { id: 4, name: 'T1', fullName: '티원 (T1)', power: 93, description: 'LCK의 최강팀', colors: { primary: '#E2012E', secondary: '#000000' } },
   { id: 5, name: 'DK', fullName: '디플러스 기아 (DK)', power: 85, description: '전략적 플레이와 팀워크', colors: { primary: '#00D9C4', secondary: '#FFFFFF' } },
-  { id: 6, name: 'BNK', fullName: 'BNK 피어엑스 (BNK)', power: 83, description: '젊은 선수들의 잠재력', colors: { primary: '#FFB800', secondary: '#000000' } },
+  { id: 6, name: 'BNK', fullName: 'BNK 피어엑스 (BNK)', power: 84, description: '젊은 선수들의 잠재력', colors: { primary: '#FFB800', secondary: '#000000' } },
   { id: 7, name: 'NS', fullName: '농심 레드포스 (NS)', power: 86, description: '재건 중인 팀', colors: { primary: '#DC143C', secondary: '#FFFFFF' } },
   { id: 8, name: 'BRO', fullName: '브리온 (BRO)', power: 79, description: '기본기에 충실한 팀', colors: { primary: '#166534', secondary: '#FFFFFF' } },
   { id: 9, name: 'DRX', fullName: '디알엑스 (DRX)', power: 81, description: '변화를 추구하는 팀', colors: { primary: '#3848A2', secondary: '#000000' } },
