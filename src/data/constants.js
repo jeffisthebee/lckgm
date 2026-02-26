@@ -106,6 +106,36 @@ export const DRAFT_SEQUENCE = [
   { type: 'PICK', side: 'RED', label: '레드 5픽', order: 20 }
 ];
 
+// Add this to the bottom of src/data/constants.js
+
+export const TEAM_COLORS = {
+  // LPL
+  'BLG': '#e04e9c', 'TES': '#d32f2f', 'AL': '#ff5722', 'JDG': '#c62828', 
+  'IG': '#000000', 'WBG': '#e040fb', 'NIP': '#fdd835', 'EDG': '#212121', 
+  'WE': '#d50000', 'LGD': '#ef5350', 'UP': '#2962ff', 'TT': '#00b0ff', 
+  'LNG': '#1565c0', 'OMG': '#5d4037',
+  
+  // LEC
+  'G2': '#000000', 'MKOI': '#C1A057', 'FNC': '#ff9800', 'KC': '#1a237e', 
+  'GX': '#b71c1c', 'VIT': '#fbc02d', 'TH': '#e65100', 'SHFT': '#7b1fa2', 
+  'SK': '#880e4f', 'NAVI': '#ffeb3b', 'LR': '#4a148c', 'KCB': '#4fc3f7',
+
+  // LCS
+  'FLY': '#004d40', 'SEN': '#f44336', 'SR': '#66bb6a', 'C9': '#00b0ff', 
+  'TL': '#1a237e', 'DSG': '#d32f2f', 'DIG': '#ffca28', 'LYON': '#b71c1c',
+
+  // LCP
+  'CFO': '#7e57c2', 'TSW': '#424242', 'GAM': '#fdd835', 'MVK': '#fbc02d', 
+  'DFM': '#2979ff', 'SHG': '#ffeb3b', 'DCG': '#c62828', 'GZ': '#e53935',
+
+  // CBLOL
+  'VKS': '#673ab7', 'RED': '#d50000', 'PAIN': '#212121', 'LOUD': '#00e676', 
+  'FUR': '#000000', 'LEV': '#1976d2', 'LOS': '#ff5722', 'FX': '#37474f',
+
+  // Fallback
+  'DEFAULT': '#607d8b'
+};
+
 export const difficulties = [
   { value: 'easy', label: '쉬움', color: 'green' },
   { value: 'normal', label: '보통', color: 'blue' },

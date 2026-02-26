@@ -5,6 +5,7 @@ import React, { useState } from 'react';
 import { teams as lckTeams } from '../data/teams';
 import { FOREIGN_LEAGUES } from '../data/foreignLeagues';
 
+import { TEAM_COLORS } from '../data/constants';
 // Import all player JSON files (Make sure these file names match exactly what you have!)
 import playersLCK from '../data/players.json';
 import playersLPL from '../data/players_lpl.json';
@@ -113,7 +114,7 @@ const RosterTab = ({ viewingTeam, roster, onPrevTeam, onNextTeam }) => {
                     </button>
                     
                     <div className="flex items-center gap-3 lg:gap-4">
-                        <div className="w-10 h-10 lg:w-16 lg:h-16 rounded-full flex items-center justify-center font-bold text-white shadow-lg text-xs lg:text-xl shrink-0" style={{backgroundColor: displayTeam.colors?.primary || '#333'}}>
+                        <div className="w-10 h-10 lg:w-16 lg:h-16 rounded-full flex items-center justify-center font-bold text-white shadow-lg text-xs lg:text-xl shrink-0" style={{backgroundColor: displayTeam.colors?.primary || TEAM_COLORS[displayTeam.name] || TEAM_COLORS.DEFAULT}}>
                             {displayTeam.name}
                         </div>
                         <div>
