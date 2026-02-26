@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { teams } from '../data/teams';
 import { difficulties, championList } from '../data/constants';
 
+// [NEW] Import the global team data helper
+import { FOREIGN_LEAGUES } from '../data/foreignLeagues';
+
 // Paste addLeague helper here
 const getLeagues = () => { const s = localStorage.getItem('lckgm_leagues'); return s ? JSON.parse(s) : []; };
 const saveLeagues = (l) => localStorage.setItem('lckgm_leagues', JSON.stringify(l));
@@ -25,12 +28,27 @@ export default function TeamSelection() {
         difficulty: diff,
         createdAt: new Date().toISOString(),
         lastPlayed: new Date().toISOString(),
+        
+        // -- LCK DATA --
         groups: { baron: [], elder: [] },
         matches: [],
         standings: {},
-        // 시즌 시작 시 초기 챔피언 리스트와 메타 버전 저장
         currentChampionList: championList,
-        metaVersion: '16.01'
+        metaVersion: '16.01',
+
+        // -- [NEW GLOBAL DATA] --
+        // This loads the team JSONs into the save file
+        foreignLeagues: FOREIGN_LEAGUES, 
+        
+        // This creates blank standings for the other leagues to use later
+        foreignStandings: {
+            LPL: {}, LEC: {}, LCS: {}, LCP: {}, CBLOL: {}
+        },
+        
+        // This creates blank match schedules for the other leagues
+        foreignMatches: {
+            LPL: [], LEC: [], LCS: [], LCP: [], CBLOL: []
+        }
       });
       setTimeout(() => navigate(`/league/${newId}`), 50);
     };

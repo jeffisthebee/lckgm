@@ -4,6 +4,7 @@ import lcs from './leagues/lcs.json';
 import lcp from './leagues/lcp.json';
 import cblol from './leagues/cblol.json';
 
+
 export const FOREIGN_LEAGUES = {
   LPL: lpl,
   LEC: lec,
