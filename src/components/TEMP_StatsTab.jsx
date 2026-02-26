@@ -1,6 +1,22 @@
-// src/components/StatsTab.jsx
+// src/components/TEMP_StatsTab.jsx
 import React, { useState, useMemo } from 'react';
-import playerList from '../data/players.json';
+
+// [NEW] 1. Import all the global players for team/position lookups!
+import playersLCK from '../data/players.json';
+import playersLPL from '../data/players_lpl.json';
+import playersLEC from '../data/players_lec.json';
+import playersLCS from '../data/players_lcs.json';
+import playersLCP from '../data/players_lcp.json';
+import playersCBLOL from '../data/players_cblol.json';
+
+const globalPlayerList = [
+    ...playersLCK,
+    ...playersLPL,
+    ...playersLEC,
+    ...playersLCS,
+    ...playersLCP,
+    ...playersCBLOL
+];
 
 // Utility: safe array
 const safeArray = (v) => Array.isArray(v) ? v : [];
@@ -39,6 +55,9 @@ const isRegularType = (t) => {
 const isPlayinType = (t) => normalizeType(t).includes('playin') || normalizeType(t) === 'playin';
 
 export default function StatsTab({ league }) {
+  // [NEW] League Switcher Memory
+  const [currentLeague, setCurrentLeague] = useState('LCK');
+  
   const [posFilter, setPosFilter] = useState('ALL');
   // Changed from regularOnly boolean to a stage string filter
   const [stageFilter, setStageFilter] = useState('ALL'); // 'ALL', 'PLAYIN', 'REGULAR', 'PLAYOFF'
@@ -55,7 +74,12 @@ export default function StatsTab({ league }) {
     let totalBans = 0;
     let totalGames = 0;
 
-    if (!league || !Array.isArray(league.matches)) {
+    // [NEW] Direct the logic to the correct matches array based on the selected league
+    const activeMatches = currentLeague === 'LCK' 
+        ? league?.matches 
+        : league?.foreignMatches?.[currentLeague] || [];
+
+    if (!activeMatches || !Array.isArray(activeMatches)) {
       return { players, champions, championStats, totalPicks, totalBans, totalGames };
     }
 
@@ -65,11 +89,10 @@ export default function StatsTab({ league }) {
     };
 
     // Iterate matches
-    for (const match of league.matches) {
+    for (const match of activeMatches) {
       if (!match || match.status !== 'finished') continue;
       
       // === STAGE FILTER LOGIC ===
-      // Match types may be 'playin', 'regular', 'super', 'superweek', 'playoff', etc.
       if (stageFilter === 'REGULAR') {
         if (!isRegularType(match.type)) continue;
       } else if (stageFilter === 'PLAYIN') {
@@ -77,7 +100,6 @@ export default function StatsTab({ league }) {
       } else if (stageFilter === 'PLAYOFF') {
         if (!isPlayoffType(match.type)) continue;
       }
-      // If 'ALL', we don't skip anything
 
       const history = safeArray(match.result?.history);
 
@@ -108,11 +130,9 @@ export default function StatsTab({ league }) {
         totalBans += bans.length;
         
         bans.forEach(b => { 
-            // Old flat structure
             champions[b] = champions[b] || { picks: 0, wins: 0, bans: 0 }; 
             champions[b].bans += 1; 
 
-            // New Bucket structure (Bans are global/ALL)
             initChampBucket(championStats['ALL'], b);
             championStats['ALL'][b].bans += 1;
         });
@@ -126,7 +146,6 @@ export default function StatsTab({ league }) {
         }
 
         const winnerName = set.winner;
-
         const picksA = safeArray(set.picks?.A);
         const picksB = safeArray(set.picks?.B);
 
@@ -144,11 +163,10 @@ export default function StatsTab({ league }) {
           players[playerName].assists += (assists || 0);
 
           // 2. Champion Stats
-          const champName = p.champName || p.champ || p.name || p.champName;
+          const champName = p.champName || p.champ || p.name;
           if (champName) {
             totalPicks += 1;
             
-            // Determine Win
             let isWin = false;
             if (winnerName) {
               const playerTeam = p.playerData?.팀 || p.playerData?.team;
@@ -161,23 +179,19 @@ export default function StatsTab({ league }) {
               }
             }
 
-            // Old Structure
             champions[champName] = champions[champName] || { picks: 0, wins: 0, bans: 0 };
             champions[champName].picks += 1;
             if (isWin) champions[champName].wins += 1;
             
             players[playerName].champCounts[champName] = (players[playerName].champCounts[champName] || 0) + 1;
 
-            // New Bucket Structure
             const rawRole = p.role || p.playerData?.포지션;
             const role = normalizePos(rawRole);
 
-            // Global Bucket
             initChampBucket(championStats['ALL'], champName);
             championStats['ALL'][champName].picks += 1;
             if (isWin) championStats['ALL'][champName].wins += 1;
 
-            // Role Bucket
             if (championStats[role]) {
                 initChampBucket(championStats[role], champName);
                 championStats[role][champName].picks += 1;
@@ -192,12 +206,11 @@ export default function StatsTab({ league }) {
     }
 
     return { players, champions, championStats, totalPicks, totalBans, totalGames };
-  }, [league, stageFilter]);
+  }, [league, stageFilter, currentLeague]);
 
   // Derived leaderboards
   const pogLeaderboard = useMemo(() => {
     const arr = Object.entries(stats.players).map(([name, data]) => ({ name, pog: data.pog || 0 }));
-    // Filter out 0 POGs
     return arr.filter(p => p.pog > 0).sort((a, b) => b.pog - a.pog || a.name.localeCompare(b.name));
   }, [stats]);
 
@@ -223,14 +236,12 @@ export default function StatsTab({ league }) {
   }, [stats]);
 
   const championMeta = useMemo(() => {
-    // Select bucket based on filter
     const targetBucket = stats.championStats[posFilter] || stats.championStats['ALL'];
     const globalBucket = stats.championStats['ALL'];
 
     const champEntries = Object.entries(targetBucket).map(([name, data]) => {
       const picks = data.picks || 0;
       const wins = data.wins || 0;
-      // Bans are global
       const bans = globalBucket[name]?.bans || 0; 
       
       return {
@@ -247,14 +258,14 @@ export default function StatsTab({ league }) {
     return champEntries;
   }, [stats, posFilter]);
 
-  // Filters apply to player lists
+  // [NEW] Filters apply to the combined globalPlayerList
   const applyFilters = (list) => {
     const query = (searchQuery || '').trim().toLowerCase();
     const pos = posFilter;
     return list.filter(item => {
       if (query && !item.name.toLowerCase().includes(query)) return false;
       if (pos === 'ALL') return true;
-      const pinfo = playerList.find(p => p.이름 === item.name) || {};
+      const pinfo = globalPlayerList.find(p => p.이름 === item.name) || {};
       const playerPos = normalizePos(pinfo.포지션 || (stats.players[item.name]?.playerData?.포지션));
       return playerPos === pos;
     });
@@ -268,13 +279,30 @@ export default function StatsTab({ league }) {
   };
 
   return (
-    // Responsive container height: adapts to screen size, excellent for landscape phones
     <div className="bg-white rounded-xl border shadow-sm flex flex-col h-[calc(100vh-100px)] sm:h-[700px]">
       
-      {/* HEADER: Flex wrap allows controls to stack on small/narrow screens */}
+      {/* HEADER */}
       <div className="p-4 sm:p-6 border-b border-gray-100 flex-shrink-0">
+        
+        {/* [NEW] The League Switcher Buttons */}
+        <div className="flex gap-2 p-2 mb-4 bg-gray-100 overflow-x-auto shrink-0 rounded-lg">
+            {['LCK', 'LPL', 'LEC', 'LCS', 'LCP', 'CBLOL'].map(lg => (
+                <button
+                    key={lg}
+                    onClick={() => setCurrentLeague(lg)}
+                    className={`px-5 py-2 rounded-full font-bold text-xs lg:text-sm transition-all whitespace-nowrap shadow-sm active:scale-95 ${
+                        currentLeague === lg
+                        ? 'bg-blue-600 text-white ring-2 ring-blue-300 transform scale-105'
+                        : 'bg-white text-gray-600 hover:bg-gray-200 border border-gray-300'
+                    }`}
+                >
+                    {lg}
+                </button>
+            ))}
+        </div>
+
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3 sm:gap-0">
-          <h2 className="text-xl sm:text-2xl font-black text-gray-800 whitespace-nowrap">📊 통계 센터</h2>
+          <h2 className="text-xl sm:text-2xl font-black text-gray-800 whitespace-nowrap">📊 2026 {currentLeague} 통계 센터</h2>
           
           <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
             
@@ -321,7 +349,7 @@ export default function StatsTab({ league }) {
           </div>
         </div>
 
-        {/* TABS: Horizontal scroll for small screens */}
+        {/* TABS */}
         <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
           {[
             { id: 'POG', label: '🏅 POG 순위', color: 'yellow' },
@@ -363,7 +391,7 @@ export default function StatsTab({ league }) {
                     <div className="font-black text-gray-900 text-base sm:text-lg truncate">{p.name}</div>
                     <div className="text-[10px] sm:text-xs font-bold text-gray-500 truncate">
                         {(() => {
-                            const pinfo = playerList.find(pl => pl.이름 === p.name);
+                            const pinfo = globalPlayerList.find(pl => pl.이름 === p.name);
                             return pinfo ? `${pinfo.팀} · ${pinfo.포지션}` : 'Unknown';
                         })()}
                     </div>
@@ -374,7 +402,7 @@ export default function StatsTab({ league }) {
                   </div>
                 </div>
               ))}
-              {applyFilters(pogLeaderboard).length === 0 && <div className="col-span-full py-12 text-center text-gray-400 font-bold">데이터가 없습니다.</div>}
+              {applyFilters(pogLeaderboard).length === 0 && <div className="col-span-full py-12 text-center text-gray-400 font-bold">{currentLeague} 리그의 데이터가 부족합니다.</div>}
             </div>
           </div>
         )}
@@ -402,7 +430,7 @@ export default function StatsTab({ league }) {
                         <div className="font-bold text-gray-800">{p.name}</div>
                         <div className="text-[10px] sm:text-xs text-gray-500 font-medium">
                             {(() => {
-                                const pinfo = playerList.find(pl => pl.이름 === p.name);
+                                const pinfo = globalPlayerList.find(pl => pl.이름 === p.name);
                                 return pinfo ? `${pinfo.팀} ${pinfo.포지션}` : '';
                             })()}
                         </div>
@@ -420,6 +448,7 @@ export default function StatsTab({ league }) {
                     ))}
                 </tbody>
                 </table>
+                {applyFilters(playerRatings).length === 0 && <div className="text-center py-12 text-gray-400 font-bold">{currentLeague} 리그의 데이터가 부족합니다.</div>}
             </div>
           </div>
         )}
@@ -454,7 +483,7 @@ export default function StatsTab({ league }) {
                 </div>
                 ))}
             </div>
-            {championMeta.length === 0 && <div className="text-center py-12 text-gray-400 font-bold">해당 조건의 데이터가 없습니다.</div>}
+            {championMeta.length === 0 && <div className="text-center py-12 text-gray-400 font-bold">{currentLeague} 리그의 데이터가 부족합니다.</div>}
           </div>
         )}
 
@@ -481,7 +510,7 @@ export default function StatsTab({ league }) {
                         <div className="font-bold text-gray-800">{p.name}</div>
                         <div className="text-[10px] sm:text-xs text-gray-500 font-medium">
                             {(() => {
-                                const pinfo = playerList.find(pl => pl.이름 === p.name);
+                                const pinfo = globalPlayerList.find(pl => pl.이름 === p.name);
                                 return pinfo ? `${pinfo.팀} ${pinfo.포지션}` : '';
                             })()}
                         </div>
@@ -499,6 +528,7 @@ export default function StatsTab({ league }) {
                     ))}
                 </tbody>
                 </table>
+                {applyFilters(kdaLeaders).length === 0 && <div className="text-center py-12 text-gray-400 font-bold">{currentLeague} 리그의 데이터가 부족합니다.</div>}
             </div>
           </div>
         )}
