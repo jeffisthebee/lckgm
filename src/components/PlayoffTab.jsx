@@ -22,44 +22,40 @@ const PlayoffTab = ({
     const isLCPGenerated = league.foreignMatches?.['LCP']?.some(m => m.type === 'playoff');
     const isLckFinished = !league.matches?.some(m => m.status === 'pending');
 
-    // [THE FIX] Omni-Search Team Finder: Resolves IDs, Names, and FullNames across all leagues
+    // [THE SUPER SEARCH] Resolves IDs, Short Names, and Full Names across all league databases
     const findGlobalTeam = (teamId) => {
-        const searchId = teamId ? String(teamId).trim() : null;
-        if (!searchId || searchId === 'TBD') return { name: 'TBD' };
+        if (!teamId || teamId === 'TBD') return { name: 'TBD' };
+        
+        // Normalize search term
+        const searchStr = String(teamId).trim().toUpperCase();
 
-        // Create a massive pool of all teams in the game
-        const allForeignLeagues = Object.values(FOREIGN_LEAGUES).flat();
-        const searchPool = [...teams, ...allForeignLeagues];
+        // Create a massive pool of every team registered in the game
+        const allForeignTeams = Object.values(FOREIGN_LEAGUES).flat();
+        const searchPool = [...teams, ...allForeignTeams];
 
-        // Search by ID, Short Name, or Full Name
+        // 1. Search by ID or Name or FullName
         const found = searchPool.find(t => 
-            (t.id && String(t.id) === searchId) || 
-            (t.name && String(t.name) === searchId) ||
-            (t.fullName && String(t.fullName) === searchId)
+            (t.id && String(t.id).toUpperCase() === searchStr) || 
+            (t.name && t.name.toUpperCase() === searchStr) ||
+            (t.fullName && t.fullName.toUpperCase() === searchStr)
         );
 
-        return found || { name: teamId };
+        // 2. Return found object or a safe fallback object
+        return found || { name: teamId, colors: { primary: '#607d8b' } };
     };
 
-    // [NEW] Local Team Formatter for the Bracket (includes Seed info)
+    // Formatter for the MatchupBox that appends seed information
     const getBracketDisplayName = (teamId) => {
         const team = findGlobalTeam(teamId);
         if (team.name === 'TBD') return 'TBD';
 
-        // Add Seed if we are in LCP
-        if (currentLeague === 'LCP') {
-            const seeds = league.foreignPlayoffSeeds?.['LCP'] || [];
-            const seedInfo = seeds.find(s => s.name === team.name || String(s.id) === String(team.id));
-            if (seedInfo) return `${team.name} (${seedInfo.seed}시드)`;
-        }
+        const seeds = league.foreignPlayoffSeeds?.[currentLeague] || league.playoffSeeds || [];
+        const seedInfo = seeds.find(s => 
+            (s.name && s.name === team.name) || 
+            (s.id && String(s.id) === String(team.id))
+        );
 
-        // Add Seed if we are in LCK (uses the existing seed data)
-        if (isLCK && league.playoffSeeds) {
-            const seedInfo = league.playoffSeeds.find(s => String(s.id) === String(team.id));
-            if (seedInfo) return `${team.name} (${seedInfo.seed}시드)`;
-        }
-
-        return team.name;
+        return seedInfo ? `${team.name} (${seedInfo.seed}시드)` : team.name;
     };
 
     const BracketColumn = ({ title, children, className }) => (
@@ -75,17 +71,17 @@ const PlayoffTab = ({
     const renderLCPBracket = () => {
         const lcpMatches = league.foreignMatches?.['LCP']?.filter(m => m.type === 'playoff') || [];
         
-        // Use normalized winners/losers for pathing
-        const getWinnerId = (m) => (m && m.status === 'finished' && m.result?.winner) ? m.result.winner : null;
-        const getLoserId = (m) => {
-            if (!m || m.status !== 'finished' || !m.result?.winner) return null;
-            const winner = m.result.winner;
-            const t1Name = findGlobalTeam(m.t1).name;
-            return winner === t1Name ? m.t2 : m.t1;
-        };
-
+        // Helper to find match by round/match number
         const findM = (round, matchNum) => lcpMatches.find(m => m.round === round && m.match === matchNum);
-        const pendingM = (t1, t2) => ({ t1: t1 || null, t2: t2 || null, status: 'pending', type: 'playoff' });
+
+        // Pathing Helpers: If the match exists, get the results
+        const getWinner = (m) => (m && m.status === 'finished' && m.result?.winner) ? m.result.winner : null;
+        const getLoser = (m) => {
+            if (!m || m.status !== 'finished' || !m.result?.winner) return null;
+            const winnerName = m.result.winner;
+            const t1Name = findGlobalTeam(m.t1).name;
+            return winnerName === t1Name ? m.t2 : m.t1;
+        };
 
         const r1m1 = findM(1, 1); 
         const r1m2 = findM(1, 2); 
@@ -95,6 +91,12 @@ const PlayoffTab = ({
         const r2lm1 = findM(2.1, 1); 
         const r3lm1 = findM(3.1, 1); 
         const final = findM(4, 1);   
+
+        // Pathing logic for visual "Pending" state if the matches aren't fully synced yet
+        const displayMatch = (actualMatch, fallbackT1, fallbackT2) => {
+            if (actualMatch) return actualMatch;
+            return { t1: fallbackT1, t2: fallbackT2, status: 'pending', type: 'playoff' };
+        };
 
         return (
             <div className="flex-1 overflow-x-auto pb-8">
@@ -111,15 +113,15 @@ const PlayoffTab = ({
                             </BracketColumn>
                             <BracketColumn title="PO 2라운드">
                                 <div className="flex flex-col justify-around space-y-32 h-[300px]">
-                                    <MatchupBox match={r2m1 || pendingM(null, getWinnerId(r1m1))} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
-                                    <MatchupBox match={r2m2 || pendingM(null, getWinnerId(r1m2))} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                    <MatchupBox match={displayMatch(r2m1, null, getWinner(r1m1))} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                    <MatchupBox match={displayMatch(r2m2, null, getWinner(r1m2))} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
                                 </div>
                             </BracketColumn>
                             <BracketColumn title="승자조 결승">
-                                <MatchupBox match={r3m1 || pendingM(getWinnerId(r2m1), getWinnerId(r2m2))} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                <MatchupBox match={displayMatch(r3m1, getWinner(r2m1), getWinner(r2m2))} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
                             </BracketColumn>
                             <BracketColumn title="결승전">
-                                <MatchupBox match={final || pendingM(getWinnerId(r3m1), null)} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                <MatchupBox match={displayMatch(final, getWinner(r3m1), null)} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
                             </BracketColumn>
                         </div>
                     </div>
@@ -129,10 +131,10 @@ const PlayoffTab = ({
                         <h3 className="text-lg font-black text-red-600 mb-8 absolute -top-2">패자조 (Lower Bracket)</h3>
                         <div className="flex justify-start items-center space-x-24 mt-8">
                             <BracketColumn title="패자조 1R">
-                                <MatchupBox match={r2lm1 || pendingM(getLoserId(r2m1), getLoserId(r2m2))} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                <MatchupBox match={displayMatch(r2lm1, getLoser(r2m1), getLoser(r2m2))} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
                             </BracketColumn>
                             <BracketColumn title="결승 진출전">
-                                <MatchupBox match={r3lm1 || pendingM(getWinnerId(r2lm1), getLoserId(r3m1))} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                <MatchupBox match={displayMatch(r3lm1, getWinner(r2lm1), getLoser(r3m1))} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
                             </BracketColumn>
                         </div>
                     </div>
@@ -141,11 +143,10 @@ const PlayoffTab = ({
         );
     };
 
-    // Preserved LCK Logic with Omni-Search upgrade
+    // Preserved LCK Logic with Team Finder Upgrade
     const renderLCKBracket = () => {
         const poMatches = league.matches ? league.matches.filter(m => m.type === 'playoff') : [];
         const findMatch = (round, matchNum) => poMatches.find(m => m.round === round && m.match === matchNum);
-        const pendingMatch = (t1, t2) => ({ t1: t1 || null, t2: t2 || null, status: 'pending', type: 'playoff' });
 
         return (
             <div className="flex-1 overflow-x-auto pb-8">
@@ -186,7 +187,7 @@ const PlayoffTab = ({
                         key={lg}
                         onClick={() => setCurrentLeague(lg)}
                         className={`px-5 py-2 rounded-full font-bold text-xs lg:text-sm transition-all whitespace-nowrap shadow-sm active:scale-95 ${
-                            currentLeague === lg ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'
+                            currentLeague === lg ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-gray-600'
                         }`}
                     >
                         {lg}
