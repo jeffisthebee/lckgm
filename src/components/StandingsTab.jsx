@@ -25,11 +25,11 @@ const StandingsTab = ({
     baronTotalWins, 
     elderTotalWins 
 }) => {
-    // [NEW] League Switcher Memory
+    // League Switcher Memory
     const [currentLeague, setCurrentLeague] = useState('LCK');
 
-    // [NEW] Helper to build tables for foreign leagues
-    const renderForeignTable = (groupName, teamsArray, colorTheme) => {
+    // Helper to build tables for foreign leagues (Added isCompact parameter for LPL)
+    const renderForeignTable = (groupName, teamsArray, colorTheme, isCompact = false) => {
         // Sort teams by wins, then point differential
         const sortedTeams = [...teamsArray].sort((a, b) => {
             const recA = league.foreignStandings?.[currentLeague]?.[a.id] || { w: 0, l: 0, diff: 0 };
@@ -39,20 +39,23 @@ const StandingsTab = ({
             return 0;
         });
 
+        // Dynamic padding to squeeze 3 tables side-by-side for LPL
+        const pxClass = isCompact ? "px-1 sm:px-2" : "px-2 sm:px-4";
+
         return (
             <div className="bg-white rounded-lg border shadow-sm overflow-hidden mb-4 sm:mb-6">
-                <div className={`p-3 sm:p-4 bg-${colorTheme}-50 border-b border-${colorTheme}-100 flex items-center gap-2`}>
-                    <h3 className={`font-black text-base sm:text-lg text-${colorTheme}-900`}>{groupName}</h3>
+                <div className={`p-2 sm:p-3 bg-${colorTheme}-50 border-b border-${colorTheme}-100 flex items-center gap-2`}>
+                    <h3 className={`font-black text-sm sm:text-base text-${colorTheme}-900`}>{groupName}</h3>
                 </div>
                 <div className="overflow-x-auto">
-                    <table className="w-full text-xs sm:text-sm">
+                    <table className="w-full text-[10px] sm:text-xs">
                         <thead className="bg-gray-50 text-gray-500 font-bold border-b">
                             <tr>
-                                <th className="py-2 px-2 sm:py-3 sm:px-4 text-center whitespace-nowrap">순위</th>
-                                <th className="py-2 px-2 sm:py-3 sm:px-4 text-left w-full">팀</th>
-                                <th className="py-2 px-2 sm:py-3 sm:px-4 text-center whitespace-nowrap">승</th>
-                                <th className="py-2 px-2 sm:py-3 sm:px-4 text-center whitespace-nowrap">패</th>
-                                <th className="py-2 px-2 sm:py-3 sm:px-4 text-center whitespace-nowrap">득실</th>
+                                <th className={`py-2 ${pxClass} text-center whitespace-nowrap`}>순위</th>
+                                <th className={`py-2 ${pxClass} text-left w-full`}>팀</th>
+                                <th className={`py-2 ${pxClass} text-center whitespace-nowrap`}>승</th>
+                                <th className={`py-2 ${pxClass} text-center whitespace-nowrap`}>패</th>
+                                <th className={`py-2 ${pxClass} text-center whitespace-nowrap`}>득실</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -61,16 +64,16 @@ const StandingsTab = ({
                                 const teamColor = t.colors?.primary || TEAM_COLORS[t.name] || TEAM_COLORS.DEFAULT;
                                 return (
                                     <tr key={t.id || t.name} className="hover:bg-gray-50 transition">
-                                        <td className="py-2 px-2 sm:py-3 sm:px-4 text-center font-bold text-gray-600">{idx + 1}</td>
-                                        <td className="py-2 px-2 sm:py-3 sm:px-4 font-bold text-gray-800">
-                                            <div className="flex items-center gap-2">
-                                                <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full text-white text-[10px] flex-shrink-0 flex items-center justify-center" style={{ backgroundColor: teamColor }}>{t.name}</div>
-                                                <span className="truncate">{t.fullName || t.name}</span>
+                                        <td className={`py-2 ${pxClass} text-center font-bold text-gray-600`}>{idx + 1}</td>
+                                        <td className={`py-2 ${pxClass} font-bold text-gray-800`}>
+                                            <div className="flex items-center gap-1.5 sm:gap-2">
+                                                <div className="w-4 h-4 sm:w-5 sm:h-5 rounded-full text-white text-[8px] sm:text-[10px] flex-shrink-0 flex items-center justify-center" style={{ backgroundColor: teamColor }}>{t.name.slice(0,3)}</div>
+                                                <span className="truncate max-w-[60px] sm:max-w-full">{t.fullName || t.name}</span>
                                             </div>
                                         </td>
-                                        <td className="py-2 px-2 sm:py-3 sm:px-4 text-center font-bold text-blue-600">{rec.w}</td>
-                                        <td className="py-2 px-2 sm:py-3 sm:px-4 text-center font-bold text-red-600">{rec.l}</td>
-                                        <td className="py-2 px-2 sm:py-3 sm:px-4 text-center text-gray-500">{rec.diff > 0 ? `+${rec.diff}` : rec.diff}</td>
+                                        <td className={`py-2 ${pxClass} text-center font-bold text-blue-600`}>{rec.w}</td>
+                                        <td className={`py-2 ${pxClass} text-center font-bold text-red-600`}>{rec.l}</td>
+                                        <td className={`py-2 ${pxClass} text-center text-gray-500`}>{rec.diff > 0 ? `+${rec.diff}` : rec.diff}</td>
                                     </tr>
                                 )
                             })}
@@ -81,7 +84,7 @@ const StandingsTab = ({
         );
     };
 
-    // [NEW] Render Logic for LPL specifically
+    // Render Logic for LPL specifically
     const renderLPL = () => {
         const lplTeams = FOREIGN_LEAGUES['LPL'] || [];
         const groups = {
@@ -99,10 +102,11 @@ const StandingsTab = ({
         });
 
         return (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-                {renderForeignTable('등봉조 (Top)', groupedTeams['등봉조'], 'red')}
-                {renderForeignTable('인내조 (Mid)', groupedTeams['인내조'], 'blue')}
-                {renderForeignTable('열반조 (Bot)', groupedTeams['열반조'], 'gray')}
+            // [FIXED] Force 3 columns on lg screens and shrink the gap so they all fit nicely
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 sm:gap-4">
+                {renderForeignTable('등봉조 (Top)', groupedTeams['등봉조'], 'red', true)}
+                {renderForeignTable('인내조 (Mid)', groupedTeams['인내조'], 'blue', true)}
+                {renderForeignTable('열반조 (Bot)', groupedTeams['열반조'], 'gray', true)}
             </div>
         );
     };
@@ -110,7 +114,7 @@ const StandingsTab = ({
     return (
         <div className="flex flex-col gap-4 sm:gap-6">
             
-            {/* [NEW] The League Switcher Buttons */}
+            {/* The League Switcher Buttons */}
             <div className="flex gap-2 p-3 border-b bg-gray-100 overflow-x-auto shrink-0 sticky top-0 z-50 rounded-lg">
                 {['LCK', 'LPL', 'LEC', 'LCS', 'LCP', 'CBLOL'].map(lg => (
                     <button
@@ -139,7 +143,7 @@ const StandingsTab = ({
                             🔥 그룹 대항전 스코어: <span className="text-purple-400 text-lg sm:text-2xl mx-1 sm:mx-2">{baronTotalWins}</span> (Baron) vs <span className="text-red-400 text-lg sm:text-2xl mx-1 sm:mx-2">{elderTotalWins}</span> (Elder)
                         </div>
                         
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
                             {[
                                 { id: 'baron', name: 'Baron Group', color: 'purple' },
                                 { id: 'elder', name: 'Elder Group', color: 'red' }
@@ -212,7 +216,7 @@ const StandingsTab = ({
             {/* Display Other Leagues (Single Group) */}
             {['LEC', 'LCS', 'LCP', 'CBLOL'].includes(currentLeague) && (
                 <div className="grid grid-cols-1 gap-4 sm:gap-6">
-                    {renderForeignTable(`${currentLeague} 정규 시즌`, FOREIGN_LEAGUES[currentLeague] || [], 'blue')}
+                    {renderForeignTable(`${currentLeague} 정규 시즌`, FOREIGN_LEAGUES[currentLeague] || [], 'blue', false)}
                 </div>
             )}
             
