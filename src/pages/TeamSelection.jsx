@@ -48,7 +48,11 @@ export default function TeamSelection() {
         // This creates blank match schedules for the other leagues
         foreignMatches: {
             LPL: [], LEC: [], LCS: [], LCP: [], CBLOL: []
-        }
+        },
+
+        foreignHistory: {
+          LPL: [], LEC: [], LCS: [], LCP: [], CBLOL: []
+      }
       });
       setTimeout(() => navigate(`/league/${newId}`), 50);
     };
