@@ -2,6 +2,9 @@
 import React, { useState, useMemo } from 'react';
 import { computeAwards, computePlayoffAwards } from '../engine/statsManager';
 
+// [NEW] Import global data
+import { FOREIGN_LEAGUES } from '../data/foreignLeagues';
+
 // --- RoleBadge Component ---
 const RoleBadge = ({ role }) => {
     const icons = { TOP: '⚔️', JGL: '🌲', MID: '🧙', ADC: '🏹', SUP: '🛡️' };
@@ -27,8 +30,9 @@ const PlayerCard = ({ player, rank, playerList }) => {
         </div>
     );
     
+    // [FIX] Adjusted to safely find players even if they are in the global pool
     const playerData = playerList.find(p => p.이름 === player.playerName);
-    const koreanName = playerData ? playerData.실명 : player.playerName; 
+    const koreanName = playerData ? (playerData.실명 || player.playerName) : player.playerName; 
     const ign = player.playerName;
 
     const rankStyles = {
@@ -38,8 +42,6 @@ const PlayerCard = ({ player, rank, playerList }) => {
     };
 
     return (
-        // Changed: Removed fixed width (min-w-[160px]), added w-full to fit grid.
-        // Adjusted padding (p-2 lg:p-3) for better fit on small screens.
         <div className={`relative w-full p-2 lg:p-3 rounded-xl border shadow-sm flex flex-col items-center gap-2 ${rankStyles[rank]}`}>
             <div className="absolute top-2 left-2 opacity-80 scale-90 origin-top-left z-10">
                 <RoleBadge role={player.role} />
@@ -56,17 +58,17 @@ const PlayerCard = ({ player, rank, playerList }) => {
             </div>
 
             <div className="w-full text-center mt-auto bg-white/50 rounded-lg p-2 border border-gray-100">
-                <div className="text-xl lg:text-2xl font-black text-gray-800 leading-none mb-1">{player.finalScore.toFixed(0)}</div>
+                <div className="text-xl lg:text-2xl font-black text-gray-800 leading-none mb-1">{player.finalScore?.toFixed(0) || 0}</div>
                 <div className="text-[10px] text-gray-400 font-bold mb-2">총 점수</div>
                 
                 <div className="text-[9px] text-gray-500 border-t border-gray-200 pt-1 mt-1">
                     <span className="font-bold hidden lg:inline">(세부 점수)</span>
                     <div className="flex justify-center flex-wrap gap-1 mt-0.5 whitespace-nowrap leading-tight">
-                        <span title="팀 성적 점수">팀 {player.rankPoints}</span>
+                        <span title="팀 성적 점수">팀 {player.rankPoints || 0}</span>
                         <span>+</span>
-                        <span title="POG 포인트">POG {player.pogCount * 10}</span>
+                        <span title="POG 포인트">POG {(player.pogCount || 0) * 10}</span>
                         <span>+</span>
-                        <span title="스탯 평점">지표 {player.avgScore.toFixed(0)}</span>
+                        <span title="스탯 평점">지표 {player.avgScore?.toFixed(0) || 0}</span>
                         
                         {player.mvpBonus > 0 && (
                              <><span>+</span><span className="text-yellow-600 font-bold">MVP {player.mvpBonus}</span></>
@@ -87,7 +89,7 @@ const PlayerCard = ({ player, rank, playerList }) => {
     );
 };
 
-// --- MvpShowcaseCard Component (Unchanged) ---
+// --- MvpShowcaseCard Component ---
 const MvpShowcaseCard = ({ player, title, badgeColor, teams, playerList, size = 'large' }) => {
     if (!player) return (
         <div className={`relative bg-gray-800 rounded-2xl border border-gray-700 p-8 flex items-center justify-center text-gray-500 font-bold ${size === 'large' ? 'w-full max-w-lg mx-auto' : 'w-full'}`}>
@@ -97,7 +99,7 @@ const MvpShowcaseCard = ({ player, title, badgeColor, teams, playerList, size = 
 
     const team = teams.find(t => player.teams?.includes(t.name) || (player.teamObj && player.teamObj.id === t.id));
     const pData = playerList.find(p => p.이름 === player.playerName);
-    const realName = pData ? pData.실명 : player.playerName;
+    const realName = pData ? (pData.실명 || player.playerName) : player.playerName;
 
     return (
         <div className={`relative bg-gradient-to-b from-gray-900 to-gray-800 text-white rounded-2xl shadow-2xl border border-gray-700 overflow-hidden group ${size === 'large' ? 'w-full max-w-lg mx-auto p-8' : 'w-full p-6'}`}>
@@ -110,12 +112,12 @@ const MvpShowcaseCard = ({ player, title, badgeColor, teams, playerList, size = 
 
                 <div className={`rounded-full border-4 flex items-center justify-center font-black shadow-2xl mb-4 relative ${badgeColor.replace('bg-', 'border-')}`}
                      style={{
-                         backgroundColor: team?.colors?.primary,
+                         backgroundColor: team?.colors?.primary || '#333',
                          width: size === 'large' ? '7rem' : '5rem', 
                          height: size === 'large' ? '7rem' : '5rem',
                          fontSize: size === 'large' ? '1.875rem' : '1.5rem'
                      }}>
-                    {team?.name}
+                    {team?.name || 'FA'}
                 </div>
                 
                 <h1 className={`${size === 'large' ? 'text-4xl lg:text-5xl' : 'text-2xl lg:text-3xl'} font-black text-white mb-1 tracking-tight`}>{realName}</h1>
@@ -129,14 +131,13 @@ const MvpShowcaseCard = ({ player, title, badgeColor, teams, playerList, size = 
                 <div className="w-full border-t border-gray-700 pt-3 mt-2">
                         <div className="text-[10px] text-gray-400 uppercase font-bold mb-1">Total Score</div>
                         <div className={`font-black ${badgeColor.replace('bg-', 'text-').replace('text-black', '')} ${size === 'large' ? 'text-4xl' : 'text-3xl'}`}>
-                        {player.finalScore?.toFixed(0)}
+                        {player.finalScore?.toFixed(0) || 0}
                         </div>
                 </div>
             </div>
         </div>
     );
 };
-
 
 // --- TeamSection Component ---
 const TeamSection = ({ title, rank, players, playerList }) => {
@@ -146,16 +147,18 @@ const TeamSection = ({ title, rank, players, playerList }) => {
         2: 'bg-gray-400 text-white border-gray-500',
         3: 'bg-orange-400 text-white border-orange-500'
     };
+    
+    // Safety check if players object is missing
+    const safePlayers = players || {};
+    
     return (
         <div className="mb-8 last:mb-0">
             <div className="flex items-center gap-2 mb-3 px-1">
-                <div className={`px-3 py-1 rounded-lg font-black text-sm shadow-sm border-b-2 ${headerStyles[rank]}`}>{title}</div>
+                <div className={`px-3 py-1 rounded-lg font-black text-sm shadow-sm border-b-2 whitespace-nowrap ${headerStyles[rank]}`}>{title}</div>
                 <div className="h-px bg-gray-200 flex-1"></div>
             </div>
-            {/* Changed from horizontal scroll to Grid */}
-            {/* Mobile (Portrait): 2 Cols | Mobile (Landscape): 5 Cols | Desktop: 5 Cols */}
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 lg:gap-3 px-1">
-                {roles.map(role => ( <PlayerCard key={role} player={players[role]} rank={rank} playerList={playerList} /> ))}
+                {roles.map(role => ( <PlayerCard key={role} player={safePlayers[role]} rank={rank} playerList={playerList} /> ))}
             </div>
         </div>
     );
@@ -163,9 +166,27 @@ const TeamSection = ({ title, rank, players, playerList }) => {
 
 // --- Main Component ---
 export default function AwardsTab({ league, teams, playerList }) {
+    // [NEW] League Switcher Memory
+    const [currentLeague, setCurrentLeague] = useState('LCK');
+    const [viewMode, setViewMode] = useState('regular'); // 'regular' | 'playoff'
+
+    // [NEW] Determine active team list and match list based on selected league
+    const isLCK = currentLeague === 'LCK';
+    const activeTeams = isLCK ? teams : (FOREIGN_LEAGUES[currentLeague] || []);
+    
+    // We create a "fake" league object to feed into the statsManager
+    const activeLeagueData = useMemo(() => {
+        if (isLCK) return league;
+        return {
+            ...league,
+            matches: league.foreignMatches?.[currentLeague] || [],
+            standings: league.foreignStandings?.[currentLeague] || {}
+        };
+    }, [league, currentLeague, isLCK]);
+
     const isPlayoffsFinished = useMemo(() => {
-        if (!league.matches) return false;
-        const playoffs = league.matches.filter(m => m.type === 'playoff');
+        if (!activeLeagueData.matches) return false;
+        const playoffs = activeLeagueData.matches.filter(m => m.type === 'playoff');
         if (playoffs.length === 0) return false;
 
         const explicitFinal = playoffs.find(m => 
@@ -180,30 +201,48 @@ export default function AwardsTab({ league, teams, playerList }) {
         const finalMatches = playoffs.filter(m => (Number(m.round) || 0) === maxRound);
         
         return finalMatches.length > 0 && finalMatches.every(m => m.status === 'finished');
-    }, [league]);
+    }, [activeLeagueData]);
 
-    const [viewMode, setViewMode] = useState('regular'); // 'regular' | 'playoff'
-
-    const regularData = useMemo(() => computeAwards(league, teams), [league, teams]);
-    const playoffData = useMemo(() => isPlayoffsFinished ? computePlayoffAwards(league, teams) : null, [league, teams, isPlayoffsFinished]);
+    // Compute awards using our dynamic activeLeagueData and activeTeams!
+    const regularData = useMemo(() => computeAwards(activeLeagueData, activeTeams), [activeLeagueData, activeTeams]);
+    const playoffData = useMemo(() => isPlayoffsFinished ? computePlayoffAwards(activeLeagueData, activeTeams) : null, [activeLeagueData, activeTeams, isPlayoffsFinished]);
 
     const activeData = (viewMode === 'playoff' && playoffData) ? playoffData : regularData;
     
-    if (!activeData) return <div className="p-10 text-center text-gray-500">데이터를 불러오는 중입니다...</div>;
-
-    const { seasonMvp, finalsMvp, pogLeader, allProTeams } = activeData;
-    const isPlayoffView = viewMode === 'playoff' && playoffData;
+    // [NEW] League specific titles
+    const titlePrefix = currentLeague === 'LCK' ? 'LCK' : currentLeague;
 
     return (
         <div className="p-2 lg:p-6 max-w-7xl mx-auto space-y-8">
+            
+            {/* [NEW] The League Switcher Buttons */}
+            <div className="flex gap-2 p-3 border-b bg-gray-100 overflow-x-auto shrink-0 sticky top-0 z-50 rounded-lg">
+                {['LCK', 'LPL', 'LEC', 'LCS', 'LCP', 'CBLOL'].map(lg => (
+                    <button
+                        key={lg}
+                        onClick={() => {
+                            setCurrentLeague(lg);
+                            setViewMode('regular'); // Reset to regular view when switching leagues
+                        }}
+                        className={`px-5 py-2 rounded-full font-bold text-xs lg:text-sm transition-all whitespace-nowrap shadow-sm active:scale-95 ${
+                            currentLeague === lg
+                            ? 'bg-blue-600 text-white ring-2 ring-blue-300 transform scale-105'
+                            : 'bg-white text-gray-600 hover:bg-gray-200 border border-gray-300'
+                        }`}
+                    >
+                        {lg}
+                    </button>
+                ))}
+            </div>
+
             {/* Header & Toggle */}
             <div className="flex flex-col items-center justify-center gap-4">
                 <div className="text-center space-y-1">
                     <h2 className="text-3xl lg:text-4xl font-black text-gray-900 uppercase tracking-tighter">
-                        <span className="text-blue-600">2026</span> LCK Awards
+                        <span className="text-blue-600">2026</span> {titlePrefix} Awards
                     </h2>
                     <p className="text-gray-500 text-sm font-medium">
-                        {isPlayoffView ? 'Playoffs & Finals Performance' : 'Regular Season Performance'}
+                        {viewMode === 'playoff' ? 'Playoffs & Finals Performance' : 'Regular Season Performance'}
                     </p>
                 </div>
 
@@ -215,45 +254,56 @@ export default function AwardsTab({ league, teams, playerList }) {
                 )}
             </div>
 
-            {/* MVP Showcase Section */}
-            <div className="w-full">
-                {!isPlayoffView ? (
-                    <MvpShowcaseCard 
-                        player={seasonMvp} 
-                        title="SEASON MVP" 
-                        badgeColor="bg-yellow-500 text-black" 
-                        teams={teams} 
-                        playerList={playerList} 
-                        size="large"
-                    />
-                ) : (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-8 max-w-5xl mx-auto">
-                        <MvpShowcaseCard 
-                            player={pogLeader} 
-                            title="PLAYOFF MVP" 
-                            badgeColor="bg-green-400 text-black" 
-                            teams={teams} 
-                            playerList={playerList} 
-                            size="medium"
-                        />
-                         <MvpShowcaseCard 
-                            player={finalsMvp} 
-                            title="FINALS MVP" 
-                            badgeColor="bg-blue-400 text-black" 
-                            teams={teams} 
-                            playerList={playerList} 
-                            size="medium"
-                        />
+            {/* Display "No Data" if calculations return empty (e.g. before season starts) */}
+            {!activeData || !activeData.seasonMvp ? (
+                <div className="flex flex-col items-center justify-center bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 py-20 text-gray-400">
+                    <div className="text-5xl mb-4 opacity-50">🏆</div>
+                    <div className="text-xl font-bold">수상자 데이터 없음</div>
+                    <p className="mt-2 text-sm">{currentLeague} 정규 시즌 경기가 충분히 진행되지 않았습니다.</p>
+                </div>
+            ) : (
+                <>
+                    {/* MVP Showcase Section */}
+                    <div className="w-full">
+                        {viewMode === 'regular' ? (
+                            <MvpShowcaseCard 
+                                player={activeData.seasonMvp} 
+                                title="SEASON MVP" 
+                                badgeColor="bg-yellow-500 text-black" 
+                                teams={activeTeams} 
+                                playerList={playerList} 
+                                size="large"
+                            />
+                        ) : (
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-8 max-w-5xl mx-auto">
+                                <MvpShowcaseCard 
+                                    player={activeData.pogLeader} 
+                                    title="PLAYOFF MVP" 
+                                    badgeColor="bg-green-400 text-black" 
+                                    teams={activeTeams} 
+                                    playerList={playerList} 
+                                    size="medium"
+                                />
+                                 <MvpShowcaseCard 
+                                    player={activeData.finalsMvp} 
+                                    title="FINALS MVP" 
+                                    badgeColor="bg-blue-400 text-black" 
+                                    teams={activeTeams} 
+                                    playerList={playerList} 
+                                    size="medium"
+                                />
+                            </div>
+                        )}
                     </div>
-                )}
-            </div>
 
-            {/* All Teams */}
-            <div>
-                <TeamSection title={isPlayoffView ? "All-Playoff 1st Team" : "All-LCK 1st Team"} rank={1} players={allProTeams[1]} playerList={playerList} />
-                <TeamSection title={isPlayoffView ? "All-Playoff 2nd Team" : "All-LCK 2nd Team"} rank={2} players={allProTeams[2]} playerList={playerList} />
-                <TeamSection title={isPlayoffView ? "All-Playoff 3rd Team" : "All-LCK 3rd Team"} rank={3} players={allProTeams[3]} playerList={playerList} />
-            </div>
+                    {/* All Teams */}
+                    <div>
+                        <TeamSection title={viewMode === 'playoff' ? `All-${titlePrefix} Playoff 1st Team` : `All-${titlePrefix} 1st Team`} rank={1} players={activeData.allProTeams?.[1]} playerList={playerList} />
+                        <TeamSection title={viewMode === 'playoff' ? `All-${titlePrefix} Playoff 2nd Team` : `All-${titlePrefix} 2nd Team`} rank={2} players={activeData.allProTeams?.[2]} playerList={playerList} />
+                        <TeamSection title={viewMode === 'playoff' ? `All-${titlePrefix} Playoff 3rd Team` : `All-${titlePrefix} 3rd Team`} rank={3} players={activeData.allProTeams?.[3]} playerList={playerList} />
+                    </div>
+                </>
+            )}
         </div>
     );
 }
