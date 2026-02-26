@@ -2,11 +2,27 @@
 import React, { useState, useMemo } from 'react';
 import { computeAwards, computePlayoffAwards } from '../engine/statsManager';
 
-// [FIX 1 & 2] Import Global Leagues AND Global Players!
+// Import Global Leagues AND Global Players!
 import { FOREIGN_LEAGUES, FOREIGN_PLAYERS } from '../data/foreignLeagues';
 
 // Safely combine every player in the world into one giant phonebook
 const globalPlayerList = Object.values(FOREIGN_PLAYERS || {}).flat().filter(Boolean);
+
+// [NEW] Global Team Finder - Guarantees we find the correct Team Colors!
+const getGlobalTeam = (teamIdentifier, lckTeams) => {
+    if (!teamIdentifier) return null;
+    
+    // 1. Check LCK
+    let found = lckTeams.find(t => t.name === teamIdentifier || String(t.id) === String(teamIdentifier));
+    if (found) return found;
+    
+    // 2. Check the Rest of the World
+    for (const lg in FOREIGN_LEAGUES) {
+        found = (FOREIGN_LEAGUES[lg] || []).find(t => t.name === teamIdentifier || String(t.id) === String(teamIdentifier));
+        if (found) return found;
+    }
+    return null;
+};
 
 // --- RoleBadge Component ---
 const RoleBadge = ({ role }) => {
@@ -26,23 +42,23 @@ const RoleBadge = ({ role }) => {
 };
 
 // --- PlayerCard Component ---
-const PlayerCard = ({ player, rank, activeTeams }) => {
+const PlayerCard = ({ player, rank, lckTeams }) => {
     if (!player) return (
         <div className="w-full h-[220px] bg-gray-50 rounded-xl border border-dashed border-gray-300 flex items-center justify-center text-xs text-gray-400">
             N/A
         </div>
     );
     
-    // [FIX 2] Hunt down the player globally and prioritize Korean Names!
+    // Force Korean Names!
     const playerData = globalPlayerList.find(p => p.이름 === player.playerName || p.playerName === player.playerName);
     const koreanName = playerData ? (playerData.한글명 || playerData.실명 || playerData.이름 || player.playerName) : player.playerName; 
     const ign = player.playerName;
 
-    // [FIX 1] Hunt down the Team Globally to get the correct Primary Color!
-    const teamName = player.teamObj?.name || player.team || (player.teams && player.teams[0]);
-    const team = activeTeams.find(t => t.name === teamName || t.id === player.teamObj?.id);
-    const bgColor = team?.colors?.primary || player.teamObj?.colors?.primary || '#333';
-    const displayTeamName = team?.name || teamName || 'FA';
+    // Force Team Colors!
+    const teamNameRef = player.teamObj?.name || player.team || (player.teams && player.teams[0]);
+    const globalTeam = getGlobalTeam(teamNameRef, lckTeams);
+    const bgColor = globalTeam?.colors?.primary || player.teamObj?.colors?.primary || '#333';
+    const displayTeamName = globalTeam?.name || teamNameRef || 'FA';
 
     const rankStyles = {
         1: 'border-yellow-400 bg-gradient-to-br from-yellow-50 to-white ring-2 ring-yellow-200',
@@ -99,18 +115,17 @@ const PlayerCard = ({ player, rank, activeTeams }) => {
 };
 
 // --- MvpShowcaseCard Component ---
-const MvpShowcaseCard = ({ player, title, badgeColor, activeTeams, size = 'large' }) => {
+const MvpShowcaseCard = ({ player, title, badgeColor, lckTeams, size = 'large' }) => {
     if (!player) return (
         <div className={`relative bg-gray-800 rounded-2xl border border-gray-700 p-8 flex items-center justify-center text-gray-500 font-bold ${size === 'large' ? 'w-full max-w-lg mx-auto' : 'w-full'}`}>
             데이터 없음
         </div>
     );
 
-    // [FIX 1 & 2] Global Team and Name Lookups
-    const teamName = player.teamObj?.name || player.team || (player.teams && player.teams[0]);
-    const team = activeTeams.find(t => t.name === teamName || t.id === player.teamObj?.id);
-    const bgColor = team?.colors?.primary || player.teamObj?.colors?.primary || '#333';
-    const displayTeamName = team?.name || teamName || 'FA';
+    const teamNameRef = player.teamObj?.name || player.team || (player.teams && player.teams[0]);
+    const globalTeam = getGlobalTeam(teamNameRef, lckTeams);
+    const bgColor = globalTeam?.colors?.primary || player.teamObj?.colors?.primary || '#333';
+    const displayTeamName = globalTeam?.name || teamNameRef || 'FA';
 
     const pData = globalPlayerList.find(p => p.이름 === player.playerName || p.playerName === player.playerName);
     const realName = pData ? (pData.한글명 || pData.실명 || pData.이름 || player.playerName) : player.playerName;
@@ -154,7 +169,7 @@ const MvpShowcaseCard = ({ player, title, badgeColor, activeTeams, size = 'large
 };
 
 // --- TeamSection Component ---
-const TeamSection = ({ title, rank, players, activeTeams }) => {
+const TeamSection = ({ title, rank, players, lckTeams }) => {
     const roles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
     const headerStyles = {
         1: 'bg-yellow-500 text-white border-yellow-600',
@@ -171,7 +186,7 @@ const TeamSection = ({ title, rank, players, activeTeams }) => {
                 <div className="h-px bg-gray-200 flex-1"></div>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 lg:gap-3 px-1">
-                {roles.map(role => ( <PlayerCard key={role} player={safePlayers[role]} rank={rank} activeTeams={activeTeams} /> ))}
+                {roles.map(role => ( <PlayerCard key={role} player={safePlayers[role]} rank={rank} lckTeams={lckTeams} /> ))}
             </div>
         </div>
     );
@@ -194,13 +209,27 @@ export default function AwardsTab({ league, teams }) {
         };
     }, [league, currentLeague, isLCK]);
 
-    // [FIX 3] Flawless Playoff Check! It no longer looks for 'Round 5'. 
-    // If the playoff bracket exists and EVERY scheduled playoff match is 'finished', the playoffs are over!
+    // [FIX 3] Smart Playoff Checker!
     const isPlayoffsFinished = useMemo(() => {
         if (!activeLeagueData.matches) return false;
         const playoffs = activeLeagueData.matches.filter(m => m.type === 'playoff');
-        return playoffs.length > 0 && playoffs.every(m => m.status === 'finished');
-    }, [activeLeagueData]);
+        if (playoffs.length === 0) return false;
+
+        // Hunt down the actual Grand Final match based on keywords or exact LCK/LCP round numbers
+        const explicitFinal = playoffs.find(m => 
+            m.round === 5 || 
+            String(m.round) === "5" || 
+            (currentLeague === 'LCP' && m.round === 4) ||
+            (m.label && (m.label.includes('결승') || m.label.toUpperCase().includes('FINAL')))
+        );
+
+        if (explicitFinal) {
+            return explicitFinal.status === 'finished';
+        }
+
+        // Fallback
+        return playoffs.every(m => m.status === 'finished');
+    }, [activeLeagueData, currentLeague]);
 
     const regularData = useMemo(() => computeAwards(activeLeagueData, activeTeams), [activeLeagueData, activeTeams]);
     const playoffData = useMemo(() => isPlayoffsFinished ? computePlayoffAwards(activeLeagueData, activeTeams) : null, [activeLeagueData, activeTeams, isPlayoffsFinished]);
@@ -248,11 +277,11 @@ export default function AwardsTab({ league, teams }) {
                 )}
             </div>
 
-            {!activeData || !activeData.seasonMvp ? (
+            {!activeData || (!activeData.seasonMvp && viewMode === 'regular') || (!activeData.pogLeader && viewMode === 'playoff') ? (
                 <div className="flex flex-col items-center justify-center bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 py-20 text-gray-400">
                     <div className="text-5xl mb-4 opacity-50">🏆</div>
                     <div className="text-xl font-bold">수상자 데이터 없음</div>
-                    <p className="mt-2 text-sm">{currentLeague} 시즌 경기가 충분히 진행되지 않았습니다.</p>
+                    <p className="mt-2 text-sm">{currentLeague} {viewMode === 'playoff' ? '플레이오프' : '시즌'} 경기가 충분히 진행되지 않았습니다.</p>
                 </div>
             ) : (
                 <>
@@ -262,7 +291,7 @@ export default function AwardsTab({ league, teams }) {
                                 player={activeData.seasonMvp} 
                                 title="SEASON MVP" 
                                 badgeColor="bg-yellow-500 text-black" 
-                                activeTeams={activeTeams} 
+                                lckTeams={teams} 
                                 size="large"
                             />
                         ) : (
@@ -271,14 +300,14 @@ export default function AwardsTab({ league, teams }) {
                                     player={activeData.pogLeader} 
                                     title="PLAYOFF MVP" 
                                     badgeColor="bg-green-400 text-black" 
-                                    activeTeams={activeTeams} 
+                                    lckTeams={teams} 
                                     size="medium"
                                 />
                                  <MvpShowcaseCard 
                                     player={activeData.finalsMvp} 
                                     title="FINALS MVP" 
                                     badgeColor="bg-blue-400 text-black" 
-                                    activeTeams={activeTeams} 
+                                    lckTeams={teams} 
                                     size="medium"
                                 />
                             </div>
@@ -286,9 +315,9 @@ export default function AwardsTab({ league, teams }) {
                     </div>
 
                     <div>
-                        <TeamSection title={viewMode === 'playoff' ? `All-${titlePrefix} Playoff 1st Team` : `All-${titlePrefix} 1st Team`} rank={1} players={activeData.allProTeams?.[1]} activeTeams={activeTeams} />
-                        <TeamSection title={viewMode === 'playoff' ? `All-${titlePrefix} Playoff 2nd Team` : `All-${titlePrefix} 2nd Team`} rank={2} players={activeData.allProTeams?.[2]} activeTeams={activeTeams} />
-                        <TeamSection title={viewMode === 'playoff' ? `All-${titlePrefix} Playoff 3rd Team` : `All-${titlePrefix} 3rd Team`} rank={3} players={activeData.allProTeams?.[3]} activeTeams={activeTeams} />
+                        <TeamSection title={viewMode === 'playoff' ? `All-${titlePrefix} Playoff 1st Team` : `All-${titlePrefix} 1st Team`} rank={1} players={activeData.allProTeams?.[1]} lckTeams={teams} />
+                        <TeamSection title={viewMode === 'playoff' ? `All-${titlePrefix} Playoff 2nd Team` : `All-${titlePrefix} 2nd Team`} rank={2} players={activeData.allProTeams?.[2]} lckTeams={teams} />
+                        <TeamSection title={viewMode === 'playoff' ? `All-${titlePrefix} Playoff 3rd Team` : `All-${titlePrefix} 3rd Team`} rank={3} players={activeData.allProTeams?.[3]} lckTeams={teams} />
                     </div>
                 </>
             )}
