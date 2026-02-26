@@ -1,15 +1,22 @@
 // src/engine/scheduleLogic.js
 
 // [NEW] Helper to compare dates correctly (e.g., "2.7" vs "2.11")
-const compareDates = (dateA, dateB) => {
-    if (!dateA || !dateB) return 0;
-    
-    // Split "2.7 (Sat)" -> "2.7" -> ["2", "7"]
-    const [monthA, dayA] = dateA.split(' ')[0].split('.').map(Number);
-    const [monthB, dayB] = dateB.split(' ')[0].split('.').map(Number);
+// [NEW] Precision Time Checker for Global Auto-Sync
+export const compareDatesObj = (a, b) => {
+    if (!a || !b || !a.date || !b.date) return 0;
+    const [monthA, dayA] = a.date.split(' ')[0].split('.').map(Number);
+    const [monthB, dayB] = b.date.split(' ')[0].split('.').map(Number);
     
     if (monthA !== monthB) return monthA - monthB;
-    return dayA - dayB;
+    if (dayA !== dayB) return dayA - dayB;
+    
+    if (a.time && b.time) {
+        const [hA, mA] = a.time.split(':').map(Number);
+        const [hB, mB] = b.time.split(':').map(Number);
+        if (hA !== hB) return hA - hB;
+        return mA - mB;
+    }
+    return 0;
 };
 
 // Helper to shuffle array (Fisher-Yates)
