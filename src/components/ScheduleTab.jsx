@@ -1,7 +1,7 @@
 // src/components/ScheduleTab.jsx
 import React, { useState } from 'react';
 
-// [NEW] Imports for the Retroactive Time Machine!
+// Imports for the Retroactive Time Machine
 import { generateLCPRegularSchedule, generateLCPPlayoffs } from '../engine/scheduleLogic';
 import { FOREIGN_LEAGUES } from '../data/foreignLeagues';
 import { updateLeague } from '../engine/storage';
@@ -27,7 +27,7 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
 
     const activeTeams = displayLeague === 'LCK' ? teams : (FOREIGN_LEAGUES[displayLeague] || []);
 
-    // The Upgraded Time Machine Engine (Now with Playoffs!)
+    // The Upgraded Time Machine Engine (Sequential Playoffs!)
     const handleRetroactiveGenerate = () => {
         if (displayLeague !== 'LCP') return;
         
@@ -53,19 +53,54 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
             seed: idx + 1
         }));
 
-        // 3. Generate & Simulate Playoffs
+        // 3. Generate & Simulate Playoffs SEQUENTIALLY
         let lcpPlayoffs = generateLCPPlayoffs(seeds);
-        lcpPlayoffs = lcpPlayoffs.map(m => {
-            if (!m.t1 || !m.t2) return m;
-
-            const winnerId = Math.random() > 0.5 ? m.t1 : m.t2;
+        
+        const simMatch = (id) => {
+            const matchObj = lcpPlayoffs.find(m => m.id === id);
+            if (!matchObj || !matchObj.t1 || !matchObj.t2) return { winnerId: null, loserId: null };
+            
+            const winnerId = Math.random() > 0.5 ? matchObj.t1 : matchObj.t2;
+            const loserId = winnerId === matchObj.t1 ? matchObj.t2 : matchObj.t1;
             const winnerTeam = lcpTeams.find(t => t.id === winnerId || t.name === winnerId);
-            return {
-                ...m,
-                status: 'finished',
-                result: { winner: winnerTeam?.name, score: '3-1' }
-            };
-        });
+            
+            matchObj.status = 'finished';
+            matchObj.result = { winner: winnerTeam?.name, score: '3-1' };
+            return { winnerId, loserId };
+        };
+
+        // Round 1
+        const r1m1 = simMatch('lcp_po1');
+        const r1m2 = simMatch('lcp_po2');
+
+        // Round 2 (승자조 2R)
+        const po3 = lcpPlayoffs.find(m => m.id === 'lcp_po3');
+        if (po3) po3.t2 = r1m1.winnerId;
+        const r2m1 = simMatch('lcp_po3');
+
+        const po4 = lcpPlayoffs.find(m => m.id === 'lcp_po4');
+        if (po4) po4.t2 = r1m2.winnerId;
+        const r2m2 = simMatch('lcp_po4');
+
+        // Round 3 (승자조 결승)
+        const po5 = lcpPlayoffs.find(m => m.id === 'lcp_po5');
+        if (po5) { po5.t1 = r2m1.winnerId; po5.t2 = r2m2.winnerId; }
+        const r3m1 = simMatch('lcp_po5');
+
+        // Round 2.1 (패자조 2R - Losers of R2)
+        const po6 = lcpPlayoffs.find(m => m.id === 'lcp_po6');
+        if (po6) { po6.t1 = r2m1.loserId; po6.t2 = r2m2.loserId; }
+        const r2lm1 = simMatch('lcp_po6');
+
+        // Round 3.1 (결승 진출전)
+        const po7 = lcpPlayoffs.find(m => m.id === 'lcp_po7');
+        if (po7) { po7.t1 = r2lm1.winnerId; po7.t2 = r3m1.loserId; }
+        const r3lm1 = simMatch('lcp_po7');
+
+        // Round 4 (결승전)
+        const po8 = lcpPlayoffs.find(m => m.id === 'lcp_po8');
+        if (po8) { po8.t1 = r3m1.winnerId; po8.t2 = r3lm1.winnerId; }
+        simMatch('lcp_po8');
 
         const fullSchedule = [...lcpSchedule, ...lcpPlayoffs];
 
@@ -104,7 +139,6 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
                 </div>
             )}
 
-            {/* [NEW] The Reset Button placed next to the header! */}
             <div className="flex items-center justify-between mb-4 lg:mb-6 shrink-0">
                 <h2 className="text-lg lg:text-2xl font-black text-gray-900 flex items-center gap-2">
                     📅 {activeTab === 'team_schedule' ? `${myTeam.name} 경기 일정` : `2026 ${displayLeague} 전체 일정`}
@@ -127,14 +161,14 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
                             .filter(m => activeTab === 'schedule' || (m.t1 === myTeam.id || m.t2 === myTeam.id))
                             .sort(compareDates) 
                             .map((m, i) => {
-                                // [FIXED] Proper name lookup to prevent TBD
                                 const t1 = m.t1 ? activeTeams.find(t => t.id === m.t1 || t.name === m.t1) : { name: 'TBD' };
                                 const t2 = m.t2 ? activeTeams.find(t => t.id === m.t2 || t.name === m.t2) : { name: 'TBD' };
                                 const isMyMatch = myTeam.id === m.t1 || myTeam.id === m.t2;
                                 const isFinished = m.status === 'finished';
                                 
-                                const t1Name = formatTeamName ? formatTeamName(m.t1, m.type) : t1.name;
-                                const t2Name = formatTeamName ? formatTeamName(m.t2, m.type) : t2.name;
+                                // [THE FIX]: Only use formatTeamName if we are in the LCK! Otherwise, use our clean data!
+                                const t1Name = (displayLeague === 'LCK' && formatTeamName) ? formatTeamName(m.t1, m.type) : t1.name;
+                                const t2Name = (displayLeague === 'LCK' && formatTeamName) ? formatTeamName(m.t2, m.type) : t2.name;
 
                                 let badgeColor = 'text-gray-500';
                                 let badgeText = '정규시즌';
