@@ -2,19 +2,27 @@
 import React, { useState } from 'react';
 
 // [NEW] Import the REAL Simulation Engine!
-import * as SimEngine from '../engine/simEngine';
+import { quickSimulateMatch } from '../engine/simEngine';
 import { generateLCPRegularSchedule, generateLCPPlayoffs } from '../engine/scheduleLogic';
 import { FOREIGN_LEAGUES } from '../data/foreignLeagues';
 import { updateLeague } from '../engine/storage';
 
+// [FIX 2] Upgraded Time Checker to calculate hours and minutes!
 const compareDates = (a, b) => {
-    if (!a.date || !b.date) return 0;
+    if (!a || !b || !a.date || !b.date) return 0;
     const [monthA, dayA] = a.date.split(' ')[0].split('.').map(Number);
     const [monthB, dayB] = b.date.split(' ')[0].split('.').map(Number);
     
     if (monthA !== monthB) return monthA - monthB;
     if (dayA !== dayB) return dayA - dayB;
-    if (a.time && b.time) return a.time.localeCompare(b.time);
+    
+    // If it's the exact same day, check the time! (e.g., 15:00 vs 17:00)
+    if (a.time && b.time) {
+        const [hA, mA] = a.time.split(':').map(Number);
+        const [hB, mB] = b.time.split(':').map(Number);
+        if (hA !== hB) return hA - hB;
+        return mA - mB;
+    }
     return 0;
 };
 
@@ -28,94 +36,107 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
 
     const activeTeams = displayLeague === 'LCK' ? teams : (FOREIGN_LEAGUES[displayLeague] || []);
 
-    // --- THE UPGRADED TIME MACHINE ENGINE ---
+    // --- CHECK CURRENT GLOBAL TIME BASED ON LCK ---
+    const pendingLCK = league.matches ? league.matches.filter(m => m.status === 'pending').sort(compareDates) : [];
+    const currentPendingLCK = pendingLCK.length > 0 ? pendingLCK[0] : { date: '99.99 (완료)', time: '23:59' };
+    
+    // [NEW] Smart tracker that lights up the Sync Button if games are behind schedule!
+    const needsSync = displayLeague === 'LCP' && (
+        activeMatches.length === 0 || 
+        activeMatches.some(m => m.status === 'pending' && currentPendingLCK.date !== '99.99 (완료)' && compareDates(m, currentPendingLCK) < 0) ||
+        (currentPendingLCK.date === '99.99 (완료)' && activeMatches.some(m => m.status === 'pending'))
+    );
+
+    // --- THE REAL SIMULATION ENGINE HOOKUP ---
     const handleRetroactiveGenerate = () => {
         if (displayLeague !== 'LCP') return;
         
         const lcpTeams = FOREIGN_LEAGUES['LCP'];
         
-        // 1. DETERMINE CURRENT TIME based on the LCK Schedule!
-        const pendingLCK = league.matches ? league.matches.filter(m => m.status === 'pending').sort(compareDates) : [];
-        const currentDate = pendingLCK.length > 0 ? pendingLCK[0].date : '99.99 (완료)';
-
-        // 2. DYNAMIC ENGINE HOOKUP 
-        // We look for your standard series simulator (handles whatever you named it in the engine)
-        const runSim = SimEngine.simulateSeries || SimEngine.simulateMatch || SimEngine.playSeries;
-
+        // 1. GENERATE REGULAR SEASON (OR LOAD EXISTING)
+        let lcpSchedule = activeMatches.length > 0 ? [...activeMatches.filter(m => m.type !== 'playoff')] : generateLCPRegularSchedule(lcpTeams);
+        
+        // 2. PROGRESSIVELY SIMULATE PAST MATCHES
         const simMatchIfPast = (matchObj) => {
-            // Check the clock! If the match date is AFTER or ON the current LCK date, leave it pending!
-            if (currentDate !== '99.99 (완료)' && compareDates({ date: matchObj.date }, { date: currentDate }) >= 0) {
+            if (matchObj.status === 'finished') return matchObj; // Skip if already played
+
+            // [FIX 2] Keep pending if strictly in the future compared to LCK!
+            if (currentPendingLCK.date !== '99.99 (완료)' && compareDates(matchObj, currentPendingLCK) > 0) {
                 return matchObj;
             }
 
-            // Otherwise, SIMULATE IT using the REAL ENGINE!
             const t1 = lcpTeams.find(t => t.id === matchObj.t1 || t.name === matchObj.t1);
             const t2 = lcpTeams.find(t => t.id === matchObj.t2 || t.name === matchObj.t2);
-            
             if (!t1 || !t2) return matchObj; 
 
             try {
-                // Call the real engine to generate stats, picks, bans, and history!
-                const result = runSim(t1, t2, matchObj.format, matchObj.type, league);
+                // [FIX 1 & 3] Run the REAL simulation so history, picks, bans, and stats are generated!
+                const simResult = quickSimulateMatch(t1, t2, matchObj.format, matchObj.type, league);
                 return {
                     ...matchObj,
                     status: 'finished',
                     result: {
-                        winner: result.winner?.name || result.winner,
-                        score: result.score,
-                        history: result.history || result.matchHistory || []
+                        winner: simResult.winner?.name || simResult.winner,
+                        score: simResult.score,
+                        history: simResult.history || []
                     }
                 };
             } catch (e) {
-                console.error("Simulation Engine Error:", e);
-                return matchObj; // Keep pending if the engine hiccups
+                console.error("Simulation error", e);
+                return matchObj;
             }
         };
 
-        // 3. GENERATE & PROGRESSIVELY SIMULATE REGULAR SEASON
-        let lcpSchedule = generateLCPRegularSchedule(lcpTeams);
         lcpSchedule = lcpSchedule.map(simMatchIfPast);
 
-        // 4. COMPUTE REAL STANDINGS & PLAYOFFS
-        let lcpPlayoffs = [];
-        let seeds = [];
+        // 3. GENERATE & SIMULATE PLAYOFFS (IF REGULAR IS DONE)
+        let lcpPlayoffs = activeMatches.filter(m => m.type === 'playoff');
+        let seeds = league.foreignPlayoffSeeds?.['LCP'] || [];
+        
         const isRegularSeasonDone = lcpSchedule.every(m => m.status === 'finished');
 
         if (isRegularSeasonDone) {
-            // Calculate real win/loss standings from the newly simulated games
-            const standings = {};
-            lcpTeams.forEach(t => standings[t.name] = { w: 0, l: 0, id: t.id || t.name, name: t.name });
-            
-            lcpSchedule.forEach(m => {
-                if (m.status === 'finished' && m.result) {
-                    const winnerName = m.result.winner;
-                    const t1Name = lcpTeams.find(t => t.id === m.t1 || t.name === m.t1)?.name;
-                    const t2Name = lcpTeams.find(t => t.id === m.t2 || t.name === m.t2)?.name;
-                    const loserName = winnerName === t1Name ? t2Name : t1Name;
-                    
-                    if (standings[winnerName]) standings[winnerName].w += 1;
-                    if (standings[loserName]) standings[loserName].l += 1;
-                }
-            });
-            
-            // Generate Playoff Seeds
-            const sortedTeams = Object.values(standings).sort((a,b) => b.w - a.w);
-            seeds = sortedTeams.slice(0, 6).map((t, idx) => ({ ...t, seed: idx + 1 }));
+            if (seeds.length === 0) {
+                const standings = {};
+                lcpTeams.forEach(t => standings[t.name] = { w: 0, l: 0, id: t.id || t.name, name: t.name });
+                
+                lcpSchedule.forEach(m => {
+                    if (m.status === 'finished' && m.result) {
+                        const winnerName = m.result.winner;
+                        const t1Name = lcpTeams.find(t => t.id === m.t1 || t.name === m.t1)?.name;
+                        const t2Name = lcpTeams.find(t => t.id === m.t2 || t.name === m.t2)?.name;
+                        const loserName = winnerName === t1Name ? t2Name : t1Name;
+                        
+                        if (standings[winnerName]) standings[winnerName].w += 1;
+                        if (standings[loserName]) standings[loserName].l += 1;
+                    }
+                });
+                
+                const sortedTeams = Object.values(standings).sort((a,b) => b.w - a.w);
+                seeds = sortedTeams.slice(0, 6).map((t, idx) => ({ ...t, seed: idx + 1 }));
+            }
 
-            lcpPlayoffs = generateLCPPlayoffs(seeds);
+            if (lcpPlayoffs.length === 0) {
+                lcpPlayoffs = generateLCPPlayoffs(seeds);
+            }
 
-            // Progressive Playoff Simulator
             const simPlayoffMatch = (id) => {
                 const matchObj = lcpPlayoffs.find(m => m.id === id);
                 if (!matchObj || !matchObj.t1 || !matchObj.t2) return { winnerId: null, loserId: null };
                 
-                // Time check for playoffs!
-                if (currentDate !== '99.99 (완료)' && compareDates({ date: matchObj.date }, { date: currentDate }) >= 0) {
+                if (matchObj.status === 'finished') {
+                    const winnerId = lcpTeams.find(t => t.name === matchObj.result.winner)?.id || matchObj.result.winner;
+                    const loserId = winnerId === matchObj.t1 ? matchObj.t2 : matchObj.t1;
+                    return { winnerId, loserId };
+                }
+
+                // Time check for playoffs
+                if (currentPendingLCK.date !== '99.99 (완료)' && compareDates(matchObj, currentPendingLCK) > 0) {
                     return { winnerId: null, loserId: null };
                 }
 
                 const simulatedMatch = simMatchIfPast(matchObj);
-                Object.assign(matchObj, simulatedMatch); // Update the original array object
+                Object.assign(matchObj, simulatedMatch); 
 
                 if (simulatedMatch.status === 'finished') {
                     const winnerId = lcpTeams.find(t => t.name === simulatedMatch.result.winner)?.id || simulatedMatch.result.winner;
@@ -125,11 +146,10 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
                 return { winnerId: null, loserId: null };
             };
 
-            // Round 1
+            // Sequential Playoff resolution
             const r1m1 = simPlayoffMatch('lcp_po1');
             const r1m2 = simPlayoffMatch('lcp_po2');
 
-            // Round 2 (승자조 2R)
             const po3 = lcpPlayoffs.find(m => m.id === 'lcp_po3');
             if (po3 && r1m1.winnerId) po3.t2 = r1m1.winnerId;
             const r2m1 = simPlayoffMatch('lcp_po3');
@@ -138,22 +158,18 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
             if (po4 && r1m2.winnerId) po4.t2 = r1m2.winnerId;
             const r2m2 = simPlayoffMatch('lcp_po4');
 
-            // Round 3 (승자조 결승)
             const po5 = lcpPlayoffs.find(m => m.id === 'lcp_po5');
             if (po5 && r2m1.winnerId && r2m2.winnerId) { po5.t1 = r2m1.winnerId; po5.t2 = r2m2.winnerId; }
             const r3m1 = simPlayoffMatch('lcp_po5');
 
-            // Round 2.1 (패자조 2R)
             const po6 = lcpPlayoffs.find(m => m.id === 'lcp_po6');
             if (po6 && r2m1.loserId && r2m2.loserId) { po6.t1 = r2m1.loserId; po6.t2 = r2m2.loserId; }
             const r2lm1 = simPlayoffMatch('lcp_po6');
 
-            // Round 3.1 (결승 진출전)
             const po7 = lcpPlayoffs.find(m => m.id === 'lcp_po7');
             if (po7 && r2lm1.winnerId && r3m1.loserId) { po7.t1 = r2lm1.winnerId; po7.t2 = r3m1.loserId; }
             const r3lm1 = simPlayoffMatch('lcp_po7');
 
-            // Round 4 (결승전)
             const po8 = lcpPlayoffs.find(m => m.id === 'lcp_po8');
             if (po8 && r3m1.winnerId && r3lm1.winnerId) { po8.t1 = r3m1.winnerId; po8.t2 = r3lm1.winnerId; }
             simPlayoffMatch('lcp_po8');
@@ -161,7 +177,7 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
 
         const fullSchedule = [...lcpSchedule, ...lcpPlayoffs];
 
-        // 5. SAVE & RELOAD
+        // Save & Reload
         const updatedLeague = { ...league };
         if (!updatedLeague.foreignMatches) updatedLeague.foreignMatches = { LPL: [], LEC: [], LCS: [], LCP: [], CBLOL: [] };
         if (!updatedLeague.foreignStandings) updatedLeague.foreignStandings = { LPL: {}, LEC: {}, LCS: {}, LCP: {}, CBLOL: {} };
@@ -201,12 +217,13 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
                     📅 {activeTab === 'team_schedule' ? `${myTeam.name} 경기 일정` : `2026 ${displayLeague} 전체 일정`}
                 </h2>
                 
-                {displayLeague === 'LCP' && activeMatches.length > 0 && (
+                {/* [NEW] Smart Auto-Sync Button! */}
+                {displayLeague === 'LCP' && needsSync && (
                     <button 
                         onClick={handleRetroactiveGenerate}
-                        className="bg-red-100 hover:bg-red-200 text-red-600 border border-red-300 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-sm"
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-black transition shadow-md animate-pulse"
                     >
-                        🔄 오류 수정 (일정 재생성)
+                        🔄 스케줄 동기화 (Auto-Sync)
                     </button>
                 )}
             </div>
@@ -249,7 +266,6 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
                                             {isFinished ? (
                                                 <div className="flex flex-col items-center">
                                                     <span className="text-lg lg:text-xl text-gray-800">{m.result?.score || '2-0'}</span>
-                                                    {/* The Detailed Match Modal Button! */}
                                                     <button 
                                                         onClick={() => onMatchClick && onMatchClick(m)}
                                                         className="mt-1 text-[9px] lg:text-[10px] bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 px-1.5 lg:px-2 py-0.5 rounded transition flex items-center gap-1 whitespace-nowrap"
@@ -279,7 +295,7 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
                                 onClick={handleRetroactiveGenerate}
                                 className="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-black shadow-lg transition transform hover:-translate-y-1"
                             >
-                                ✨ LCP 소급 스케줄 및 결과 생성하기 ✨
+                                ✨ LCP 스케줄 및 결과 연동하기 ✨
                             </button>
                         )}
                     </div>
