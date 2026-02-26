@@ -143,35 +143,97 @@ const PlayoffTab = ({
         const lcpMatches = (league.foreignMatches?.['LCP'] || []).filter(m => m.type === 'playoff');
         const lcpSeeds = league.foreignPlayoffSeeds?.['LCP'] || [];
 
-        // Resolve team display name from id (for MatchupBox that uses teams lookup)
-        const lcpFormatTeamName = (id) => {
-            if (!id) return 'TBD';
-            const t = lcpTeams.find(t => t.id === id || t.name === id);
-            return t ? t.name : id;
+        // ── Robust team lookup ──────────────────────────────────────────────
+        // t1/t2 on matches may be stored as: team.id, team.name, team.shortName,
+        // team.abbr, or even the raw seed object's id/name. We try everything.
+        const findTeam = (token) => {
+            if (!token) return null;
+            const s = String(token).toLowerCase().trim();
+            return lcpTeams.find(t =>
+                String(t.id   || '').toLowerCase() === s ||
+                String(t.name || '').toLowerCase() === s ||
+                String(t.shortName || '').toLowerCase() === s ||
+                String(t.abbr || '').toLowerCase() === s ||
+                String(t.fullName || '').toLowerCase() === s ||
+                String(t.teamName || '').toLowerCase() === s
+            );
+        };
+
+        // Always returns a human-readable display name; never returns 'TBD' for a non-null token
+        const lcpFormatTeamName = (token) => {
+            if (!token) return 'TBD';
+            const t = findTeam(token);
+            // Prefer shortName → name → token itself (so at worst the raw ID shows, not "TBD")
+            return t ? (t.shortName || t.name || t.id || String(token)) : String(token);
         };
 
         const findById = (id) => lcpMatches.find(m => m.id === id);
 
-        // Get winner team ID from a finished match
+        // ── Normalize any team token → a canonical key for comparison ───────
+        // This is the critical fix: t1/t2 and result.winner may use DIFFERENT
+        // representations (id vs name). We normalize both sides to the same thing
+        // (the team's name string, which is what result.winner always uses).
+        const normalize = (token) => {
+            if (!token) return null;
+            const t = findTeam(token);
+            return t ? (t.name || t.id || String(token)) : String(token);
+        };
+
+        // ── Winner / Loser helpers (normalized comparison) ──────────────────
         const getWinner = (m) => {
             if (!m || m.status !== 'finished' || !m.result?.winner) return null;
-            const team = lcpTeams.find(t => t.name === m.result.winner || t.id === m.result.winner);
-            // Return id if found, otherwise return the winner string directly
-            return team ? (team.id || team.name) : m.result.winner;
+            // result.winner is always a team name string from the sim engine
+            // — normalize it back to whatever token format t1/t2 use so that
+            //   the getLoser comparison works correctly.
+            const winnerNorm = normalize(m.result.winner);
+            const t1Norm     = normalize(m.t1);
+            const t2Norm     = normalize(m.t2);
+            // Return whichever original token (t1 or t2) matches the winner
+            if (t1Norm === winnerNorm) return m.t1;
+            if (t2Norm === winnerNorm) return m.t2;
+            // Fallback: just return result.winner directly; better than null
+            return m.result.winner;
         };
 
         const getLoser = (m) => {
             if (!m || m.status !== 'finished' || !m.result?.winner) return null;
-            const winnerId = getWinner(m);
-            if (!winnerId) return null;
-            return m.t1 === winnerId ? m.t2 : m.t1;
+            const winnerToken = getWinner(m);
+            if (!winnerToken) return null;
+            // Return the OTHER token (t1 or t2) that is NOT the winner
+            const winnerNorm = normalize(winnerToken);
+            if (normalize(m.t1) !== winnerNorm) return m.t1;
+            if (normalize(m.t2) !== winnerNorm) return m.t2;
+            return null;
         };
 
+        // ── Seed lookup ─────────────────────────────────────────────────────
+        // Seeds are stored as { seed: N, id, name, ... }. Also fall back to
+        // computing seeds live from standings if foreignPlayoffSeeds is missing.
         const getSeedId = (seedNum) => {
+            // 1. Try stored seeds
             const s = lcpSeeds.find(item => item.seed === seedNum);
-            if (!s) return null;
-            // Seeds store id or name; prefer id
-            return s.id || s.name;
+            if (s) return s.id || s.name || null;
+
+            // 2. Compute live from regular-season results as a fallback
+            const regularMatches = (league.foreignMatches?.['LCP'] || [])
+                .filter(m => (m.type === 'regular' || m.type === 'super') && m.status === 'finished');
+            if (regularMatches.length === 0) return null;
+
+            const st = {};
+            lcpTeams.forEach(t => { st[t.name] = { w: 0, ref: t }; });
+            regularMatches.forEach(m => {
+                const winnerName = m.result?.winner;
+                if (!winnerName) return;
+                const t1 = findTeam(m.t1);
+                const t2 = findTeam(m.t2);
+                if (!t1 || !t2) return;
+                if (st[t1.name]) st[t1.name].w += (winnerName === t1.name || normalize(winnerName) === normalize(t1.name)) ? 1 : 0;
+                if (st[t2.name]) st[t2.name].w += (winnerName === t2.name || normalize(winnerName) === normalize(t2.name)) ? 1 : 0;
+            });
+
+            const sorted = Object.values(st).sort((a, b) => b.w - a.w);
+            const entry = sorted[seedNum - 1];
+            return entry ? (entry.ref.id || entry.ref.name) : null;
         };
 
         const pendingMatch = (t1, t2) => ({
