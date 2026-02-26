@@ -5,7 +5,6 @@ import { generateLCPRegularSchedule, generateLCPPlayoffs } from '../engine/sched
 
 import { FOREIGN_LEAGUES, FOREIGN_PLAYERS } from '../data/foreignLeagues';
 import { updateLeague } from '../engine/storage';
-// [NEW] Import the Champion List to patch old save files!
 import { championList } from '../data/constants'; 
 
 const compareDatesObj = (a, b) => {
@@ -25,7 +24,6 @@ const compareDatesObj = (a, b) => {
     return 0;
 };
 
-// Robust Roster Generator ensures players have Detailed Stats so the engine NEVER crashes
 const getSafeRoster = (teamObj, allPlayers) => {
     const tName = teamObj.name;
     let r = allPlayers.filter(p => p.팀 === tName || p.team === tName || p.Team === tName || (p.playerData && p.playerData.팀 === tName));
@@ -70,13 +68,19 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
     const pendingLCK = league.matches ? league.matches.filter(m => m.status === 'pending').sort(compareDatesObj) : [];
     const currentPendingLCK = pendingLCK.length > 0 ? pendingLCK[0] : { date: '99.99 (완료)', time: '23:59' };
     
-    // Checks if we need to sync AND if the current data is corrupted (empty history)
+    // [THE FIX] The detector now actively hunts for the fake error logs!
     const needsSync = displayLeague === 'LCP' && (
         activeMatches.length === 0 || 
         activeMatches.some(m => m.status === 'pending' && currentPendingLCK.date !== '99.99 (완료)' && compareDatesObj(m, currentPendingLCK) < 0) ||
         (currentPendingLCK.date === '99.99 (완료)' && activeMatches.some(m => m.status === 'pending')) ||
         activeMatches.some(m => m.t1 === 'TBD' || !activeTeams.find(t => t.id === m.t1 || t.name === m.t1)) ||
-        activeMatches.some(m => m.status === 'finished' && (!m.result || !m.result.history || m.result.history.length === 0))
+        activeMatches.some(m => m.status === 'finished' && (
+            !m.result || 
+            !m.result.history || 
+            m.result.history.length === 0 || 
+            m.result.history[0]?.logs?.includes('데이터 오류로 인해 강제 시뮬레이션 됨') ||
+            !m.result.history[0]?.picks?.A?.length
+        ))
     );
 
     useEffect(() => {
@@ -89,19 +93,24 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
 
         let lcpSchedule = activeMatches.filter(m => m.type !== 'playoff');
         
-        // Destroy corrupted games (like those flat 2-1s with no history!)
-        const hasBadData = lcpSchedule.some(m => 
+        // Destroy corrupted games (including the fake fail-safe games)
+        const hasBadData = activeMatches.some(m => 
             !lcpTeams.find(t => t.id === m.t1 || t.name === m.t1) || 
-            (m.status === 'finished' && (!m.result || !m.result.history || m.result.history.length === 0))
+            (m.status === 'finished' && (
+                !m.result || 
+                !m.result.history || 
+                m.result.history.length === 0 || 
+                m.result.history[0]?.logs?.includes('데이터 오류로 인해 강제 시뮬레이션 됨') ||
+                !m.result.history[0]?.picks?.A?.length
+            ))
         );
         
         if (lcpSchedule.length === 0 || hasBadData) {
-            console.log("[Auto-Sync] Scrubbing corrupt data and regenerating LCP Schedule...");
+            console.log("[Auto-Sync] Scrubbing corrupt fail-safe data and regenerating LCP...");
             lcpSchedule = generateLCPRegularSchedule(lcpTeams);
             isUpdated = true;
         }
 
-        // [THE PATCH] Feed the champion list to the engine even if the save file forgot it!
         const safeLeague = {
             ...league,
             currentChampionList: league.currentChampionList || championList,
@@ -123,11 +132,9 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
             const t2 = { ...t2Obj, roster: getSafeRoster(t2Obj, lcpPlayers) };
 
             try {
-                // RUN THE REAL SIMULATION!
                 const simResult = quickSimulateMatch(t1, t2, matchObj.format, matchObj.type, safeLeague);
                 isUpdated = true;
                 
-                // Ensure Score String Formatting is correct
                 let fScore = simResult.scoreString || simResult.score;
                 if (typeof fScore === 'object') {
                     const valA = fScore.A ?? 0;
@@ -150,7 +157,6 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
                 };
             } catch (e) {
                 console.error("Engine Crash Blocked:", e);
-                // If it STILL crashes, dynamically calculate BO3 vs BO5 scores!
                 const isBO5 = matchObj.format === 'BO5' || matchObj.type === 'playoff';
                 const reqWins = isBO5 ? 3 : 2;
                 const t1Wins = Math.random() > 0.5;
@@ -164,7 +170,6 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
                     result: {
                         winner: t1Wins ? t1.name : t2.name,
                         score: t1Wins ? `${winnerScore}-${loserScore}` : `${loserScore}-${winnerScore}`,
-                        // Inject safe fake history to prevent the Modal from crashing
                         history: [{ logs: ['데이터 오류로 인해 강제 시뮬레이션 됨'], picks: { A: [], B: [] }, bans: { A: [], B: [] } }] 
                     }
                 };
@@ -173,7 +178,6 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
 
         lcpSchedule = lcpSchedule.map(simMatchIfPast);
 
-        // PLAYOFFS
         let lcpPlayoffs = hasBadData ? [] : activeMatches.filter(m => m.type === 'playoff');
         let seeds = league.foreignPlayoffSeeds?.['LCP'] || [];
         
@@ -308,7 +312,6 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
                 activeMatches.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 pb-4">
                         {activeMatches
-                            // [FIX] Ensure Team Schedule doesn't hide foreign games!
                             .filter(m => activeTab === 'schedule' || displayLeague !== 'LCK' || (m.t1 === myTeam.id || m.t2 === myTeam.id))
                             .sort(compareDatesObj) 
                             .map((m, i) => {
