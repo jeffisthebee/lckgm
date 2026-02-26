@@ -30,6 +30,7 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
     const activeTeams = displayLeague === 'LCK' ? teams : (FOREIGN_LEAGUES[displayLeague] || []);
 
     // [NEW] The Time Machine Engine
+    // [NEW] The Upgraded Time Machine Engine
     const handleRetroactiveGenerate = () => {
         if (displayLeague !== 'LCP') return;
         
@@ -47,8 +48,20 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
             };
         });
 
-        // Save to game memory and reload!
         const updatedLeague = { ...league };
+        
+        // [THE FIX] Inject the missing storage bins if it's an old save file!
+        if (!updatedLeague.foreignMatches) {
+            updatedLeague.foreignMatches = { LPL: [], LEC: [], LCS: [], LCP: [], CBLOL: [] };
+        }
+        if (!updatedLeague.foreignStandings) {
+            updatedLeague.foreignStandings = { LPL: {}, LEC: {}, LCS: {}, LCP: {}, CBLOL: {} };
+        }
+        if (!updatedLeague.foreignHistory) {
+            updatedLeague.foreignHistory = { LPL: [], LEC: [], LCS: [], LCP: [], CBLOL: [] };
+        }
+
+        // Save to game memory and reload!
         updatedLeague.foreignMatches['LCP'] = lcpSchedule;
         updateLeague(league.id, updatedLeague);
         window.location.reload();
