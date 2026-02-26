@@ -22,6 +22,7 @@ import {updateLeague, getLeagueById } from '../engine/storage';
 import AwardsTab from '../components/AwardsTab';
 import HistoryTab from '../components/HistoryTab'; 
 import { computeAwards, computePlayoffAwards } from '../engine/statsManager';
+import { FOREIGN_LEAGUES } from '../data/foreignLeagues';
 
 // --- HELPER FUNCTIONS ---
 const getOvrBadgeStyle = (ovr) => {
@@ -215,29 +216,51 @@ const handleManualArchive = () => {
     }, [league?.matches]); // Trigger when matches update
   
   // [CRITICAL FIX] handleMatchClick now injects round info for old saves
-  const handleMatchClick = (match) => {
-    if (!match || match.status !== 'finished' || !match.result) return;
+  // [CRITICAL FIX] Global Team Finder for the Modal!
+  const findGlobalTeam = (teamIdentifier) => {
+    if (!teamIdentifier) return { name: 'Unknown' };
     
-    // Helper to safely get ID
-    const getID = (id) => (typeof id === 'object' ? id.id : Number(id));
-    
-    const t1Id = getID(match.t1);
-    const t2Id = getID(match.t2);
-    
-    const teamA = teams.find(t => t.id === t1Id);
-    const teamB = teams.find(t => t.id === t2Id);
+    // 1. Search LCK
+    let found = teams.find(t => String(t.id) === String(teamIdentifier) || t.name === teamIdentifier);
+    if (found) return found;
 
-    setMyMatchResult({
-        resultData: {
-            ...match.result,
-            round: match.round,
-            roundIndex: match.roundIndex,
-            roundName: match.label || match.roundName || (match.round === 5 ? 'Grand Final' : undefined),
-            matchId: match.id
-        }, 
-        teamA: teamA,
-        teamB: teamB
-    });
+    // 2. Search all Foreign Leagues
+    for (const leagueName in FOREIGN_LEAGUES) {
+        const fTeams = FOREIGN_LEAGUES[leagueName];
+        if (fTeams) {
+            found = fTeams.find(t => String(t.id) === String(teamIdentifier) || t.name === teamIdentifier);
+            if (found) return found;
+        }
+    }
+    
+    // Safe Fallback so the Modal never crashes again
+    return { name: String(teamIdentifier), colors: { primary: '#333' } };
+};
+
+const handleMatchClick = (match) => {
+  if (!match || match.status !== 'finished' || !match.result) return;
+  
+  // Safely parse ID or String
+  const getID = (id) => (typeof id === 'object' ? id.id : id);
+  
+  const t1Id = getID(match.t1);
+  const t2Id = getID(match.t2);
+  
+  // Use the new Global Finder!
+  const teamA = findGlobalTeam(t1Id);
+  const teamB = findGlobalTeam(t2Id);
+
+  setMyMatchResult({
+      resultData: {
+          ...match.result,
+          round: match.round,
+          roundIndex: match.roundIndex,
+          roundName: match.label || match.roundName || (match.round === 5 ? 'Grand Final' : undefined),
+          matchId: match.id
+      }, 
+      teamA: teamA,
+      teamB: teamB
+  });
 };
   
     const handleMenuClick = (tabId) => {
