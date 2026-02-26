@@ -1,30 +1,11 @@
 // src/components/ScheduleTab.jsx
 import React, { useState, useEffect } from 'react';
 import { quickSimulateMatch } from '../engine/simEngine';
-import { generateLCPRegularSchedule, generateLCPPlayoffs } from '../engine/scheduleLogic';
+import { generateLCPRegularSchedule, generateLCPPlayoffs, compareDatesObj } from '../engine/scheduleLogic';
 
-// [FIX 1] Import FOREIGN_PLAYERS to feed the simulation engine!
+// [FIX] Import FOREIGN_PLAYERS!
 import { FOREIGN_LEAGUES, FOREIGN_PLAYERS } from '../data/foreignLeagues';
 import { updateLeague } from '../engine/storage';
-
-// [FIX 2] Hyper-accurate time checking (Checks exact hours/minutes)
-const compareDatesObj = (a, b) => {
-    if (!a || !b || !a.date || !b.date) return 0;
-    const [monthA, dayA] = a.date.split(' ')[0].split('.').map(Number);
-    const [monthB, dayB] = b.date.split(' ')[0].split('.').map(Number);
-    
-    if (monthA !== monthB) return monthA - monthB;
-    if (dayA !== dayB) return dayA - dayB;
-    
-    // Check exact hour and minute if dates are identical
-    if (a.time && b.time) {
-        const [hA, mA] = a.time.split(':').map(Number);
-        const [hB, mB] = b.time.split(':').map(Number);
-        if (hA !== hB) return hA - hB;
-        return mA - mB;
-    }
-    return 0;
-};
 
 const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamName, onMatchClick }) => {
     const [currentLeague, setCurrentLeague] = useState('LCK');
@@ -36,35 +17,38 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
 
     const activeTeams = displayLeague === 'LCK' ? teams : (FOREIGN_LEAGUES[displayLeague] || []);
 
-    // --- SMART CLOCK: What exact time is it in the LCK? ---
     const pendingLCK = league.matches ? league.matches.filter(m => m.status === 'pending').sort(compareDatesObj) : [];
-    // If no pending matches, LCK is finished -> Set clock to the end of time!
     const currentPendingLCK = pendingLCK.length > 0 ? pendingLCK[0] : { date: '99.99 (완료)', time: '23:59' };
     
-    // Check if the current foreign league is behind schedule
     const needsSync = displayLeague === 'LCP' && (
         activeMatches.length === 0 || 
         activeMatches.some(m => m.status === 'pending' && currentPendingLCK.date !== '99.99 (완료)' && compareDatesObj(m, currentPendingLCK) < 0) ||
-        (currentPendingLCK.date === '99.99 (완료)' && activeMatches.some(m => m.status === 'pending'))
+        (currentPendingLCK.date === '99.99 (완료)' && activeMatches.some(m => m.status === 'pending')) ||
+        activeMatches.some(m => m.t1 === 'TBD' || !activeTeams.find(t => t.id === m.t1 || t.name === m.t1)) // The TBD Detector!
     );
 
-    // --- AUTO-SYNC ENGINE (Runs automatically without buttons!) ---
+    // --- BULLETPROOF AUTO-SYNC ENGINE ---
     useEffect(() => {
         if (!needsSync) return;
 
-        console.log(`[Auto-Sync] ${displayLeague} is behind schedule. Simulating games...`);
-        
-        const lcpTeams = FOREIGN_LEAGUES['LCP'];
-        const lcpPlayers = FOREIGN_PLAYERS['LCP']; // Grab the players!
+        const lcpTeams = FOREIGN_LEAGUES['LCP'] || [];
+        const lcpPlayers = (FOREIGN_PLAYERS && FOREIGN_PLAYERS['LCP']) ? FOREIGN_PLAYERS['LCP'] : [];
 
-        let lcpSchedule = activeMatches.length > 0 ? [...activeMatches.filter(m => m.type !== 'playoff')] : generateLCPRegularSchedule(lcpTeams);
-        
         let isUpdated = false;
+
+        // 1. Detect and Destroy Bad Data (TBD matches)
+        let lcpSchedule = activeMatches.filter(m => m.type !== 'playoff');
+        const hasBadData = lcpSchedule.some(m => !lcpTeams.find(t => t.id === m.t1 || t.name === m.t1));
+        
+        if (lcpSchedule.length === 0 || hasBadData) {
+            console.log("[Auto-Sync] Generating fresh LCP Schedule...");
+            lcpSchedule = generateLCPRegularSchedule(lcpTeams);
+            isUpdated = true;
+        }
 
         const simMatchIfPast = (matchObj) => {
             if (matchObj.status === 'finished') return matchObj; 
 
-            // If the LCP match is strictly in the future compared to LCK, wait!
             if (currentPendingLCK.date !== '99.99 (완료)' && compareDatesObj(matchObj, currentPendingLCK) >= 0) {
                 return matchObj;
             }
@@ -73,12 +57,10 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
             const t2Obj = lcpTeams.find(t => t.id === matchObj.t2 || t.name === matchObj.t2);
             if (!t1Obj || !t2Obj) return matchObj; 
 
-            // [FIX 1] Attach the correct full rosters to the teams!
             const t1 = { ...t1Obj, roster: lcpPlayers.filter(p => p.팀 === t1Obj.name) };
             const t2 = { ...t2Obj, roster: lcpPlayers.filter(p => p.팀 === t2Obj.name) };
 
             try {
-                // Now quickSimulateMatch has real players to calculate Kills, Damage, and POG!
                 const simResult = quickSimulateMatch(t1, t2, matchObj.format, matchObj.type, league);
                 isUpdated = true;
                 return {
@@ -96,17 +78,16 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
             }
         };
 
-        // Progressively simulate regular season
         lcpSchedule = lcpSchedule.map(simMatchIfPast);
 
         // PLAYOFFS
-        let lcpPlayoffs = activeMatches.filter(m => m.type === 'playoff');
+        let lcpPlayoffs = hasBadData ? [] : activeMatches.filter(m => m.type === 'playoff');
         let seeds = league.foreignPlayoffSeeds?.['LCP'] || [];
         
         const isRegularSeasonDone = lcpSchedule.every(m => m.status === 'finished');
 
         if (isRegularSeasonDone) {
-            if (seeds.length === 0) {
+            if (seeds.length === 0 || hasBadData) {
                 const standings = {};
                 lcpTeams.forEach(t => standings[t.name] = { w: 0, l: 0, id: t.id || t.name, name: t.name });
                 lcpSchedule.forEach(m => {
@@ -192,7 +173,7 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
             updatedLeague.foreignPlayoffSeeds['LCP'] = seeds;
 
             updateLeague(league.id, updatedLeague);
-            window.location.reload(); // Reloads to cleanly sync everything
+            window.location.reload(); 
         }
     }, [needsSync, currentPendingLCK, displayLeague, activeMatches]);
 

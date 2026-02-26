@@ -214,14 +214,9 @@ export const generateSchedule = (baronIds, elderIds) => {
     });
 
     // [FIX] Sort Chronologically using the robust compareDates helper
-    allScheduled.sort((a, b) => {
-        const dateDiff = compareDates(a.date, b.date);
-        if (dateDiff !== 0) return dateDiff;
-        // If same date, sort by time (17:00 vs 19:30)
-        return a.time.localeCompare(b.time);
-    });
+    // [FIX] Sort Chronologically using the NEW precision object checker!
+    allScheduled.sort(compareDatesObj);
 
-    
     return allScheduled;
 };
 

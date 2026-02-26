@@ -3,6 +3,8 @@ import lec from './leagues/lec.json';
 import lcs from './leagues/lcs.json';
 import lcp from './leagues/lcp.json';
 import cblol from './leagues/cblol.json';
+
+// Import all player data
 import playersLCK from '../data/players.json';
 import playersLPL from '../data/players_lpl.json';
 import playersLEC from '../data/players_lec.json';
