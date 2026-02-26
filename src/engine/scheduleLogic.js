@@ -222,12 +222,19 @@ export const generateSchedule = (baronIds, elderIds) => {
 // [NEW] GLOBAL LEAGUES SCHEDULE LOGIC
 // ==========================================
 
+// ==========================================
+// [NEW] GLOBAL LEAGUES SCHEDULE LOGIC
+// ==========================================
+
 export const generateLCPRegularSchedule = (teams) => {
     let pairs = [];
     // Create single round-robin (8 teams = 28 games)
     for(let i=0; i<teams.length; i++){
         for(let j=i+1; j<teams.length; j++){
-            pairs.push({ t1: teams[i].id, t2: teams[j].id });
+            // [FIX] Use name if id doesn't exist to prevent TBD!
+            const t1Id = teams[i].id || teams[i].name;
+            const t2Id = teams[j].id || teams[j].name;
+            pairs.push({ t1: t1Id, t2: t2Id });
         }
     }
     
@@ -282,9 +289,13 @@ export const generateLCPRegularSchedule = (teams) => {
     return schedule;
 };
 
-// Initial playoff structure
+// [NEW] Updated Playoff Logic with your exact LCP dates!
 export const generateLCPPlayoffs = (seeds) => {
-    const getSeedId = (s) => seeds.find(x => x.seed === s)?.id;
+    // [FIX] Use name if id doesn't exist
+    const getSeedId = (s) => {
+        const team = seeds.find(x => x.seed === s);
+        return team ? (team.id || team.name) : null;
+    };
     
     // 3rd Seed chooses opponent (90% chance to pick 6th)
     let pickOpponent = 6;
@@ -294,10 +305,10 @@ export const generateLCPPlayoffs = (seeds) => {
     return [
         { round: 1, match: 1, label: '플레이오프 1R', t1: getSeedId(3), t2: getSeedId(pickOpponent), date: '2.12 (목)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lcp_po1' },
         { round: 1, match: 2, label: '플레이오프 1R', t1: getSeedId(4), t2: getSeedId(otherOpponent), date: '2.13 (금)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lcp_po2' },
-        { round: 2, match: 1, label: '플레이오프 2R', t1: getSeedId(1), t2: null, date: '2.14 (토)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lcp_po3' },
-        { round: 2, match: 2, label: '플레이오프 2R', t1: getSeedId(2), t2: null, date: '2.15 (일)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lcp_po4' },
+        { round: 2, match: 1, label: '승자조 2R', t1: getSeedId(1), t2: null, date: '2.14 (토)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lcp_po3' },
+        { round: 2, match: 2, label: '승자조 2R', t1: getSeedId(2), t2: null, date: '2.15 (일)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lcp_po4' },
         { round: 3, match: 1, label: '승자조 결승', t1: null, t2: null, date: '2.26 (목)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lcp_po5' },
-        { round: 2.1, match: 1, label: '패자조 1R', t1: null, t2: null, date: '2.27 (금)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lcp_po6' },
+        { round: 2.1, match: 1, label: '패자조 2R', t1: null, t2: null, date: '2.27 (금)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lcp_po6' },
         { round: 3.1, match: 1, label: '결승 진출전', t1: null, t2: null, date: '2.28 (토)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lcp_po7' },
         { round: 4, match: 1, label: '결승전', t1: null, t2: null, date: '3.1 (일)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lcp_po8' }
     ];

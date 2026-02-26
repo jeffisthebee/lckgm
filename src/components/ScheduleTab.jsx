@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 
 // [NEW] Imports for the Retroactive Time Machine!
-import { generateLCPRegularSchedule } from '../engine/scheduleLogic';
+import { generateLCPRegularSchedule, generateLCPPlayoffs } from '../engine/scheduleLogic';
 import { FOREIGN_LEAGUES } from '../data/foreignLeagues';
 import { updateLeague } from '../engine/storage';
 
@@ -31,41 +31,62 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
 
     // [NEW] The Time Machine Engine
     // [NEW] The Upgraded Time Machine Engine
-    const handleRetroactiveGenerate = () => {
-        if (displayLeague !== 'LCP') return;
-        
-        const lcpTeams = FOREIGN_LEAGUES['LCP'];
-        let lcpSchedule = generateLCPRegularSchedule(lcpTeams);
-        
-        // Fast-forward simulate all games randomly so you can see results immediately
-        lcpSchedule = lcpSchedule.map(m => {
-            const winnerId = Math.random() > 0.5 ? m.t1 : m.t2;
-            const winnerName = lcpTeams.find(t => t.id === winnerId)?.name;
-            return {
-                ...m,
-                status: 'finished',
-                result: { winner: winnerName, score: '2-1' }
-            };
-        });
+   // [NEW] The Upgraded Time Machine Engine (Now with Playoffs!)
+   const handleRetroactiveGenerate = () => {
+    if (displayLeague !== 'LCP') return;
+    
+    const lcpTeams = FOREIGN_LEAGUES['LCP'];
+    
+    // 1. Generate & Simulate Regular Season
+    let lcpSchedule = generateLCPRegularSchedule(lcpTeams);
+    lcpSchedule = lcpSchedule.map(m => {
+        const winnerId = Math.random() > 0.5 ? m.t1 : m.t2;
+        const winnerTeam = lcpTeams.find(t => t.id === winnerId || t.name === winnerId);
+        return {
+            ...m,
+            status: 'finished',
+            result: { winner: winnerTeam?.name, score: '2-1' }
+        };
+    });
 
-        const updatedLeague = { ...league };
-        
-        // [THE FIX] Inject the missing storage bins if it's an old save file!
-        if (!updatedLeague.foreignMatches) {
-            updatedLeague.foreignMatches = { LPL: [], LEC: [], LCS: [], LCP: [], CBLOL: [] };
-        }
-        if (!updatedLeague.foreignStandings) {
-            updatedLeague.foreignStandings = { LPL: {}, LEC: {}, LCS: {}, LCP: {}, CBLOL: {} };
-        }
-        if (!updatedLeague.foreignHistory) {
-            updatedLeague.foreignHistory = { LPL: [], LEC: [], LCS: [], LCP: [], CBLOL: [] };
-        }
+    // 2. Generate Playoff Seeds (Randomly pick 6 teams)
+    const shuffled = [...lcpTeams].sort(() => Math.random() - 0.5);
+    const seeds = shuffled.slice(0, 6).map((t, idx) => ({
+        id: t.id || t.name,
+        name: t.name,
+        seed: idx + 1
+    }));
 
-        // Save to game memory and reload!
-        updatedLeague.foreignMatches['LCP'] = lcpSchedule;
-        updateLeague(league.id, updatedLeague);
-        window.location.reload();
-    };
+    // 3. Generate & Simulate Playoffs
+    let lcpPlayoffs = generateLCPPlayoffs(seeds);
+    lcpPlayoffs = lcpPlayoffs.map(m => {
+        // If the match doesn't have opponents yet (like Round 2), just skip simulating it for now
+        if (!m.t1 || !m.t2) return m;
+
+        const winnerId = Math.random() > 0.5 ? m.t1 : m.t2;
+        const winnerTeam = lcpTeams.find(t => t.id === winnerId || t.name === winnerId);
+        return {
+            ...m,
+            status: 'finished',
+            result: { winner: winnerTeam?.name, score: '3-1' }
+        };
+    });
+
+    const fullSchedule = [...lcpSchedule, ...lcpPlayoffs];
+
+    const updatedLeague = { ...league };
+    if (!updatedLeague.foreignMatches) updatedLeague.foreignMatches = { LPL: [], LEC: [], LCS: [], LCP: [], CBLOL: [] };
+    if (!updatedLeague.foreignStandings) updatedLeague.foreignStandings = { LPL: {}, LEC: {}, LCS: {}, LCP: {}, CBLOL: {} };
+    if (!updatedLeague.foreignHistory) updatedLeague.foreignHistory = { LPL: [], LEC: [], LCS: [], LCP: [], CBLOL: [] };
+
+    // Save to game memory and reload!
+    updatedLeague.foreignMatches['LCP'] = fullSchedule;
+    updatedLeague.foreignPlayoffSeeds = updatedLeague.foreignPlayoffSeeds || {};
+    updatedLeague.foreignPlayoffSeeds['LCP'] = seeds;
+
+    updateLeague(league.id, updatedLeague);
+    window.location.reload();
+};
 
     return (
         <div className="bg-white rounded-lg border shadow-sm p-4 lg:p-8 min-h-[300px] lg:min-h-[600px] flex flex-col h-full lg:h-auto overflow-y-auto">
@@ -100,8 +121,8 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
                             .filter(m => activeTab === 'schedule' || (m.t1 === myTeam.id || m.t2 === myTeam.id))
                             .sort(compareDates) 
                             .map((m, i) => {
-                                const t1 = m.t1 ? activeTeams.find(t => t.id === m.t1) : { name: 'TBD' };
-                                const t2 = m.t2 ? activeTeams.find(t => t.id === m.t2) : { name: 'TBD' };
+                                const t1 = m.t1 ? activeTeams.find(t => t.id === m.t1 || t.name === m.t1) : { name: 'TBD' };
+                                const t2 = m.t2 ? activeTeams.find(t => t.id === m.t2 || t.name === m.t2) : { name: 'TBD' };
                                 const isMyMatch = myTeam.id === m.t1 || myTeam.id === m.t2;
                                 const isFinished = m.status === 'finished';
                                 
