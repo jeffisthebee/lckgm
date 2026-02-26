@@ -27,12 +27,15 @@ const StandingsTab = ({
 }) => {
     const [currentLeague, setCurrentLeague] = useState('LCK');
 
-    // [FIX 2] Standardized Score Parser to ensure Standings and Schedule match perfectly
+    // [FIX 2] Robust Score Parser - Handles "-", ":", and spaces to ensure Schedule & Standings match!
     const getScoreDiff = (scoreStr) => {
         if (!scoreStr || typeof scoreStr !== 'string') return 0;
-        const parts = scoreStr.split('-').map(Number);
+        // Split by either hyphen or colon and trim whitespace
+        const parts = scoreStr.split(/[-:]/).map(s => parseInt(s.trim()));
         if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) return 0;
-        // Differential is always (Winner Score - Loser Score)
+        
+        // Differential is (Winner Score - Loser Score)
+        // Since the winner is already identified, we just need the magnitude of the victory
         return Math.abs(parts[0] - parts[1]);
     };
 
@@ -44,34 +47,37 @@ const StandingsTab = ({
         const tArray = FOREIGN_LEAGUES[currentLeague] || [];
         const st = {};
         
+        // Initialize all teams in the league
         tArray.forEach(t => {
             st[t.name] = { w: 0, l: 0, diff: 0, ...t };
         });
 
-        const regularMatches = matches.filter(m => m.type !== 'playoff' && m.status === 'finished');
+        // Compute from regular season matches that are actually finished
+        const regularMatches = matches.filter(m => (m.type === 'regular' || m.type === 'super') && m.status === 'finished');
+        
         regularMatches.forEach(m => {
-            if (!m.result || !m.result.winner) return;
+            if (!m.result || !m.result.winner || !m.result.score) return;
             
-            const winner = m.result.winner;
-            const t1Obj = tArray.find(t => t.id === m.t1 || t.name === m.t1);
-            const t2Obj = tArray.find(t => t.id === m.t2 || t.name === m.t2);
+            const winnerName = m.result.winner;
+            // Standardize identification of Team 1 and Team 2 names
+            const team1 = tArray.find(t => t.id === m.t1 || t.name === m.t1);
+            const team2 = tArray.find(t => t.id === m.t2 || t.name === m.t2);
             
-            if (!t1Obj || !t2Obj) return;
+            if (!team1 || !team2) return;
             
-            const t1 = t1Obj.name;
-            const t2 = t2Obj.name;
-            const loser = winner === t1 ? t2 : t1;
+            const t1Name = team1.name;
+            const t2Name = team2.name;
+            const loserName = winnerName === t1Name ? t2Name : t1Name;
 
-            // Apply standardized diff
             const diffValue = getScoreDiff(m.result.score);
 
-            if (st[winner]) {
-                st[winner].w += 1;
-                st[winner].diff += diffValue;
+            if (st[winnerName]) {
+                st[winnerName].w += 1;
+                st[winnerName].diff += diffValue;
             }
-            if (st[loser]) {
-                st[loser].l += 1;
-                st[loser].diff -= diffValue;
+            if (st[loserName]) {
+                st[loserName].l += 1;
+                st[loserName].diff -= diffValue;
             }
         });
         
@@ -79,6 +85,7 @@ const StandingsTab = ({
     }, [currentLeague, league.foreignMatches]);
 
     const renderForeignTable = (groupName, teamsArray, colorTheme, isCompact = false) => {
+        // Sort by Match Wins, then by Game Differential
         const sortedTeams = [...teamsArray].sort((a, b) => {
             const recA = foreignStandings[a.name] || { w: 0, l: 0, diff: 0 };
             const recB = foreignStandings[b.name] || { w: 0, l: 0, diff: 0 };
@@ -108,7 +115,7 @@ const StandingsTab = ({
                         <tbody className="divide-y divide-gray-100">
                             {sortedTeams.map((t, idx) => {
                                 const rec = foreignStandings[t.name] || { w: 0, l: 0, diff: 0 };
-                                const teamColor = t.colors?.primary || TEAM_COLORS[t.name] || '#333';
+                                const teamColor = TEAM_COLORS[t.name] || t.colors?.primary || '#333';
                                 
                                 // [FIX 1] Seeding badges are now STRICTLY for LCP only
                                 let statusBadge = null;
@@ -117,8 +124,8 @@ const StandingsTab = ({
                                         statusBadge = <span className="block sm:inline text-[10px] sm:text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded sm:ml-2 mt-1 sm:mt-0 font-bold w-fit whitespace-nowrap">PO {idx + 1}시드</span>;
                                     } else {
                                         const matches = league.foreignMatches?.[currentLeague] || [];
-                                        const totalRegular = matches.filter(m => m.type !== 'playoff').length;
-                                        const finishedRegular = matches.filter(m => m.type !== 'playoff' && m.status === 'finished').length;
+                                        const totalRegular = matches.filter(m => (m.type === 'regular' || m.type === 'super')).length;
+                                        const finishedRegular = matches.filter(m => (m.type === 'regular' || m.type === 'super') && m.status === 'finished').length;
                                         if (totalRegular > 0 && totalRegular === finishedRegular) {
                                              statusBadge = <span className="block sm:inline text-[10px] sm:text-xs bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded sm:ml-2 mt-1 sm:mt-0 font-bold w-fit whitespace-nowrap">탈락</span>;
                                         }
