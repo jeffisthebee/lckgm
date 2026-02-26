@@ -55,7 +55,8 @@ const getSafeRoster = (teamObj, allPlayers) => {
     });
 };
 
-const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamName, onMatchClick }) => {
+// [FIX] Accept setLeague from Dashboard!
+const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, formatTeamName, onMatchClick }) => {
     const [currentLeague, setCurrentLeague] = useState('LCK');
     const displayLeague = activeTab === 'team_schedule' ? 'LCK' : currentLeague;
 
@@ -68,7 +69,6 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
     const pendingLCK = league.matches ? league.matches.filter(m => m.status === 'pending').sort(compareDatesObj) : [];
     const currentPendingLCK = pendingLCK.length > 0 ? pendingLCK[0] : { date: '99.99 (완료)', time: '23:59' };
     
-    // [THE FIX] The detector now actively hunts for the fake error logs!
     const needsSync = displayLeague === 'LCP' && (
         activeMatches.length === 0 || 
         activeMatches.some(m => m.status === 'pending' && currentPendingLCK.date !== '99.99 (완료)' && compareDatesObj(m, currentPendingLCK) < 0) ||
@@ -93,7 +93,6 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
 
         let lcpSchedule = activeMatches.filter(m => m.type !== 'playoff');
         
-        // Destroy corrupted games (including the fake fail-safe games)
         const hasBadData = activeMatches.some(m => 
             !lcpTeams.find(t => t.id === m.t1 || t.name === m.t1) || 
             (m.status === 'finished' && (
@@ -132,7 +131,8 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
             const t2 = { ...t2Obj, roster: getSafeRoster(t2Obj, lcpPlayers) };
 
             try {
-                const simResult = quickSimulateMatch(t1, t2, matchObj.format, matchObj.type, safeLeague);
+                // [THE CRITICAL FIX] Pass exactly 4 arguments! No more sending 'regular'/'playoff' into the Champion List parameter!
+                const simResult = quickSimulateMatch(t1, t2, matchObj.format, safeLeague.currentChampionList);
                 isUpdated = true;
                 
                 let fScore = simResult.scoreString || simResult.score;
@@ -270,9 +270,15 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
             updatedLeague.foreignPlayoffSeeds['LCP'] = seeds;
 
             updateLeague(league.id, updatedLeague);
-            window.location.reload(); 
+            
+            // [THE FIX] Safely update the Dashboard's state instead of violently reloading!
+            if (setLeague) {
+                setLeague(updatedLeague);
+            } else {
+                window.location.reload(); 
+            }
         }
-    }, [needsSync, currentPendingLCK, displayLeague, activeMatches]);
+    }, [needsSync, currentPendingLCK, displayLeague, activeMatches, league, setLeague]);
 
     return (
         <div className="bg-white rounded-lg border shadow-sm p-4 lg:p-8 min-h-[300px] lg:min-h-[600px] flex flex-col h-full lg:h-auto overflow-y-auto relative">

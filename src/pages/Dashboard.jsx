@@ -1434,17 +1434,18 @@ const handleMatchClick = (match) => {
                 />
             )}
   
-               {(activeTab === 'schedule' || activeTab === 'team_schedule') && (
+  {(activeTab === 'schedule' || activeTab === 'team_schedule') && (
                 <ScheduleTab 
                     activeTab={activeTab}
                     league={league}
+                    setLeague={setLeague} // <--- [NEW] Pass the memory controller!
                     teams={teams}
                     myTeam={myTeam}
                     hasDrafted={hasDrafted}
                     formatTeamName={formatTeamName}
                     onMatchClick={handleMatchClick} 
                 />
-            )} 
+            )}
 
 {activeTab === 'awards' && (
     <AwardsTab league={league} teams={teams} playerList={playerList} />
