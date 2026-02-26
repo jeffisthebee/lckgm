@@ -21,72 +21,67 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
     const [currentLeague, setCurrentLeague] = useState('LCK');
     const displayLeague = activeTab === 'team_schedule' ? 'LCK' : currentLeague;
 
-    // [NEW] Determine which match array to pull from based on the buttons
     const activeMatches = displayLeague === 'LCK' 
         ? (league.matches || [])
         : (league.foreignMatches?.[displayLeague] || []);
 
-    // [NEW] Determine global teams to display names correctly
     const activeTeams = displayLeague === 'LCK' ? teams : (FOREIGN_LEAGUES[displayLeague] || []);
 
-    // [NEW] The Time Machine Engine
-    // [NEW] The Upgraded Time Machine Engine
-   // [NEW] The Upgraded Time Machine Engine (Now with Playoffs!)
-   const handleRetroactiveGenerate = () => {
-    if (displayLeague !== 'LCP') return;
-    
-    const lcpTeams = FOREIGN_LEAGUES['LCP'];
-    
-    // 1. Generate & Simulate Regular Season
-    let lcpSchedule = generateLCPRegularSchedule(lcpTeams);
-    lcpSchedule = lcpSchedule.map(m => {
-        const winnerId = Math.random() > 0.5 ? m.t1 : m.t2;
-        const winnerTeam = lcpTeams.find(t => t.id === winnerId || t.name === winnerId);
-        return {
-            ...m,
-            status: 'finished',
-            result: { winner: winnerTeam?.name, score: '2-1' }
-        };
-    });
+    // The Upgraded Time Machine Engine (Now with Playoffs!)
+    const handleRetroactiveGenerate = () => {
+        if (displayLeague !== 'LCP') return;
+        
+        const lcpTeams = FOREIGN_LEAGUES['LCP'];
+        
+        // 1. Generate & Simulate Regular Season
+        let lcpSchedule = generateLCPRegularSchedule(lcpTeams);
+        lcpSchedule = lcpSchedule.map(m => {
+            const winnerId = Math.random() > 0.5 ? m.t1 : m.t2;
+            const winnerTeam = lcpTeams.find(t => t.id === winnerId || t.name === winnerId);
+            return {
+                ...m,
+                status: 'finished',
+                result: { winner: winnerTeam?.name, score: '2-1' }
+            };
+        });
 
-    // 2. Generate Playoff Seeds (Randomly pick 6 teams)
-    const shuffled = [...lcpTeams].sort(() => Math.random() - 0.5);
-    const seeds = shuffled.slice(0, 6).map((t, idx) => ({
-        id: t.id || t.name,
-        name: t.name,
-        seed: idx + 1
-    }));
+        // 2. Generate Playoff Seeds (Randomly pick 6 teams)
+        const shuffled = [...lcpTeams].sort(() => Math.random() - 0.5);
+        const seeds = shuffled.slice(0, 6).map((t, idx) => ({
+            id: t.id || t.name,
+            name: t.name,
+            seed: idx + 1
+        }));
 
-    // 3. Generate & Simulate Playoffs
-    let lcpPlayoffs = generateLCPPlayoffs(seeds);
-    lcpPlayoffs = lcpPlayoffs.map(m => {
-        // If the match doesn't have opponents yet (like Round 2), just skip simulating it for now
-        if (!m.t1 || !m.t2) return m;
+        // 3. Generate & Simulate Playoffs
+        let lcpPlayoffs = generateLCPPlayoffs(seeds);
+        lcpPlayoffs = lcpPlayoffs.map(m => {
+            if (!m.t1 || !m.t2) return m;
 
-        const winnerId = Math.random() > 0.5 ? m.t1 : m.t2;
-        const winnerTeam = lcpTeams.find(t => t.id === winnerId || t.name === winnerId);
-        return {
-            ...m,
-            status: 'finished',
-            result: { winner: winnerTeam?.name, score: '3-1' }
-        };
-    });
+            const winnerId = Math.random() > 0.5 ? m.t1 : m.t2;
+            const winnerTeam = lcpTeams.find(t => t.id === winnerId || t.name === winnerId);
+            return {
+                ...m,
+                status: 'finished',
+                result: { winner: winnerTeam?.name, score: '3-1' }
+            };
+        });
 
-    const fullSchedule = [...lcpSchedule, ...lcpPlayoffs];
+        const fullSchedule = [...lcpSchedule, ...lcpPlayoffs];
 
-    const updatedLeague = { ...league };
-    if (!updatedLeague.foreignMatches) updatedLeague.foreignMatches = { LPL: [], LEC: [], LCS: [], LCP: [], CBLOL: [] };
-    if (!updatedLeague.foreignStandings) updatedLeague.foreignStandings = { LPL: {}, LEC: {}, LCS: {}, LCP: {}, CBLOL: {} };
-    if (!updatedLeague.foreignHistory) updatedLeague.foreignHistory = { LPL: [], LEC: [], LCS: [], LCP: [], CBLOL: [] };
+        const updatedLeague = { ...league };
+        if (!updatedLeague.foreignMatches) updatedLeague.foreignMatches = { LPL: [], LEC: [], LCS: [], LCP: [], CBLOL: [] };
+        if (!updatedLeague.foreignStandings) updatedLeague.foreignStandings = { LPL: {}, LEC: {}, LCS: {}, LCP: {}, CBLOL: {} };
+        if (!updatedLeague.foreignHistory) updatedLeague.foreignHistory = { LPL: [], LEC: [], LCS: [], LCP: [], CBLOL: [] };
 
-    // Save to game memory and reload!
-    updatedLeague.foreignMatches['LCP'] = fullSchedule;
-    updatedLeague.foreignPlayoffSeeds = updatedLeague.foreignPlayoffSeeds || {};
-    updatedLeague.foreignPlayoffSeeds['LCP'] = seeds;
+        // Save to game memory and reload!
+        updatedLeague.foreignMatches['LCP'] = fullSchedule;
+        updatedLeague.foreignPlayoffSeeds = updatedLeague.foreignPlayoffSeeds || {};
+        updatedLeague.foreignPlayoffSeeds['LCP'] = seeds;
 
-    updateLeague(league.id, updatedLeague);
-    window.location.reload();
-};
+        updateLeague(league.id, updatedLeague);
+        window.location.reload();
+    };
 
     return (
         <div className="bg-white rounded-lg border shadow-sm p-4 lg:p-8 min-h-[300px] lg:min-h-[600px] flex flex-col h-full lg:h-auto overflow-y-auto">
@@ -109,11 +104,22 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
                 </div>
             )}
 
-            <h2 className="text-lg lg:text-2xl font-black text-gray-900 mb-4 lg:mb-6 flex items-center gap-2 shrink-0">
-                📅 {activeTab === 'team_schedule' ? `${myTeam.name} 경기 일정` : `2026 ${displayLeague} 전체 일정`}
-            </h2>
+            {/* [NEW] The Reset Button placed next to the header! */}
+            <div className="flex items-center justify-between mb-4 lg:mb-6 shrink-0">
+                <h2 className="text-lg lg:text-2xl font-black text-gray-900 flex items-center gap-2">
+                    📅 {activeTab === 'team_schedule' ? `${myTeam.name} 경기 일정` : `2026 ${displayLeague} 전체 일정`}
+                </h2>
+                
+                {displayLeague === 'LCP' && activeMatches.length > 0 && (
+                    <button 
+                        onClick={handleRetroactiveGenerate}
+                        className="bg-red-100 hover:bg-red-200 text-red-600 border border-red-300 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-sm"
+                    >
+                        🔄 오류 수정 (일정 재생성)
+                    </button>
+                )}
+            </div>
             
-            {/* LCK and LCP are now "Unlocked", others show the placeholder */}
             {displayLeague === 'LCK' || displayLeague === 'LCP' ? (
                 activeMatches.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 pb-4">
@@ -121,6 +127,7 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
                             .filter(m => activeTab === 'schedule' || (m.t1 === myTeam.id || m.t2 === myTeam.id))
                             .sort(compareDates) 
                             .map((m, i) => {
+                                // [FIXED] Proper name lookup to prevent TBD
                                 const t1 = m.t1 ? activeTeams.find(t => t.id === m.t1 || t.name === m.t1) : { name: 'TBD' };
                                 const t2 = m.t2 ? activeTeams.find(t => t.id === m.t2 || t.name === m.t2) : { name: 'TBD' };
                                 const isMyMatch = myTeam.id === m.t1 || myTeam.id === m.t2;
@@ -146,12 +153,12 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
                                         <div className="flex justify-between items-center mt-1 lg:mt-2">
                                             <div className="flex flex-col items-center w-1/3">
                                                 <span className={`font-bold text-xs lg:text-base text-center break-keep leading-tight ${isMyMatch && myTeam.id === m.t1 && displayLeague === 'LCK' ? 'text-blue-600' : 'text-gray-800'}`}>{t1Name}</span>
-                                                {isFinished && m.result.winner === t1.name && <span className="text-[10px] lg:text-xs text-blue-500 font-bold mt-1">WIN</span>}
+                                                {isFinished && m.result?.winner === t1.name && <span className="text-[10px] lg:text-xs text-blue-500 font-bold mt-1">WIN</span>}
                                             </div>
                                             <div className="text-center font-bold flex flex-col items-center shrink-0 w-1/4">
                                             {isFinished ? (
                                                 <div className="flex flex-col items-center">
-                                                    <span className="text-lg lg:text-xl text-gray-800">{m.result.score}</span>
+                                                    <span className="text-lg lg:text-xl text-gray-800">{m.result?.score || '2-1'}</span>
                                                 </div>
                                             ) : (
                                                 <span className="text-gray-400 text-sm lg:text-base">VS</span>
@@ -159,7 +166,7 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
                                             </div>
                                             <div className="flex flex-col items-center w-1/3">
                                                 <span className={`font-bold text-xs lg:text-base text-center break-keep leading-tight ${isMyMatch && myTeam.id === m.t2 && displayLeague === 'LCK' ? 'text-blue-600' : 'text-gray-800'}`}>{t2Name}</span>
-                                                {isFinished && m.result.winner === t2.name && <span className="text-[10px] lg:text-xs text-blue-500 font-bold mt-1">WIN</span>}
+                                                {isFinished && m.result?.winner === t2.name && <span className="text-[10px] lg:text-xs text-blue-500 font-bold mt-1">WIN</span>}
                                             </div>
                                         </div>
                                     </div>
@@ -167,7 +174,6 @@ const ScheduleTab = ({ activeTab, league, teams, myTeam, hasDrafted, formatTeamN
                             })}
                     </div>
                 ) : (
-                    // [NEW] The Time Machine Display!
                     <div className="flex-1 flex flex-col items-center justify-center text-gray-400 py-10">
                         <div className="text-2xl lg:text-4xl mb-2 lg:mb-4">⏳</div>
                         <div className="text-lg lg:text-xl font-bold">LCP 일정이 비어있습니다</div>
