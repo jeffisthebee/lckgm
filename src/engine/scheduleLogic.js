@@ -214,5 +214,91 @@ export const generateSchedule = (baronIds, elderIds) => {
         return a.time.localeCompare(b.time);
     });
 
+    
     return allScheduled;
+};
+
+// ==========================================
+// [NEW] GLOBAL LEAGUES SCHEDULE LOGIC
+// ==========================================
+
+export const generateLCPRegularSchedule = (teams) => {
+    let pairs = [];
+    // Create single round-robin (8 teams = 28 games)
+    for(let i=0; i<teams.length; i++){
+        for(let j=i+1; j<teams.length; j++){
+            pairs.push({ t1: teams[i].id, t2: teams[j].id });
+        }
+    }
+    
+    // Shuffle the pairs for randomness
+    pairs = pairs.sort(() => Math.random() - 0.5);
+
+    // The exact 28 slots for the LCP schedule
+    const slots = [
+        { date: '1.16 (금)', time: '15:00' }, { date: '1.16 (금)', time: '17:30' },
+        { date: '1.17 (토)', time: '15:00' }, { date: '1.17 (토)', time: '17:30' },
+        { date: '1.18 (일)', time: '15:00' }, { date: '1.18 (일)', time: '17:30' },
+        { date: '1.23 (금)', time: '15:00' }, { date: '1.23 (금)', time: '17:30' },
+        { date: '1.24 (토)', time: '15:00' }, { date: '1.24 (토)', time: '17:30' },
+        { date: '1.25 (일)', time: '15:00' }, { date: '1.25 (일)', time: '17:30' },
+        { date: '1.29 (목)', time: '15:00' }, { date: '1.29 (목)', time: '17:30' },
+        { date: '1.30 (금)', time: '15:00' }, { date: '1.30 (금)', time: '17:30' },
+        { date: '1.31 (토)', time: '15:00' }, { date: '1.31 (토)', time: '17:30' },
+        { date: '2.1 (일)', time: '15:00' },  { date: '2.1 (일)', time: '17:30' },
+        { date: '2.5 (목)', time: '15:00' },  { date: '2.5 (목)', time: '17:30' },
+        { date: '2.6 (금)', time: '15:00' },  { date: '2.6 (금)', time: '17:30' },
+        { date: '2.7 (토)', time: '15:00' },  { date: '2.7 (토)', time: '17:30' },
+        { date: '2.8 (일)', time: '15:00' },  { date: '2.8 (일)', time: '17:30' }
+    ];
+
+    let schedule = [];
+    // Greedy placement to ensure no team plays twice on the same day
+    for(let i=0; i<slots.length; i++) {
+        const slotDate = slots[i].date;
+        let bestPairIdx = 0;
+        
+        for(let j=0; j<pairs.length; j++) {
+            const p = pairs[j];
+            const hasPlayedToday = schedule.some(m => m.date === slotDate && (m.t1 === p.t1 || m.t2 === p.t1 || m.t1 === p.t2 || m.t2 === p.t2));
+            if (!hasPlayedToday) {
+                bestPairIdx = j;
+                break;
+            }
+        }
+        
+        const selected = pairs.splice(bestPairIdx, 1)[0];
+        schedule.push({
+            ...slots[i],
+            t1: selected.t1,
+            t2: selected.t2,
+            id: 'lcp_' + Date.now() + i,
+            type: 'regular',
+            format: 'BO3',
+            status: 'pending'
+        });
+    }
+
+    return schedule;
+};
+
+// Initial playoff structure
+export const generateLCPPlayoffs = (seeds) => {
+    const getSeedId = (s) => seeds.find(x => x.seed === s)?.id;
+    
+    // 3rd Seed chooses opponent (90% chance to pick 6th)
+    let pickOpponent = 6;
+    if (Math.random() > 0.90) pickOpponent = 5;
+    let otherOpponent = pickOpponent === 6 ? 5 : 6;
+
+    return [
+        { round: 1, match: 1, label: '플레이오프 1R', t1: getSeedId(3), t2: getSeedId(pickOpponent), date: '2.12 (목)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lcp_po1' },
+        { round: 1, match: 2, label: '플레이오프 1R', t1: getSeedId(4), t2: getSeedId(otherOpponent), date: '2.13 (금)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lcp_po2' },
+        { round: 2, match: 1, label: '플레이오프 2R', t1: getSeedId(1), t2: null, date: '2.14 (토)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lcp_po3' },
+        { round: 2, match: 2, label: '플레이오프 2R', t1: getSeedId(2), t2: null, date: '2.15 (일)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lcp_po4' },
+        { round: 3, match: 1, label: '승자조 결승', t1: null, t2: null, date: '2.26 (목)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lcp_po5' },
+        { round: 2.1, match: 1, label: '패자조 1R', t1: null, t2: null, date: '2.27 (금)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lcp_po6' },
+        { round: 3.1, match: 1, label: '결승 진출전', t1: null, t2: null, date: '2.28 (토)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lcp_po7' },
+        { round: 4, match: 1, label: '결승전', t1: null, t2: null, date: '3.1 (일)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lcp_po8' }
+    ];
 };
