@@ -1,8 +1,8 @@
 // src/components/StandingsTab.jsx
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { sortGroupByStandings } from '../engine/BracketManager';
 
-// [NEW] Import global data
+// Import global data
 import { FOREIGN_LEAGUES } from '../data/foreignLeagues';
 import { TEAM_COLORS } from '../data/constants';
 
@@ -25,21 +25,71 @@ const StandingsTab = ({
     baronTotalWins, 
     elderTotalWins 
 }) => {
-    // League Switcher Memory
     const [currentLeague, setCurrentLeague] = useState('LCK');
 
-    // Helper to build tables for foreign leagues (Added isCompact parameter for LPL)
+    // [NEW] Live Dynamic Standings Calculator for Foreign Leagues!
+    const foreignStandings = useMemo(() => {
+        if (currentLeague === 'LCK') return {};
+        
+        const matches = league.foreignMatches?.[currentLeague] || [];
+        const tArray = FOREIGN_LEAGUES[currentLeague] || [];
+        const st = {};
+        
+        // Initialize all teams
+        tArray.forEach(t => {
+            st[t.name] = { w: 0, l: 0, diff: 0, ...t };
+        });
+
+        // Compute from finished regular season matches
+        const regularMatches = matches.filter(m => m.type !== 'playoff' && m.status === 'finished');
+        regularMatches.forEach(m => {
+            if (!m.result || !m.result.winner) return;
+            
+            const winner = m.result.winner;
+            const t1Obj = tArray.find(t => t.id === m.t1 || t.name === m.t1);
+            const t2Obj = tArray.find(t => t.id === m.t2 || t.name === m.t2);
+            
+            if (!t1Obj || !t2Obj) return;
+            
+            const t1 = t1Obj.name;
+            const t2 = t2Obj.name;
+            const loser = winner === t1 ? t2 : t1;
+
+            // Calculate exact game differential (e.g., 2-0 = +2, 2-1 = +1)
+            let wScore = 2, lScore = 0;
+            if (m.result.score && typeof m.result.score === 'string') {
+                const parts = m.result.score.split('-').map(Number);
+                if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                    wScore = Math.max(parts[0], parts[1]);
+                    lScore = Math.min(parts[0], parts[1]);
+                }
+            }
+
+            if (st[winner]) {
+                st[winner].w += 1;
+                st[winner].diff += (wScore - lScore);
+            }
+            if (st[loser]) {
+                st[loser].l += 1;
+                st[loser].diff -= (wScore - lScore);
+            }
+        });
+        
+        return st;
+    }, [currentLeague, league.foreignMatches]);
+
+    // Helper to build tables for foreign leagues
     const renderForeignTable = (groupName, teamsArray, colorTheme, isCompact = false) => {
-        // Sort teams by wins, then point differential
+        
+        // Sort teams live by Series Wins, then Score Differential!
         const sortedTeams = [...teamsArray].sort((a, b) => {
-            const recA = league.foreignStandings?.[currentLeague]?.[a.id] || { w: 0, l: 0, diff: 0 };
-            const recB = league.foreignStandings?.[currentLeague]?.[b.id] || { w: 0, l: 0, diff: 0 };
+            const recA = foreignStandings[a.name] || { w: 0, l: 0, diff: 0 };
+            const recB = foreignStandings[b.name] || { w: 0, l: 0, diff: 0 };
             if (recB.w !== recA.w) return recB.w - recA.w;
             if (recB.diff !== recA.diff) return recB.diff - recA.diff;
             return 0;
         });
 
-        // Dynamic padding to squeeze 3 tables side-by-side for LPL
         const pxClass = isCompact ? "px-1 sm:px-2" : "px-2 sm:px-4";
 
         return (
@@ -60,8 +110,26 @@ const StandingsTab = ({
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                             {sortedTeams.map((t, idx) => {
-                                const rec = league.foreignStandings?.[currentLeague]?.[t.id] || { w: 0, l: 0, diff: 0 };
-                                const teamColor = t.colors?.primary || TEAM_COLORS[t.name] || TEAM_COLORS.DEFAULT;
+                                const rec = foreignStandings[t.name] || { w: 0, l: 0, diff: 0 };
+                                const teamColor = t.colors?.primary || TEAM_COLORS[t.name] || '#333';
+                                
+                                // [NEW] Smart Playoff Badges based on live rank!
+                                let statusBadge = null;
+                                if (currentLeague !== 'LPL') {
+                                    if (idx < 6) {
+                                        statusBadge = <span className="block sm:inline text-[10px] sm:text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded sm:ml-2 mt-1 sm:mt-0 font-bold w-fit whitespace-nowrap">PO {idx + 1}시드</span>;
+                                    } else {
+                                        const matches = league.foreignMatches?.[currentLeague] || [];
+                                        const totalRegular = matches.filter(m => m.type !== 'playoff').length;
+                                        const finishedRegular = matches.filter(m => m.type !== 'playoff' && m.status === 'finished').length;
+                                        
+                                        // If the regular season is 100% finished, mark them as eliminated
+                                        if (totalRegular > 0 && totalRegular === finishedRegular) {
+                                             statusBadge = <span className="block sm:inline text-[10px] sm:text-xs bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded sm:ml-2 mt-1 sm:mt-0 font-bold w-fit whitespace-nowrap">탈락</span>;
+                                        }
+                                    }
+                                }
+
                                 return (
                                     <tr key={t.id || t.name} className="hover:bg-gray-50 transition">
                                         <td className={`py-2 ${pxClass} text-center font-bold text-gray-600`}>{idx + 1}</td>
@@ -69,6 +137,7 @@ const StandingsTab = ({
                                             <div className="flex items-center gap-1.5 sm:gap-2">
                                                 <div className="w-4 h-4 sm:w-5 sm:h-5 rounded-full text-white text-[8px] sm:text-[10px] flex-shrink-0 flex items-center justify-center" style={{ backgroundColor: teamColor }}>{t.name.slice(0,3)}</div>
                                                 <span className="truncate max-w-[60px] sm:max-w-full">{t.fullName || t.name}</span>
+                                                {statusBadge}
                                             </div>
                                         </td>
                                         <td className={`py-2 ${pxClass} text-center font-bold text-blue-600`}>{rec.w}</td>
@@ -84,7 +153,7 @@ const StandingsTab = ({
         );
     };
 
-    // Render Logic for LPL specifically
+    // Render Logic for LPL specifically (Maintains 3 columns)
     const renderLPL = () => {
         const lplTeams = FOREIGN_LEAGUES['LPL'] || [];
         const groups = {
@@ -102,7 +171,6 @@ const StandingsTab = ({
         });
 
         return (
-            // [FIXED] Force 3 columns on lg screens and shrink the gap so they all fit nicely
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 sm:gap-4">
                 {renderForeignTable('등봉조 (Top)', groupedTeams['등봉조'], 'red', true)}
                 {renderForeignTable('인내조 (Mid)', groupedTeams['인내조'], 'blue', true)}
@@ -175,9 +243,9 @@ const StandingsTab = ({
                                                         const poInfo = summary.poTeams?.find(pt => pt.id === id);
                                                         const piInfo = summary.playInTeams?.find(pit => pit.id === id);
 
-                                                        if (poInfo) statusBadge = <span className="block sm:inline text-[10px] sm:text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded sm:ml-2 mt-1 sm:mt-0 font-bold w-fit">PO {poInfo.seed}시드</span>;
-                                                        else if (piInfo) statusBadge = <span className="block sm:inline text-[10px] sm:text-xs bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded sm:ml-2 mt-1 sm:mt-0 font-bold w-fit">PI {piInfo.seed}시드</span>;
-                                                        else if (summary.eliminated === id) statusBadge = <span className="block sm:inline text-[10px] sm:text-xs bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded sm:ml-2 mt-1 sm:mt-0 font-bold w-fit">탈락</span>;
+                                                        if (poInfo) statusBadge = <span className="block sm:inline text-[10px] sm:text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded sm:ml-2 mt-1 sm:mt-0 font-bold w-fit whitespace-nowrap">PO {poInfo.seed}시드</span>;
+                                                        else if (piInfo) statusBadge = <span className="block sm:inline text-[10px] sm:text-xs bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded sm:ml-2 mt-1 sm:mt-0 font-bold w-fit whitespace-nowrap">PI {piInfo.seed}시드</span>;
+                                                        else if (summary.eliminated === id) statusBadge = <span className="block sm:inline text-[10px] sm:text-xs bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded sm:ml-2 mt-1 sm:mt-0 font-bold w-fit whitespace-nowrap">탈락</span>;
                                                     }
 
                                                     return (
