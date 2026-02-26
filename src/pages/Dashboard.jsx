@@ -1427,11 +1427,11 @@ const handleManualArchive = () => {
     <AwardsTab league={league} teams={teams} playerList={playerList} />
 )}
 
-{activeTab === 'foreign' && (
-    <ForeignLeaguesTab />
+
+{/* [NEW] History Tab Render */}
+{activeTab === 'history' && (
+    <HistoryTab league={league} />
 )}
-
-
   
             </div>
           </main>
