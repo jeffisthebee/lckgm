@@ -5,10 +5,13 @@ import { computeAwards, computePlayoffAwards } from '../engine/statsManager';
 // Import Global Leagues AND Global Players!
 import { FOREIGN_LEAGUES, FOREIGN_PLAYERS } from '../data/foreignLeagues';
 
+// [NEW] Import your Team Colors dictionary!
+import { TEAM_COLORS } from '../data/constants'; 
+
 // Safely combine every player in the world into one giant phonebook
 const globalPlayerList = Object.values(FOREIGN_PLAYERS || {}).flat().filter(Boolean);
 
-// [NEW] Global Team Finder - Guarantees we find the correct Team Colors!
+// Global Team Finder - Guarantees we find the correct Team Colors!
 const getGlobalTeam = (teamIdentifier, lckTeams) => {
     if (!teamIdentifier) return null;
     
@@ -57,8 +60,10 @@ const PlayerCard = ({ player, rank, lckTeams }) => {
     // Force Team Colors!
     const teamNameRef = player.teamObj?.name || player.team || (player.teams && player.teams[0]);
     const globalTeam = getGlobalTeam(teamNameRef, lckTeams);
-    const bgColor = globalTeam?.colors?.primary || player.teamObj?.colors?.primary || '#333';
     const displayTeamName = globalTeam?.name || teamNameRef || 'FA';
+    
+    // [FIX] Checks constants.js first, then falls back to object property (for LCK), then defaults to #333
+    const bgColor = TEAM_COLORS[displayTeamName] || globalTeam?.colors?.primary || player.teamObj?.colors?.primary || '#333';
 
     const rankStyles = {
         1: 'border-yellow-400 bg-gradient-to-br from-yellow-50 to-white ring-2 ring-yellow-200',
@@ -124,8 +129,10 @@ const MvpShowcaseCard = ({ player, title, badgeColor, lckTeams, size = 'large' }
 
     const teamNameRef = player.teamObj?.name || player.team || (player.teams && player.teams[0]);
     const globalTeam = getGlobalTeam(teamNameRef, lckTeams);
-    const bgColor = globalTeam?.colors?.primary || player.teamObj?.colors?.primary || '#333';
     const displayTeamName = globalTeam?.name || teamNameRef || 'FA';
+    
+    // [FIX] Checks constants.js first, then falls back!
+    const bgColor = TEAM_COLORS[displayTeamName] || globalTeam?.colors?.primary || player.teamObj?.colors?.primary || '#333';
 
     const pData = globalPlayerList.find(p => p.이름 === player.playerName || p.playerName === player.playerName);
     const realName = pData ? (pData.한글명 || pData.실명 || pData.이름 || player.playerName) : player.playerName;
@@ -209,13 +216,11 @@ export default function AwardsTab({ league, teams }) {
         };
     }, [league, currentLeague, isLCK]);
 
-    // [FIX 3] Smart Playoff Checker!
     const isPlayoffsFinished = useMemo(() => {
         if (!activeLeagueData.matches) return false;
         const playoffs = activeLeagueData.matches.filter(m => m.type === 'playoff');
         if (playoffs.length === 0) return false;
 
-        // Hunt down the actual Grand Final match based on keywords or exact LCK/LCP round numbers
         const explicitFinal = playoffs.find(m => 
             m.round === 5 || 
             String(m.round) === "5" || 
@@ -227,7 +232,6 @@ export default function AwardsTab({ league, teams }) {
             return explicitFinal.status === 'finished';
         }
 
-        // Fallback
         return playoffs.every(m => m.status === 'finished');
     }, [activeLeagueData, currentLeague]);
 
