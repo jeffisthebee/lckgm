@@ -27,7 +27,16 @@ const StandingsTab = ({
 }) => {
     const [currentLeague, setCurrentLeague] = useState('LCK');
 
-    // [FIX 2] Synchronized Dynamic Standings Calculator
+    // [FIX 2] Standardized Score Parser to ensure Standings and Schedule match perfectly
+    const getScoreDiff = (scoreStr) => {
+        if (!scoreStr || typeof scoreStr !== 'string') return 0;
+        const parts = scoreStr.split('-').map(Number);
+        if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) return 0;
+        // Differential is always (Winner Score - Loser Score)
+        return Math.abs(parts[0] - parts[1]);
+    };
+
+    // Live Dynamic Standings Calculator for Foreign Leagues
     const foreignStandings = useMemo(() => {
         if (currentLeague === 'LCK') return {};
         
@@ -39,7 +48,6 @@ const StandingsTab = ({
             st[t.name] = { w: 0, l: 0, diff: 0, ...t };
         });
 
-        // Compute only from finished regular season matches
         const regularMatches = matches.filter(m => m.type !== 'playoff' && m.status === 'finished');
         regularMatches.forEach(m => {
             if (!m.result || !m.result.winner) return;
@@ -54,26 +62,16 @@ const StandingsTab = ({
             const t2 = t2Obj.name;
             const loser = winner === t1 ? t2 : t1;
 
-            // [FIX 2] Parse exact score to ensure schedule and standings sync perfectly
-            let wScore = 0, lScore = 0;
-            if (m.result.score && typeof m.result.score === 'string') {
-                const parts = m.result.score.split('-').map(Number);
-                if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-                    wScore = Math.max(parts[0], parts[1]);
-                    lScore = Math.min(parts[0], parts[1]);
-                }
-            } else {
-                // Fallback for BO3 if string is missing
-                wScore = 2; lScore = 0;
-            }
+            // Apply standardized diff
+            const diffValue = getScoreDiff(m.result.score);
 
             if (st[winner]) {
                 st[winner].w += 1;
-                st[winner].diff += (wScore - lScore);
+                st[winner].diff += diffValue;
             }
             if (st[loser]) {
                 st[loser].l += 1;
-                st[loser].diff -= (wScore - lScore);
+                st[loser].diff -= diffValue;
             }
         });
         
@@ -110,15 +108,15 @@ const StandingsTab = ({
                         <tbody className="divide-y divide-gray-100">
                             {sortedTeams.map((t, idx) => {
                                 const rec = foreignStandings[t.name] || { w: 0, l: 0, diff: 0 };
-                                const teamColor = TEAM_COLORS[t.name] || t.colors?.primary || '#333';
+                                const teamColor = t.colors?.primary || TEAM_COLORS[t.name] || '#333';
                                 
-                                // [FIX 1] Seed badges are strictly isolated to LCP for now
+                                // [FIX 1] Seeding badges are now STRICTLY for LCP only
                                 let statusBadge = null;
                                 if (currentLeague === 'LCP') {
                                     if (idx < 6) {
                                         statusBadge = <span className="block sm:inline text-[10px] sm:text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded sm:ml-2 mt-1 sm:mt-0 font-bold w-fit whitespace-nowrap">PO {idx + 1}시드</span>;
                                     } else {
-                                        const matches = league.foreignMatches?.['LCP'] || [];
+                                        const matches = league.foreignMatches?.[currentLeague] || [];
                                         const totalRegular = matches.filter(m => m.type !== 'playoff').length;
                                         const finishedRegular = matches.filter(m => m.type !== 'playoff' && m.status === 'finished').length;
                                         if (totalRegular > 0 && totalRegular === finishedRegular) {
@@ -128,9 +126,9 @@ const StandingsTab = ({
                                 }
 
                                 return (
-                                    <tr key={t.id || t.name} className="hover:bg-gray-50 transition text-gray-800">
+                                    <tr key={t.id || t.name} className="hover:bg-gray-50 transition">
                                         <td className={`py-2 ${pxClass} text-center font-bold text-gray-600`}>{idx + 1}</td>
-                                        <td className={`py-2 ${pxClass} font-bold`}>
+                                        <td className={`py-2 ${pxClass} font-bold text-gray-800`}>
                                             <div className="flex items-center gap-1.5 sm:gap-2">
                                                 <div className="w-4 h-4 sm:w-5 sm:h-5 rounded-full text-white text-[8px] sm:text-[10px] flex-shrink-0 flex items-center justify-center" style={{ backgroundColor: teamColor }}>{t.name.slice(0,3)}</div>
                                                 <span className="truncate max-w-[60px] sm:max-w-full">{t.fullName || t.name}</span>
