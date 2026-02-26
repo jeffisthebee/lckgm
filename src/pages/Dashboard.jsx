@@ -20,7 +20,6 @@ import PlayoffTab from '../components/PlayoffTab';
 import StatsTab from '../components/TEMP_StatsTab';
 import {updateLeague, getLeagueById } from '../engine/storage';
 import AwardsTab from '../components/AwardsTab';
-import ForeignLeaguesTab from '../components/TEMP_ForeignLeaguesTab'; 
 import HistoryTab from '../components/HistoryTab'; 
 import { computeAwards, computePlayoffAwards } from '../engine/statsManager';
 
@@ -766,7 +765,6 @@ const handleManualArchive = () => {
       { id: 'team_schedule', name: '팀 일정', icon: '📆' },
       { id: 'stats', name: '리그 통계', icon: '📈' },
       { id: 'awards', name: '시즌 어워드', icon: '🎖️' },
-      { id: 'foreign', name: '해외 리그', icon: '🌍' },
       { id: 'history', name: '역대 기록', icon: '📜' }, // [NEW] Added History Menu
     ];
     
@@ -1433,10 +1431,7 @@ const handleManualArchive = () => {
     <ForeignLeaguesTab />
 )}
 
-{/* [NEW] History Tab Render */}
-{activeTab === 'history' && (
-    <HistoryTab league={league} />
-)}
+
   
             </div>
           </main>
