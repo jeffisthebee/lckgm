@@ -1,7 +1,7 @@
 // src/components/ScheduleTab.jsx
 import React, { useState } from 'react';
 
-// [NEW] Helper to force correct date sorting (e.g., 2.7 before 2.11)
+// Helper to force correct date sorting (e.g., 2.7 before 2.11)
 const compareDates = (a, b) => {
     if (!a.date || !b.date) return 0;
     // Split "2.7 (Sat)" -> "2.7" -> ["2", "7"]
@@ -25,35 +25,42 @@ const ScheduleTab = ({
     formatTeamName,
     onMatchClick 
 }) => {
-    // [NEW] Memory box for the league switcher
+    // Memory box for the league switcher
     const [currentLeague, setCurrentLeague] = useState('LCK');
+
+    // [FIX] Force display to LCK if we are viewing the specific team schedule
+    // This prevents the tab from breaking if you clicked 'LPL', then clicked '팀 일정' on the sidebar
+    const displayLeague = activeTab === 'team_schedule' ? 'LCK' : currentLeague;
 
     return (
         <div className="bg-white rounded-lg border shadow-sm p-4 lg:p-8 min-h-[300px] lg:min-h-[600px] flex flex-col h-full lg:h-auto overflow-y-auto">
             
-            {/* [NEW] The League Switcher Buttons */}
-            <div className="flex gap-2 p-3 border-b bg-gray-100 overflow-x-auto shrink-0 sticky top-0 z-50 rounded-lg mb-4 sm:mb-6">
-                {['LCK', 'LPL', 'LEC', 'LCS', 'LCP', 'CBLOL'].map(lg => (
-                    <button
-                        key={lg}
-                        onClick={() => setCurrentLeague(lg)}
-                        className={`px-5 py-2 rounded-full font-bold text-xs lg:text-sm transition-all whitespace-nowrap shadow-sm active:scale-95 ${
-                            currentLeague === lg
-                            ? 'bg-blue-600 text-white ring-2 ring-blue-300 transform scale-105'
-                            : 'bg-white text-gray-600 hover:bg-gray-200 border border-gray-300'
-                        }`}
-                    >
-                        {lg}
-                    </button>
-                ))}
-            </div>
+            {/* [FIX] Only show League Switcher Buttons on '전체 일정' (Full Schedule) */}
+            {activeTab === 'schedule' && (
+                <div className="flex gap-2 p-3 border-b bg-gray-100 overflow-x-auto shrink-0 sticky top-0 z-50 rounded-lg mb-4 sm:mb-6">
+                    {['LCK', 'LPL', 'LEC', 'LCS', 'LCP', 'CBLOL'].map(lg => (
+                        <button
+                            key={lg}
+                            onClick={() => setCurrentLeague(lg)}
+                            className={`px-5 py-2 rounded-full font-bold text-xs lg:text-sm transition-all whitespace-nowrap shadow-sm active:scale-95 ${
+                                currentLeague === lg
+                                ? 'bg-blue-600 text-white ring-2 ring-blue-300 transform scale-105'
+                                : 'bg-white text-gray-600 hover:bg-gray-200 border border-gray-300'
+                            }`}
+                        >
+                            {lg}
+                        </button>
+                    ))}
+                </div>
+            )}
 
+            {/* Title dynamically changes based on activeTab and displayLeague */}
             <h2 className="text-lg lg:text-2xl font-black text-gray-900 mb-4 lg:mb-6 flex items-center gap-2 shrink-0">
-                📅 {activeTab === 'team_schedule' && currentLeague === 'LCK' ? `${myTeam.name} 경기 일정` : `2026 ${currentLeague} 전체 일정`}
+                📅 {activeTab === 'team_schedule' ? `${myTeam.name} 경기 일정` : `2026 ${displayLeague} 전체 일정`}
             </h2>
             
-            {/* [NEW] Traffic Director: LCK goes to the real schedule, Foreign goes to Placeholder */}
-            {currentLeague === 'LCK' ? (
+            {/* Traffic Director: LCK goes to the real schedule, Foreign goes to Placeholder */}
+            {displayLeague === 'LCK' ? (
                 hasDrafted ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 pb-4">
                         {league.matches
@@ -119,7 +126,7 @@ const ScheduleTab = ({
                     </div>
                 )
             ) : (
-                // [NEW] Safe Placeholder for all Foreign Leagues!
+                // Safe Placeholder for all Foreign Leagues!
                 <div className="flex-1 flex flex-col items-center justify-center text-gray-400 py-10 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
                     <div className="text-4xl lg:text-6xl mb-3 lg:mb-4 animate-bounce">🌍</div>
                     <div className="text-xl lg:text-2xl font-black text-gray-600">{currentLeague} 일정 준비 중</div>
