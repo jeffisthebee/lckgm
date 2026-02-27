@@ -72,7 +72,7 @@ const AllProTeamRow = ({ title, players }) => (
                     </div>
                 );
                 
-                const displayName = getKoreanName(p); // [FIX] Forces Korean Names
+                const displayName = getKoreanName(p); 
                 
                 let teamNameRef = "FA";
                 if (p.teamObj && p.teamObj.name) teamNameRef = p.teamObj.name;
@@ -100,7 +100,7 @@ const AllProTeamRow = ({ title, players }) => (
 const SmallMvpCard = ({ title, player, colorClass }) => {
     if (!player) return null;
 
-    const displayName = getKoreanName(player); // [FIX] Forces Korean Names
+    const displayName = getKoreanName(player); 
     
     let teamNameRef = "FA";
     if (player.teamObj && player.teamObj.name) teamNameRef = player.teamObj.name;
@@ -181,7 +181,6 @@ const HistoryTab = ({ league }) => {
               const playoffAllPro = isNewFormat ? record.awards.playoff?.allPro : null;
               const finalsMvpName = getKoreanName(finalsMvp);
 
-              // ─── [THE FIX] DYNAMIC LCP STANDINGS CALCULATOR ───
               let displayStandings = record.finalStandings || [];
 
               if (currentLeague === 'LCP' && record.matches && record.matches.length > 0) {
@@ -189,7 +188,6 @@ const HistoryTab = ({ league }) => {
                   const st = {};
                   lcpTeams.forEach(t => st[t.name] = { w: 0, l: 0, diff: 0, team: t });
                   
-                  // Compute Regular Season Records for Tiebreakers
                   record.matches.filter(m => m.type !== 'playoff' && m.status === 'finished').forEach(m => {
                       const winner = m.result?.winner;
                       const t1 = findGlobalTeam(m.t1).name;
@@ -207,7 +205,6 @@ const HistoryTab = ({ league }) => {
                   
                   const regSorted = Object.values(st).sort((a,b) => b.w !== a.w ? b.w - a.w : b.diff - a.diff);
                   
-                  // Trace Playoff Elimination Path
                   const poMatches = record.matches.filter(m => m.type === 'playoff' && m.status === 'finished');
                   const getWinner = (r, mNum) => poMatches.find(x => x.round === r && x.match === mNum)?.result?.winner;
                   const getLoser = (r, mNum) => {
@@ -220,8 +217,8 @@ const HistoryTab = ({ league }) => {
 
                   const finalW = getWinner(4, 1);
                   const finalL = getLoser(4, 1);
-                  const third = getLoser(3.1, 1);  // Loser of 결승 진출전
-                  const fourth = getLoser(2.1, 1); // Loser of 패자조 1R
+                  const third = getLoser(3.1, 1);  
+                  const fourth = getLoser(2.1, 1); 
                   const r1L1 = getLoser(1, 1);
                   const r1L2 = getLoser(1, 2);
 
@@ -231,20 +228,17 @@ const HistoryTab = ({ league }) => {
                   if (third) lcpRanks.push({ rank: 3, team: st[third]?.team || findGlobalTeam(third) });
                   if (fourth) lcpRanks.push({ rank: 4, team: st[fourth]?.team || findGlobalTeam(fourth) });
                   
-                  // 5th & 6th resolved by Regular Season ranking
                   const fifthSixth = [r1L1, r1L2].filter(Boolean).sort((a, b) => {
                       return regSorted.findIndex(x => x.team.name === a) - regSorted.findIndex(x => x.team.name === b); 
                   });
                   fifthSixth.forEach((tName, i) => lcpRanks.push({ rank: 5 + i, team: st[tName]?.team || findGlobalTeam(tName) }));
 
-                  // 7th & 8th
                   const alreadyPlaced = lcpRanks.map(r => r.team.name);
                   regSorted.filter(x => !alreadyPlaced.includes(x.team.name)).forEach(r => lcpRanks.push({ rank: lcpRanks.length + 1, team: r.team }));
 
                   if (lcpRanks.length > 0) displayStandings = lcpRanks;
               }
 
-              // Robust Champion Resolution
               const champTeamObj = record.champion ? findGlobalTeam(record.champion.name) : (displayStandings.length > 0 ? findGlobalTeam(displayStandings[0].team.name) : null);
               const championColor = TEAM_COLORS[champTeamObj?.name] || champTeamObj?.colors?.primary || '#333';
               const championDisplayShort = champTeamObj?.name || 'TBD';
@@ -252,7 +246,6 @@ const HistoryTab = ({ league }) => {
 
               return (
                   <>
-                      {/* 1. HEADER & NAVIGATION */}
                       <div className="bg-gray-900 text-white rounded-xl p-6 flex items-center justify-between shadow-lg relative overflow-hidden">
                           <div className="absolute top-0 left-0 w-full h-full opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
                           <button onClick={handlePrev} className="z-10 w-10 h-10 rounded-full bg-gray-700 hover:bg-gray-600 flex items-center justify-center font-bold text-xl transition">&lt;</button>
@@ -265,7 +258,6 @@ const HistoryTab = ({ league }) => {
                           <button onClick={handleNext} className="z-10 w-10 h-10 rounded-full bg-gray-700 hover:bg-gray-600 flex items-center justify-center font-bold text-xl transition">&gt;</button>
                       </div>
 
-                      {/* 2. CHAMPION & KEY MVPS */}
                       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                           <div className="lg:col-span-2 bg-gradient-to-br from-yellow-50 to-white border border-yellow-200 rounded-xl p-6 shadow-sm flex items-center gap-6 relative overflow-hidden">
                               <div className="absolute top-0 right-0 p-4 opacity-10 text-9xl">🏆</div>
@@ -293,7 +285,6 @@ const HistoryTab = ({ league }) => {
                           </div>
                       </div>
 
-                      {/* 3. AWARDS SECTION (With Toggle) */}
                       <div className="bg-white rounded-xl border shadow-sm p-5">
                           <div className="flex items-center justify-between mb-4">
                              <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">
@@ -367,6 +358,12 @@ const HistoryTab = ({ league }) => {
                                                               {tObj.name.slice(0,3)}
                                                           </div>
                                                           {tObj.fullName || tObj.name}
+                                                          {/* [NEW] Add FST Badge for 1st Place in LCP! */}
+                                                          {item.rank === 1 && currentLeague === 'LCP' && (
+                                                              <span className="text-[10px] bg-purple-100 text-purple-700 border border-purple-200 px-2 py-0.5 rounded font-black whitespace-nowrap shadow-sm ml-1">
+                                                                  FST 진출
+                                                              </span>
+                                                          )}
                                                       </td>
                                                       <td className="p-3 text-right font-medium text-gray-600">
                                                           {item.rank === 1 ? '0.5억' : item.rank === 2 ? '0.25억' : item.rank === 3 ? '0.2억' : '0.1억'}
