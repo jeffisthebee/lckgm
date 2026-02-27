@@ -17,7 +17,6 @@ const PlayoffTab = ({
     const isLCPGenerated = league.foreignMatches?.['LCP']?.some(m => m.type === 'playoff');
     const isLckFinished = !league.matches?.some(m => m.status === 'pending');
 
-    // --- [THE FIX] Bulletproof Team Resolver ---
     const findGlobalTeam = (token) => {
         const strToken = String(token);
         if (!token || strToken === 'TBD' || strToken === 'null' || strToken === 'undefined') return { name: 'TBD' };
@@ -66,7 +65,6 @@ const PlayoffTab = ({
         </div>
     );
 
-    // --- [THE FIX] Intelligent Math Overrider ---
     const getValidTeam = (actualTeam, expectedTeam) => {
         const actualStr = String(actualTeam);
         if (actualTeam && actualStr !== 'TBD' && actualStr !== 'null' && actualStr !== 'undefined') return actualTeam;
@@ -88,7 +86,7 @@ const PlayoffTab = ({
         const t2Name = findGlobalTeam(m.t2).name.toUpperCase();
         if (t1Name === winnerName) return m.t1;
         if (t2Name === winnerName) return m.t2;
-        return m.result.winner; // Fallback directly to the string name
+        return m.result.winner; 
     };
 
     const getMatchLoser = (m) => {
@@ -126,6 +124,7 @@ const PlayoffTab = ({
         return (
             <div className="flex-1 overflow-x-auto pb-8">
                 <div className="flex flex-col space-y-24 min-w-[1200px] relative pt-12">
+                    {/* Upper Bracket */}
                     <div className="relative border-b-2 border-dashed pb-16">
                         <h3 className="text-lg font-black text-blue-600 mb-8 absolute -top-2">승자조 (Upper Bracket)</h3>
                         <div className="flex justify-between items-center mt-8">
@@ -150,6 +149,7 @@ const PlayoffTab = ({
                         </div>
                     </div>
 
+                    {/* Lower Bracket */}
                     <div className="relative pt-8">
                         <h3 className="text-lg font-black text-red-600 mb-8 absolute -top-2">패자조 (Lower Bracket)</h3>
                         <div className="flex justify-start items-center space-x-24 mt-8">
@@ -254,7 +254,9 @@ const PlayoffTab = ({
 
     return (
         <div className="bg-white rounded-lg border shadow-sm p-6 min-h-[800px] flex flex-col">
-            <div className="flex gap-2 p-3 border-b bg-gray-100 overflow-x-auto shrink-0 sticky top-0 z-50 rounded-lg mb-4 sm:mb-6">
+            
+            {/* [FIX] Removed "sticky top-0 z-50" here too! */}
+            <div className="flex gap-2 p-3 border-b bg-gray-100 overflow-x-auto shrink-0 rounded-lg mb-4 sm:mb-6">
                 {['LCK', 'LPL', 'LEC', 'LCS', 'LCP', 'CBLOL'].map(lg => (
                     <button
                         key={lg}

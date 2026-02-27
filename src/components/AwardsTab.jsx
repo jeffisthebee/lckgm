@@ -5,7 +5,7 @@ import { computeAwards, computePlayoffAwards } from '../engine/statsManager';
 // Import Global Leagues AND Global Players!
 import { FOREIGN_LEAGUES, FOREIGN_PLAYERS } from '../data/foreignLeagues';
 
-// [NEW] Import your Team Colors dictionary!
+// Import your Team Colors dictionary!
 import { TEAM_COLORS } from '../data/constants'; 
 
 // Safely combine every player in the world into one giant phonebook
@@ -62,7 +62,6 @@ const PlayerCard = ({ player, rank, lckTeams }) => {
     const globalTeam = getGlobalTeam(teamNameRef, lckTeams);
     const displayTeamName = globalTeam?.name || teamNameRef || 'FA';
     
-    // [FIX] Checks constants.js first, then falls back to object property (for LCK), then defaults to #333
     const bgColor = TEAM_COLORS[displayTeamName] || globalTeam?.colors?.primary || player.teamObj?.colors?.primary || '#333';
 
     const rankStyles = {
@@ -131,7 +130,6 @@ const MvpShowcaseCard = ({ player, title, badgeColor, lckTeams, size = 'large' }
     const globalTeam = getGlobalTeam(teamNameRef, lckTeams);
     const displayTeamName = globalTeam?.name || teamNameRef || 'FA';
     
-    // [FIX] Checks constants.js first, then falls back!
     const bgColor = TEAM_COLORS[displayTeamName] || globalTeam?.colors?.primary || player.teamObj?.colors?.primary || '#333';
 
     const pData = globalPlayerList.find(p => p.이름 === player.playerName || p.playerName === player.playerName);
@@ -244,7 +242,8 @@ export default function AwardsTab({ league, teams }) {
     return (
         <div className="p-2 lg:p-6 max-w-7xl mx-auto space-y-8">
             
-            <div className="flex gap-2 p-3 border-b bg-gray-100 overflow-x-auto shrink-0 sticky top-0 z-50 rounded-lg">
+            {/* [FIX] Removed "sticky top-0 z-50" so it freezes in place and scrolls away normally */}
+            <div className="flex gap-2 p-3 border-b bg-gray-100 overflow-x-auto shrink-0 rounded-lg mb-4">
                 {['LCK', 'LPL', 'LEC', 'LCS', 'LCP', 'CBLOL'].map(lg => (
                     <button
                         key={lg}
