@@ -21,26 +21,43 @@ const PlayoffTab = ({
 
     // ─── SUPER SEARCH: Resolves IDs, Names, and Full Names universally ───
     const findGlobalTeam = (token) => {
-        if (!token || token === 'TBD') return null;
+        if (!token || token === 'TBD' || token === 'null') return { name: 'TBD' };
         const s = String(token).trim().toUpperCase();
         const pool = [...teams, ...Object.values(FOREIGN_LEAGUES).flat()];
-        return pool.find(t =>
+        const found = pool.find(t =>
             (t.id && String(t.id).toUpperCase() === s) ||
             (t.name && String(t.name).toUpperCase() === s) ||
-            (t.fullName && String(t.fullName).toUpperCase() === s) ||
-            (t.shortName && String(t.shortName).toUpperCase() === s) ||
-            (t.abbr && String(t.abbr).toUpperCase() === s)
-        ) || { name: String(token) }; // Safe fallback guarantees a name
+            (t.fullName && String(t.fullName).toUpperCase() === s)
+        );
+        return found || { name: String(token) }; 
     };
 
-    // Formatter to accurately display names with their Seed Number
+    // ─── DYNAMIC SEED CALCULATOR ───
+    // If the database forgot the seeds, we calculate them perfectly on the fly!
+    const getLcpSeeds = () => {
+        if (league.foreignPlayoffSeeds?.['LCP']?.length > 0) {
+            return league.foreignPlayoffSeeds['LCP'];
+        }
+        const lcpTeams = FOREIGN_LEAGUES['LCP'] || [];
+        const st = {};
+        lcpTeams.forEach(t => st[t.name] = { w: 0, id: t.id || t.name, name: t.name });
+        const regular = (league.foreignMatches?.['LCP'] || []).filter(m => m.type !== 'playoff' && m.status === 'finished');
+        regular.forEach(m => {
+            if (m.result?.winner && st[m.result.winner]) st[m.result.winner].w++;
+        });
+        const sorted = Object.values(st).sort((a,b) => b.w - a.w);
+        return sorted.map((t, idx) => ({ ...t, seed: idx + 1 }));
+    };
+    const computedLcpSeeds = getLcpSeeds();
+
+    // ─── BRACKET FORMATTER ───
     const getBracketDisplayName = (teamId) => {
         if (!teamId || teamId === 'TBD') return 'TBD';
         
         const team = findGlobalTeam(teamId);
         const displayName = team.name;
 
-        const seeds = league.foreignPlayoffSeeds?.[currentLeague] || league.playoffSeeds || [];
+        const seeds = currentLeague === 'LCP' ? computedLcpSeeds : (league.playoffSeeds || []);
         const seedInfo = seeds.find(s => 
             (s.id && String(s.id).toUpperCase() === String(teamId).toUpperCase()) ||
             (s.name && String(s.name).toUpperCase() === String(displayName).toUpperCase())
@@ -56,62 +73,64 @@ const PlayoffTab = ({
         </div>
     );
 
+    // ─── INTELLIGENT PATHING ENGINE ───
+    const getValidTeam = (actualTeam, expectedTeam) => {
+        // Trust the DB if it has real data. If it has TBD or null, forcefully inject the expected math!
+        if (actualTeam && actualTeam !== 'TBD' && actualTeam !== 'null') return actualTeam;
+        return expectedTeam || null;
+    };
+
+    const displayMatch = (actual, expectedT1, expectedT2) => {
+        return {
+            ...(actual || { status: 'pending', type: 'playoff' }),
+            t1: getValidTeam(actual?.t1, expectedT1),
+            t2: getValidTeam(actual?.t2, expectedT2)
+        };
+    };
+
+    const getMatchWinner = (m) => {
+        if (!m || m.status !== 'finished' || !m.result?.winner) return null;
+        const winnerName = String(m.result.winner).toUpperCase();
+        const t1Name = findGlobalTeam(m.t1).name.toUpperCase();
+        const t2Name = findGlobalTeam(m.t2).name.toUpperCase();
+        if (t1Name === winnerName) return m.t1;
+        if (t2Name === winnerName) return m.t2;
+        return m.result.winner; // absolute fallback
+    };
+
+    const getMatchLoser = (m) => {
+        if (!m || m.status !== 'finished' || !m.result?.winner) return null;
+        const winnerName = String(m.result.winner).toUpperCase();
+        const t1Name = findGlobalTeam(m.t1).name.toUpperCase();
+        const t2Name = findGlobalTeam(m.t2).name.toUpperCase();
+        if (t1Name === winnerName) return m.t2;
+        if (t2Name === winnerName) return m.t1;
+        return null;
+    };
+
     // ─── LCP BRACKET LOGIC ───────────────────────────────────────────────────
     const renderLCPBracket = () => {
         const lcpMatches = league.foreignMatches?.['LCP']?.filter(m => m.type === 'playoff') || [];
-        
-        // Find by Round instead of ID!
         const findM = (round, matchNum) => lcpMatches.find(m => m.round === round && m.match === matchNum);
 
-        // Intelligently figure out who won and lost the matches
-        const getWinnerToken = (m) => {
-            if (!m || m.status !== 'finished' || !m.result?.winner) return null;
-            // Return the original t1/t2 token so MatchupBox gets the exact right string
-            const winnerName = String(m.result.winner).toUpperCase();
-            const t1Name = findGlobalTeam(m.t1).name.toUpperCase();
-            return t1Name === winnerName ? m.t1 : m.t2;
-        };
-
-        const getLoserToken = (m) => {
-            if (!m || m.status !== 'finished' || !m.result?.winner) return null;
-            const winnerName = String(m.result.winner).toUpperCase();
-            const t1Name = findGlobalTeam(m.t1).name.toUpperCase();
-            return t1Name === winnerName ? m.t2 : m.t1;
-        };
-
         const getSeedToken = (num) => {
-            const s = league.foreignPlayoffSeeds?.['LCP']?.find(x => x.seed === num);
+            const s = computedLcpSeeds.find(x => x.seed === num);
             return s ? (s.id || s.name) : null;
         };
 
-        const displayMatch = (actual, fallbackT1, fallbackT2) => {
-            if (actual) return actual;
-            return { t1: fallbackT1 || null, t2: fallbackT2 || null, status: 'pending', type: 'playoff' };
-        };
-
-        // Extract raw match data
-        const r1m1 = findM(1, 1);
-        const r1m2 = findM(1, 2);
-        const r2m1 = findM(2, 1);
-        const r2m2 = findM(2, 2);
-        const r3m1 = findM(3, 1);
-        const r2lm1 = findM(2.1, 1);
-        const r3lm1 = findM(3.1, 1);
-        const final = findM(4, 1);
-
-        // Construct display objects propagating the expected winners/losers cascading down the bracket
-        const dispR1m1 = displayMatch(r1m1, getSeedToken(3), getSeedToken(6));
-        const dispR1m2 = displayMatch(r1m2, getSeedToken(4), getSeedToken(5));
+        // Construct display objects that cascade logically!
+        const dispR1m1 = displayMatch(findM(1, 1), getSeedToken(3), getSeedToken(6));
+        const dispR1m2 = displayMatch(findM(1, 2), getSeedToken(4), getSeedToken(5));
         
-        const dispR2m1 = displayMatch(r2m1, getSeedToken(1), getWinnerToken(dispR1m1));
-        const dispR2m2 = displayMatch(r2m2, getSeedToken(2), getWinnerToken(dispR1m2));
+        const dispR2m1 = displayMatch(findM(2, 1), getSeedToken(1), getMatchWinner(dispR1m1));
+        const dispR2m2 = displayMatch(findM(2, 2), getSeedToken(2), getMatchWinner(dispR1m2));
         
-        const dispR3m1 = displayMatch(r3m1, getWinnerToken(dispR2m1), getWinnerToken(dispR2m2));
+        const dispR3m1 = displayMatch(findM(3, 1), getMatchWinner(dispR2m1), getMatchWinner(dispR2m2));
         
-        const dispR2lm1 = displayMatch(r2lm1, getLoserToken(dispR2m1), getLoserToken(dispR2m2));
-        const dispR3lm1 = displayMatch(r3lm1, getWinnerToken(dispR2lm1), getLoserToken(dispR3m1));
+        const dispR2lm1 = displayMatch(findM(2.1, 1), getMatchLoser(dispR2m1), getMatchLoser(dispR2m2));
+        const dispR3lm1 = displayMatch(findM(3.1, 1), getMatchWinner(dispR2lm1), getMatchLoser(dispR3m1));
         
-        const dispFinal = displayMatch(final, getWinnerToken(dispR3m1), getWinnerToken(dispR3lm1));
+        const dispFinal = displayMatch(findM(4, 1), getMatchWinner(dispR3m1), getMatchWinner(dispR3lm1));
 
         return (
             <div className="flex-1 overflow-x-auto pb-8">
@@ -158,48 +177,24 @@ const PlayoffTab = ({
         );
     };
 
-    // ─── LCK BRACKET ─────────────────────────────────────────────────────────
+    // ─── LCK BRACKET LOGIC ───────────────────────────────────────────────────
     const renderLCKBracket = () => {
         const poMatches = league.matches ? league.matches.filter(m => m.type === 'playoff') : [];
         const findMatch = (round, matchNum) => poMatches.find(m => m.round === round && m.match === matchNum);
-        
-        const getWinner = (m) => (m && m.status === 'finished' && m.result?.winner) ? m.result.winner : null;
-        const getLoser = (m) => {
-            if (!m || m.status !== 'finished' || !m.result?.winner) return null;
-            const winnerName = String(m.result.winner).toUpperCase();
-            const t1Name = findGlobalTeam(m.t1).name.toUpperCase();
-            return t1Name === winnerName ? m.t2 : m.t1;
-        };
 
-        const getSeedId = (num) => {
+        const getLckSeedId = (num) => {
             const s = league.playoffSeeds?.find(item => item.seed === num);
             return s ? s.id : null;
         };
 
-        const displayMatch = (actual, fallbackT1, fallbackT2) => {
-            if (actual) return actual;
-            return { t1: fallbackT1 || null, t2: fallbackT2 || null, status: 'pending', type: 'playoff' };
-        };
-
-        const r1m1 = findMatch(1, 1);
-        const r1m2 = findMatch(1, 2);
-        const r2m1 = findMatch(2, 1);
-        const r2m2 = findMatch(2, 2);
-        const r2lm1 = findMatch(2.1, 1);
-        const r2lm2 = findMatch(2.2, 1);
-        const r3m1 = findMatch(3, 1);
-        const r3lm1 = findMatch(3.1, 1);
-        const r4m1 = findMatch(4, 1);
-        const final = findMatch(5, 1);
-
-        const dispR1m1 = displayMatch(r1m1, getSeedId(3), getSeedId(6));
-        const dispR1m2 = displayMatch(r1m2, getSeedId(4), getSeedId(5));
-        const dispR2m1 = displayMatch(r2m1, getSeedId(1), getWinner(dispR1m1));
-        const dispR2m2 = displayMatch(r2m2, getSeedId(2), getWinner(dispR1m2));
+        const dispR1m1 = displayMatch(findMatch(1, 1), getLckSeedId(3), getLckSeedId(6));
+        const dispR1m2 = displayMatch(findMatch(1, 2), getLckSeedId(4), getLckSeedId(5));
+        const dispR2m1 = displayMatch(findMatch(2, 1), getLckSeedId(1), getMatchWinner(dispR1m1));
+        const dispR2m2 = displayMatch(findMatch(2, 2), getLckSeedId(2), getMatchWinner(dispR1m2));
         
         const getHigherSeedLoser = (mA, mB) => {
-            const lA = getLoser(mA);
-            const lB = getLoser(mB);
+            const lA = getMatchLoser(mA);
+            const lB = getMatchLoser(mB);
             if (!lA) return lB;
             if (!lB) return lA;
             const sA = league.playoffSeeds?.find(s => s.id === lA)?.seed || 99;
@@ -209,16 +204,16 @@ const PlayoffTab = ({
 
         const getLowerSeedLoser = (mA, mB) => {
             const higher = getHigherSeedLoser(mA, mB);
-            const lA = getLoser(mA);
-            return (lA === higher) ? getLoser(mB) : lA;
+            const lA = getMatchLoser(mA);
+            return (lA === higher) ? getMatchLoser(mB) : lA;
         };
 
-        const dispR2lm1 = displayMatch(r2lm1, getLoser(dispR1m1), getLoser(dispR1m2));
-        const dispR2lm2 = displayMatch(r2lm2, getHigherSeedLoser(dispR2m1, dispR2m2), getWinner(dispR2lm1));
-        const dispR3m1 = displayMatch(r3m1, getWinner(dispR2m1), getWinner(dispR2m2));
-        const dispR3lm1 = displayMatch(r3lm1, getLowerSeedLoser(dispR2m1, dispR2m2), getWinner(dispR2lm2));
-        const dispR4m1 = displayMatch(r4m1, getLoser(dispR3m1), getWinner(dispR3lm1));
-        const dispFinal = displayMatch(final, getWinner(dispR3m1), getWinner(dispR4m1));
+        const dispR2lm1 = displayMatch(findMatch(2.1, 1), getMatchLoser(dispR1m1), getMatchLoser(dispR1m2));
+        const dispR2lm2 = displayMatch(findMatch(2.2, 1), getHigherSeedLoser(dispR2m1, dispR2m2), getMatchWinner(dispR2lm1));
+        const dispR3m1 = displayMatch(findMatch(3, 1), getMatchWinner(dispR2m1), getMatchWinner(dispR2m2));
+        const dispR3lm1 = displayMatch(findMatch(3.1, 1), getLowerSeedLoser(dispR2m1, dispR2m2), getMatchWinner(dispR2lm2));
+        const dispR4m1 = displayMatch(findMatch(4, 1), getMatchLoser(dispR3m1), getMatchWinner(dispR3lm1));
+        const dispFinal = displayMatch(findMatch(5, 1), getMatchWinner(dispR3m1), getMatchWinner(dispR4m1));
 
         return (
             <div className="flex-1 overflow-x-auto pb-8">
