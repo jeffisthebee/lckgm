@@ -11,55 +11,48 @@ const PlayoffTab = ({
 }) => {
     const [currentLeague, setCurrentLeague] = useState('LCK');
     
-    if (!league || !teams) {
-        return <div className="p-10 text-center text-gray-500">데이터 로딩 중...</div>;
-    }
+    if (!league || !teams) return <div className="p-10 text-center text-gray-500">데이터 로딩 중...</div>;
 
     const isLCK = currentLeague === 'LCK';
     const isLCPGenerated = league.foreignMatches?.['LCP']?.some(m => m.type === 'playoff');
     const isLckFinished = !league.matches?.some(m => m.status === 'pending');
 
-    // ─── SUPER SEARCH: Resolves IDs, Names, and Full Names universally ───
+    // --- [THE FIX] Bulletproof Team Resolver ---
     const findGlobalTeam = (token) => {
-        if (!token || token === 'TBD' || token === 'null') return { name: 'TBD' };
-        const s = String(token).trim().toUpperCase();
+        const strToken = String(token);
+        if (!token || strToken === 'TBD' || strToken === 'null' || strToken === 'undefined') return { name: 'TBD' };
+        
+        const s = strToken.trim().toUpperCase();
         const pool = [...teams, ...Object.values(FOREIGN_LEAGUES).flat()];
         const found = pool.find(t =>
             (t.id && String(t.id).toUpperCase() === s) ||
             (t.name && String(t.name).toUpperCase() === s) ||
             (t.fullName && String(t.fullName).toUpperCase() === s)
         );
-        return found || { name: String(token) }; 
+        return found || { name: strToken }; 
     };
 
-    // ─── DYNAMIC SEED CALCULATOR ───
-    // If the database forgot the seeds, we calculate them perfectly on the fly!
     const getLcpSeeds = () => {
-        if (league.foreignPlayoffSeeds?.['LCP']?.length > 0) {
-            return league.foreignPlayoffSeeds['LCP'];
-        }
+        if (league.foreignPlayoffSeeds?.['LCP']?.length > 0) return league.foreignPlayoffSeeds['LCP'];
         const lcpTeams = FOREIGN_LEAGUES['LCP'] || [];
         const st = {};
         lcpTeams.forEach(t => st[t.name] = { w: 0, id: t.id || t.name, name: t.name });
         const regular = (league.foreignMatches?.['LCP'] || []).filter(m => m.type !== 'playoff' && m.status === 'finished');
-        regular.forEach(m => {
-            if (m.result?.winner && st[m.result.winner]) st[m.result.winner].w++;
-        });
-        const sorted = Object.values(st).sort((a,b) => b.w - a.w);
-        return sorted.map((t, idx) => ({ ...t, seed: idx + 1 }));
+        regular.forEach(m => { if (m.result?.winner && st[m.result.winner]) st[m.result.winner].w++; });
+        return Object.values(st).sort((a,b) => b.w - a.w).map((t, idx) => ({ ...t, seed: idx + 1 }));
     };
     const computedLcpSeeds = getLcpSeeds();
 
-    // ─── BRACKET FORMATTER ───
     const getBracketDisplayName = (teamId) => {
-        if (!teamId || teamId === 'TBD') return 'TBD';
+        const strId = String(teamId);
+        if (!teamId || strId === 'TBD' || strId === 'null' || strId === 'undefined') return 'TBD';
         
         const team = findGlobalTeam(teamId);
         const displayName = team.name;
 
         const seeds = currentLeague === 'LCP' ? computedLcpSeeds : (league.playoffSeeds || []);
         const seedInfo = seeds.find(s => 
-            (s.id && String(s.id).toUpperCase() === String(teamId).toUpperCase()) ||
+            (s.id && String(s.id).toUpperCase() === strId.toUpperCase()) ||
             (s.name && String(s.name).toUpperCase() === String(displayName).toUpperCase())
         );
 
@@ -73,10 +66,10 @@ const PlayoffTab = ({
         </div>
     );
 
-    // ─── INTELLIGENT PATHING ENGINE ───
+    // --- [THE FIX] Intelligent Math Overrider ---
     const getValidTeam = (actualTeam, expectedTeam) => {
-        // Trust the DB if it has real data. If it has TBD or null, forcefully inject the expected math!
-        if (actualTeam && actualTeam !== 'TBD' && actualTeam !== 'null') return actualTeam;
+        const actualStr = String(actualTeam);
+        if (actualTeam && actualStr !== 'TBD' && actualStr !== 'null' && actualStr !== 'undefined') return actualTeam;
         return expectedTeam || null;
     };
 
@@ -95,7 +88,7 @@ const PlayoffTab = ({
         const t2Name = findGlobalTeam(m.t2).name.toUpperCase();
         if (t1Name === winnerName) return m.t1;
         if (t2Name === winnerName) return m.t2;
-        return m.result.winner; // absolute fallback
+        return m.result.winner; // Fallback directly to the string name
     };
 
     const getMatchLoser = (m) => {
@@ -108,7 +101,6 @@ const PlayoffTab = ({
         return null;
     };
 
-    // ─── LCP BRACKET LOGIC ───────────────────────────────────────────────────
     const renderLCPBracket = () => {
         const lcpMatches = league.foreignMatches?.['LCP']?.filter(m => m.type === 'playoff') || [];
         const findM = (round, matchNum) => lcpMatches.find(m => m.round === round && m.match === matchNum);
@@ -118,7 +110,6 @@ const PlayoffTab = ({
             return s ? (s.id || s.name) : null;
         };
 
-        // Construct display objects that cascade logically!
         const dispR1m1 = displayMatch(findM(1, 1), getSeedToken(3), getSeedToken(6));
         const dispR1m2 = displayMatch(findM(1, 2), getSeedToken(4), getSeedToken(5));
         
@@ -135,7 +126,6 @@ const PlayoffTab = ({
         return (
             <div className="flex-1 overflow-x-auto pb-8">
                 <div className="flex flex-col space-y-24 min-w-[1200px] relative pt-12">
-                    {/* Upper Bracket */}
                     <div className="relative border-b-2 border-dashed pb-16">
                         <h3 className="text-lg font-black text-blue-600 mb-8 absolute -top-2">승자조 (Upper Bracket)</h3>
                         <div className="flex justify-between items-center mt-8">
@@ -160,7 +150,6 @@ const PlayoffTab = ({
                         </div>
                     </div>
 
-                    {/* Lower Bracket */}
                     <div className="relative pt-8">
                         <h3 className="text-lg font-black text-red-600 mb-8 absolute -top-2">패자조 (Lower Bracket)</h3>
                         <div className="flex justify-start items-center space-x-24 mt-8">
@@ -177,7 +166,6 @@ const PlayoffTab = ({
         );
     };
 
-    // ─── LCK BRACKET LOGIC ───────────────────────────────────────────────────
     const renderLCKBracket = () => {
         const poMatches = league.matches ? league.matches.filter(m => m.type === 'playoff') : [];
         const findMatch = (round, matchNum) => poMatches.find(m => m.round === round && m.match === matchNum);
