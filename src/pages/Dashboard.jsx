@@ -142,22 +142,20 @@ const getOvrBadgeStyle = (ovr) => {
 
 // [FIX] Manual Archive Function - Now saves Playoff Awards too!
 // [FIXED] Manual Archive Function
+// [FIXED] Manual Archive Function - Now saves LCK AND Foreign Leagues!
 const handleManualArchive = () => {
   if (!league) return;
 
   const currentYear = league.year || 2026;
   const currentSeasonName = league.seasonName || 'LCK CUP';
 
-  console.log("Archiving Season...");
+  console.log("Archiving Season & Foreign Leagues...");
   
-  // 1. Generate Snapshot Data
+  // --- 1. LCK ARCHIVE ---
   const finalStandings = calculateFinalStandings(league);
-  
-  // [CRITICAL] Calculate Awards (Now utilizing the imported function)
   const regularAwards = computeAwards(league, teams);
-  const playoffAwards = computePlayoffAwards(league, teams); // This was failing before!
+  const playoffAwards = computePlayoffAwards(league, teams); 
   
-  // 2. Create History Object
   const seasonSnapshot = {
       year: currentYear,
       seasonName: currentSeasonName,
@@ -178,7 +176,6 @@ const handleManualArchive = () => {
               diff: computedStandings[id].diff
           }))
       },
-      // [CRITICAL] Save Structure
       awards: {
         regular: {
             mvp: regularAwards.seasonMvp, 
@@ -193,17 +190,58 @@ const handleManualArchive = () => {
     }
   };
 
-  // 3. Save to League State
   const history = league.history || [];
   const cleanHistory = history.filter(h => !(h.year === currentYear && h.seasonName === currentSeasonName));
   const newHistory = [...cleanHistory, seasonSnapshot];
   
-  const updatedLeague = { ...league, history: newHistory };
+  // --- 2. FOREIGN LEAGUES (LCP, etc.) ARCHIVE ---
+  const newForeignHistory = { ...(league.foreignHistory || { LPL: [], LEC: [], LCS: [], LCP: [], CBLOL: [] }) };
+
+  ['LPL', 'LEC', 'LCS', 'LCP', 'CBLOL'].forEach(lgName => {
+      const fMatches = league.foreignMatches?.[lgName] || [];
+      
+      if (fMatches.length > 0) {
+          const fTeams = FOREIGN_LEAGUES[lgName] || [];
+          const pseudoLeague = { matches: fMatches }; // Mock league to feed the stats engine
+          
+          const fRegAwards = computeAwards(pseudoLeague, fTeams);
+          const fPlayoffAwards = computePlayoffAwards(pseudoLeague, fTeams);
+
+          const fSnapshot = {
+              year: currentYear,
+              seasonName: '스플릿 1', // Match the custom title in HistoryTab
+              matches: fMatches,      // CRITICAL: HistoryTab uses this to dynamically calculate final standings!
+              awards: {
+                  regular: {
+                      mvp: fRegAwards.seasonMvp,
+                      allPro: fRegAwards.allProTeams,
+                      pogLeader: fRegAwards.pogLeader
+                  },
+                  playoff: {
+                      finalsMvp: fPlayoffAwards.finalsMvp,
+                      playoffMvp: fPlayoffAwards.pogLeader,
+                      allPro: fPlayoffAwards.allProTeams
+                  }
+              }
+          };
+
+          const currentFHist = newForeignHistory[lgName] || [];
+          const cleanFHist = currentFHist.filter(h => !(h.year === currentYear && h.seasonName === '스플릿 1'));
+          newForeignHistory[lgName] = [...cleanFHist, fSnapshot];
+      }
+  });
+
+  // --- 3. SAVE TO DB ---
+  const updatedLeague = { 
+      ...league, 
+      history: newHistory,
+      foreignHistory: newForeignHistory
+  };
   
   setLeague(updatedLeague);
   updateLeague(league.id, updatedLeague);
   
-  alert("✅ 시즌 기록 저장 완료! (플레이오프 데이터 포함)");
+  alert("✅ 시즌 기록 저장 완료! (LCK 및 해외 리그 데이터 통합 저장됨)");
 };
 
     // [NEW] AUTO-ARCHIVE HISTORY EFFECT (Still kept for future seasons)
