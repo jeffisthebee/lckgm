@@ -2,7 +2,6 @@
 import React, { useState, useEffect } from 'react';
 import { quickSimulateMatch } from '../engine/simEngine';
 import { generateLCPRegularSchedule, generateLCPPlayoffs } from '../engine/scheduleLogic';
-
 import { FOREIGN_LEAGUES, FOREIGN_PLAYERS } from '../data/foreignLeagues';
 import { updateLeague } from '../engine/storage';
 import { championList } from '../data/constants'; 
@@ -11,10 +10,8 @@ const compareDatesObj = (a, b) => {
     if (!a || !b || !a.date || !b.date) return 0;
     const [monthA, dayA] = a.date.split(' ')[0].split('.').map(Number);
     const [monthB, dayB] = b.date.split(' ')[0].split('.').map(Number);
-    
     if (monthA !== monthB) return monthA - monthB;
     if (dayA !== dayB) return dayA - dayB;
-    
     if (a.time && b.time) {
         const [hA, mA] = a.time.split(':').map(Number);
         const [hB, mB] = b.time.split(':').map(Number);
@@ -24,12 +21,23 @@ const compareDatesObj = (a, b) => {
     return 0;
 };
 
+// --- [THE FIX] Omni-Search Team Finder ---
+const findGlobalTeam = (token, teamsList) => {
+    if (!token || token === 'TBD' || token === 'null' || token === 'undefined') return { name: 'TBD' };
+    const s = String(token).trim().toUpperCase();
+    const pool = [...(teamsList || []), ...Object.values(FOREIGN_LEAGUES).flat()];
+    const found = pool.find(t =>
+        (t.id && String(t.id).toUpperCase() === s) ||
+        (t.name && String(t.name).toUpperCase() === s) ||
+        (t.fullName && String(t.fullName).toUpperCase() === s)
+    );
+    return found || { name: String(token) };
+};
+
 const getSafeRoster = (teamObj, allPlayers) => {
     const tName = teamObj.name;
     let r = allPlayers.filter(p => p.팀 === tName || p.team === tName || p.Team === tName || (p.playerData && p.playerData.팀 === tName));
-    
     const requiredRoles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
-    
     return requiredRoles.map(role => {
         const existing = r.find(p => String(p.포지션 || p.role).toUpperCase() === role);
         if (existing) {
@@ -43,44 +51,37 @@ const getSafeRoster = (teamObj, allPlayers) => {
             };
         }
         return {
-            이름: `${tName} ${role}`,
-            playerName: `${tName} ${role}`,
-            포지션: role,
-            role: role,
-            팀: tName,
-            종합: 80,
+            이름: `${tName} ${role}`, playerName: `${tName} ${role}`,
+            포지션: role, role: role, 팀: tName, 종합: 80,
             상세: { 라인전: 80, 한타: 80, 운영: 80, 생존: 80, 성장: 80, 무력: 80 },
             playerData: { 팀: tName, 포지션: role }
         };
     });
 };
 
-// [FIX] Accept setLeague from Dashboard!
 const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, formatTeamName, onMatchClick }) => {
     const [currentLeague, setCurrentLeague] = useState('LCK');
     const displayLeague = activeTab === 'team_schedule' ? 'LCK' : currentLeague;
 
-    const activeMatches = displayLeague === 'LCK' 
-        ? (league.matches || [])
-        : (league.foreignMatches?.[displayLeague] || []);
-
-    const activeTeams = displayLeague === 'LCK' ? teams : (FOREIGN_LEAGUES[displayLeague] || []);
-
+    const activeMatches = displayLeague === 'LCK' ? (league.matches || []) : (league.foreignMatches?.[displayLeague] || []);
     const pendingLCK = league.matches ? league.matches.filter(m => m.status === 'pending').sort(compareDatesObj) : [];
     const currentPendingLCK = pendingLCK.length > 0 ? pendingLCK[0] : { date: '99.99 (완료)', time: '23:59' };
     
+    // --- [THE FIX] Aggressive Ghost Data Detector ---
     const needsSync = displayLeague === 'LCP' && (
         activeMatches.length === 0 || 
         activeMatches.some(m => m.status === 'pending' && currentPendingLCK.date !== '99.99 (완료)' && compareDatesObj(m, currentPendingLCK) < 0) ||
         (currentPendingLCK.date === '99.99 (완료)' && activeMatches.some(m => m.status === 'pending')) ||
-        activeMatches.some(m => m.t1 === 'TBD' || !activeTeams.find(t => t.id === m.t1 || t.name === m.t1)) ||
-        activeMatches.some(m => m.status === 'finished' && (
-            !m.result || 
-            !m.result.history || 
-            m.result.history.length === 0 || 
-            m.result.history[0]?.logs?.includes('데이터 오류로 인해 강제 시뮬레이션 됨') ||
-            !m.result.history[0]?.picks?.A?.length
-        ))
+        activeMatches.some(m => {
+            const t1Str = String(m.t1); const t2Str = String(m.t2);
+            if (m.status === 'finished') {
+                if (!m.t1 || t1Str === 'TBD' || t1Str === 'null' || t1Str === 'undefined') return true;
+                if (!m.t2 || t2Str === 'TBD' || t2Str === 'null' || t2Str === 'undefined') return true;
+                if (!m.result || !m.result.history || m.result.history.length === 0) return true;
+                if (m.result.history[0]?.logs?.includes('데이터 오류')) return true;
+            }
+            return false;
+        })
     );
 
     useEffect(() => {
@@ -88,24 +89,23 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
 
         const lcpTeams = FOREIGN_LEAGUES['LCP'] || [];
         const lcpPlayers = (FOREIGN_PLAYERS && FOREIGN_PLAYERS['LCP']) ? FOREIGN_PLAYERS['LCP'] : [];
-
         let isUpdated = false;
 
         let lcpSchedule = activeMatches.filter(m => m.type !== 'playoff');
         
-        const hasBadData = activeMatches.some(m => 
-            !lcpTeams.find(t => t.id === m.t1 || t.name === m.t1) || 
-            (m.status === 'finished' && (
-                !m.result || 
-                !m.result.history || 
-                m.result.history.length === 0 || 
-                m.result.history[0]?.logs?.includes('데이터 오류로 인해 강제 시뮬레이션 됨') ||
-                !m.result.history[0]?.picks?.A?.length
-            ))
-        );
+        const hasBadData = activeMatches.some(m => {
+            const t1Str = String(m.t1); const t2Str = String(m.t2);
+            if (m.status === 'finished') {
+                if (!m.t1 || t1Str === 'TBD' || t1Str === 'null' || t1Str === 'undefined') return true;
+                if (!m.t2 || t2Str === 'TBD' || t2Str === 'null' || t2Str === 'undefined') return true;
+                if (!m.result || !m.result.history || m.result.history.length === 0) return true;
+                if (m.result.history[0]?.logs?.includes('데이터 오류')) return true;
+            }
+            return false;
+        });
         
         if (lcpSchedule.length === 0 || hasBadData) {
-            console.log("[Auto-Sync] Scrubbing corrupt fail-safe data and regenerating LCP...");
+            console.log("[Auto-Sync] Ghost Data detected. Regenerating flawless LCP schedule...");
             lcpSchedule = generateLCPRegularSchedule(lcpTeams);
             isUpdated = true;
         }
@@ -118,59 +118,46 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
 
         const simMatchIfPast = (matchObj) => {
             if (matchObj.status === 'finished') return matchObj; 
+            if (currentPendingLCK.date !== '99.99 (완료)' && compareDatesObj(matchObj, currentPendingLCK) >= 0) return matchObj;
 
-            if (currentPendingLCK.date !== '99.99 (완료)' && compareDatesObj(matchObj, currentPendingLCK) >= 0) {
-                return matchObj;
-            }
-
-            const t1Obj = lcpTeams.find(t => t.id === matchObj.t1 || t.name === matchObj.t1);
-            const t2Obj = lcpTeams.find(t => t.id === matchObj.t2 || t.name === matchObj.t2);
-            if (!t1Obj || !t2Obj) return matchObj; 
+            const t1Obj = findGlobalTeam(matchObj.t1, teams);
+            const t2Obj = findGlobalTeam(matchObj.t2, teams);
+            if (t1Obj.name === 'TBD' || t2Obj.name === 'TBD') return matchObj; 
 
             const t1 = { ...t1Obj, roster: getSafeRoster(t1Obj, lcpPlayers) };
             const t2 = { ...t2Obj, roster: getSafeRoster(t2Obj, lcpPlayers) };
 
             try {
-                // [THE CRITICAL FIX] Pass exactly 4 arguments! No more sending 'regular'/'playoff' into the Champion List parameter!
                 const simResult = quickSimulateMatch(t1, t2, matchObj.format, safeLeague.currentChampionList);
                 isUpdated = true;
                 
                 let fScore = simResult.scoreString || simResult.score;
                 if (typeof fScore === 'object') {
-                    const valA = fScore.A ?? 0;
-                    const valB = fScore.B ?? 0;
-                    fScore = `${Math.max(valA, valB)}-${Math.min(valA, valB)}`;
+                    fScore = `${Math.max(fScore.A ?? 0, fScore.B ?? 0)}-${Math.min(fScore.A ?? 0, fScore.B ?? 0)}`;
                 }
-                if (!fScore) {
-                     const reqWins = (matchObj.format === 'BO5' || matchObj.type === 'playoff') ? 3 : 2;
-                     fScore = `${reqWins}-0`;
-                }
+                if (!fScore) fScore = `${(matchObj.format === 'BO5' || matchObj.type === 'playoff') ? 3 : 2}-0`;
 
                 return {
                     ...matchObj,
+                    t1: t1.id || t1.name, 
+                    t2: t2.id || t2.name,
                     status: 'finished',
-                    result: {
-                        winner: simResult.winner?.name || simResult.winner,
-                        score: fScore,
-                        history: simResult.history || []
-                    }
+                    result: { winner: simResult.winner?.name || simResult.winner, score: fScore, history: simResult.history || [] }
                 };
             } catch (e) {
                 console.error("Engine Crash Blocked:", e);
-                const isBO5 = matchObj.format === 'BO5' || matchObj.type === 'playoff';
-                const reqWins = isBO5 ? 3 : 2;
+                const reqWins = (matchObj.format === 'BO5' || matchObj.type === 'playoff') ? 3 : 2;
                 const t1Wins = Math.random() > 0.5;
-                const winnerScore = reqWins;
-                const loserScore = Math.floor(Math.random() * reqWins); 
-                
                 isUpdated = true;
                 return {
                     ...matchObj,
+                    t1: t1.id || t1.name, 
+                    t2: t2.id || t2.name,
                     status: 'finished',
                     result: {
                         winner: t1Wins ? t1.name : t2.name,
-                        score: t1Wins ? `${winnerScore}-${loserScore}` : `${loserScore}-${winnerScore}`,
-                        history: [{ logs: ['데이터 오류로 인해 강제 시뮬레이션 됨'], picks: { A: [], B: [] }, bans: { A: [], B: [] } }] 
+                        score: t1Wins ? `${reqWins}-0` : `0-${reqWins}`,
+                        history: [{ logs: ['데이터 오류 복구됨'], picks: { A: [], B: [] }, bans: { A: [], B: [] } }] 
                     }
                 };
             }
@@ -181,24 +168,21 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
         let lcpPlayoffs = hasBadData ? [] : activeMatches.filter(m => m.type === 'playoff');
         let seeds = league.foreignPlayoffSeeds?.['LCP'] || [];
         
-        const isRegularSeasonDone = lcpSchedule.every(m => m.status === 'finished');
-
-        if (isRegularSeasonDone) {
+        if (lcpSchedule.every(m => m.status === 'finished')) {
             if (seeds.length === 0 || hasBadData) {
                 const standings = {};
                 lcpTeams.forEach(t => standings[t.name] = { w: 0, l: 0, id: t.id || t.name, name: t.name });
                 lcpSchedule.forEach(m => {
                     if (m.status === 'finished' && m.result) {
                         const winnerName = m.result.winner;
-                        const t1Name = lcpTeams.find(t => t.id === m.t1 || t.name === m.t1)?.name;
-                        const t2Name = lcpTeams.find(t => t.id === m.t2 || t.name === m.t2)?.name;
+                        const t1Name = findGlobalTeam(m.t1, teams).name;
+                        const t2Name = findGlobalTeam(m.t2, teams).name;
                         const loserName = winnerName === t1Name ? t2Name : t1Name;
                         if (standings[winnerName]) standings[winnerName].w += 1;
                         if (standings[loserName]) standings[loserName].l += 1;
                     }
                 });
-                const sortedTeams = Object.values(standings).sort((a,b) => b.w - a.w);
-                seeds = sortedTeams.slice(0, 6).map((t, idx) => ({ ...t, seed: idx + 1 }));
+                seeds = Object.values(standings).sort((a,b) => b.w - a.w).slice(0, 6).map((t, idx) => ({ ...t, seed: idx + 1 }));
                 isUpdated = true;
             }
 
@@ -209,24 +193,24 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
 
             const simPlayoffMatch = (id) => {
                 const matchObj = lcpPlayoffs.find(m => m.id === id);
-                if (!matchObj || !matchObj.t1 || !matchObj.t2) return { winnerId: null, loserId: null };
+                if (!matchObj || !matchObj.t1 || !matchObj.t2 || matchObj.t1 === 'TBD' || matchObj.t2 === 'TBD') return { winnerId: null, loserId: null };
+                
                 if (matchObj.status === 'finished') {
-                    const winnerId = lcpTeams.find(t => t.name === matchObj.result.winner)?.id || matchObj.result.winner;
-                    const loserId = winnerId === matchObj.t1 ? matchObj.t2 : matchObj.t1;
-                    return { winnerId, loserId };
+                    const wId = findGlobalTeam(matchObj.result.winner, teams).name;
+                    const lId = wId === findGlobalTeam(matchObj.t1, teams).name ? matchObj.t2 : matchObj.t1;
+                    return { winnerId: wId, loserId: lId };
                 }
-                if (currentPendingLCK.date !== '99.99 (완료)' && compareDatesObj(matchObj, currentPendingLCK) >= 0) {
-                    return { winnerId: null, loserId: null };
-                }
+                
+                if (currentPendingLCK.date !== '99.99 (완료)' && compareDatesObj(matchObj, currentPendingLCK) >= 0) return { winnerId: null, loserId: null };
 
                 const simulatedMatch = simMatchIfPast(matchObj);
                 Object.assign(matchObj, simulatedMatch); 
                 isUpdated = true;
 
                 if (simulatedMatch.status === 'finished') {
-                    const winnerId = lcpTeams.find(t => t.name === simulatedMatch.result.winner)?.id || simulatedMatch.result.winner;
-                    const loserId = winnerId === matchObj.t1 ? matchObj.t2 : matchObj.t1;
-                    return { winnerId, loserId };
+                    const wId = findGlobalTeam(simulatedMatch.result.winner, teams).name;
+                    const lId = wId === findGlobalTeam(matchObj.t1, teams).name ? matchObj.t2 : matchObj.t1;
+                    return { winnerId: wId, loserId: lId };
                 }
                 return { winnerId: null, loserId: null };
             };
@@ -260,25 +244,16 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
         }
 
         if (isUpdated) {
-            const fullSchedule = [...lcpSchedule, ...lcpPlayoffs];
             const updatedLeague = { ...league };
             if (!updatedLeague.foreignMatches) updatedLeague.foreignMatches = { LPL: [], LEC: [], LCS: [], LCP: [], CBLOL: [] };
-            if (!updatedLeague.foreignStandings) updatedLeague.foreignStandings = { LPL: {}, LEC: {}, LCS: {}, LCP: {}, CBLOL: {} };
-            
-            updatedLeague.foreignMatches['LCP'] = fullSchedule;
+            updatedLeague.foreignMatches['LCP'] = [...lcpSchedule, ...lcpPlayoffs];
             updatedLeague.foreignPlayoffSeeds = updatedLeague.foreignPlayoffSeeds || {};
             updatedLeague.foreignPlayoffSeeds['LCP'] = seeds;
 
             updateLeague(league.id, updatedLeague);
-            
-            // [THE FIX] Safely update the Dashboard's state instead of violently reloading!
-            if (setLeague) {
-                setLeague(updatedLeague);
-            } else {
-                window.location.reload(); 
-            }
+            if (setLeague) setLeague(updatedLeague); else window.location.reload(); 
         }
-    }, [needsSync, currentPendingLCK, displayLeague, activeMatches, league, setLeague]);
+    }, [needsSync, currentPendingLCK, displayLeague, activeMatches, league, setLeague, teams]);
 
     return (
         <div className="bg-white rounded-lg border shadow-sm p-4 lg:p-8 min-h-[300px] lg:min-h-[600px] flex flex-col h-full lg:h-auto overflow-y-auto relative">
@@ -286,7 +261,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
             {needsSync && (
                 <div className="absolute inset-0 bg-white/80 z-50 flex flex-col items-center justify-center backdrop-blur-sm">
                     <div className="text-4xl animate-spin mb-4">⏳</div>
-                    <div className="text-lg font-black text-blue-600 animate-pulse">LCP 데이터를 복구 및 동기화 중입니다...</div>
+                    <div className="text-lg font-black text-blue-600 animate-pulse">LCP 고스트 데이터를 삭제하고 복구 중입니다...</div>
                 </div>
             )}
 
@@ -297,9 +272,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                             key={lg}
                             onClick={() => setCurrentLeague(lg)}
                             className={`px-5 py-2 rounded-full font-bold text-xs lg:text-sm transition-all whitespace-nowrap shadow-sm active:scale-95 ${
-                                currentLeague === lg
-                                ? 'bg-blue-600 text-white ring-2 ring-blue-300 transform scale-105'
-                                : 'bg-white text-gray-600 hover:bg-gray-200 border border-gray-300'
+                                currentLeague === lg ? 'bg-blue-600 text-white ring-2 ring-blue-300 transform scale-105' : 'bg-white text-gray-600 hover:bg-gray-200 border border-gray-300'
                             }`}
                         >
                             {lg}
@@ -321,8 +294,8 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                             .filter(m => activeTab === 'schedule' || displayLeague !== 'LCK' || (m.t1 === myTeam.id || m.t2 === myTeam.id))
                             .sort(compareDatesObj) 
                             .map((m, i) => {
-                                const t1 = m.t1 ? activeTeams.find(t => t.id === m.t1 || t.name === m.t1) : { name: 'TBD' };
-                                const t2 = m.t2 ? activeTeams.find(t => t.id === m.t2 || t.name === m.t2) : { name: 'TBD' };
+                                const t1 = findGlobalTeam(m.t1, teams);
+                                const t2 = findGlobalTeam(m.t2, teams);
                                 const isMyMatch = myTeam.id === m.t1 || myTeam.id === m.t2;
                                 const isFinished = m.status === 'finished';
                                 
@@ -339,9 +312,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                                     <div key={i} className={`p-3 lg:p-4 rounded-lg border flex flex-col gap-1 lg:gap-2 ${isMyMatch && displayLeague === 'LCK' ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-200' : 'bg-white border-gray-200'}`}>
                                         <div className="flex justify-between text-[10px] lg:text-xs font-bold text-gray-500">
                                             <span>{m.date} {m.time}</span>
-                                            <span className={`font-bold ${badgeColor}`}>
-                                                {badgeText}
-                                            </span>
+                                            <span className={`font-bold ${badgeColor}`}>{badgeText}</span>
                                         </div>
                                         <div className="flex justify-between items-center mt-1 lg:mt-2">
                                             <div className="flex flex-col items-center w-1/3">
@@ -383,7 +354,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 <div className="flex-1 flex flex-col items-center justify-center text-gray-400 py-10 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
                     <div className="text-4xl lg:text-6xl mb-3 lg:mb-4 animate-bounce">🌍</div>
                     <div className="text-xl lg:text-2xl font-black text-gray-600">{currentLeague} 일정 준비 중</div>
-                    <p className="mt-2 text-sm lg:text-base font-bold text-gray-500">해외 리그 스케줄링 시스템은 다음 작전 단계에서 가동됩니다!</p>
                 </div>
             )}
         </div>
