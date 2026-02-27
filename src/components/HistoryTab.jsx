@@ -1,9 +1,33 @@
 // src/components/HistoryTab.jsx
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { teams } from '../data/teams';
 import { FOREIGN_LEAGUES, FOREIGN_PLAYERS } from '../data/foreignLeagues';
 import { TEAM_COLORS } from '../data/constants';
 
+// --- GLOBAL RESOLVERS ---
+const globalPlayerList = Object.values(FOREIGN_PLAYERS || {}).flat().filter(Boolean);
+
+const getKoreanName = (playerObj) => {
+    if (!playerObj) return "Unknown";
+    const searchName = playerObj.playerName || playerObj.이름 || playerObj.name || playerObj.실명;
+    if (!searchName) return "Unknown";
+    const pData = globalPlayerList.find(p => p.이름 === searchName || p.playerName === searchName || p.실명 === searchName);
+    return pData ? (pData.한글명 || pData.실명 || pData.이름 || searchName) : searchName;
+};
+
+const findGlobalTeam = (token) => {
+    if (!token || token === 'TBD' || token === 'null' || token === 'undefined') return { name: 'TBD' };
+    const s = String(token).trim().toUpperCase();
+    const pool = [...teams, ...Object.values(FOREIGN_LEAGUES).flat()];
+    const found = pool.find(t =>
+        (t.id && String(t.id).toUpperCase() === s) ||
+        (t.name && String(t.name).toUpperCase() === s) ||
+        (t.fullName && String(t.fullName).toUpperCase() === s)
+    );
+    return found || { name: String(token) };
+};
+
+// --- CUSTOM TITLES ---
 const LEAGUE_TITLES = {
     'LCK': '컵',
     'LPL': '스플릿 1',
@@ -13,10 +37,7 @@ const LEAGUE_TITLES = {
     'CBLOL': '레전드 컵'
 };
 
-// Safely combine every player in the world into one giant phonebook
-const globalPlayerList = Object.values(FOREIGN_PLAYERS || {}).flat().filter(Boolean);
-
-// --- Helpers ---
+// --- HELPER COMPONENTS ---
 const RoleBadge = ({ role }) => {
     const icons = { TOP: '⚔️', JGL: '🌲', MID: '🧙', ADC: '🏹', SUP: '🛡️' };
     const colors = {
@@ -28,283 +49,344 @@ const RoleBadge = ({ role }) => {
     };
     return (
         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 ${colors[role] || 'bg-gray-100'}`}>
-            <span>{icons[role]}</span> {role}
+            <span>{icons[role] || '•'}</span> {role}
         </span>
     );
 };
 
-// Force Korean Names Globally
-const getKoreanName = (playerName) => {
-    if (!playerName) return 'Unknown';
-    const p = globalPlayerList.find(x => x.이름 === playerName || x.playerName === playerName);
-    return p ? (p.한글명 || p.실명 || p.이름 || playerName) : playerName;
-};
+const AllProTeamRow = ({ title, players }) => (
+    <div className="mb-4">
+        <h4 className="text-xs font-bold text-gray-500 uppercase mb-2 border-b pb-1">{title}</h4>
+        <div className="grid grid-cols-5 gap-2">
+            {['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(role => {
+                let p = null;
+                if (players) {
+                    if (Array.isArray(players)) p = players.find(x => x && x.role === role);
+                    else p = players[role];
+                }
+                
+                if (!p) return (
+                    <div key={role} className="bg-gray-50 rounded p-2 text-center text-xs text-gray-400 flex flex-col items-center justify-center min-h-[80px]">
+                        <RoleBadge role={role} />
+                        <span className="mt-1">-</span>
+                    </div>
+                );
+                
+                const displayName = getKoreanName(p); // [FIX] Forces Korean Names
+                
+                let teamNameRef = "FA";
+                if (p.teamObj && p.teamObj.name) teamNameRef = p.teamObj.name;
+                else if (p.team) teamNameRef = p.team;
+                else if (p.teams && p.teams.length > 0) teamNameRef = p.teams[0];
 
-// Omni-Search Team Finder
-const findGlobalTeam = (token) => {
-    if (!token || token === 'TBD' || token === 'null') return { name: 'TBD' };
-    const s = String(token).trim().toUpperCase();
-    const pool = [...teams, ...Object.values(FOREIGN_LEAGUES).flat()];
-    const found = pool.find(t =>
-        (t.id && String(t.id).toUpperCase() === s) ||
-        (t.name && String(t.name).toUpperCase() === s) ||
-        (t.fullName && String(t.fullName).toUpperCase() === s)
+                const teamObj = findGlobalTeam(teamNameRef);
+                const teamColor = TEAM_COLORS[teamObj.name] || teamObj?.colors?.primary || '#999';
+
+                return (
+                    <div key={role} className="bg-white border rounded-lg p-2 flex flex-col items-center shadow-sm">
+                        <RoleBadge role={role} />
+                        <div className="font-bold text-gray-800 text-xs mt-1 truncate w-full text-center">{displayName}</div>
+                        <div className="text-[10px] text-gray-500 font-bold flex items-center gap-1 mt-1">
+                             <div className="w-3 h-3 rounded-full border border-gray-200 flex-shrink-0" style={{backgroundColor: teamColor}}></div>
+                             <span className="truncate">{teamObj.name}</span>
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    </div>
+);
+
+const SmallMvpCard = ({ title, player, colorClass }) => {
+    if (!player) return null;
+
+    const displayName = getKoreanName(player); // [FIX] Forces Korean Names
+    
+    let teamNameRef = "FA";
+    if (player.teamObj && player.teamObj.name) teamNameRef = player.teamObj.name;
+    else if (player.team) teamNameRef = player.team;
+    else if (Array.isArray(player.teams) && player.teams.length > 0) teamNameRef = player.teams[0];
+
+    const teamObj = findGlobalTeam(teamNameRef);
+    const role = player.role || 'Player';
+
+    return (
+        <div className="bg-white border rounded-xl p-3 shadow-sm flex items-center gap-3 relative overflow-hidden">
+            <div className={`absolute top-0 right-0 text-[10px] font-bold px-2 py-1 rounded-bl-lg text-white ${colorClass}`}>
+                {title}
+            </div>
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg border-2 ${colorClass.replace('bg-', 'border-').replace('text-white','')}`}>
+                🧑‍🚀
+            </div>
+            <div>
+                <div className="text-sm font-black text-gray-800">{displayName}</div>
+                <div className="text-[10px] text-gray-500 font-bold">{teamObj.name} · {role}</div>
+            </div>
+        </div>
     );
-    return found || { name: String(token) };
 };
 
 const HistoryTab = ({ league }) => {
-    const [currentLeague, setCurrentLeague] = useState('LCK');
+  const [currentLeague, setCurrentLeague] = useState('LCK');
+  
+  const history = currentLeague === 'LCK' 
+      ? (league?.history || []) 
+      : (league?.foreignHistory?.[currentLeague] || []);
 
-    // --- LCP STANDINGS LOGIC ---
-    const lcpFinalStandings = useMemo(() => {
-        if (currentLeague !== 'LCP') return null;
-        const matches = league.foreignMatches?.['LCP'] || [];
-        const playoffs = matches.filter(m => m.type === 'playoff');
-        const regular = matches.filter(m => m.type !== 'playoff' && m.status === 'finished');
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [viewMode, setViewMode] = useState('regular');
 
-        // Check if playoffs are fully finished
-        if (playoffs.length === 0 || playoffs.some(m => m.status !== 'finished')) return null;
+  useEffect(() => {
+      setCurrentIndex(history.length > 0 ? history.length - 1 : 0);
+  }, [currentLeague, history.length]);
 
-        const findM = (round) => playoffs.find(m => m.round === round);
-        const findMNum = (round, num) => playoffs.find(m => m.round === round && m.match === num);
+  return (
+    <div className="flex flex-col gap-6 max-w-5xl mx-auto pb-10">
+      
+      <div className="flex gap-2 p-3 border-b bg-gray-100 overflow-x-auto shrink-0 rounded-lg">
+          {['LCK', 'LPL', 'LEC', 'LCS', 'LCP', 'CBLOL'].map(lg => (
+              <button
+                  key={lg}
+                  onClick={() => setCurrentLeague(lg)}
+                  className={`px-5 py-2 rounded-full font-bold text-xs lg:text-sm transition-all whitespace-nowrap shadow-sm active:scale-95 ${
+                      currentLeague === lg
+                      ? 'bg-blue-600 text-white ring-2 ring-blue-300 transform scale-105'
+                      : 'bg-white text-gray-600 hover:bg-gray-200 border border-gray-300'
+                  }`}
+              >
+                  {lg}
+              </button>
+          ))}
+      </div>
 
-        const getWinner = (m) => (m && m.result?.winner) ? String(m.result.winner).toUpperCase() : null;
-        const getLoser = (m) => {
-            if (!m || !m.result?.winner) return null;
-            const w = String(m.result.winner).toUpperCase();
-            const t1 = findGlobalTeam(m.t1).name.toUpperCase();
-            const t2 = findGlobalTeam(m.t2).name.toUpperCase();
-            if (t1 === w) return findGlobalTeam(m.t2).name;
-            if (t2 === w) return findGlobalTeam(m.t1).name;
-            return null;
-        };
+      {history.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-[400px] text-gray-400 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+              <div className="text-4xl mb-4">📜</div>
+              <div className="font-bold text-xl mb-2">2026 {currentLeague} {LEAGUE_TITLES[currentLeague]} 기록이 없습니다.</div>
+              <p className="text-sm text-gray-500 font-medium">시즌이 종료되면 상단의 [💾 시즌 기록 저장] 버튼을 눌러 역사에 기록하세요.</p>
+          </div>
+      ) : (
+          (() => {
+              const record = history[currentIndex];
+              if (!record) return <div>Data Error</div>;
 
-        const r4 = findM(4);         // Finals
-        const r3_1 = findM(3.1);     // 결승 진출전
-        const r2_1 = findM(2.1);     // 패자조 1라운드
-        const r1_1 = findMNum(1, 1); // 1라운드 Match 1
-        const r1_2 = findMNum(1, 2); // 1라운드 Match 2
+              const handlePrev = () => setCurrentIndex(prev => (prev - 1 + history.length) % history.length);
+              const handleNext = () => setCurrentIndex(prev => (prev + 1) % history.length);
 
-        const first = findGlobalTeam(getWinner(r4)).name;
-        const second = getLoser(r4);
-        const third = getLoser(r3_1);
-        const fourth = getLoser(r2_1);
+              const isNewFormat = record.awards?.regular !== undefined;
+              const regularMvp = isNewFormat ? record.awards.regular?.mvp : record.awards?.mvp;
+              const regularAllPro = isNewFormat ? record.awards.regular?.allPro : record.awards?.allPro;
+              const finalsMvp = isNewFormat ? record.awards.playoff?.finalsMvp : null;
+              const playoffMvp = isNewFormat ? record.awards.playoff?.playoffMvp : null;
+              const playoffAllPro = isNewFormat ? record.awards.playoff?.allPro : null;
+              const finalsMvpName = getKoreanName(finalsMvp);
 
-        const loser1 = getLoser(r1_1);
-        const loser2 = getLoser(r1_2);
+              // ─── [THE FIX] DYNAMIC LCP STANDINGS CALCULATOR ───
+              let displayStandings = record.finalStandings || [];
 
-        // Sort 5th/6th by sets won in their playoff match
-        const getLoserWins = (m) => {
-            if(!m || !m.result || !m.result.score) return 0;
-            const pts = String(m.result.score).split(/[-:]/).map(s => parseInt(s.trim()));
-            return Math.min(pts[0] || 0, pts[1] || 0);
-        };
-        const l1Wins = getLoserWins(r1_1);
-        const l2Wins = getLoserWins(r1_2);
-        
-        let fifth = loser1, sixth = loser2;
-        if (l1Wins < l2Wins) { fifth = loser2; sixth = loser1; }
+              if (currentLeague === 'LCP' && record.matches && record.matches.length > 0) {
+                  const lcpTeams = FOREIGN_LEAGUES['LCP'] || [];
+                  const st = {};
+                  lcpTeams.forEach(t => st[t.name] = { w: 0, l: 0, diff: 0, team: t });
+                  
+                  // Compute Regular Season Records for Tiebreakers
+                  record.matches.filter(m => m.type !== 'playoff' && m.status === 'finished').forEach(m => {
+                      const winner = m.result?.winner;
+                      const t1 = findGlobalTeam(m.t1).name;
+                      const t2 = findGlobalTeam(m.t2).name;
+                      const loser = winner === t1 ? t2 : t1;
+                      
+                      let diff = 0;
+                      if (m.result?.score) {
+                          const pts = String(m.result.score).split(/[-:]/).map(Number);
+                          if (pts.length === 2 && !isNaN(pts[0]) && !isNaN(pts[1])) diff = Math.abs(pts[0] - pts[1]);
+                      }
+                      if (st[winner]) { st[winner].w++; st[winner].diff += diff; }
+                      if (st[loser]) { st[loser].l++; st[loser].diff -= diff; }
+                  });
+                  
+                  const regSorted = Object.values(st).sort((a,b) => b.w !== a.w ? b.w - a.w : b.diff - a.diff);
+                  
+                  // Trace Playoff Elimination Path
+                  const poMatches = record.matches.filter(m => m.type === 'playoff' && m.status === 'finished');
+                  const getWinner = (r, mNum) => poMatches.find(x => x.round === r && x.match === mNum)?.result?.winner;
+                  const getLoser = (r, mNum) => {
+                      const m = poMatches.find(x => x.round === r && x.match === mNum);
+                      if (!m || !m.result?.winner) return null;
+                      const t1 = findGlobalTeam(m.t1).name;
+                      const t2 = findGlobalTeam(m.t2).name;
+                      return m.result.winner === t1 ? t2 : t1;
+                  };
 
-        const top6 = [first, second, third, fourth, fifth, sixth].filter(Boolean);
-        
-        // Compute 7th/8th based on Regular Season Record
-        const allLcpTeams = (FOREIGN_LEAGUES['LCP'] || []).map(t => t.name);
-        const remaining = allLcpTeams.filter(t => !top6.includes(t));
+                  const finalW = getWinner(4, 1);
+                  const finalL = getLoser(4, 1);
+                  const third = getLoser(3.1, 1);  // Loser of 결승 진출전
+                  const fourth = getLoser(2.1, 1); // Loser of 패자조 1R
+                  const r1L1 = getLoser(1, 1);
+                  const r1L2 = getLoser(1, 2);
 
-        const st = {};
-        remaining.forEach(t => st[t] = { w: 0, diff: 0, name: t});
-        
-        regular.forEach(m => {
-            if(m.status !== 'finished') return;
-            const w = m.result.winner;
-            const pts = String(m.result.score).split(/[-:]/).map(Number);
-            const diff = Math.abs(pts[0] - pts[1]);
-            
-            if (st[w]) { st[w].w++; st[w].diff += diff; }
-            
-            const l = (findGlobalTeam(m.t1).name === w) ? findGlobalTeam(m.t2).name : findGlobalTeam(m.t1).name;
-            if (st[l]) { st[l].diff -= diff; }
-        });
-        
-        remaining.sort((a,b) => {
-            if(st[b].w !== st[a].w) return st[b].w - st[a].w;
-            return st[b].diff - st[a].diff;
-        });
+                  const lcpRanks = [];
+                  if (finalW) lcpRanks.push({ rank: 1, team: st[finalW]?.team || findGlobalTeam(finalW) });
+                  if (finalL) lcpRanks.push({ rank: 2, team: st[finalL]?.team || findGlobalTeam(finalL) });
+                  if (third) lcpRanks.push({ rank: 3, team: st[third]?.team || findGlobalTeam(third) });
+                  if (fourth) lcpRanks.push({ rank: 4, team: st[fourth]?.team || findGlobalTeam(fourth) });
+                  
+                  // 5th & 6th resolved by Regular Season ranking
+                  const fifthSixth = [r1L1, r1L2].filter(Boolean).sort((a, b) => {
+                      return regSorted.findIndex(x => x.team.name === a) - regSorted.findIndex(x => x.team.name === b); 
+                  });
+                  fifthSixth.forEach((tName, i) => lcpRanks.push({ rank: 5 + i, team: st[tName]?.team || findGlobalTeam(tName) }));
 
-        const seventh = remaining[0];
-        const eighth = remaining[1];
+                  // 7th & 8th
+                  const alreadyPlaced = lcpRanks.map(r => r.team.name);
+                  regSorted.filter(x => !alreadyPlaced.includes(x.team.name)).forEach(r => lcpRanks.push({ rank: lcpRanks.length + 1, team: r.team }));
 
-        return [
-            { rank: 1, team: findGlobalTeam(first) },
-            { rank: 2, team: findGlobalTeam(second) },
-            { rank: 3, team: findGlobalTeam(third) },
-            { rank: 4, team: findGlobalTeam(fourth) },
-            { rank: 5, team: findGlobalTeam(fifth) },
-            { rank: 6, team: findGlobalTeam(sixth) },
-            { rank: 7, team: findGlobalTeam(seventh) },
-            { rank: 8, team: findGlobalTeam(eighth) }
-        ].filter(x => x.team && x.team.name !== 'TBD');
-    }, [currentLeague, league.foreignMatches]);
+                  if (lcpRanks.length > 0) displayStandings = lcpRanks;
+              }
 
-    // --- RENDER HELPERS ---
-    const renderLeagueHistory = () => {
-        let isFinished = false;
-        let finalStandings = [];
-        let championTeam = null;
-        let championRoster = [];
+              // Robust Champion Resolution
+              const champTeamObj = record.champion ? findGlobalTeam(record.champion.name) : (displayStandings.length > 0 ? findGlobalTeam(displayStandings[0].team.name) : null);
+              const championColor = TEAM_COLORS[champTeamObj?.name] || champTeamObj?.colors?.primary || '#333';
+              const championDisplayShort = champTeamObj?.name || 'TBD';
+              const championDisplayFull = champTeamObj?.fullName || 'Unknown Team';
 
-        if (currentLeague === 'LCK') {
-            const summary = league.seasonSummary;
-            if (summary) {
-                isFinished = true;
-                finalStandings = summary.finalStandings || [];
-                championTeam = findGlobalTeam(finalStandings[0]?.id);
-                championRoster = championTeam ? globalPlayerList.filter(p => p.팀 === championTeam.name) : [];
-            }
-        } else if (currentLeague === 'LCP') {
-            if (lcpFinalStandings) {
-                isFinished = true;
-                finalStandings = lcpFinalStandings;
-                championTeam = lcpFinalStandings[0]?.team;
-                championRoster = championTeam ? globalPlayerList.filter(p => p.팀 === championTeam.name) : [];
-            }
-        } else {
-            return (
-                <div className="flex flex-col items-center justify-center bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 py-20 text-gray-400">
-                    <div className="text-4xl lg:text-6xl mb-3 lg:mb-4 animate-bounce">🌍</div>
-                    <div className="text-xl lg:text-2xl font-black text-gray-600">{currentLeague} 기록 준비 중</div>
-                </div>
-            );
-        }
+              return (
+                  <>
+                      {/* 1. HEADER & NAVIGATION */}
+                      <div className="bg-gray-900 text-white rounded-xl p-6 flex items-center justify-between shadow-lg relative overflow-hidden">
+                          <div className="absolute top-0 left-0 w-full h-full opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
+                          <button onClick={handlePrev} className="z-10 w-10 h-10 rounded-full bg-gray-700 hover:bg-gray-600 flex items-center justify-center font-bold text-xl transition">&lt;</button>
+                          <div className="z-10 text-center">
+                              <h2 className="text-3xl lg:text-4xl font-black tracking-tighter text-yellow-400 drop-shadow-md">
+                                  {record.year} {currentLeague} {LEAGUE_TITLES[currentLeague]}
+                              </h2>
+                              <div className="text-gray-400 font-bold text-sm mt-1 uppercase tracking-widest">Season Archive</div>
+                          </div>
+                          <button onClick={handleNext} className="z-10 w-10 h-10 rounded-full bg-gray-700 hover:bg-gray-600 flex items-center justify-center font-bold text-xl transition">&gt;</button>
+                      </div>
 
-        if (!isFinished) {
-            return (
-                <div className="flex flex-col items-center justify-center bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 py-20 text-gray-400">
-                    <div className="text-5xl mb-4 opacity-50">🏆</div>
-                    <div className="text-xl font-bold">시즌이 아직 완료되지 않았습니다</div>
-                    <p className="mt-2 text-sm">플레이오프 결승전이 종료되면 기록이 해금됩니다.</p>
-                </div>
-            );
-        }
+                      {/* 2. CHAMPION & KEY MVPS */}
+                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                          <div className="lg:col-span-2 bg-gradient-to-br from-yellow-50 to-white border border-yellow-200 rounded-xl p-6 shadow-sm flex items-center gap-6 relative overflow-hidden">
+                              <div className="absolute top-0 right-0 p-4 opacity-10 text-9xl">🏆</div>
+                              <div className="w-24 h-24 lg:w-32 lg:h-32 rounded-full shadow-lg flex items-center justify-center text-white font-black text-2xl lg:text-4xl border-4 border-yellow-400 z-10"
+                                   style={{backgroundColor: championColor}}>
+                                  {championDisplayShort}
+                              </div>
+                              <div className="z-10">
+                                  <div className="text-yellow-600 font-bold text-sm uppercase tracking-wide mb-1">Season Champion</div>
+                                  <div className="text-3xl lg:text-5xl font-black text-gray-900">{championDisplayFull}</div>
+                                  <div className="flex gap-2 mt-2">
+                                       {finalsMvpName !== "Unknown" && (
+                                           <div className="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded-lg border border-blue-200">
+                                               FMVP: {finalsMvpName}
+                                           </div>
+                                       )}
+                                  </div>
+                              </div>
+                          </div>
 
-        const champColor = TEAM_COLORS[championTeam?.name] || championTeam?.colors?.primary || '#3b82f6';
+                          <div className="flex flex-col gap-2">
+                             <SmallMvpCard title="SEASON MVP" player={regularMvp} colorClass="bg-yellow-500" />
+                             {playoffMvp && <SmallMvpCard title="PLAYOFF MVP" player={playoffMvp} colorClass="bg-green-500" />}
+                             {finalsMvp && <SmallMvpCard title="FINALS MVP" player={finalsMvp} colorClass="bg-blue-500" />}
+                          </div>
+                      </div>
 
-        return (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
-                {/* 챔피언 팀 로스터 (Left Column) */}
-                <div className="lg:col-span-1 bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl border border-gray-700 shadow-xl overflow-hidden flex flex-col relative">
-                    <div className="absolute top-0 right-0 p-6 opacity-5 text-8xl font-black text-white pointer-events-none">V1</div>
-                    <div className="p-6 pb-4 border-b border-gray-700 relative z-10">
-                        <div className="text-yellow-400 font-bold text-xs mb-1 tracking-widest uppercase">2026 {currentLeague} {LEAGUE_TITLES[currentLeague]} Champion</div>
-                        <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 rounded-full border-2 border-white/20 shadow-lg flex items-center justify-center text-white font-black text-sm" 
-                                 style={{backgroundColor: champColor}}>
-                                {championTeam?.name}
-                            </div>
-                            <h3 className="text-2xl font-black text-white">{championTeam?.fullName || championTeam?.name}</h3>
-                        </div>
-                    </div>
-                    
-                    <div className="p-6 flex-1 flex flex-col justify-center space-y-3 z-10">
-                        <h4 className="text-gray-400 text-xs font-bold mb-2 uppercase tracking-wider">Championship Roster</h4>
-                        {['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(role => {
-                            const player = championRoster.find(p => String(p.포지션 || p.role).toUpperCase() === role);
-                            return (
-                                <div key={role} className="flex items-center justify-between bg-gray-800/50 p-3 rounded-lg border border-gray-700">
-                                    <div className="flex items-center gap-3">
-                                        <RoleBadge role={role} />
-                                        <div className="flex flex-col">
-                                            <span className="text-white font-bold">{player ? getKoreanName(player.이름) : 'TBD'}</span>
-                                            <span className="text-gray-500 text-[10px] uppercase">{player?.이름 || 'Unknown'}</span>
-                                        </div>
-                                    </div>
-                                    {player && <div className="text-yellow-500 text-xs">🏆</div>}
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
+                      {/* 3. AWARDS SECTION (With Toggle) */}
+                      <div className="bg-white rounded-xl border shadow-sm p-5">
+                          <div className="flex items-center justify-between mb-4">
+                             <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">
+                                 <span className="text-xl">🎖️</span> 시즌 어워드
+                             </h3>
+                             <div className="flex bg-gray-100 p-1 rounded-lg">
+                                 <button 
+                                    onClick={() => setViewMode('regular')}
+                                    className={`px-3 py-1 text-xs font-bold rounded-md transition ${viewMode === 'regular' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}
+                                 >
+                                     정규 시즌
+                                 </button>
+                                 <button 
+                                    onClick={() => setViewMode('playoff')}
+                                    className={`px-3 py-1 text-xs font-bold rounded-md transition ${viewMode === 'playoff' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}
+                                 >
+                                     플레이오프
+                                 </button>
+                             </div>
+                          </div>
+                          
+                          <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
+                              {viewMode === 'regular' ? (
+                                  regularAllPro ? (
+                                    <>
+                                        <AllProTeamRow title="1st All-Pro Team" players={regularAllPro[1]} />
+                                        <AllProTeamRow title="2nd All-Pro Team" players={regularAllPro[2]} />
+                                        <AllProTeamRow title="3rd All-Pro Team" players={regularAllPro[3]} />
+                                    </>
+                                  ) : <div className="text-center text-gray-400 py-4">정규 시즌 수상 내역이 없습니다.</div>
+                              ) : (
+                                  playoffAllPro ? (
+                                    <>
+                                        <AllProTeamRow title="Playoff 1st Team" players={playoffAllPro[1]} />
+                                        <AllProTeamRow title="Playoff 2nd Team" players={playoffAllPro[2]} />
+                                        <AllProTeamRow title="Playoff 3rd Team" players={playoffAllPro[3]} />
+                                    </>
+                                  ) : <div className="text-center text-gray-400 py-4">플레이오프 수상 내역이 없습니다.</div>
+                              )}
+                          </div>
+                      </div>
 
-                {/* 최종 순위 표 (Right Column) */}
-                <div className="lg:col-span-2 bg-white rounded-2xl border shadow-sm flex flex-col">
-                    <div className="p-4 lg:p-6 border-b bg-gray-50 rounded-t-2xl">
-                        <h3 className="text-lg lg:text-xl font-black text-gray-900 flex items-center gap-2">
-                            📊 2026 {currentLeague} {LEAGUE_TITLES[currentLeague]} 최종 순위
-                        </h3>
-                    </div>
-                    <div className="flex-1 p-4 lg:p-6 overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead className="bg-gray-100 text-gray-500 font-bold border-b">
-                                <tr>
-                                    <th className="py-3 px-4 text-center w-16">순위</th>
-                                    <th className="py-3 px-4 text-left">팀</th>
-                                    <th className="py-3 px-4 text-right">상금 / 비고</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                                {finalStandings.map((item, idx) => {
-                                    // Handle LCK vs LCP data structure differences
-                                    const tObj = item.team || findGlobalTeam(item.id);
-                                    const rank = item.rank || (idx + 1);
-                                    const tColor = TEAM_COLORS[tObj.name] || tObj.colors?.primary || '#999';
-
-                                    let prize = '-';
-                                    if (rank === 1) prize = '0.5억 (🏆 우승)';
-                                    else if (rank === 2) prize = '0.25억 (🥈 준우승)';
-                                    else if (rank === 3) prize = '0.2억';
-                                    else if (rank === 4) prize = '0.1억';
-
-                                    return (
-                                        <tr key={idx} className={`hover:bg-gray-50 transition ${rank === 1 ? 'bg-yellow-50/50' : ''}`}>
-                                            <td className="py-3 px-4 text-center font-black text-gray-700">
-                                                {rank === 1 ? '🥇 1' : rank === 2 ? '🥈 2' : rank === 3 ? '🥉 3' : rank}
-                                            </td>
-                                            <td className="py-3 px-4 font-bold text-gray-800 flex items-center gap-3">
-                                                <div className="w-6 h-6 rounded-full text-[8px] flex items-center justify-center text-white shadow-sm" 
-                                                     style={{backgroundColor: tColor}}>
-                                                    {tObj.name}
-                                                </div>
-                                                {tObj.fullName || tObj.name}
-                                            </td>
-                                            <td className="py-3 px-4 text-right font-bold text-gray-600">
-                                                {prize}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
-    return (
-        <div className="p-2 lg:p-6 max-w-7xl mx-auto space-y-6">
-            
-            {/* League Switcher */}
-            <div className="flex gap-2 p-3 border-b bg-gray-100 overflow-x-auto shrink-0 rounded-lg">
-                {['LCK', 'LPL', 'LEC', 'LCS', 'LCP', 'CBLOL'].map(lg => (
-                    <button
-                        key={lg}
-                        onClick={() => setCurrentLeague(lg)}
-                        className={`px-5 py-2 rounded-full font-bold text-xs lg:text-sm transition-all whitespace-nowrap shadow-sm active:scale-95 ${
-                            currentLeague === lg
-                            ? 'bg-blue-600 text-white shadow-md'
-                            : 'bg-white text-gray-600 hover:bg-gray-200 border border-gray-300'
-                        }`}
-                    >
-                        {lg}
-                    </button>
-                ))}
-            </div>
-
-            {renderLeagueHistory()}
-
-        </div>
-    );
+                      {/* 4. FINAL STANDINGS (FULL LIST) */}
+                      <div className="bg-white rounded-xl border shadow-sm p-5">
+                          <h3 className="text-lg font-black text-gray-800 mb-4 flex items-center gap-2">
+                              <span className="text-xl">🏅</span> 최종 순위
+                          </h3>
+                          <div className="overflow-x-auto">
+                              <table className="w-full text-sm text-left">
+                                  <thead className="bg-gray-50 text-gray-500 border-b">
+                                      <tr>
+                                          <th className="p-3 w-16 text-center">순위</th>
+                                          <th className="p-3">팀</th>
+                                          <th className="p-3 text-right">상금</th>
+                                      </tr>
+                                  </thead>
+                                  <tbody>
+                                      {displayStandings && displayStandings.length > 0 ? (
+                                          displayStandings.map((item, idx) => {
+                                              const tObj = findGlobalTeam(item.team?.name || item.team?.id);
+                                              const bgColor = TEAM_COLORS[tObj.name] || tObj.colors?.primary || '#999';
+                                              
+                                              return (
+                                                  <tr key={idx} className="border-b last:border-0 hover:bg-gray-50">
+                                                      <td className="p-3 text-center font-bold text-gray-700">
+                                                          {item.rank === 1 ? '🥇 1' : item.rank === 2 ? '🥈 2' : item.rank === 3 ? '🥉 3' : item.rank}
+                                                      </td>
+                                                      <td className="p-3 font-bold flex items-center gap-2">
+                                                          <div className="w-6 h-6 rounded-full text-[10px] flex items-center justify-center text-white" 
+                                                               style={{backgroundColor: bgColor}}>
+                                                              {tObj.name.slice(0,3)}
+                                                          </div>
+                                                          {tObj.fullName || tObj.name}
+                                                      </td>
+                                                      <td className="p-3 text-right font-medium text-gray-600">
+                                                          {item.rank === 1 ? '0.5억' : item.rank === 2 ? '0.25억' : item.rank === 3 ? '0.2억' : '0.1억'}
+                                                      </td>
+                                                  </tr>
+                                              );
+                                          })
+                                      ) : (
+                                          <tr><td colSpan="3" className="p-4 text-center text-gray-400">순위 데이터가 없습니다.</td></tr>
+                                      )}
+                                  </tbody>
+                              </table>
+                          </div>
+                      </div>
+                  </>
+              );
+          })()
+      )}
+    </div>
+  );
 };
 
 export default HistoryTab;
