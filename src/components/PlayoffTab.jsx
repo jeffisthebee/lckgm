@@ -43,13 +43,31 @@ const PlayoffTab = ({
     const computedLcpSeeds = getLcpSeeds();
 
     const getCblolSeeds = () => {
-        if (league.foreignPlayoffSeeds?.['CBLOL']?.length > 0) return league.foreignPlayoffSeeds['CBLOL'];
         const cblolTeams = FOREIGN_LEAGUES['CBLOL'] || [];
         const st = {};
         cblolTeams.forEach(t => st[t.name] = { w: 0, id: t.id || t.name, name: t.name });
         const regular = (league.foreignMatches?.['CBLOL'] || []).filter(m => m.type !== 'playoff' && m.type !== 'playin' && m.status === 'finished');
         regular.forEach(m => { if (m.result?.winner && st[m.result.winner]) st[m.result.winner].w++; });
-        return Object.values(st).sort((a, b) => b.w - a.w).map((t, idx) => ({ ...t, seed: idx + 1 }));
+        let base = league.foreignPlayoffSeeds?.['CBLOL']?.length > 0
+            ? league.foreignPlayoffSeeds['CBLOL']
+            : Object.values(st).sort((a, b) => b.w - a.w).map((t, idx) => ({ ...t, seed: idx + 1 }));
+
+        // Override seeds 5 & 6 based on actual playin results:
+        // pi2 winner (seed 5 vs 6 match) earns playoff seed 5
+        // pi3 winner (pi1 winner vs pi2 loser) earns playoff seed 6
+        const cblolMatches = league.foreignMatches?.['CBLOL'] || [];
+        const pi2 = cblolMatches.find(m => m.id === 'cblol_pi2');
+        const pi3 = cblolMatches.find(m => m.id === 'cblol_pi3');
+        const pi2Winner = pi2?.status === 'finished' ? findGlobalTeam(pi2.result?.winner).name : null;
+        const pi3Winner = pi3?.status === 'finished' ? findGlobalTeam(pi3.result?.winner).name : null;
+
+        if (pi2Winner) {
+            base = base.map(s => s.seed === 5 ? { ...s, id: pi2Winner, name: pi2Winner } : s);
+        }
+        if (pi3Winner) {
+            base = base.map(s => s.seed === 6 ? { ...s, id: pi3Winner, name: pi3Winner } : s);
+        }
+        return base;
     };
     const computedCblolSeeds = getCblolSeeds();
 
