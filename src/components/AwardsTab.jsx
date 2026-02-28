@@ -4,22 +4,14 @@ import { computeAwards, computePlayoffAwards } from '../engine/statsManager';
 
 // Import Global Leagues AND Global Players!
 import { FOREIGN_LEAGUES, FOREIGN_PLAYERS } from '../data/foreignLeagues';
-
-// Import your Team Colors dictionary!
 import { TEAM_COLORS } from '../data/constants'; 
 
-// Safely combine every player in the world into one giant phonebook
 const globalPlayerList = Object.values(FOREIGN_PLAYERS || {}).flat().filter(Boolean);
 
-// Global Team Finder - Guarantees we find the correct Team Colors!
 const getGlobalTeam = (teamIdentifier, lckTeams) => {
     if (!teamIdentifier) return null;
-    
-    // 1. Check LCK
     let found = lckTeams.find(t => t.name === teamIdentifier || String(t.id) === String(teamIdentifier));
     if (found) return found;
-    
-    // 2. Check the Rest of the World
     for (const lg in FOREIGN_LEAGUES) {
         found = (FOREIGN_LEAGUES[lg] || []).find(t => t.name === teamIdentifier || String(t.id) === String(teamIdentifier));
         if (found) return found;
@@ -52,12 +44,10 @@ const PlayerCard = ({ player, rank, lckTeams }) => {
         </div>
     );
     
-    // Force Korean Names!
     const playerData = globalPlayerList.find(p => p.이름 === player.playerName || p.playerName === player.playerName);
     const koreanName = playerData ? (playerData.한글명 || playerData.실명 || playerData.이름 || player.playerName) : player.playerName; 
     const ign = player.playerName;
 
-    // Force Team Colors!
     const teamNameRef = player.teamObj?.name || player.team || (player.teams && player.teams[0]);
     const globalTeam = getGlobalTeam(teamNameRef, lckTeams);
     const displayTeamName = globalTeam?.name || teamNameRef || 'FA';
@@ -205,14 +195,155 @@ export default function AwardsTab({ league, teams }) {
     const isLCK = currentLeague === 'LCK';
     const activeTeams = isLCK ? teams : (FOREIGN_LEAGUES[currentLeague] || []);
     
+    // [THE FIX] Pre-calculate the exact Final Standings here so the Stats Engine uses the right Multipliers!
     const activeLeagueData = useMemo(() => {
         if (isLCK) return league;
+
+        const foreignMatches = league.foreignMatches?.[currentLeague] || [];
+        let customFinalStandingsNames = [];
+
+        if (foreignMatches.length > 0) {
+            const currentTeams = FOREIGN_LEAGUES[currentLeague] || [];
+            const getLoser = (id) => {
+                const m = foreignMatches.find(x => x.id === id);
+                if (!m || !m.result?.winner) return null;
+                const t1 = getGlobalTeam(m.t1, currentTeams)?.name || m.t1;
+                const t2 = getGlobalTeam(m.t2, currentTeams)?.name || m.t2;
+                return m.result.winner === t1 ? t2 : t1;
+            };
+            const getWinner = (id) => {
+                const m = foreignMatches.find(x => x.id === id);
+                return m?.result?.winner || null;
+            };
+            const getWinnerByRound = (r, mNum) => foreignMatches.find(x => x.round === r && x.match === mNum)?.result?.winner;
+            const getLoserByRound = (r, mNum) => {
+                const m = foreignMatches.find(x => x.round === r && x.match === mNum);
+                if (!m || !m.result?.winner) return null;
+                const t1 = getGlobalTeam(m.t1, currentTeams)?.name || m.t1;
+                const t2 = getGlobalTeam(m.t2, currentTeams)?.name || m.t2;
+                return m.result.winner === t1 ? t2 : t1;
+            };
+
+            const st = {};
+            currentTeams.forEach(t => st[t.name] = { w: 0, l: 0, diff: 0, h2h: {}, defeatedOpponents: [], team: t });
+
+            foreignMatches.filter(m => (m.type === 'regular' || m.type === 'super') && m.status === 'finished').forEach(m => {
+                const winner = m.result?.winner;
+                const t1 = getGlobalTeam(m.t1, currentTeams)?.name || m.t1;
+                const t2 = getGlobalTeam(m.t2, currentTeams)?.name || m.t2;
+                const loser = winner === t1 ? t2 : t1;
+                let diff = 0;
+                if (m.result?.score) {
+                    const pts = String(m.result.score).split(/[-:]/).map(Number);
+                    if (pts.length === 2 && !isNaN(pts[0]) && !isNaN(pts[1])) diff = Math.abs(pts[0] - pts[1]);
+                }
+                if (st[winner]) {
+                    st[winner].w++; st[winner].diff += diff; st[winner].defeatedOpponents.push(loser);
+                    if (!st[winner].h2h[loser]) st[winner].h2h[loser] = { w: 0, l: 0 };
+                    st[winner].h2h[loser].w += 1;
+                }
+                if (st[loser]) {
+                    st[loser].l++; st[loser].diff -= diff;
+                    if (!st[loser].h2h[winner]) st[loser].h2h[winner] = { w: 0, l: 0 };
+                    st[loser].h2h[winner].l += 1;
+                }
+            });
+
+            const tiedGroups = {};
+            Object.values(st).forEach(rec => {
+                const key = `${rec.w}_${rec.diff}`;
+                if (!tiedGroups[key]) tiedGroups[key] = [];
+                tiedGroups[key].push(rec.team.name);
+            });
+
+            const regSorted = Object.values(st).sort((a,b) => {
+                if (b.w !== a.w) return b.w - a.w; 
+                if (b.diff !== a.diff) return b.diff - a.diff; 
+                const tieKey = `${a.w}_${a.diff}`;
+                const tiedCount = tiedGroups[tieKey]?.length || 0;
+                if (tiedCount === 2) {
+                    const aWinsVsB = a.h2h[b.team.name]?.w || 0;
+                    const bWinsVsA = b.h2h[a.team.name]?.w || 0;
+                    if (aWinsVsB !== bWinsVsA) return bWinsVsA - aWinsVsB;
+                }
+                let sovWinsA = 0, sovDiffA = 0;
+                a.defeatedOpponents.forEach(opp => { sovWinsA += (st[opp]?.w || 0); sovDiffA += (st[opp]?.diff || 0); });
+                let sovWinsB = 0, sovDiffB = 0;
+                b.defeatedOpponents.forEach(opp => { sovWinsB += (st[opp]?.w || 0); sovDiffB += (st[opp]?.diff || 0); });
+                if (sovWinsB !== sovWinsA) return sovWinsB - sovWinsA;
+                if (sovDiffB !== sovDiffA) return sovDiffB - sovDiffA;
+                return 0;
+            });
+
+            if (currentLeague === 'LCS') {
+                const lcsRanks = [];
+                const addRank = (tName) => { if (tName) lcsRanks.push(tName); };
+
+                addRank(getWinner('lcs_po8'));
+                addRank(getLoser('lcs_po8'));
+                addRank(getLoser('lcs_po7'));
+                addRank(getLoser('lcs_po6'));
+
+                const r1L1 = getLoser('lcs_po4');
+                const r1L2 = getLoser('lcs_po5');
+                const fifthSixth = [r1L1, r1L2].filter(Boolean).sort((a, b) => {
+                    return regSorted.findIndex(x => x.team.name === a) - regSorted.findIndex(x => x.team.name === b); 
+                });
+                fifthSixth.forEach(tName => addRank(tName));
+                addRank(getLoser('lcs_pi1'));
+
+                const alreadyPlaced = new Set(lcsRanks);
+                regSorted.filter(x => x.team && !alreadyPlaced.has(x.team.name)).forEach(r => lcsRanks.push(r.team.name));
+                customFinalStandingsNames = lcsRanks;
+                
+            } else if (currentLeague === 'CBLOL') {
+                const cblolRanks = [];
+                const addRank = (tName) => { if (tName) cblolRanks.push(tName); };
+                
+                addRank(getWinner('cblol_po10'));
+                addRank(getLoser('cblol_po10'));
+                addRank(getLoser('cblol_po9'));
+                addRank(getLoser('cblol_po8'));
+                addRank(getLoser('cblol_po7'));
+                addRank(getLoser('cblol_po6'));
+
+                const alreadyPlaced = new Set(cblolRanks);
+                regSorted.filter(x => x.team && !alreadyPlaced.has(x.team.name)).forEach(r => cblolRanks.push(r.team.name));
+                customFinalStandingsNames = cblolRanks;
+
+            } else if (currentLeague === 'LCP') {
+                const lcpRanks = [];
+                const addRank = (tName) => { if (tName) lcpRanks.push(tName); };
+                
+                addRank(getWinnerByRound(4, 1));
+                addRank(getLoserByRound(4, 1));
+                addRank(getLoserByRound(3.1, 1));
+                addRank(getLoserByRound(2.1, 1));
+
+                const r1L1 = getLoserByRound(1, 1);
+                const r1L2 = getLoserByRound(1, 2);
+                const fifthSixth = [r1L1, r1L2].filter(Boolean).sort((a, b) => {
+                    return regSorted.findIndex(x => x.team.name === a) - regSorted.findIndex(x => x.team.name === b); 
+                });
+                fifthSixth.forEach(tName => addRank(tName));
+
+                const alreadyPlaced = new Set(lcpRanks);
+                regSorted.filter(x => x.team && !alreadyPlaced.has(x.team.name)).forEach(r => lcpRanks.push(r.team.name));
+                customFinalStandingsNames = lcpRanks;
+            }
+        }
+
         return {
             ...league,
-            matches: league.foreignMatches?.[currentLeague] || [],
-            standings: league.foreignStandings?.[currentLeague] || {}
+            matches: foreignMatches,
+            standings: league.foreignStandings?.[currentLeague] || {},
+            finalStandings: customFinalStandingsNames.length > 0 ? customFinalStandingsNames : (league.finalStandings || []),
+            seasonSummary: {
+                ...league.seasonSummary,
+                finalStandings: customFinalStandingsNames.length > 0 ? customFinalStandingsNames : league.seasonSummary?.finalStandings
+            }
         };
-    }, [league, currentLeague, isLCK]);
+    }, [league, currentLeague, isLCK, activeTeams]);
 
     const isPlayoffsFinished = useMemo(() => {
         if (!activeLeagueData.matches) return false;
@@ -223,6 +354,7 @@ export default function AwardsTab({ league, teams }) {
             m.round === 5 || 
             String(m.round) === "5" || 
             (currentLeague === 'LCP' && m.round === 4) ||
+            (currentLeague === 'LCS' && m.id === 'lcs_po8') || // Explicitly ensure LCS finals detection!
             (m.label && (m.label.includes('결승') || m.label.toUpperCase().includes('FINAL')))
         );
 
@@ -242,7 +374,6 @@ export default function AwardsTab({ league, teams }) {
     return (
         <div className="p-2 lg:p-6 max-w-7xl mx-auto space-y-8">
             
-            {/* [FIX] Removed "sticky top-0 z-50" so it freezes in place and scrolls away normally */}
             <div className="flex gap-2 p-3 border-b bg-gray-100 overflow-x-auto shrink-0 rounded-lg mb-4">
                 {['LCK', 'LPL', 'LEC', 'LCS', 'LCP', 'CBLOL'].map(lg => (
                     <button
