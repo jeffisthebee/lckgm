@@ -195,26 +195,81 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
         if (schedule.every(m => m.status === 'finished')) {
             if (seeds.length === 0 || hasBadData) {
                 const standings = {};
-                lgTeams.forEach(t => standings[t.name] = { w: 0, l: 0, id: t.id || t.name, name: t.name });
+                lgTeams.forEach(t => standings[t.name] = { w: 0, l: 0, diff: 0, h2h: {}, defeatedOpponents: [], id: t.id || t.name, name: t.name });
+                
                 schedule.forEach(m => {
                     if (m.status === 'finished' && m.result) {
                         const winnerName = m.result.winner;
                         const t1Name = findGlobalTeam(m.t1, teams).name;
                         const t2Name = findGlobalTeam(m.t2, teams).name;
                         const loserName = winnerName === t1Name ? t2Name : t1Name;
-                        if (standings[winnerName]) standings[winnerName].w += 1;
-                        if (standings[loserName]) standings[loserName].l += 1;
+                        
+                        let diffValue = 0;
+                        if (m.result.score) {
+                            const parts = String(m.result.score).split(/[-:]/).map(Number);
+                            if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) diffValue = Math.abs(parts[0] - parts[1]);
+                        }
+
+                        // Track Wins, Diff, and specifically WHO they beat for H2H and SoV calculations
+                        if (standings[winnerName]) {
+                            standings[winnerName].w += 1;
+                            standings[winnerName].diff += diffValue;
+                            standings[winnerName].defeatedOpponents.push(loserName);
+                            if (!standings[winnerName].h2h[loserName]) standings[winnerName].h2h[loserName] = { w: 0, l: 0 };
+                            standings[winnerName].h2h[loserName].w += 1;
+                        }
+                        if (standings[loserName]) {
+                            standings[loserName].l += 1;
+                            standings[loserName].diff -= diffValue;
+                            if (!standings[loserName].h2h[winnerName]) standings[loserName].h2h[winnerName] = { w: 0, l: 0 };
+                            standings[loserName].h2h[winnerName].l += 1;
+                        }
                     }
                 });
-                const sorted = Object.values(standings).sort((a,b) => b.w - a.w);
+
+                // Group ties together to know if it's a 2-way or multi-way tie
+                const tiedGroups = {};
+                Object.values(standings).forEach(rec => {
+                    const key = `${rec.w}_${rec.diff}`;
+                    if (!tiedGroups[key]) tiedGroups[key] = [];
+                    tiedGroups[key].push(rec.name);
+                });
+
+                // The Master Tiebreaker Sort
+                const sorted = Object.values(standings).sort((a,b) => {
+                    if (b.w !== a.w) return b.w - a.w; // Rule 1: Wins
+                    if (b.diff !== a.diff) return b.diff - a.diff; // Rule 2: Set Diff
+                    
+                    const tieKey = `${a.w}_${a.diff}`;
+                    const tiedCount = tiedGroups[tieKey].length;
+
+                    // Rule 3: Head-to-Head (Only if exactly 2 teams are tied)
+                    if (tiedCount === 2) {
+                        const aWinsVsB = a.h2h[b.name]?.w || 0;
+                        const bWinsVsA = b.h2h[a.name]?.w || 0;
+                        if (aWinsVsB !== bWinsVsA) return bWinsVsA - aWinsVsB;
+                    }
+
+                    // Rule 4: Strength of Victory (SoV) - Triggers for Multi-Team ties or H2H ties
+                    let sovWinsA = 0, sovDiffA = 0;
+                    a.defeatedOpponents.forEach(opp => {
+                        sovWinsA += (standings[opp]?.w || 0);
+                        sovDiffA += (standings[opp]?.diff || 0);
+                    });
+
+                    let sovWinsB = 0, sovDiffB = 0;
+                    b.defeatedOpponents.forEach(opp => {
+                        sovWinsB += (standings[opp]?.w || 0);
+                        sovDiffB += (standings[opp]?.diff || 0);
+                    });
+
+                    if (sovWinsB !== sovWinsA) return sovWinsB - sovWinsA;
+                    if (sovDiffB !== sovDiffA) return sovDiffB - sovDiffA;
+                    return 0;
+                });
+
                 if (targetLeague === 'LCP') seeds = sorted.slice(0, 6).map((t, idx) => ({ ...t, seed: idx + 1 }));
                 else if (targetLeague === 'CBLOL') seeds = sorted.slice(0, 8).map((t, idx) => ({ ...t, seed: idx + 1 }));
-                isUpdated = true;
-            }
-
-            if (playoffs.length === 0) {
-                if (targetLeague === 'LCP') playoffs = generateLCPPlayoffs(seeds);
-                else if (targetLeague === 'CBLOL') playoffs = generateCBLOLPlayoffs(seeds);
                 isUpdated = true;
             }
 
