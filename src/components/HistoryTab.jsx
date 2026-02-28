@@ -239,6 +239,73 @@ const HistoryTab = ({ league }) => {
                   if (lcpRanks.length > 0) displayStandings = lcpRanks;
               }
 
+              if (currentLeague === 'CBLOL' && record.matches && record.matches.length > 0) {
+                  const cblolTeams = FOREIGN_LEAGUES['CBLOL'] || [];
+                  const st = {};
+                  cblolTeams.forEach(t => st[t.name] = { w: 0, l: 0, diff: 0, team: t });
+
+                  record.matches.filter(m => (m.type === 'regular' || m.type === 'super') && m.status === 'finished').forEach(m => {
+                      const winner = m.result?.winner;
+                      const t1 = findGlobalTeam(m.t1).name;
+                      const t2 = findGlobalTeam(m.t2).name;
+                      const loser = winner === t1 ? t2 : t1;
+                      let diff = 0;
+                      if (m.result?.score) {
+                          const pts = String(m.result.score).split(/[-:]/).map(Number);
+                          if (pts.length === 2 && !isNaN(pts[0]) && !isNaN(pts[1])) diff = Math.abs(pts[0] - pts[1]);
+                      }
+                      if (st[winner]) { st[winner].w++; st[winner].diff += diff; }
+                      if (st[loser]) { st[loser].l++; st[loser].diff -= diff; }
+                  });
+
+                  const regSorted = Object.values(st).sort((a, b) => b.w !== a.w ? b.w - a.w : b.diff - a.diff);
+
+                  const poMatches = record.matches.filter(m => m.type === 'playoff' && m.status === 'finished');
+                  const getLoser = (id) => {
+                      const m = poMatches.find(x => x.id === id);
+                      if (!m || !m.result?.winner) return null;
+                      const t1 = findGlobalTeam(m.t1).name;
+                      const t2 = findGlobalTeam(m.t2).name;
+                      return m.result.winner === t1 ? t2 : t1;
+                  };
+                  const getWinner = (id) => {
+                      const m = poMatches.find(x => x.id === id);
+                      return m?.result?.winner || null;
+                  };
+
+                  // po10 = Grand Finals
+                  // po9  = 4라운드 패자조 → loser = 3rd
+                  // po8  = 3라운드 패자조 → loser = 4th
+                  // po7  = 2라운드 패자조 → loser = 5th
+                  // po6  = 1라운드 패자조 → loser = 6th
+                  // 7/8  = regular season seed order
+                  const finalW = getWinner('cblol_po10');
+                  const finalL = getLoser('cblol_po10');
+                  const third  = getLoser('cblol_po9');
+                  const fourth = getLoser('cblol_po8');
+                  const fifth  = getLoser('cblol_po7');
+                  const sixth  = getLoser('cblol_po6');
+
+                  const cblolRanks = [];
+                  const addRank = (rank, tName) => {
+                      if (tName) cblolRanks.push({ rank, team: st[tName]?.team || findGlobalTeam(tName) });
+                  };
+                  addRank(1, finalW);
+                  addRank(2, finalL);
+                  addRank(3, third);
+                  addRank(4, fourth);
+                  addRank(5, fifth);
+                  addRank(6, sixth);
+
+                  // 7th/8th: remaining teams in regular season order
+                  const alreadyPlaced = new Set(cblolRanks.map(r => r.team.name));
+                  regSorted.filter(x => !alreadyPlaced.has(x.team.name)).forEach((r, i) => {
+                      cblolRanks.push({ rank: 7 + i, team: r.team });
+                  });
+
+                  if (cblolRanks.length > 0) displayStandings = cblolRanks;
+              }
+
               const champTeamObj = record.champion ? findGlobalTeam(record.champion.name) : (displayStandings.length > 0 ? findGlobalTeam(displayStandings[0].team.name) : null);
               const championColor = TEAM_COLORS[champTeamObj?.name] || champTeamObj?.colors?.primary || '#333';
               const championDisplayShort = champTeamObj?.name || 'TBD';
