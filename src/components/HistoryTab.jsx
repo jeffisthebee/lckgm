@@ -426,7 +426,7 @@ const HistoryTab = ({ league }) => {
                                                           </div>
                                                           {tObj.fullName || tObj.name}
                                                           {/* [NEW] Add FST Badge for 1st Place in LCP! */}
-                                                          {item.rank === 1 && currentLeague === 'LCP' && (
+                                                          {item.rank === 1 && (currentLeague === 'LCP' || currentLeague === 'CBLOL') && (
                                                               <span className="text-[10px] bg-purple-100 text-purple-700 border border-purple-200 px-2 py-0.5 rounded font-black whitespace-nowrap shadow-sm ml-1">
                                                                   FST 진출
                                                               </span>
