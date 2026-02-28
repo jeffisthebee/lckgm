@@ -78,6 +78,10 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
         if (lg === 'CBLOL' && (m.type === 'regular' || m.type === 'super') && m.format !== 'BO1') return true;
 
         const t1Str = String(m.t1); const t2Str = String(m.t2);
+        
+        // [CRITICAL FIX] Instantly hunt down and wipe any "Clone Matches" where a team plays itself!
+        if (m.t1 && m.t2 && t1Str !== 'TBD' && t2Str !== 'TBD' && t1Str === t2Str) return true;
+
         if (m.status === 'finished') {
             if (!m.t1 || t1Str === 'TBD' || t1Str === 'null' || t1Str === 'undefined') return true;
             if (!m.t2 || t2Str === 'TBD' || t2Str === 'null' || t2Str === 'undefined') return true;
@@ -166,11 +170,13 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                         roundMatches.forEach(m => {
                             if (!m.t1 || !m.t2) {
                                 let pool = pools[m.bracket] || [];
+                                // [THE FIX] Deduplicate pool strictly to prevent Clone Matches
+                                pool = [...new Set(pool)]; 
                                 if (pool.length >= 2) {
                                     pool = pool.sort(() => Math.random() - 0.5); 
                                     let t1 = pool[0];
                                     let t2Index = pool.findIndex((t, idx) => idx > 0 && !st[t1].played.includes(t));
-                                    if (t2Index === -1) t2Index = 1; 
+                                    if (t2Index <= 0) t2Index = 1; // Force distinct opponent if stuck
                                     let t2 = pool[t2Index];
                                     
                                     m.t1 = t1;
@@ -185,16 +191,13 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
             });
         }
 
-        // [THE FIX] Temporal Meta Engine
         const getMatchMeta = (matchObj) => {
             const isLateSeason = matchObj.type === 'super' || matchObj.type === 'playoff' || matchObj.type === 'playin' || 
                                  (matchObj.date && (matchObj.date.startsWith('2.') || matchObj.date.startsWith('3.')));
             
-            // If the match is in Feb/March AND the LCK has successfully upgraded to 16.02, apply 16.02!
             if (isLateSeason && league.metaVersion === '16.02' && league.currentChampionList) {
                 return league.currentChampionList;
             }
-            // For all early season games (January), strictly enforce 16.01 base meta!
             return championList; 
         };
 
@@ -206,11 +209,12 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
             const t2Obj = findGlobalTeam(matchObj.t2, lgTeams);
             
             if (t1Obj.name === 'TBD' || t2Obj.name === 'TBD') return matchObj; 
+            // [THE FIX] Ironclad guard: Refuse to simulate if team plays itself!
+            if (t1Obj.name === t2Obj.name) return matchObj; 
 
             const t1 = { ...t1Obj, roster: getSafeRoster(t1Obj, lgPlayers) };
             const t2 = { ...t2Obj, roster: getSafeRoster(t2Obj, lgPlayers) };
             
-            // Assign the temporally correct patch!
             const matchMetaList = getMatchMeta(matchObj);
 
             try {
@@ -352,7 +356,8 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 isUpdated = true;
             }
 
-            if (playoffs.length === 0 || forceRegen) {
+            // [THE FIX] Added "hasBadData" here to force Playoff bracket Wipe when corruption is detected!
+            if (playoffs.length === 0 || forceRegen || hasBadData) {
                 if (targetLeague === 'LCP') playoffs = generateLCPPlayoffs(seeds);
                 else if (targetLeague === 'CBLOL') playoffs = generateCBLOLPlayoffs(seeds);
                 else if (targetLeague === 'LCS') playoffs = generateLCSPlayoffs(seeds);
@@ -363,6 +368,9 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 const matchObj = playoffs.find(m => m.id === id);
                 if (!matchObj || !matchObj.t1 || !matchObj.t2 || matchObj.t1 === 'TBD' || matchObj.t2 === 'TBD') return { winnerId: null, loserId: null };
                 
+                // [THE FIX] Ironclad guard: Refuse to simulate playoffs if team plays itself!
+                if (matchObj.t1 === matchObj.t2) return { winnerId: null, loserId: null };
+
                 if (matchObj.status === 'finished') {
                     const wId = findGlobalTeam(matchObj.result.winner, teams).name;
                     const lId = wId === findGlobalTeam(matchObj.t1, teams).name ? matchObj.t2 : matchObj.t1;
