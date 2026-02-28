@@ -34,7 +34,6 @@ const StandingsTab = ({
         return Math.abs(parts[0] - parts[1]);
     };
 
-    // [THE FIX] Upgraded Database for Tiebreakers
     const foreignStandings = useMemo(() => {
         if (currentLeague === 'LCK') return {};
         
@@ -79,7 +78,6 @@ const StandingsTab = ({
     }, [currentLeague, league.foreignMatches]);
 
     const renderForeignTable = (groupName, teamsArray, colorTheme, isCompact = false) => {
-        // Tiebreaker Pre-processor
         const tiedGroups = {};
         teamsArray.forEach(t => {
             const rec = foreignStandings[t.name] || { w: 0, l: 0, diff: 0 };
@@ -88,7 +86,6 @@ const StandingsTab = ({
             tiedGroups[key].push(t.name);
         });
 
-        // The Ultimate Sorting Engine (Wins -> Diff -> H2H -> SoV)
         const sortedTeams = [...teamsArray].sort((a, b) => {
             const recA = foreignStandings[a.name] || { w: 0, l: 0, diff: 0, h2h: {}, defeatedOpponents: [] };
             const recB = foreignStandings[b.name] || { w: 0, l: 0, diff: 0, h2h: {}, defeatedOpponents: [] };
@@ -148,8 +145,12 @@ const StandingsTab = ({
                                 let statusBadge = null;
                                 const matches = league.foreignMatches?.[currentLeague] || [];
 
-                                if (currentLeague === 'LCP' || currentLeague === 'CBLOL') {
-                                    const finalRoundNum = currentLeague === 'LCP' ? 4 : 5;
+                                // [THE FIX] Added LCS and Dynamic Round Detection for the Champion!
+                                if (['LCP', 'CBLOL', 'LCS'].includes(currentLeague)) {
+                                    let finalRoundNum = 5; // Default CBLOL is round 5
+                                    if (currentLeague === 'LCP') finalRoundNum = 4;
+                                    if (currentLeague === 'LCS') finalRoundNum = 4;
+                                    
                                     const finalMatch = matches.find(m => m.type === 'playoff' && m.round === finalRoundNum);
                                     const isChampion = finalMatch && finalMatch.status === 'finished' && finalMatch.result?.winner === t.name;
 
@@ -167,14 +168,33 @@ const StandingsTab = ({
                                             if (totalRegular > 0 && totalRegular === finishedRegular) statusBadge = <span className="block sm:inline text-[10px] sm:text-xs bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded sm:ml-2 mt-1 sm:mt-0 font-bold w-fit whitespace-nowrap">탈락</span>;
                                         }
                                     } else if (currentLeague === 'CBLOL') {
-                                        if (idx < 4) {
+                                        if (idx < 4) { // 1st ~ 4th
                                             statusBadge = (
                                                 <div className="flex items-center gap-1 sm:ml-2 mt-1 sm:mt-0">
                                                     <span className="text-[10px] sm:text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded font-bold whitespace-nowrap">PO {idx + 1}시드</span>
                                                     {isChampion && <span className="text-[10px] sm:text-xs bg-purple-100 text-purple-700 border border-purple-300 px-1.5 py-0.5 rounded font-black whitespace-nowrap shadow-sm">FST 진출</span>}
                                                 </div>
                                             );
-                                        } else if (idx < 8) {
+                                        } else if (idx < 8) { // 5th ~ 8th
+                                            statusBadge = (
+                                                <div className="flex items-center gap-1 sm:ml-2 mt-1 sm:mt-0">
+                                                    <span className="text-[10px] sm:text-xs bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-bold whitespace-nowrap">PI {idx + 1}시드</span>
+                                                </div>
+                                            );
+                                        } else {
+                                            const totalRegular = matches.filter(m => (m.type === 'regular' || m.type === 'super')).length;
+                                            const finishedRegular = matches.filter(m => (m.type === 'regular' || m.type === 'super') && m.status === 'finished').length;
+                                            if (totalRegular > 0 && totalRegular === finishedRegular) statusBadge = <span className="block sm:inline text-[10px] sm:text-xs bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded sm:ml-2 mt-1 sm:mt-0 font-bold w-fit whitespace-nowrap">탈락</span>;
+                                        }
+                                    } else if (currentLeague === 'LCS') {
+                                        if (idx < 5) { // 1st ~ 5th
+                                            statusBadge = (
+                                                <div className="flex items-center gap-1 sm:ml-2 mt-1 sm:mt-0">
+                                                    <span className="text-[10px] sm:text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded font-bold whitespace-nowrap">PO {idx + 1}시드</span>
+                                                    {isChampion && <span className="text-[10px] sm:text-xs bg-purple-100 text-purple-700 border border-purple-300 px-1.5 py-0.5 rounded font-black whitespace-nowrap shadow-sm">FST 진출</span>}
+                                                </div>
+                                            );
+                                        } else if (idx < 7) { // 6th ~ 7th
                                             statusBadge = (
                                                 <div className="flex items-center gap-1 sm:ml-2 mt-1 sm:mt-0">
                                                     <span className="text-[10px] sm:text-xs bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-bold whitespace-nowrap">PI {idx + 1}시드</span>
