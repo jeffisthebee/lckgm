@@ -79,8 +79,8 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
 
         const t1Str = String(m.t1); const t2Str = String(m.t2);
         
-        // [CRITICAL FIX] Instantly hunt down and wipe any "Clone Matches" where a team plays itself!
-        if (m.t1 && m.t2 && t1Str !== 'TBD' && t2Str !== 'TBD' && t1Str === t2Str) return true;
+        // [CRITICAL FIX] Prevent clone wipes if teams are "null". Only wipe if actual teams play themselves!
+        if (m.t1 && m.t2 && t1Str !== 'TBD' && t2Str !== 'TBD' && t1Str !== 'null' && t2Str !== 'null' && t1Str === t2Str) return true;
 
         if (m.status === 'finished') {
             if (!m.t1 || t1Str === 'TBD' || t1Str === 'null' || t1Str === 'undefined') return true;
@@ -170,13 +170,12 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                         roundMatches.forEach(m => {
                             if (!m.t1 || !m.t2) {
                                 let pool = pools[m.bracket] || [];
-                                // [THE FIX] Deduplicate pool strictly to prevent Clone Matches
                                 pool = [...new Set(pool)]; 
                                 if (pool.length >= 2) {
                                     pool = pool.sort(() => Math.random() - 0.5); 
                                     let t1 = pool[0];
                                     let t2Index = pool.findIndex((t, idx) => idx > 0 && !st[t1].played.includes(t));
-                                    if (t2Index <= 0) t2Index = 1; // Force distinct opponent if stuck
+                                    if (t2Index <= 0) t2Index = 1; 
                                     let t2 = pool[t2Index];
                                     
                                     m.t1 = t1;
@@ -209,7 +208,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
             const t2Obj = findGlobalTeam(matchObj.t2, lgTeams);
             
             if (t1Obj.name === 'TBD' || t2Obj.name === 'TBD') return matchObj; 
-            // [THE FIX] Ironclad guard: Refuse to simulate if team plays itself!
             if (t1Obj.name === t2Obj.name) return matchObj; 
 
             const t1 = { ...t1Obj, roster: getSafeRoster(t1Obj, lgPlayers) };
@@ -356,7 +354,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 isUpdated = true;
             }
 
-            // [THE FIX] Added "hasBadData" here to force Playoff bracket Wipe when corruption is detected!
             if (playoffs.length === 0 || forceRegen || hasBadData) {
                 if (targetLeague === 'LCP') playoffs = generateLCPPlayoffs(seeds);
                 else if (targetLeague === 'CBLOL') playoffs = generateCBLOLPlayoffs(seeds);
@@ -368,7 +365,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 const matchObj = playoffs.find(m => m.id === id);
                 if (!matchObj || !matchObj.t1 || !matchObj.t2 || matchObj.t1 === 'TBD' || matchObj.t2 === 'TBD') return { winnerId: null, loserId: null };
                 
-                // [THE FIX] Ironclad guard: Refuse to simulate playoffs if team plays itself!
                 if (matchObj.t1 === matchObj.t2) return { winnerId: null, loserId: null };
 
                 if (matchObj.status === 'finished') {
@@ -507,13 +503,19 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
 
                 const po1Match = playoffs.find(m => m.id === 'lcs_po1');
                 const po2Match = playoffs.find(m => m.id === 'lcs_po2');
+                
+                // [THE CRITICAL FIX] The "Existence Lock"
+                // It now refuses to assign Seed 3 and 4 until they actually exist in the standings!
+                // This permanently prevents the infinite mid-season loading screen loop.
                 if (po1Match && !po1Match.t2) {
-                    let pickSeed4 = Math.random() < 0.90; 
                     const s3 = getSeedId(3);
                     const s4 = getSeedId(4);
-                    po1Match.t2 = pickSeed4 ? s4 : s3;
-                    po2Match.t2 = pickSeed4 ? s3 : s4;
-                    isUpdated = true;
+                    if (s3 && s4) {
+                        let pickSeed4 = Math.random() < 0.90; 
+                        po1Match.t2 = pickSeed4 ? s4 : s3;
+                        po2Match.t2 = pickSeed4 ? s3 : s4;
+                        isUpdated = true;
+                    }
                 }
                 const po1 = simPlayoffMatch('lcs_po1');
                 const po2 = simPlayoffMatch('lcs_po2');
