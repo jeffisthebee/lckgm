@@ -73,6 +73,10 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
     
     const hasBadDataCheck = (matches) => matches.some(m => {
         const t1Str = String(m.t1); const t2Str = String(m.t2);
+        
+        // [FIX 1] Hunt down old CBLOL BO3 regular season games and flag them for a Redo!
+        if (targetLeague === 'CBLOL' && m.type === 'regular' && m.format !== 'BO1') return true;
+
         if (m.status === 'finished') {
             if (!m.t1 || t1Str === 'TBD' || t1Str === 'null' || t1Str === 'undefined') return true;
             if (!m.t2 || t2Str === 'TBD' || t2Str === 'null' || t2Str === 'undefined') return true;
@@ -129,13 +133,18 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 isUpdated = true;
                 
                 let fScore = simResult.scoreString || simResult.score;
-                if (typeof fScore === 'object') {
-                    fScore = `${Math.max(fScore.A ?? 0, fScore.B ?? 0)}-${Math.min(fScore.A ?? 0, fScore.B ?? 0)}`;
-                }
-                if (!fScore) {
-                    const isBO1 = matchObj.format === 'BO1';
-                    const isBO5 = matchObj.format === 'BO5' || matchObj.type === 'playoff';
-                    fScore = `${isBO5 ? 3 : (isBO1 ? 1 : 2)}-0`;
+                
+                // [FIX 2] STRICT BO1 OVERRIDE! Normal math for BO3/BO5.
+                if (matchObj.format === 'BO1') {
+                    fScore = '1-0';
+                } else {
+                    if (typeof fScore === 'object') {
+                        fScore = `${Math.max(fScore.A ?? 0, fScore.B ?? 0)}-${Math.min(fScore.A ?? 0, fScore.B ?? 0)}`;
+                    }
+                    if (!fScore) {
+                        const isBO5 = matchObj.format === 'BO5' || matchObj.type === 'playoff';
+                        fScore = `${isBO5 ? 3 : 2}-0`;
+                    }
                 }
 
                 return {
@@ -143,7 +152,11 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                     t1: t1.id || t1.name, 
                     t2: t2.id || t2.name,
                     status: 'finished',
-                    result: { winner: simResult.winner?.name || simResult.winner, score: fScore, history: simResult.history || [] }
+                    result: { 
+                        winner: simResult.winner?.name || simResult.winner, 
+                        score: fScore, 
+                        history: [] // [MEMORY SAVER] Bypass the 5MB Crash Limit!
+                    }
                 };
             } catch (e) {
                 console.error("Engine Crash Blocked:", e);
@@ -160,7 +173,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                     result: {
                         winner: t1Wins ? t1.name : t2.name,
                         score: t1Wins ? `${reqWins}-0` : `0-${reqWins}`,
-                        history: [{ logs: ['데이터 오류 복구됨'], picks: { A: [], B: [] }, bans: { A: [], B: [] } }] 
+                        history: [] // [MEMORY SAVER]
                     }
                 };
             }
@@ -425,7 +438,9 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                                             <div className="text-center font-bold flex flex-col items-center shrink-0 w-1/4">
                                             {isFinished ? (
                                                 <div className="flex flex-col items-center">
-                                                    <span className="text-lg lg:text-xl text-gray-800">{m.result?.score || '1-0'}</span>
+                                                    <span className="text-lg lg:text-xl text-gray-800">
+    {m.result?.score || (m.format === 'BO1' ? '1-0' : (m.format === 'BO5' ? '3-0' : '2-0'))}
+</span>
                                                     <button 
                                                         onClick={() => onMatchClick && onMatchClick(m)}
                                                         className="mt-1 text-[9px] lg:text-[10px] bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 px-1.5 lg:px-2 py-0.5 rounded transition flex items-center gap-1 whitespace-nowrap"
