@@ -72,11 +72,10 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
     const currentPendingLCK = pendingLCK.length > 0 ? pendingLCK[0] : { date: '99.99 (완료)', time: '23:59' };
     
     const hasBadDataCheck = (matches) => matches.some(m => {
-        const t1Str = String(m.t1); const t2Str = String(m.t2);
-        
         // [FIX 1] Hunt down old CBLOL BO3 regular season games and flag them for a Redo!
         if (targetLeague === 'CBLOL' && m.type === 'regular' && m.format !== 'BO1') return true;
 
+        const t1Str = String(m.t1); const t2Str = String(m.t2);
         if (m.status === 'finished') {
             if (!m.t1 || t1Str === 'TBD' || t1Str === 'null' || t1Str === 'undefined') return true;
             if (!m.t2 || t2Str === 'TBD' || t2Str === 'null' || t2Str === 'undefined') return true;
@@ -134,7 +133,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 
                 let fScore = simResult.scoreString || simResult.score;
                 
-                // [FIX 2] STRICT BO1 OVERRIDE! Normal math for BO3/BO5.
+                // [FIX 2a] STRICT BO1 OVERRIDE FOR CBLOL
                 if (matchObj.format === 'BO1') {
                     fScore = '1-0';
                 } else {
@@ -155,7 +154,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                     result: { 
                         winner: simResult.winner?.name || simResult.winner, 
                         score: fScore, 
-                        history: [] // [MEMORY SAVER] Bypass the 5MB Crash Limit!
+                        history: [] // [CRITICAL MEMORY SAVER] Clears huge text logs to stop 5MB crashes
                     }
                 };
             } catch (e) {
@@ -173,7 +172,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                     result: {
                         winner: t1Wins ? t1.name : t2.name,
                         score: t1Wins ? `${reqWins}-0` : `0-${reqWins}`,
-                        history: [] // [MEMORY SAVER]
+                        history: [] // [CRITICAL MEMORY SAVER]
                     }
                 };
             }
@@ -439,8 +438,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                                             {isFinished ? (
                                                 <div className="flex flex-col items-center">
                                                     <span className="text-lg lg:text-xl text-gray-800">
-    {m.result?.score || (m.format === 'BO1' ? '1-0' : (m.format === 'BO5' ? '3-0' : '2-0'))}
-</span>
+    {m.result?.score || (m.format === 'BO1' ? '1-0' : (m.format === 'BO5' ? '3-0' : '2-0'))} </span>
                                                     <button 
                                                         onClick={() => onMatchClick && onMatchClick(m)}
                                                         className="mt-1 text-[9px] lg:text-[10px] bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 px-1.5 lg:px-2 py-0.5 rounded transition flex items-center gap-1 whitespace-nowrap"
