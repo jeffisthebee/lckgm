@@ -22,7 +22,7 @@ import {updateLeague, getLeagueById } from '../engine/storage';
 import AwardsTab from '../components/AwardsTab';
 import HistoryTab from '../components/HistoryTab'; 
 import { computeAwards, computePlayoffAwards } from '../engine/statsManager';
-import { FOREIGN_LEAGUES } from '../data/foreignLeagues';
+import { FOREIGN_LEAGUES, FOREIGN_PLAYERS } from '../data/foreignLeagues';
 
 // --- HELPER FUNCTIONS ---
 const getOvrBadgeStyle = (ovr) => {
@@ -255,50 +255,80 @@ const handleManualArchive = () => {
   
   // [CRITICAL FIX] handleMatchClick now injects round info for old saves
   // [CRITICAL FIX] Global Team Finder for the Modal!
-  const findGlobalTeam = (teamIdentifier) => {
-    if (!teamIdentifier) return { name: 'Unknown' };
-    
-    // 1. Search LCK
-    let found = teams.find(t => String(t.id) === String(teamIdentifier) || t.name === teamIdentifier);
-    if (found) return found;
+ // [CRITICAL FIX] Omni-Search Team Finder with ROSTER INJECTION for the Modal!
+ const findGlobalTeamForModal = (teamIdentifier) => {
+  if (!teamIdentifier) return { name: 'Unknown', roster: [] };
+  
+  const searchStr = String(teamIdentifier).trim().toUpperCase();
+  let found = null;
 
-    // 2. Search all Foreign Leagues
-    for (const leagueName in FOREIGN_LEAGUES) {
-        const fTeams = FOREIGN_LEAGUES[leagueName];
-        if (fTeams) {
-            found = fTeams.find(t => String(t.id) === String(teamIdentifier) || t.name === teamIdentifier);
-            if (found) return found;
-        }
-    }
-    
-    // Safe Fallback so the Modal never crashes again
-    return { name: String(teamIdentifier), colors: { primary: '#333' } };
+  // 1. Search LCK
+  found = teams.find(t => String(t.id).toUpperCase() === searchStr || t.name.toUpperCase() === searchStr);
+  
+  // 2. Search Foreign Leagues
+  if (!found) {
+      const allForeign = Object.values(FOREIGN_LEAGUES).flat();
+      found = allForeign.find(t => 
+          (t.id && String(t.id).toUpperCase() === searchStr) || 
+          (t.name && t.name.toUpperCase() === searchStr) ||
+          (t.fullName && t.fullName.toUpperCase() === searchStr)
+      );
+  }
+
+  const baseTeam = found || { name: String(teamIdentifier), colors: { primary: '#333' } };
+
+  // 3. Inject Roster so DetailedMatchResultModal never throws a White Screen!
+  let r = [];
+  if (baseTeam.name) {
+      // Try LCK roster logic first
+      r = getFullTeamRoster(baseTeam.name);
+      
+      // If empty, search foreign players
+      if (!r || r.length < 5) {
+          const allForeignPlayers = Object.values(FOREIGN_PLAYERS || {}).flat().filter(Boolean);
+          const foreignRoster = allForeignPlayers.filter(p => p.팀 === baseTeam.name || p.team === baseTeam.name || p.Team === baseTeam.name);
+          
+          const requiredRoles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
+          r = requiredRoles.map(role => {
+              const existing = foreignRoster.find(p => String(p.포지션 || p.role).toUpperCase() === role);
+              if (existing) {
+                  return { 
+                      ...existing, 
+                      이름: existing.한글명 || existing.이름 || existing.playerName || `${baseTeam.name} ${role}`, 
+                      종합: existing.종합 || existing.ovr || 80 
+                  };
+              }
+              return { 이름: `${baseTeam.name} ${role}`, 포지션: role, 종합: 80 };
+          });
+      }
+  }
+
+  return { ...baseTeam, roster: r };
 };
 
 const handleMatchClick = (match) => {
-  if (!match || match.status !== 'finished' || !match.result) return;
-  
-  // Safely parse ID or String
-  const getID = (id) => (typeof id === 'object' ? id.id : id);
-  
-  const t1Id = getID(match.t1);
-  const t2Id = getID(match.t2);
-  
-  // Use the new Global Finder!
-  const teamA = findGlobalTeam(t1Id);
-  const teamB = findGlobalTeam(t2Id);
+if (!match || match.status !== 'finished' || !match.result) return;
 
-  setMyMatchResult({
-      resultData: {
-          ...match.result,
-          round: match.round,
-          roundIndex: match.roundIndex,
-          roundName: match.label || match.roundName || (match.round === 5 ? 'Grand Final' : undefined),
-          matchId: match.id
-      }, 
-      teamA: teamA,
-      teamB: teamB
-  });
+// Safely parse ID or String
+const getID = (id) => (typeof id === 'object' ? id.id : id);
+const t1Id = getID(match.t1);
+const t2Id = getID(match.t2);
+
+// Use the new Roster Injector!
+const teamA = findGlobalTeamForModal(t1Id);
+const teamB = findGlobalTeamForModal(t2Id);
+
+setMyMatchResult({
+    resultData: {
+        ...match.result,
+        round: match.round,
+        roundIndex: match.roundIndex,
+        roundName: match.label || match.roundName || (match.round === 5 ? 'Grand Final' : undefined),
+        matchId: match.id
+    }, 
+    teamA: teamA,
+    teamB: teamB
+});
 };
   
     const handleMenuClick = (tabId) => {
