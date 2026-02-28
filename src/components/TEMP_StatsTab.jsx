@@ -258,7 +258,7 @@ export default function StatsTab({ league }) {
     return champEntries;
   }, [stats, posFilter]);
 
-  // [NEW] Filters apply to the combined globalPlayerList
+  // Filters apply to the combined globalPlayerList
   const applyFilters = (list) => {
     const query = (searchQuery || '').trim().toLowerCase();
     const pos = posFilter;
@@ -284,7 +284,7 @@ export default function StatsTab({ league }) {
       {/* HEADER */}
       <div className="p-4 sm:p-6 border-b border-gray-100 flex-shrink-0">
         
-        {/* [NEW] The League Switcher Buttons */}
+        {/* The League Switcher Buttons */}
         <div className="flex gap-2 p-2 mb-4 bg-gray-100 overflow-x-auto shrink-0 rounded-lg">
             {['LCK', 'LPL', 'LEC', 'LCS', 'LCP', 'CBLOL'].map(lg => (
                 <button
@@ -423,7 +423,8 @@ export default function StatsTab({ league }) {
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                    {applyFilters(playerRatings).slice(0, 50).map((p, i) => (
+                    {/* [FIX] Removed slice(0, 50) */}
+                    {applyFilters(playerRatings).map((p, i) => (
                     <tr key={p.name} className="hover:bg-blue-50/50 transition text-xs sm:text-sm">
                         <td className="py-2 px-2 sm:py-3 sm:px-4 text-center font-black text-gray-400">{i + 1}</td>
                         <td className="py-2 px-2 sm:py-3 sm:px-4">
@@ -463,7 +464,8 @@ export default function StatsTab({ league }) {
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-                {championMeta.slice(0, 60).map((c, i) => (
+                {/* [FIX] Removed slice(0, 60) */}
+                {championMeta.map((c, i) => (
                 <div key={c.name} className="bg-white p-3 sm:p-4 rounded-xl border hover:shadow-md transition flex items-center justify-between">
                     <div className="flex items-center gap-3 sm:gap-4">
                         <span className={`text-lg sm:text-xl font-black w-5 sm:w-6 ${i<3 ? 'text-purple-600' : 'text-gray-300'}`}>{i+1}</span>
@@ -503,7 +505,8 @@ export default function StatsTab({ league }) {
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                    {applyFilters(kdaLeaders).slice(0, 50).map((p, i) => (
+                    {/* [FIX] Removed slice(0, 50) */}
+                    {applyFilters(kdaLeaders).map((p, i) => (
                     <tr key={p.name} className="hover:bg-red-50/50 transition text-xs sm:text-sm">
                         <td className="py-2 px-2 sm:py-3 sm:px-4 text-center font-black text-gray-400">{i + 1}</td>
                         <td className="py-2 px-2 sm:py-3 sm:px-4">
