@@ -74,22 +74,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
     const pendingLCK = league.matches ? league.matches.filter(m => m.status === 'pending').sort(compareDatesObj) : [];
     const currentPendingLCK = pendingLCK.length > 0 ? pendingLCK[0] : { date: '99.99 (완료)', time: '23:59' };
     
-    const checkBadData = (matches, lg) => matches.some(m => {
-        if (lg === 'CBLOL' && (m.type === 'regular' || m.type === 'super') && m.format !== 'BO1') return true;
-
-        const t1Str = String(m.t1); const t2Str = String(m.t2);
-        
-        if (m.t1 && m.t2 && t1Str !== 'TBD' && t2Str !== 'TBD' && t1Str !== 'null' && t2Str !== 'null' && t1Str === t2Str) return true;
-
-        if (m.status === 'finished') {
-            if (!m.t1 || t1Str === 'TBD' || t1Str === 'null' || t1Str === 'undefined') return true;
-            if (!m.t2 || t2Str === 'TBD' || t2Str === 'null' || t2Str === 'undefined') return true;
-            if (!m.result || !m.result.winner) return true;
-            if (m.result.history && m.result.history.length > 0 && m.result.history[0]?.logs?.includes('데이터 오류')) return true;
-        }
-        return false;
-    });
-
     const needsSync = targetLeague && (
         forceRegen ||
         activeMatches.length === 0 || 
@@ -123,9 +107,8 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
         let isUpdated = false;
 
         let schedule = activeMatches.filter(m => m.type === 'regular' || m.type === 'super');
-        const hasBadData = forceRegen || checkBadData(activeMatches, targetLeague);
         
-        if (schedule.length === 0 || hasBadData) {
+        if (schedule.length === 0 || forceRegen) {
             if (targetLeague === 'LCP') schedule = generateLCPRegularSchedule(lgTeams);
             else if (targetLeague === 'CBLOL') schedule = generateCBLOLRegularSchedule(lgTeams); 
             else if (targetLeague === 'LCS') schedule = generateLCSRegularSchedule(lgTeams);
@@ -139,7 +122,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 lgTeams.forEach(t => st[t.name] = { w: 0, l: 0, played: [] });
                 pastMatches.forEach(m => {
                     if (m.status === 'finished' && m.result && m.result.winner) {
-                        // [THE FIX] Absolute Name Standardizer! Prevents missing stats due to ID mismatch!
                         const wName = findGlobalTeam(m.result.winner, lgTeams).name;
                         const t1Name = findGlobalTeam(m.t1, lgTeams).name;
                         const t2Name = findGlobalTeam(m.t2, lgTeams).name;
@@ -190,7 +172,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                                     pools[m.bracket] = pool.filter(t => t !== t1 && t !== t2);
                                     isUpdated = true;
                                 } else {
-                                    // [THE FIX] Emergency Fallback! If math breaks, grab any available team to stop the infinite loading screen!
                                     const assigned = roundMatches.flatMap(rm => [rm.t1, rm.t2]).filter(Boolean);
                                     const remaining = lgTeams.map(t => t.name).filter(t => !assigned.includes(t));
                                     if (remaining.length >= 2) {
@@ -223,8 +204,25 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
             const t1Obj = findGlobalTeam(matchObj.t1, lgTeams);
             const t2Obj = findGlobalTeam(matchObj.t2, lgTeams);
             
-            if (t1Obj.name === 'TBD' || t2Obj.name === 'TBD') return matchObj; 
-            if (t1Obj.name === t2Obj.name) return matchObj; 
+            // [THE DEADLOCK BREAKER]
+            // If the teams are mathematically broken or missing, forcefully finish the match!
+            // This prevents the engine from freezing on the loading screen forever.
+            if (!t1Obj.name || !t2Obj.name || t1Obj.name === 'TBD' || t2Obj.name === 'TBD' || t1Obj.name === t2Obj.name) {
+                isUpdated = true;
+                const fallbackWinner = (t1Obj.name && t1Obj.name !== 'TBD') ? t1Obj.name : 
+                                       (t2Obj.name && t2Obj.name !== 'TBD') ? t2Obj.name : 'Unknown';
+                return {
+                    ...matchObj,
+                    t1: t1Obj.name || 'TBD',
+                    t2: t2Obj.name || 'TBD',
+                    status: 'finished',
+                    result: { 
+                        winner: fallbackWinner, 
+                        score: '0-0', 
+                        history: [{ logs: ['오류로 인한 강제 종료'], winner: fallbackWinner }] 
+                    }
+                };
+            }
 
             const t1 = { ...t1Obj, roster: getSafeRoster(t1Obj, lgPlayers) };
             const t2 = { ...t2Obj, roster: getSafeRoster(t2Obj, lgPlayers) };
@@ -295,13 +293,12 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
         let seeds = forceRegen ? [] : (league.foreignPlayoffSeeds?.[targetLeague] || []);
         
         if (schedule.every(m => m.status === 'finished')) {
-            if (seeds.length === 0 || hasBadData) {
+            if (seeds.length === 0) {
                 const standings = {};
                 lgTeams.forEach(t => standings[t.name] = { w: 0, l: 0, diff: 0, h2h: {}, defeatedOpponents: [], id: t.id || t.name, name: t.name });
                 
                 schedule.forEach(m => {
-                    if (m.status === 'finished' && m.result) {
-                        // [THE FIX] Absolute Name Standardizer for Playoff Seeds!
+                    if (m.status === 'finished' && m.result && m.result.winner && m.result.winner !== 'Unknown') {
                         const wName = findGlobalTeam(m.result.winner, lgTeams).name;
                         const t1Name = findGlobalTeam(m.t1, lgTeams).name;
                         const t2Name = findGlobalTeam(m.t2, lgTeams).name;
@@ -371,7 +368,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 isUpdated = true;
             }
 
-            if (playoffs.length === 0 || forceRegen || hasBadData) {
+            if (playoffs.length === 0 || forceRegen) {
                 if (targetLeague === 'LCP') playoffs = generateLCPPlayoffs(seeds);
                 else if (targetLeague === 'CBLOL') playoffs = generateCBLOLPlayoffs(seeds);
                 else if (targetLeague === 'LCS') playoffs = generateLCSPlayoffs(seeds);
@@ -380,9 +377,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
 
             const simPlayoffMatch = (id) => {
                 const matchObj = playoffs.find(m => m.id === id);
-                if (!matchObj || !matchObj.t1 || !matchObj.t2 || matchObj.t1 === 'TBD' || matchObj.t2 === 'TBD') return { winnerId: null, loserId: null };
-                
-                if (matchObj.t1 === matchObj.t2) return { winnerId: null, loserId: null };
+                if (!matchObj) return { winnerId: null, loserId: null };
 
                 if (matchObj.status === 'finished') {
                     const wId = findGlobalTeam(matchObj.result.winner, teams).name;
@@ -391,6 +386,21 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 }
                 
                 if (currentPendingLCK.date !== '99.99 (완료)' && compareDatesObj(matchObj, currentPendingLCK) >= 0) return { winnerId: null, loserId: null };
+
+                // [THE DEADLOCK BREAKER] Force-finish broken playoff matches too!
+                if (!matchObj.t1 || !matchObj.t2 || matchObj.t1 === 'TBD' || matchObj.t2 === 'TBD' || matchObj.t1 === matchObj.t2) {
+                    isUpdated = true;
+                    const fallbackWinner = (matchObj.t1 && matchObj.t1 !== 'TBD') ? matchObj.t1 : 
+                                           (matchObj.t2 && matchObj.t2 !== 'TBD') ? matchObj.t2 : 'Unknown';
+                    matchObj.status = 'finished';
+                    matchObj.result = {
+                        winner: fallbackWinner,
+                        score: '0-0',
+                        history: [{ logs: ['오류 강제 종료'], winner: fallbackWinner }]
+                    };
+                    const lId = fallbackWinner === matchObj.t1 ? matchObj.t2 : matchObj.t1;
+                    return { winnerId: fallbackWinner, loserId: lId };
+                }
 
                 const simulatedMatch = simMatchIfPast(matchObj);
                 Object.assign(matchObj, simulatedMatch); 
