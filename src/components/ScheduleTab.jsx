@@ -73,6 +73,10 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
     
     const hasBadDataCheck = (matches) => matches.some(m => {
         const t1Str = String(m.t1); const t2Str = String(m.t2);
+        
+        // [FIX 1] Hunt down old CBLOL BO3 regular season games and flag them for a Redo!
+        if (targetLeague === 'CBLOL' && m.type === 'regular' && m.format !== 'BO1') return true;
+
         if (m.status === 'finished') {
             if (!m.t1 || t1Str === 'TBD' || t1Str === 'null' || t1Str === 'undefined') return true;
             if (!m.t2 || t2Str === 'TBD' || t2Str === 'null' || t2Str === 'undefined') return true;
@@ -438,7 +442,8 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                                             <div className="text-center font-bold flex flex-col items-center shrink-0 w-1/4">
                                             {isFinished ? (
                                                 <div className="flex flex-col items-center">
-                                                    <span className="text-lg lg:text-xl text-gray-800">{m.result?.score || '1-0'}</span>
+                                                    <span className="text-lg lg:text-xl text-gray-800">
+                                                    {m.result?.score || (m.format === 'BO1' ? '1-0' : (m.format === 'BO5' ? '3-0' : '2-0'))} </span>
                                                     <button 
                                                         onClick={() => onMatchClick && onMatchClick(m)}
                                                         className="mt-1 text-[9px] lg:text-[10px] bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 px-1.5 lg:px-2 py-0.5 rounded transition flex items-center gap-1 whitespace-nowrap"
