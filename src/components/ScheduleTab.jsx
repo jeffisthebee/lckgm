@@ -75,6 +75,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
     const currentPendingLCK = pendingLCK.length > 0 ? pendingLCK[0] : { date: '99.99 (완료)', time: '23:59' };
     
     // Scrubber: Identifies Corrupted Games
+    // Scrubber: Identifies Corrupted Games
     const checkBadData = (matches, lg) => matches.some(m => {
         // [FORCE REWRITE] If CBLOL regular matches were mistakenly saved as BO3, trigger a wipe!
         if (lg === 'CBLOL' && (m.type === 'regular' || m.type === 'super') && m.format !== 'BO1') return true;
@@ -83,8 +84,11 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
         if (m.status === 'finished') {
             if (!m.t1 || t1Str === 'TBD' || t1Str === 'null' || t1Str === 'undefined') return true;
             if (!m.t2 || t2Str === 'TBD' || t2Str === 'null' || t2Str === 'undefined') return true;
-            if (!m.result || !m.result.history || m.result.history.length === 0) return true;
-            if (m.result.history[0]?.logs?.includes('데이터 오류')) return true;
+            
+            // [THE FIX] We intentionally delete `history` to save the 5MB browser limit! 
+            // So we MUST NOT flag `history.length === 0` as corrupted data anymore!
+            if (!m.result) return true;
+            if (m.result.history && m.result.history.length > 0 && m.result.history[0]?.logs?.includes('데이터 오류')) return true;
         }
         return false;
     });
