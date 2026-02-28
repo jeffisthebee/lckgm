@@ -1,7 +1,6 @@
 // src/components/ScheduleTab.jsx
 import React, { useState, useEffect } from 'react';
 import { quickSimulateMatch } from '../engine/simEngine';
-// [NEW] Added LCS Generators!
 import { 
     generateLCPRegularSchedule, generateLCPPlayoffs, 
     generateCBLOLRegularSchedule, generateCBLOLPlayoffs,
@@ -69,7 +68,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
 
     const [forceRegen, setForceRegen] = useState(false);
 
-    // [NEW] Added LCS to the Target League engine
     const targetLeague = ['LCP', 'CBLOL', 'LCS'].includes(displayLeague) ? displayLeague : null;
 
     const activeMatches = displayLeague === 'LCK' ? (league.matches || []) : (league.foreignMatches?.[displayLeague] || []);
@@ -97,12 +95,11 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
         checkBadData(activeMatches, targetLeague)
     );
 
-    // [FIX] SELF-HEALING LCK PROTECTOR
+    // LCK SELF-HEALER
     useEffect(() => {
         if (displayLeague === 'LCK' && league.matches) {
             const hasCorruptedFormat = league.matches.some(m => m.type !== 'playoff' && m.format === 'BO1');
             if (hasCorruptedFormat) {
-                console.log("[Auto-Heal] Restoring LCK formats to BO3/BO5...");
                 const healedMatches = league.matches.map(m => {
                     if (m.type === 'super') return { ...m, format: 'BO5' };
                     if (m.type === 'regular') return { ...m, format: 'BO3' };
@@ -127,14 +124,13 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
         const hasBadData = forceRegen || checkBadData(activeMatches, targetLeague);
         
         if (schedule.length === 0 || hasBadData) {
-            console.log(`[Auto-Sync] Regenerating flawless ${targetLeague} schedule...`);
             if (targetLeague === 'LCP') schedule = generateLCPRegularSchedule(lgTeams);
             else if (targetLeague === 'CBLOL') schedule = generateCBLOLRegularSchedule(lgTeams); 
-            else if (targetLeague === 'LCS') schedule = generateLCSRegularSchedule(lgTeams); // [NEW] Generates LCS Swiss Placeholders
+            else if (targetLeague === 'LCS') schedule = generateLCSRegularSchedule(lgTeams);
             isUpdated = true;
         }
 
-        // --- [NEW] LCS SWISS DRAW ALGORITHM ---
+        // --- LCS SWISS DRAW ALGORITHM ---
         if (targetLeague === 'LCS') {
             const getSwissStandings = (pastMatches) => {
                 const st = {};
@@ -152,17 +148,14 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 return st;
             };
 
-            // Process dynamic matchups for Round 2 and Round 3
             [2, 3].forEach(roundNum => {
                 const roundMatches = schedule.filter(m => m.swissRound === roundNum);
                 if (roundMatches.some(m => !m.t1 || !m.t2)) {
-                    // Check if previous round is 100% finished
                     const prevRoundFinished = schedule.filter(m => m.swissRound === roundNum - 1).every(m => m.status === 'finished');
                     if (prevRoundFinished) {
                         const pastMatches = schedule.filter(m => m.swissRound < roundNum && m.status === 'finished');
                         const st = getSwissStandings(pastMatches);
                         
-                        // Group into W-L Brackets (e.g. "1-0")
                         const pools = {};
                         Object.entries(st).forEach(([tName, record]) => {
                             const bracketStr = `${record.w}-${record.l}`;
@@ -170,15 +163,14 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                             pools[bracketStr].push(tName);
                         });
 
-                        // Draw Teams for Empty Matches
                         roundMatches.forEach(m => {
                             if (!m.t1 || !m.t2) {
                                 let pool = pools[m.bracket] || [];
                                 if (pool.length >= 2) {
-                                    pool = pool.sort(() => Math.random() - 0.5); // Shuffle
+                                    pool = pool.sort(() => Math.random() - 0.5); 
                                     let t1 = pool[0];
                                     let t2Index = pool.findIndex((t, idx) => idx > 0 && !st[t1].played.includes(t));
-                                    if (t2Index === -1) t2Index = 1; // Fallback if forced to replay
+                                    if (t2Index === -1) t2Index = 1; 
                                     let t2 = pool[t2Index];
                                     
                                     m.t1 = t1;
@@ -193,10 +185,17 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
             });
         }
 
-        const safeLeague = {
-            ...league,
-            currentChampionList: league.currentChampionList || championList,
-            metaVersion: league.metaVersion || '16.01'
+        // [THE FIX] Temporal Meta Engine
+        const getMatchMeta = (matchObj) => {
+            const isLateSeason = matchObj.type === 'super' || matchObj.type === 'playoff' || matchObj.type === 'playin' || 
+                                 (matchObj.date && (matchObj.date.startsWith('2.') || matchObj.date.startsWith('3.')));
+            
+            // If the match is in Feb/March AND the LCK has successfully upgraded to 16.02, apply 16.02!
+            if (isLateSeason && league.metaVersion === '16.02' && league.currentChampionList) {
+                return league.currentChampionList;
+            }
+            // For all early season games (January), strictly enforce 16.01 base meta!
+            return championList; 
         };
 
         const simMatchIfPast = (matchObj) => {
@@ -206,14 +205,16 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
             const t1Obj = findGlobalTeam(matchObj.t1, lgTeams);
             const t2Obj = findGlobalTeam(matchObj.t2, lgTeams);
             
-            // If teams are TBD (like a future Swiss match), skip simulation until they are drawn!
             if (t1Obj.name === 'TBD' || t2Obj.name === 'TBD') return matchObj; 
 
             const t1 = { ...t1Obj, roster: getSafeRoster(t1Obj, lgPlayers) };
             const t2 = { ...t2Obj, roster: getSafeRoster(t2Obj, lgPlayers) };
+            
+            // Assign the temporally correct patch!
+            const matchMetaList = getMatchMeta(matchObj);
 
             try {
-                const simResult = quickSimulateMatch(t1, t2, matchObj.format, safeLeague.currentChampionList);
+                const simResult = quickSimulateMatch(t1, t2, matchObj.format, matchMetaList);
                 isUpdated = true;
                 
                 let fScore = simResult.scoreString || simResult.score;
@@ -494,13 +495,12 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 simPlayoffMatch('cblol_po10');
             
             } else if (targetLeague === 'LCS') {
-                // --- [NEW] LCS PLAYOFF LOGIC ---
-                const pi1 = simPlayoffMatch('lcs_pi1'); // 6 vs 7 (Winner becomes Seed 6)
+                const pi1 = simPlayoffMatch('lcs_pi1');
 
                 const po1Match = playoffs.find(m => m.id === 'lcs_po1');
                 const po2Match = playoffs.find(m => m.id === 'lcs_po2');
                 if (po1Match && !po1Match.t2) {
-                    let pickSeed4 = Math.random() < 0.90; // Seed 1 picks between 3 and 4
+                    let pickSeed4 = Math.random() < 0.90; 
                     const s3 = getSeedId(3);
                     const s4 = getSeedId(4);
                     po1Match.t2 = pickSeed4 ? s4 : s3;
@@ -519,13 +519,13 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
 
                 const po4Match = playoffs.find(m => m.id === 'lcs_po4');
                 if (po4Match && po1.loserId) { 
-                    po4Match.t2 = po1.loserId; // t1 is pre-assigned to Seed 5
+                    po4Match.t2 = po1.loserId; 
                 }
                 const po4 = simPlayoffMatch('lcs_po4');
 
                 const po5Match = playoffs.find(m => m.id === 'lcs_po5');
                 if (po5Match && pi1.winnerId && po2.loserId && !po5Match.t1) { 
-                    po5Match.t1 = pi1.winnerId; // pi1 winner is the new Seed 6
+                    po5Match.t1 = pi1.winnerId; 
                     po5Match.t2 = po2.loserId; 
                     isUpdated = true;
                 }
