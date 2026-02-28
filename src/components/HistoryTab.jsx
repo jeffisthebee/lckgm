@@ -273,12 +273,6 @@ const HistoryTab = ({ league }) => {
                       return m?.result?.winner || null;
                   };
 
-                  // po10 = Grand Finals
-                  // po9  = 4라운드 패자조 → loser = 3rd
-                  // po8  = 3라운드 패자조 → loser = 4th
-                  // po7  = 2라운드 패자조 → loser = 5th
-                  // po6  = 1라운드 패자조 → loser = 6th
-                  // 7/8  = regular season seed order
                   const finalW = getWinner('cblol_po10');
                   const finalL = getLoser('cblol_po10');
                   const third  = getLoser('cblol_po9');
@@ -297,13 +291,131 @@ const HistoryTab = ({ league }) => {
                   addRank(5, fifth);
                   addRank(6, sixth);
 
-                  // 7th/8th: remaining teams in regular season order
                   const alreadyPlaced = new Set(cblolRanks.map(r => r.team.name));
                   regSorted.filter(x => !alreadyPlaced.has(x.team.name)).forEach((r, i) => {
                       cblolRanks.push({ rank: 7 + i, team: r.team });
                   });
 
                   if (cblolRanks.length > 0) displayStandings = cblolRanks;
+              }
+
+              // --- [NEW] LCS STANDINGS CALCULATOR ---
+              if (currentLeague === 'LCS' && record.matches && record.matches.length > 0) {
+                  const lcsTeams = FOREIGN_LEAGUES['LCS'] || [];
+                  const st = {};
+                  lcsTeams.forEach(t => st[t.name] = { w: 0, l: 0, diff: 0, h2h: {}, defeatedOpponents: [], team: t });
+
+                  // Regular Season processing for tiebreakers
+                  record.matches.filter(m => (m.type === 'regular' || m.type === 'super') && m.status === 'finished').forEach(m => {
+                      const winner = m.result?.winner;
+                      const t1 = findGlobalTeam(m.t1).name;
+                      const t2 = findGlobalTeam(m.t2).name;
+                      const loser = winner === t1 ? t2 : t1;
+                      let diff = 0;
+                      if (m.result?.score) {
+                          const pts = String(m.result.score).split(/[-:]/).map(Number);
+                          if (pts.length === 2 && !isNaN(pts[0]) && !isNaN(pts[1])) diff = Math.abs(pts[0] - pts[1]);
+                      }
+                      if (st[winner]) {
+                          st[winner].w++;
+                          st[winner].diff += diff;
+                          st[winner].defeatedOpponents.push(loser);
+                          if (!st[winner].h2h[loser]) st[winner].h2h[loser] = { w: 0, l: 0 };
+                          st[winner].h2h[loser].w += 1;
+                      }
+                      if (st[loser]) {
+                          st[loser].l++;
+                          st[loser].diff -= diff;
+                          if (!st[loser].h2h[winner]) st[loser].h2h[winner] = { w: 0, l: 0 };
+                          st[loser].h2h[winner].l += 1;
+                      }
+                  });
+
+                  // Execute identical tiebreaker logic as StandingsTab
+                  const tiedGroups = {};
+                  Object.values(st).forEach(rec => {
+                      const key = `${rec.w}_${rec.diff}`;
+                      if (!tiedGroups[key]) tiedGroups[key] = [];
+                      tiedGroups[key].push(rec.name);
+                  });
+
+                  const regSorted = Object.values(st).sort((a,b) => {
+                      if (b.w !== a.w) return b.w - a.w; 
+                      if (b.diff !== a.diff) return b.diff - a.diff; 
+                      
+                      const tieKey = `${a.w}_${a.diff}`;
+                      const tiedCount = tiedGroups[tieKey]?.length || 0;
+
+                      if (tiedCount === 2) {
+                          const aWinsVsB = a.h2h[b.name]?.w || 0;
+                          const bWinsVsA = b.h2h[a.name]?.w || 0;
+                          if (aWinsVsB !== bWinsVsA) return bWinsVsA - aWinsVsB;
+                      }
+
+                      let sovWinsA = 0, sovDiffA = 0;
+                      a.defeatedOpponents.forEach(opp => {
+                          sovWinsA += (st[opp]?.w || 0);
+                          sovDiffA += (st[opp]?.diff || 0);
+                      });
+
+                      let sovWinsB = 0, sovDiffB = 0;
+                      b.defeatedOpponents.forEach(opp => {
+                          sovWinsB += (st[opp]?.w || 0);
+                          sovDiffB += (st[opp]?.diff || 0);
+                      });
+
+                      if (sovWinsB !== sovWinsA) return sovWinsB - sovWinsA;
+                      if (sovDiffB !== sovDiffA) return sovDiffB - sovDiffA;
+                      return 0;
+                  });
+
+                  // Map LCS playoff elimination path
+                  const poMatches = record.matches.filter(m => (m.type === 'playoff' || m.type === 'playin') && m.status === 'finished');
+                  const getLoser = (id) => {
+                      const m = poMatches.find(x => x.id === id);
+                      if (!m || !m.result?.winner) return null;
+                      const t1 = findGlobalTeam(m.t1).name;
+                      const t2 = findGlobalTeam(m.t2).name;
+                      return m.result.winner === t1 ? t2 : t1;
+                  };
+                  const getWinner = (id) => {
+                      const m = poMatches.find(x => x.id === id);
+                      return m?.result?.winner || null;
+                  };
+
+                  const finalW = getWinner('lcs_po8');
+                  const finalL = getLoser('lcs_po8');
+                  const third  = getLoser('lcs_po7');
+                  const fourth = getLoser('lcs_po6');
+                  const r1L1 = getLoser('lcs_po4');
+                  const r1L2 = getLoser('lcs_po5');
+                  const playinLoser = getLoser('lcs_pi1');
+
+                  const lcsRanks = [];
+                  const addRank = (rank, tName) => {
+                      if (tName) lcsRanks.push({ rank, team: st[tName]?.team || findGlobalTeam(tName) });
+                  };
+
+                  addRank(1, finalW);
+                  addRank(2, finalL);
+                  addRank(3, third);
+                  addRank(4, fourth);
+
+                  // 5th/6th sorted by regular season seed dominance
+                  const fifthSixth = [r1L1, r1L2].filter(Boolean).sort((a, b) => {
+                      return regSorted.findIndex(x => x.name === a) - regSorted.findIndex(x => x.name === b); 
+                  });
+                  fifthSixth.forEach((tName, i) => lcsRanks.push({ rank: 5 + i, team: st[tName]?.team || findGlobalTeam(tName) }));
+
+                  addRank(7, playinLoser);
+
+                  // 8th is whoever is left in the regular season order
+                  const alreadyPlaced = new Set(lcsRanks.map(r => r.team.name));
+                  regSorted.filter(x => !alreadyPlaced.has(x.name)).forEach((r, i) => {
+                      lcsRanks.push({ rank: lcsRanks.length + 1, team: r.team });
+                  });
+
+                  if (lcsRanks.length > 0) displayStandings = lcsRanks;
               }
 
               const champTeamObj = record.champion ? findGlobalTeam(record.champion.name) : (displayStandings.length > 0 ? findGlobalTeam(displayStandings[0].team.name) : null);
@@ -425,8 +537,8 @@ const HistoryTab = ({ league }) => {
                                                               {tObj.name.slice(0,3)}
                                                           </div>
                                                           {tObj.fullName || tObj.name}
-                                                          {/* [NEW] Add FST Badge for 1st Place in LCP! */}
-                                                          {item.rank === 1 && (currentLeague === 'LCP' || currentLeague === 'CBLOL') && (
+                                                          {/* [NEW] Included LCS in the FST Badge Array! */}
+                                                          {item.rank === 1 && ['LCP', 'CBLOL', 'LCS'].includes(currentLeague) && (
                                                               <span className="text-[10px] bg-purple-100 text-purple-700 border border-purple-200 px-2 py-0.5 rounded font-black whitespace-nowrap shadow-sm ml-1">
                                                                   FST 진출
                                                               </span>
