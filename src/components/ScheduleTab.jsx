@@ -66,7 +66,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
     const [currentLeague, setCurrentLeague] = useState('LCK');
     const displayLeague = activeTab === 'team_schedule' ? 'LCK' : currentLeague;
 
-    // The manual safety switch
     const [forceRegen, setForceRegen] = useState(false);
 
     const targetLeague = ['LCP', 'CBLOL', 'LCS'].includes(displayLeague) ? displayLeague : null;
@@ -75,7 +74,22 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
     const pendingLCK = league.matches ? league.matches.filter(m => m.status === 'pending').sort(compareDatesObj) : [];
     const currentPendingLCK = pendingLCK.length > 0 ? pendingLCK[0] : { date: '99.99 (완료)', time: '23:59' };
     
-    // [THE FIX] Removed the auto-scrubber entirely. It will only sync on time passing OR if you press the manual button!
+    const checkBadData = (matches, lg) => matches.some(m => {
+        if (lg === 'CBLOL' && (m.type === 'regular' || m.type === 'super') && m.format !== 'BO1') return true;
+
+        const t1Str = String(m.t1); const t2Str = String(m.t2);
+        
+        if (m.t1 && m.t2 && t1Str !== 'TBD' && t2Str !== 'TBD' && t1Str !== 'null' && t2Str !== 'null' && t1Str === t2Str) return true;
+
+        if (m.status === 'finished') {
+            if (!m.t1 || t1Str === 'TBD' || t1Str === 'null' || t1Str === 'undefined') return true;
+            if (!m.t2 || t2Str === 'TBD' || t2Str === 'null' || t2Str === 'undefined') return true;
+            if (!m.result || !m.result.winner) return true;
+            if (m.result.history && m.result.history.length > 0 && m.result.history[0]?.logs?.includes('데이터 오류')) return true;
+        }
+        return false;
+    });
+
     const needsSync = targetLeague && (
         forceRegen ||
         activeMatches.length === 0 || 
@@ -109,9 +123,9 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
         let isUpdated = false;
 
         let schedule = activeMatches.filter(m => m.type === 'regular' || m.type === 'super');
+        const hasBadData = forceRegen || checkBadData(activeMatches, targetLeague);
         
-        // Manual Wipe logic perfectly replaces auto-wipe
-        if (schedule.length === 0 || forceRegen) {
+        if (schedule.length === 0 || hasBadData) {
             if (targetLeague === 'LCP') schedule = generateLCPRegularSchedule(lgTeams);
             else if (targetLeague === 'CBLOL') schedule = generateCBLOLRegularSchedule(lgTeams); 
             else if (targetLeague === 'LCS') schedule = generateLCSRegularSchedule(lgTeams);
@@ -124,13 +138,15 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 const st = {};
                 lgTeams.forEach(t => st[t.name] = { w: 0, l: 0, played: [] });
                 pastMatches.forEach(m => {
-                    if (m.status === 'finished' && m.result) {
-                        const w = m.result.winner;
-                        const t1 = findGlobalTeam(m.t1, lgTeams).name;
-                        const t2 = findGlobalTeam(m.t2, lgTeams).name;
-                        const l = w === t1 ? t2 : t1;
-                        if(st[w]) { st[w].w++; st[w].played.push(l); }
-                        if(st[l]) { st[l].l++; st[l].played.push(w); }
+                    if (m.status === 'finished' && m.result && m.result.winner) {
+                        // [THE FIX] Absolute Name Standardizer! Prevents missing stats due to ID mismatch!
+                        const wName = findGlobalTeam(m.result.winner, lgTeams).name;
+                        const t1Name = findGlobalTeam(m.t1, lgTeams).name;
+                        const t2Name = findGlobalTeam(m.t2, lgTeams).name;
+                        const lName = wName === t1Name ? t2Name : t1Name;
+                        
+                        if(st[wName]) { st[wName].w++; st[wName].played.push(lName); }
+                        if(st[lName]) { st[lName].l++; st[lName].played.push(wName); }
                     }
                 });
                 return st;
@@ -155,6 +171,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                             if (!m.t1 || !m.t2) {
                                 let pool = pools[m.bracket] || [];
                                 pool = [...new Set(pool)]; 
+                                
                                 if (pool.length >= 2) {
                                     pool = pool.sort(() => Math.random() - 0.5); 
                                     let t1 = pool[0];
@@ -162,17 +179,25 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                                     if (t2Index <= 0) t2Index = 1; 
                                     let t2 = pool[t2Index];
 
-                                    // [THE FIX] Absolute Clone Lock - DIG vs DIG is impossible now!
                                     if (t1 === t2) {
                                         const emergencyT2 = pool.find(t => t !== t1);
                                         if (emergencyT2) t2 = emergencyT2;
-                                        else t2 = lgTeams.find(t => t.name !== t1).name; // Hard fallback
+                                        else t2 = lgTeams.find(t => t.name !== t1).name; 
                                     }
                                     
                                     m.t1 = t1;
                                     m.t2 = t2;
                                     pools[m.bracket] = pool.filter(t => t !== t1 && t !== t2);
                                     isUpdated = true;
+                                } else {
+                                    // [THE FIX] Emergency Fallback! If math breaks, grab any available team to stop the infinite loading screen!
+                                    const assigned = roundMatches.flatMap(rm => [rm.t1, rm.t2]).filter(Boolean);
+                                    const remaining = lgTeams.map(t => t.name).filter(t => !assigned.includes(t));
+                                    if (remaining.length >= 2) {
+                                        m.t1 = remaining[0];
+                                        m.t2 = remaining[1];
+                                        isUpdated = true;
+                                    }
                                 }
                             }
                         });
@@ -199,7 +224,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
             const t2Obj = findGlobalTeam(matchObj.t2, lgTeams);
             
             if (t1Obj.name === 'TBD' || t2Obj.name === 'TBD') return matchObj; 
-            if (t1Obj.name === t2Obj.name) return matchObj; // Final guard
+            if (t1Obj.name === t2Obj.name) return matchObj; 
 
             const t1 = { ...t1Obj, roster: getSafeRoster(t1Obj, lgPlayers) };
             const t2 = { ...t2Obj, roster: getSafeRoster(t2Obj, lgPlayers) };
@@ -270,16 +295,17 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
         let seeds = forceRegen ? [] : (league.foreignPlayoffSeeds?.[targetLeague] || []);
         
         if (schedule.every(m => m.status === 'finished')) {
-            if (seeds.length === 0) {
+            if (seeds.length === 0 || hasBadData) {
                 const standings = {};
                 lgTeams.forEach(t => standings[t.name] = { w: 0, l: 0, diff: 0, h2h: {}, defeatedOpponents: [], id: t.id || t.name, name: t.name });
                 
                 schedule.forEach(m => {
                     if (m.status === 'finished' && m.result) {
-                        const winnerName = m.result.winner;
-                        const t1Name = findGlobalTeam(m.t1, teams).name;
-                        const t2Name = findGlobalTeam(m.t2, teams).name;
-                        const loserName = winnerName === t1Name ? t2Name : t1Name;
+                        // [THE FIX] Absolute Name Standardizer for Playoff Seeds!
+                        const wName = findGlobalTeam(m.result.winner, lgTeams).name;
+                        const t1Name = findGlobalTeam(m.t1, lgTeams).name;
+                        const t2Name = findGlobalTeam(m.t2, lgTeams).name;
+                        const loserName = wName === t1Name ? t2Name : t1Name;
                         
                         let diffValue = 0;
                         if (m.result.score) {
@@ -287,18 +313,18 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                             if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) diffValue = Math.abs(parts[0] - parts[1]);
                         }
 
-                        if (standings[winnerName]) {
-                            standings[winnerName].w += 1;
-                            standings[winnerName].diff += diffValue;
-                            standings[winnerName].defeatedOpponents.push(loserName);
-                            if (!standings[winnerName].h2h[loserName]) standings[winnerName].h2h[loserName] = { w: 0, l: 0 };
-                            standings[winnerName].h2h[loserName].w += 1;
+                        if (standings[wName]) {
+                            standings[wName].w += 1;
+                            standings[wName].diff += diffValue;
+                            standings[wName].defeatedOpponents.push(loserName);
+                            if (!standings[wName].h2h[loserName]) standings[wName].h2h[loserName] = { w: 0, l: 0 };
+                            standings[wName].h2h[loserName].w += 1;
                         }
                         if (standings[loserName]) {
                             standings[loserName].l += 1;
                             standings[loserName].diff -= diffValue;
-                            if (!standings[loserName].h2h[winnerName]) standings[loserName].h2h[winnerName] = { w: 0, l: 0 };
-                            standings[loserName].h2h[winnerName].l += 1;
+                            if (!standings[loserName].h2h[wName]) standings[loserName].h2h[wName] = { w: 0, l: 0 };
+                            standings[loserName].h2h[wName].l += 1;
                         }
                     }
                 });
@@ -345,7 +371,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 isUpdated = true;
             }
 
-            if (playoffs.length === 0) {
+            if (playoffs.length === 0 || forceRegen || hasBadData) {
                 if (targetLeague === 'LCP') playoffs = generateLCPPlayoffs(seeds);
                 else if (targetLeague === 'CBLOL') playoffs = generateCBLOLPlayoffs(seeds);
                 else if (targetLeague === 'LCS') playoffs = generateLCSPlayoffs(seeds);
