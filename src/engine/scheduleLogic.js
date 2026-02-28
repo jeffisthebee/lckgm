@@ -407,3 +407,169 @@ export const generateCBLOLPlayoffs = (seeds) => {
         { round: 5, match: 1, label: '결승전', t1: null, t2: null, date: '3.2 (월)', time: '01:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'cblol_po10' }
     ];
 };
+// [NEW] LCS SCHEDULE LOGIC (Swiss Format)
+// ==========================================
+
+// Week 1: Random pairings, 1 game per team
+export const generateLCSWeek1 = (teams) => {
+    const ids = [...teams].map(t => t.id || t.name).sort(() => Math.random() - 0.5);
+    const slots = [
+        { date: '1.25 (일)', time: '06:00' },
+        { date: '1.25 (일)', time: '09:00' },
+        { date: '1.26 (월)', time: '06:00' },
+        { date: '1.26 (월)', time: '09:00' },
+    ];
+    return slots.map((slot, i) => ({
+        ...slot,
+        t1: ids[i * 2],
+        t2: ids[i * 2 + 1],
+        id: `lcs_w1_${i + 1}`,
+        type: 'swiss',
+        week: 1,
+        format: 'BO3',
+        status: 'pending'
+    }));
+};
+
+// Week 2: Winners face winners, losers face losers — no repeat matchups
+export const generateLCSWeek2 = (week1Matches, teams) => {
+    const wins = {};
+    teams.forEach(t => { wins[t.id || t.name] = 0; });
+    week1Matches.forEach(m => {
+        if (m.status === 'finished' && m.result?.winner) {
+            const wName = m.result.winner;
+            wins[wName] = (wins[wName] || 0) + 1;
+        }
+    });
+
+    const winners = teams.map(t => t.id || t.name).filter(id => wins[id] === 1);
+    const losers  = teams.map(t => t.id || t.name).filter(id => wins[id] === 0);
+
+    const played = new Set(week1Matches.flatMap(m => [`${m.t1}__${m.t2}`, `${m.t2}__${m.t1}`]));
+
+    const pairGroup = (group) => {
+        for (let attempt = 0; attempt < 100; attempt++) {
+            const arr = [...group].sort(() => Math.random() - 0.5);
+            let valid = true;
+            const pairs = [];
+            for (let i = 0; i < arr.length; i += 2) {
+                if (played.has(`${arr[i]}__${arr[i+1]}`) || played.has(`${arr[i+1]}__${arr[i]}`)) { valid = false; break; }
+                pairs.push([arr[i], arr[i+1]]);
+            }
+            if (valid) return pairs;
+        }
+        // Fallback: just pair as-is
+        const arr = [...group];
+        return [[arr[0], arr[1]], [arr[2], arr[3]]];
+    };
+
+    const allPairs = [...pairGroup(winners), ...pairGroup(losers)];
+    const slots = [
+        { date: '2.1 (일)', time: '06:00' },
+        { date: '2.1 (일)', time: '09:00' },
+        { date: '2.2 (월)', time: '06:00' },
+        { date: '2.2 (월)', time: '09:00' },
+    ];
+    return slots.map((slot, i) => ({
+        ...slot,
+        t1: allPairs[i][0],
+        t2: allPairs[i][1],
+        id: `lcs_w2_${i + 1}`,
+        type: 'swiss',
+        week: 2,
+        format: 'BO3',
+        status: 'pending'
+    }));
+};
+
+// Week 3: 2-0 vs 2-0, 1-1 vs 1-1, 0-2 vs 0-2 — no repeat matchups from weeks 1+2
+export const generateLCSWeek3 = (week1Matches, week2Matches, teams) => {
+    const wins = {};
+    teams.forEach(t => { wins[t.id || t.name] = 0; });
+    [...week1Matches, ...week2Matches].forEach(m => {
+        if (m.status === 'finished' && m.result?.winner) {
+            const wName = m.result.winner;
+            wins[wName] = (wins[wName] || 0) + 1;
+        }
+    });
+
+    const allIds = teams.map(t => t.id || t.name);
+    const twoZero = allIds.filter(id => wins[id] === 2);
+    const oneOne  = allIds.filter(id => wins[id] === 1);
+    const zeroTwo = allIds.filter(id => wins[id] === 0);
+
+    const played = new Set([...week1Matches, ...week2Matches].flatMap(m => [`${m.t1}__${m.t2}`, `${m.t2}__${m.t1}`]));
+
+    const pairGroup = (group) => {
+        if (group.length < 2) return [];
+        for (let attempt = 0; attempt < 100; attempt++) {
+            const arr = [...group].sort(() => Math.random() - 0.5);
+            let valid = true;
+            const pairs = [];
+            for (let i = 0; i < arr.length; i += 2) {
+                if (played.has(`${arr[i]}__${arr[i+1]}`) || played.has(`${arr[i+1]}__${arr[i]}`)) { valid = false; break; }
+                pairs.push([arr[i], arr[i+1]]);
+            }
+            if (valid) return pairs;
+        }
+        const arr = [...group];
+        const pairs = [];
+        for (let i = 0; i < arr.length; i += 2) pairs.push([arr[i], arr[i+1]]);
+        return pairs;
+    };
+
+    const allPairs = [...pairGroup(twoZero), ...pairGroup(oneOne), ...pairGroup(zeroTwo)];
+    const slots = [
+        { date: '2.8 (일)', time: '06:00' },
+        { date: '2.8 (일)', time: '09:00' },
+        { date: '2.9 (월)', time: '06:00' },
+        { date: '2.9 (월)', time: '09:00' },
+    ];
+    return slots.map((slot, i) => ({
+        ...slot,
+        t1: allPairs[i]?.[0] || 'TBD',
+        t2: allPairs[i]?.[1] || 'TBD',
+        id: `lcs_w3_${i + 1}`,
+        type: 'swiss',
+        week: 3,
+        format: 'BO3',
+        status: 'pending'
+    }));
+};
+
+// Playin: 6th vs 7th seed, BO1, winner earns playoff seed 6
+export const generateLCSPlayin = (seeds) => {
+    const getSeedId = (s) => { const t = seeds.find(x => x.seed === s); return t ? (t.id || t.name) : null; };
+    return [{
+        id: 'lcs_playin',
+        label: '플레이인 (6위 vs 7위)',
+        t1: getSeedId(6),
+        t2: getSeedId(7),
+        date: '2.9 (월)',
+        time: '12:00',
+        type: 'playin',
+        format: 'BO1',
+        status: 'pending'
+    }];
+};
+
+// Playoffs: double-elimination style, BO5
+export const generateLCSPlayoffs = (seeds) => {
+    const getSeedId = (s) => { const t = seeds.find(x => x.seed === s); return t ? (t.id || t.name) : null; };
+
+    // Seed 1 picks opponent: 90% chance they pick seed 4 (lower/weaker)
+    const pickSeed4 = Math.random() < 0.90;
+    const s1opp = pickSeed4 ? getSeedId(4) : getSeedId(3);
+    const s2opp = pickSeed4 ? getSeedId(3) : getSeedId(4);
+
+    return [
+        { id: 'lcs_po1', label: '1라운드 승자조', t1: getSeedId(1), t2: s1opp,        date: '2.15 (일)', time: '06:00', type: 'playoff', format: 'BO5', status: 'pending' },
+        { id: 'lcs_po2', label: '1라운드 승자조', t1: getSeedId(2), t2: s2opp,        date: '2.16 (월)', time: '06:00', type: 'playoff', format: 'BO5', status: 'pending' },
+        { id: 'lcs_po3', label: '1라운드 패자조', t1: getSeedId(5), t2: null,         date: '2.21 (토)', time: '06:00', type: 'playoff', format: 'BO5', status: 'pending' },
+        { id: 'lcs_po4', label: '1라운드 패자조', t1: getSeedId(6), t2: null,         date: '2.22 (일)', time: '06:00', type: 'playoff', format: 'BO5', status: 'pending' },
+        { id: 'lcs_po5', label: '2라운드 승자조', t1: null,         t2: null,         date: '2.23 (월)', time: '06:00', type: 'playoff', format: 'BO5', status: 'pending' },
+        { id: 'lcs_po6', label: '2라운드 패자조', t1: null,         t2: null,         date: '2.28 (토)', time: '06:00', type: 'playoff', format: 'BO5', status: 'pending' },
+        { id: 'lcs_po7', label: '3라운드',        t1: null,         t2: null,         date: '3.1 (일)',  time: '06:00', type: 'playoff', format: 'BO5', status: 'pending' },
+        { id: 'lcs_po8', label: '결승전',          t1: null,         t2: null,         date: '3.2 (월)',  time: '06:00', type: 'playoff', format: 'BO5', status: 'pending' },
+    ];
+};

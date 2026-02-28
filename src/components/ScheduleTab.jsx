@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { quickSimulateMatch } from '../engine/simEngine';
 // Import CBLOL logic along with LCP
-import { generateLCPRegularSchedule, generateLCPPlayoffs, generateCBLOLRegularSchedule, generateCBLOLPlayoffs } from '../engine/scheduleLogic';
+import { generateLCPRegularSchedule, generateLCPPlayoffs, generateCBLOLRegularSchedule, generateCBLOLPlayoffs, generateLCSWeek1, generateLCSWeek2, generateLCSWeek3, generateLCSPlayin, generateLCSPlayoffs } from '../engine/scheduleLogic';
 import { FOREIGN_LEAGUES, FOREIGN_PLAYERS } from '../data/foreignLeagues';
 import { updateLeague } from '../engine/storage';
 import { championList } from '../data/constants'; 
@@ -68,7 +68,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
     const [forceRegen, setForceRegen] = useState(false);
 
     // Target League determines which sync engine is currently running (Air-gapped from LCK)
-    const targetLeague = ['LCP', 'CBLOL'].includes(displayLeague) ? displayLeague : null;
+    const targetLeague = ['LCP', 'CBLOL', 'LCS'].includes(displayLeague) ? displayLeague : null;
 
     const activeMatches = displayLeague === 'LCK' ? (league.matches || []) : (league.foreignMatches?.[displayLeague] || []);
     const pendingLCK = league.matches ? league.matches.filter(m => m.status === 'pending').sort(compareDatesObj) : [];
@@ -78,6 +78,8 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
     const checkBadData = (matches, lg) => matches.some(m => {
         // [FORCE REWRITE] If CBLOL regular matches were mistakenly saved as BO3, trigger a wipe!
         if (lg === 'CBLOL' && (m.type === 'regular' || m.type === 'super') && m.format !== 'BO1') return true;
+        // LCS: swiss matches must be BO3
+        if (lg === 'LCS' && m.type === 'swiss' && m.format !== 'BO3') return true;
 
         const t1Str = String(m.t1); const t2Str = String(m.t2);
         if (m.status === 'finished') {
@@ -101,6 +103,183 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
     useEffect(() => {
         // AIR-GAP: Never touches LCK games.
         if (!needsSync || !targetLeague) return;
+
+        // ══════════════════════════════════════════════════════
+        // LCS SWISS SYNC ENGINE (completely separate early-return)
+        // ══════════════════════════════════════════════════════
+        if (targetLeague === 'LCS') {
+            const lgTeams = FOREIGN_LEAGUES['LCS'] || [];
+            const lgPlayers = (FOREIGN_PLAYERS && FOREIGN_PLAYERS['LCS']) ? FOREIGN_PLAYERS['LCS'] : [];
+            let isUpdated = false;
+            const hasBadData = forceRegen;
+
+            const safeLeague = {
+                ...league,
+                currentChampionList: league.currentChampionList || championList,
+                metaVersion: league.metaVersion || '16.01'
+            };
+
+            const simMatch = (matchObj) => {
+                if (matchObj.status === 'finished') return matchObj;
+                if (currentPendingLCK.date !== '99.99 (완료)' && compareDatesObj(matchObj, currentPendingLCK) >= 0) return matchObj;
+                const t1Obj = findGlobalTeam(matchObj.t1, teams);
+                const t2Obj = findGlobalTeam(matchObj.t2, teams);
+                if (t1Obj.name === 'TBD' || t2Obj.name === 'TBD') return matchObj;
+                const t1 = { ...t1Obj, roster: getSafeRoster(t1Obj, lgPlayers) };
+                const t2 = { ...t2Obj, roster: getSafeRoster(t2Obj, lgPlayers) };
+                try {
+                    const simResult = quickSimulateMatch(t1, t2, matchObj.format, safeLeague.currentChampionList);
+                    isUpdated = true;
+                    let fScore = simResult.scoreString || simResult.score;
+                    let matchWinner = simResult.winner?.name || simResult.winner;
+                    let liteHistory = (simResult.history || []).map(set => ({ ...set, logs: [] }));
+                    if (matchObj.format === 'BO1') {
+                        if (liteHistory.length > 0) { liteHistory = [liteHistory[0]]; matchWinner = liteHistory[0].winner; }
+                        fScore = '1-0';
+                    } else {
+                        if (typeof fScore === 'object') fScore = `${Math.max(fScore.A ?? 0, fScore.B ?? 0)}-${Math.min(fScore.A ?? 0, fScore.B ?? 0)}`;
+                        if (!fScore) fScore = matchObj.format === 'BO5' ? '3-0' : '2-0';
+                    }
+                    return { ...matchObj, t1: t1.id || t1.name, t2: t2.id || t2.name, status: 'finished', result: { winner: matchWinner, score: fScore, history: liteHistory } };
+                } catch (e) {
+                    const reqWins = matchObj.format === 'BO5' ? 3 : matchObj.format === 'BO1' ? 1 : 2;
+                    const t1Wins = Math.random() > 0.5;
+                    isUpdated = true;
+                    return { ...matchObj, t1: t1.id || t1.name, t2: t2.id || t2.name, status: 'finished', result: { winner: t1Wins ? t1.name : t2.name, score: t1Wins ? `${reqWins}-0` : `0-${reqWins}`, history: [{ logs: [], winner: t1Wins ? t1.name : t2.name }] } };
+                }
+            };
+
+            let lcsW1 = activeMatches.filter(m => m.type === 'swiss' && m.week === 1);
+            let lcsW2 = activeMatches.filter(m => m.type === 'swiss' && m.week === 2);
+            let lcsW3 = activeMatches.filter(m => m.type === 'swiss' && m.week === 3);
+            let lcsPlayin   = activeMatches.filter(m => m.type === 'playin');
+            let lcsPlayoffs = hasBadData ? [] : activeMatches.filter(m => m.type === 'playoff');
+            let lcsSeeds    = league.foreignPlayoffSeeds?.['LCS'] || [];
+
+            // --- Week 1 ---
+            if (lcsW1.length === 0 || hasBadData) {
+                lcsW1 = generateLCSWeek1(lgTeams);
+                lcsW2 = []; lcsW3 = []; lcsPlayin = []; lcsPlayoffs = []; lcsSeeds = [];
+                isUpdated = true;
+            }
+            lcsW1 = lcsW1.map(simMatch);
+
+            // --- Week 2 (generate once week 1 is done) ---
+            if (lcsW1.every(m => m.status === 'finished')) {
+                if (lcsW2.length === 0) { lcsW2 = generateLCSWeek2(lcsW1, lgTeams); isUpdated = true; }
+                lcsW2 = lcsW2.map(simMatch);
+            }
+
+            // --- Week 3 (generate once week 2 is done) ---
+            if (lcsW2.length > 0 && lcsW2.every(m => m.status === 'finished')) {
+                if (lcsW3.length === 0) { lcsW3 = generateLCSWeek3(lcsW1, lcsW2, lgTeams); isUpdated = true; }
+                lcsW3 = lcsW3.map(simMatch);
+            }
+
+            // --- Post-Swiss: standings → playin → playoffs ---
+            if (lcsW3.length > 0 && lcsW3.every(m => m.status === 'finished')) {
+                if (lcsSeeds.length === 0 || hasBadData) {
+                    const allSwiss = [...lcsW1, ...lcsW2, ...lcsW3];
+                    const st = {};
+                    lgTeams.forEach(t => st[t.name] = { w: 0, l: 0, diff: 0, h2h: {}, defeatedOpponents: [], id: t.id || t.name, name: t.name });
+                    allSwiss.forEach(m => {
+                        if (m.status !== 'finished' || !m.result) return;
+                        const winnerName = m.result.winner;
+                        const t1Name = findGlobalTeam(m.t1, teams).name;
+                        const t2Name = findGlobalTeam(m.t2, teams).name;
+                        const loserName = winnerName === t1Name ? t2Name : t1Name;
+                        let diffValue = 0;
+                        if (m.result.score) { const p = String(m.result.score).split(/[-:]/).map(Number); if (p.length === 2 && !isNaN(p[0]) && !isNaN(p[1])) diffValue = Math.abs(p[0] - p[1]); }
+                        if (st[winnerName]) { st[winnerName].w++; st[winnerName].diff += diffValue; st[winnerName].defeatedOpponents.push(loserName); if (!st[winnerName].h2h[loserName]) st[winnerName].h2h[loserName] = { w: 0, l: 0 }; st[winnerName].h2h[loserName].w++; }
+                        if (st[loserName])  { st[loserName].l++;  st[loserName].diff -= diffValue;  if (!st[loserName].h2h[winnerName])  st[loserName].h2h[winnerName]  = { w: 0, l: 0 }; st[loserName].h2h[winnerName].l++; }
+                    });
+                    const tG = {};
+                    Object.values(st).forEach(r => { const k = `${r.w}_${r.diff}`; if (!tG[k]) tG[k] = []; tG[k].push(r.name); });
+                    const sorted = Object.values(st).sort((a, b) => {
+                        if (b.w !== a.w) return b.w - a.w;
+                        if (b.diff !== a.diff) return b.diff - a.diff;
+                        if ((tG[`${a.w}_${a.diff}`]?.length || 0) === 2) { const aW = a.h2h[b.name]?.w || 0; const bW = b.h2h[a.name]?.w || 0; if (aW !== bW) return bW - aW; }
+                        let sovA = 0, sovB = 0;
+                        a.defeatedOpponents.forEach(o => { sovA += (st[o]?.w || 0); });
+                        b.defeatedOpponents.forEach(o => { sovB += (st[o]?.w || 0); });
+                        return sovB - sovA;
+                    });
+                    lcsSeeds = sorted.map((t, idx) => ({ ...t, seed: idx + 1 }));
+                    isUpdated = true;
+                }
+
+                // Playin: 6th vs 7th
+                if (lcsPlayin.length === 0 || hasBadData) { lcsPlayin = generateLCSPlayin(lcsSeeds); isUpdated = true; }
+                lcsPlayin = lcsPlayin.map(simMatch);
+
+                // Playin winner overrides seed 6
+                const playinMatch = lcsPlayin.find(m => m.id === 'lcs_playin');
+                if (playinMatch?.status === 'finished' && playinMatch.result?.winner) {
+                    const playinWinnerName = findGlobalTeam(playinMatch.result.winner, teams).name;
+                    lcsSeeds = lcsSeeds.map(s => s.seed === 6 ? { ...s, id: playinMatch.result.winner, name: playinWinnerName } : s);
+                    isUpdated = true;
+                }
+
+                // Playoffs
+                if ((lcsPlayoffs.length === 0 || hasBadData) && lcsPlayin.every(m => m.status === 'finished')) {
+                    lcsPlayoffs = generateLCSPlayoffs(lcsSeeds);
+                    isUpdated = true;
+                }
+
+                const simPo = (id) => {
+                    const matchObj = lcsPlayoffs.find(m => m.id === id);
+                    if (!matchObj || !matchObj.t1 || !matchObj.t2 || matchObj.t1 === 'TBD' || matchObj.t2 === 'TBD') return { winnerId: null, loserId: null };
+                    if (matchObj.status === 'finished') { const wId = findGlobalTeam(matchObj.result.winner, teams).name; return { winnerId: wId, loserId: wId === findGlobalTeam(matchObj.t1, teams).name ? matchObj.t2 : matchObj.t1 }; }
+                    if (currentPendingLCK.date !== '99.99 (완료)' && compareDatesObj(matchObj, currentPendingLCK) >= 0) return { winnerId: null, loserId: null };
+                    const simmed = simMatch(matchObj);
+                    Object.assign(matchObj, simmed);
+                    isUpdated = true;
+                    if (simmed.status === 'finished') { const wId = findGlobalTeam(simmed.result.winner, teams).name; return { winnerId: wId, loserId: wId === findGlobalTeam(matchObj.t1, teams).name ? matchObj.t2 : matchObj.t1 }; }
+                    return { winnerId: null, loserId: null };
+                };
+
+                const ub1 = simPo('lcs_po1');
+                const ub2 = simPo('lcs_po2');
+
+                const lb1M = lcsPlayoffs.find(m => m.id === 'lcs_po3');
+                if (lb1M && ub1.loserId && !lb1M.t2) { lb1M.t2 = ub1.loserId; isUpdated = true; }
+                const lb1 = simPo('lcs_po3');
+
+                const lb2M = lcsPlayoffs.find(m => m.id === 'lcs_po4');
+                if (lb2M && ub2.loserId && !lb2M.t2) { lb2M.t2 = ub2.loserId; isUpdated = true; }
+                const lb2 = simPo('lcs_po4');
+
+                const ub2M = lcsPlayoffs.find(m => m.id === 'lcs_po5');
+                if (ub2M && ub1.winnerId && ub2.winnerId) { ub2M.t1 = ub1.winnerId; ub2M.t2 = ub2.winnerId; }
+                const ub2r = simPo('lcs_po5');
+
+                const lb2rM = lcsPlayoffs.find(m => m.id === 'lcs_po6');
+                if (lb2rM && lb1.winnerId && lb2.winnerId) { lb2rM.t1 = lb1.winnerId; lb2rM.t2 = lb2.winnerId; }
+                const lb2r = simPo('lcs_po6');
+
+                const r3M = lcsPlayoffs.find(m => m.id === 'lcs_po7');
+                if (r3M && ub2r.loserId && lb2r.winnerId) { r3M.t1 = ub2r.loserId; r3M.t2 = lb2r.winnerId; }
+                const r3 = simPo('lcs_po7');
+
+                const finalM = lcsPlayoffs.find(m => m.id === 'lcs_po8');
+                if (finalM && ub2r.winnerId && r3.winnerId) { finalM.t1 = ub2r.winnerId; finalM.t2 = r3.winnerId; }
+                simPo('lcs_po8');
+            }
+
+            if (isUpdated) {
+                const fullLCS = [...lcsW1, ...lcsW2, ...lcsW3, ...lcsPlayin, ...lcsPlayoffs];
+                const updatedLeague = { ...league };
+                if (!updatedLeague.foreignMatches) updatedLeague.foreignMatches = {};
+                updatedLeague.foreignMatches['LCS'] = fullLCS;
+                updatedLeague.foreignPlayoffSeeds = updatedLeague.foreignPlayoffSeeds || {};
+                updatedLeague.foreignPlayoffSeeds['LCS'] = lcsSeeds;
+                updateLeague(league.id, updatedLeague);
+                if (setLeague) setLeague(updatedLeague);
+                if (forceRegen) setForceRegen(false);
+            }
+            return; // LCS handled — do not fall through to LCP/CBLOL engine
+        }
+
 
         const lgTeams = FOREIGN_LEAGUES[targetLeague] || [];
         const lgPlayers = (FOREIGN_PLAYERS && FOREIGN_PLAYERS[targetLeague]) ? FOREIGN_PLAYERS[targetLeague] : [];
@@ -487,7 +666,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 )}
             </div>
             
-            {['LCK', 'LCP', 'CBLOL'].includes(displayLeague) ? (
+            {['LCK', 'LCP', 'CBLOL', 'LCS'].includes(displayLeague) ? (
                 activeMatches.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 pb-4">
                         {activeMatches
