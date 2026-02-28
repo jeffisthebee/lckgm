@@ -338,12 +338,25 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 }
                 const pi3 = simPlayoffMatch('cblol_pi3');
 
+                // After playin resolves: pi2 winner = playoff seed 5, pi3 winner = playoff seed 6
+                if (pi2.winnerId && pi3.winnerId) {
+                    const pi2WinnerName = findGlobalTeam(pi2.winnerId, teams).name;
+                    const pi3WinnerName = findGlobalTeam(pi3.winnerId, teams).name;
+                    seeds = seeds.map(s => {
+                        if (s.seed === 5) return { ...s, id: pi2.winnerId, name: pi2WinnerName };
+                        if (s.seed === 6) return { ...s, id: pi3.winnerId, name: pi3WinnerName };
+                        return s;
+                    });
+                    isUpdated = true;
+                }
+
                 const po1Match = playoffs.find(m => m.id === 'cblol_po1');
                 const po2Match = playoffs.find(m => m.id === 'cblol_po2');
                 if (pi2.winnerId && pi3.winnerId && po1Match && !po1Match.t2) {
+                    // seed 3 picks opponent: 90% chance they face seed 6 (pi3 winner = weaker qualifier)
                     let pickSeed6 = Math.random() < 0.90;
-                    po1Match.t2 = pickSeed6 ? pi3.winnerId : pi2.winnerId;
-                    po2Match.t2 = pickSeed6 ? pi2.winnerId : pi3.winnerId;
+                    po1Match.t2 = pickSeed6 ? pi3.winnerId : pi2.winnerId; // seed 3 vs chosen opponent
+                    po2Match.t2 = pickSeed6 ? pi2.winnerId : pi3.winnerId; // seed 4 vs the other
                     isUpdated = true;
                 }
                 const po1 = simPlayoffMatch('cblol_po1');
