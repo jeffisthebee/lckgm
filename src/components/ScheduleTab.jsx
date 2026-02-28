@@ -154,6 +154,13 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                     }
                 }
 
+                // [THE FIX] "Lite History" Compression
+                // Keeps the KDA and POG stats for the Awards/Stats tabs, but deletes the heavy text logs!
+                const liteHistory = (simResult.history || []).map(set => ({
+                    ...set,
+                    logs: [] // Empties the massive text array to prevent 5MB crashes!
+                }));
+
                 return {
                     ...matchObj,
                     t1: t1.id || t1.name, 
@@ -162,7 +169,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                     result: { 
                         winner: simResult.winner?.name || simResult.winner, 
                         score: fScore, 
-                        history: [] // Memory Saver: Deletes huge logs for background foreign games
+                        history: liteHistory 
                     }
                 };
             } catch (e) {
