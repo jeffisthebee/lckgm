@@ -129,7 +129,7 @@ export const TEAM_COLORS = {
   'DFM': '#2979ff', 'SHG': '#ffeb3b', 'DCG': '#c62828', 'GZ': '#e53935',
 
   // CBLOL
-  'VKS': '#673ab7', 'RED': '#d50000', 'PAIN': '#212121', 'LOUD': '#00e676', 
+  'VKS': '#673ab7', 'RED': '#d50000', 'PAIN': '#e30613', 'LOUD': '#00e676', 
   'FUR': '#000000', 'LEV': '#1976d2', 'LOS': '#ff5722', 'FX': '#37474f',
 
   // Fallback
