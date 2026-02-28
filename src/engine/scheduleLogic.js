@@ -224,10 +224,6 @@ export const generateSchedule = (baronIds, elderIds) => {
 // [NEW] GLOBAL LEAGUES SCHEDULE LOGIC
 // ==========================================
 
-// ==========================================
-// [NEW] GLOBAL LEAGUES SCHEDULE LOGIC
-// ==========================================
-
 export const generateLCPRegularSchedule = (teams) => {
     let pairs = [];
     // Create single round-robin (8 teams = 28 games)
@@ -313,5 +309,101 @@ export const generateLCPPlayoffs = (seeds) => {
         { round: 2.1, match: 1, label: '패자조 2R', t1: null, t2: null, date: '2.27 (금)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lcp_po6' },
         { round: 3.1, match: 1, label: '결승 진출전', t1: null, t2: null, date: '2.28 (토)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lcp_po7' },
         { round: 4, match: 1, label: '결승전', t1: null, t2: null, date: '3.1 (일)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lcp_po8' }
+    ];
+};
+
+// ==========================================
+// [NEW] CBLOL SCHEDULE LOGIC
+// ==========================================
+
+export const generateCBLOLRegularSchedule = (teams) => {
+    const getID = (t) => t.id || t.name;
+    let teamIds = teams.map(getID);
+    
+    // Shuffle teams to randomize matchups
+    teamIds = teamIds.sort(() => Math.random() - 0.5);
+
+    // Generate 7 perfect Round-Robin rounds (4 games per round = 28 games total)
+    const rounds = [];
+    const n = teamIds.length; 
+    let pool = [...teamIds];
+
+    for (let r = 0; r < n - 1; r++) {
+        const currentRound = [];
+        for (let i = 0; i < n / 2; i++) {
+            currentRound.push({ t1: pool[i], t2: pool[n - 1 - i] });
+        }
+        rounds.push(currentRound);
+        // Rotate all teams except the first one
+        pool = [pool[0], pool[n - 1], ...pool.slice(1, n - 1)];
+    }
+
+    // Flatten into 28 sequential matches
+    const allMatches = rounds.flat();
+
+    // Map exact dates and times per your requirements (BO1s)
+    const slots = [
+        // Week 1 (5 games/day)
+        { date: '1.18 (일)', time: '01:00' }, { date: '1.18 (일)', time: '02:00' }, { date: '1.18 (일)', time: '03:00' }, { date: '1.18 (일)', time: '04:00' }, { date: '1.18 (일)', time: '05:00' },
+        // Week 2 (5 games/day)
+        { date: '1.19 (월)', time: '01:00' }, { date: '1.19 (월)', time: '02:00' }, { date: '1.19 (월)', time: '03:00' }, { date: '1.19 (월)', time: '04:00' }, { date: '1.19 (월)', time: '05:00' },
+        { date: '1.25 (일)', time: '01:00' }, { date: '1.25 (일)', time: '02:00' }, { date: '1.25 (일)', time: '03:00' }, { date: '1.25 (일)', time: '04:00' }, { date: '1.25 (일)', time: '05:00' },
+        { date: '1.26 (월)', time: '01:00' }, { date: '1.26 (월)', time: '02:00' }, { date: '1.26 (월)', time: '03:00' }, { date: '1.26 (월)', time: '04:00' }, { date: '1.26 (월)', time: '05:00' },
+        // Week 3 (4 games/day)
+        { date: '2.1 (일)', time: '01:00' }, { date: '2.1 (일)', time: '02:00' }, { date: '2.1 (일)', time: '03:00' }, { date: '2.1 (일)', time: '04:00' },
+        { date: '2.2 (월)', time: '01:00' }, { date: '2.2 (월)', time: '02:00' }, { date: '2.2 (월)', time: '03:00' }, { date: '2.2 (월)', time: '04:00' }
+    ];
+    
+    let schedule = [];
+    for (let i = 0; i < 28; i++) {
+        // Randomize Blue/Red Side
+        const coin = Math.random() < 0.5;
+        schedule.push({
+            date: slots[i].date,
+            time: slots[i].time,
+            t1: coin ? allMatches[i].t1 : allMatches[i].t2,
+            t2: coin ? allMatches[i].t2 : allMatches[i].t1,
+            id: 'cblol_' + Date.now() + i,
+            type: 'regular',
+            format: 'BO1',
+            status: 'pending'
+        });
+    }
+    
+    return schedule;
+};
+
+export const generateCBLOLPlayoffs = (seeds) => {
+    const getSeedId = (s) => {
+        const team = seeds.find(x => x.seed === s);
+        return team ? (team.id || team.name) : null;
+    };
+
+    return [
+        // --- PLAY-IN STAGE (Strictly 'playin' type so it avoids playoff stats) ---
+        { round: 1, match: 1, label: '플레이인 G1', t1: getSeedId(7), t2: getSeedId(8), date: '2.3 (화)', time: '01:00', type: 'playin', format: 'BO3', status: 'pending', id: 'cblol_pi1' },
+        { round: 1, match: 2, label: '플레이인 G2', t1: getSeedId(5), t2: getSeedId(6), date: '2.3 (화)', time: '04:00', type: 'playin', format: 'BO3', status: 'pending', id: 'cblol_pi2' },
+        { round: 2, match: 1, label: '플레이인 최종', t1: null, t2: null, date: '2.4 (수)', time: '06:00', type: 'playin', format: 'BO3', status: 'pending', id: 'cblol_pi3' },
+
+        // --- UPPER BRACKET (Type 'playoff') ---
+        { round: 1, match: 1, label: '승자조 1R', t1: getSeedId(3), t2: null, date: '2.8 (일)', time: '01:00', type: 'playoff', format: 'BO3', status: 'pending', id: 'cblol_po1' },
+        { round: 1, match: 2, label: '승자조 1R', t1: getSeedId(4), t2: null, date: '2.8 (일)', time: '04:00', type: 'playoff', format: 'BO3', status: 'pending', id: 'cblol_po2' },
+
+        { round: 2, match: 1, label: '승자조 2R', t1: getSeedId(1), t2: null, date: '2.9 (월)', time: '01:00', type: 'playoff', format: 'BO3', status: 'pending', id: 'cblol_po3' },
+        { round: 2, match: 2, label: '승자조 2R', t1: getSeedId(2), t2: null, date: '2.9 (월)', time: '04:00', type: 'playoff', format: 'BO3', status: 'pending', id: 'cblol_po4' },
+
+        { round: 3, match: 1, label: '승자조 결승', t1: null, t2: null, date: '2.22 (일)', time: '01:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'cblol_po5' },
+
+        // --- LOWER BRACKET (Type 'playoff') ---
+        { round: 1.1, match: 1, label: '패자조 1R', t1: null, t2: null, date: '2.15 (일)', time: '01:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'cblol_po6' },
+        
+        { round: 2.1, match: 1, label: '패자조 2R', t1: null, t2: null, date: '2.16 (월)', time: '01:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'cblol_po7' },
+        
+        { round: 3.1, match: 1, label: '패자조 3R', t1: null, t2: null, date: '2.23 (월)', time: '01:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'cblol_po8' },
+        
+        { round: 4, match: 1, label: '결승 진출전', t1: null, t2: null, date: '3.1 (일)', time: '01:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'cblol_po9' },
+
+        // --- GRAND FINAL (Type 'playoff') ---
+        { round: 5, match: 1, label: '결승전', t1: null, t2: null, date: '3.2 (월)', time: '01:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'cblol_po10' }
     ];
 };
