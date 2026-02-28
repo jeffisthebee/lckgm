@@ -129,13 +129,19 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 isUpdated = true;
                 
                 let fScore = simResult.scoreString || simResult.score;
-                if (typeof fScore === 'object') {
-                    fScore = `${Math.max(fScore.A ?? 0, fScore.B ?? 0)}-${Math.min(fScore.A ?? 0, fScore.B ?? 0)}`;
-                }
-                if (!fScore) {
-                    const isBO1 = matchObj.format === 'BO1';
-                    const isBO5 = matchObj.format === 'BO5' || matchObj.type === 'playoff';
-                    fScore = `${isBO5 ? 3 : (isBO1 ? 1 : 2)}-0`;
+                
+                // [FIX 2] STRICT BO1 OVERRIDE FOR CBLOL!
+                // Forces the engine to recognize a BO1 format and display '1-0'
+                if (matchObj.format === 'BO1') {
+                    fScore = '1-0';
+                } else {
+                    if (typeof fScore === 'object') {
+                        fScore = `${Math.max(fScore.A ?? 0, fScore.B ?? 0)}-${Math.min(fScore.A ?? 0, fScore.B ?? 0)}`;
+                    }
+                    if (!fScore) {
+                        const isBO5 = matchObj.format === 'BO5' || matchObj.type === 'playoff';
+                        fScore = `${isBO5 ? 3 : 2}-0`;
+                    }
                 }
 
                 return {
@@ -143,7 +149,12 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                     t1: t1.id || t1.name, 
                     t2: t2.id || t2.name,
                     status: 'finished',
-                    result: { winner: simResult.winner?.name || simResult.winner, score: fScore, history: simResult.history || [] }
+                    result: { 
+                        winner: simResult.winner?.name || simResult.winner, 
+                        score: fScore, 
+                        // [FIX 1] MEMORY SAVER: Delete massive background text logs to bypass the 5MB limit!
+                        history: [] 
+                    }
                 };
             } catch (e) {
                 console.error("Engine Crash Blocked:", e);
@@ -152,6 +163,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 const reqWins = isBO5 ? 3 : (isBO1 ? 1 : 2);
                 const t1Wins = Math.random() > 0.5;
                 isUpdated = true;
+                
                 return {
                     ...matchObj,
                     t1: t1.id || t1.name, 
@@ -160,7 +172,8 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                     result: {
                         winner: t1Wins ? t1.name : t2.name,
                         score: t1Wins ? `${reqWins}-0` : `0-${reqWins}`,
-                        history: [{ logs: ['데이터 오류 복구됨'], picks: { A: [], B: [] }, bans: { A: [], B: [] } }] 
+                        // [FIX 1] MEMORY SAVER
+                        history: [] 
                     }
                 };
             }
