@@ -1,7 +1,7 @@
 // src/components/ScheduleTab.jsx
 import React, { useState, useEffect } from 'react';
 import { quickSimulateMatch } from '../engine/simEngine';
-// [NEW] Added CBLOL Generators!
+// Import CBLOL logic along with LCP
 import { generateLCPRegularSchedule, generateLCPPlayoffs, generateCBLOLRegularSchedule, generateCBLOLPlayoffs } from '../engine/scheduleLogic';
 import { FOREIGN_LEAGUES, FOREIGN_PLAYERS } from '../data/foreignLeagues';
 import { updateLeague } from '../engine/storage';
@@ -64,17 +64,20 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
     const [currentLeague, setCurrentLeague] = useState('LCK');
     const displayLeague = activeTab === 'team_schedule' ? 'LCK' : currentLeague;
 
-    // [THE FIX] targetLeague determines which sync engine is currently running!
-    // [THE FIX] targetLeague determines which sync engine is currently running!
+    // Manual Override State
+    const [forceRegen, setForceRegen] = useState(false);
+
+    // Target League determines which sync engine is currently running (Air-gapped from LCK)
     const targetLeague = ['LCP', 'CBLOL'].includes(displayLeague) ? displayLeague : null;
 
     const activeMatches = displayLeague === 'LCK' ? (league.matches || []) : (league.foreignMatches?.[displayLeague] || []);
     const pendingLCK = league.matches ? league.matches.filter(m => m.status === 'pending').sort(compareDatesObj) : [];
     const currentPendingLCK = pendingLCK.length > 0 ? pendingLCK[0] : { date: '99.99 (완료)', time: '23:59' };
     
-    const hasBadDataCheck = (matches) => matches.some(m => {
-        // [FIX 1] Force rewrite if CBLOL regular matches are mistakenly saved as BO3!
-        if (targetLeague === 'CBLOL' && m.type === 'regular' && m.format !== 'BO1') return true;
+    // Scrubber: Identifies Corrupted Games
+    const checkBadData = (matches, lg) => matches.some(m => {
+        // [FORCE REWRITE] If CBLOL regular matches were mistakenly saved as BO3, trigger a wipe!
+        if (lg === 'CBLOL' && (m.type === 'regular' || m.type === 'super') && m.format !== 'BO1') return true;
 
         const t1Str = String(m.t1); const t2Str = String(m.t2);
         if (m.status === 'finished') {
@@ -87,28 +90,13 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
     });
 
     const needsSync = targetLeague && (
+        forceRegen ||
         activeMatches.length === 0 || 
         activeMatches.some(m => m.status === 'pending' && currentPendingLCK.date !== '99.99 (완료)' && compareDatesObj(m, currentPendingLCK) < 0) ||
         (currentPendingLCK.date === '99.99 (완료)' && activeMatches.some(m => m.status === 'pending')) ||
-        hasBadDataCheck(activeMatches)
+        checkBadData(activeMatches, targetLeague)
     );
 
-    useEffect(() => {
-        if (displayLeague === 'LCK' && league.matches) {
-            const hasCorruptedFormat = league.matches.some(m => m.type !== 'playoff' && m.format === 'BO1');
-            if (hasCorruptedFormat) {
-                console.log("[Auto-Heal] Restoring LCK formats to BO3/BO5...");
-                const healedMatches = league.matches.map(m => {
-                    if (m.type === 'super') return { ...m, format: 'BO5' };
-                    if (m.type === 'regular') return { ...m, format: 'BO3' };
-                    return m;
-                });
-                const updatedLeague = { ...league, matches: healedMatches };
-                updateLeague(league.id, updatedLeague);
-                if (setLeague) setLeague(updatedLeague);
-            }
-        }
-    }, [displayLeague, league, setLeague]);  
     // --- DUAL-CORE AUTO-SYNC ENGINE ---
     useEffect(() => {
         if (!needsSync || !targetLeague) return;
@@ -118,12 +106,12 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
         let isUpdated = false;
 
         let schedule = activeMatches.filter(m => m.type === 'regular' || m.type === 'super');
-        const hasBadData = hasBadDataCheck(activeMatches);
+        const hasBadData = forceRegen || checkBadData(activeMatches, targetLeague);
         
         if (schedule.length === 0 || hasBadData) {
             console.log(`[Auto-Sync] Regenerating flawless ${targetLeague} schedule...`);
             if (targetLeague === 'LCP') schedule = generateLCPRegularSchedule(lgTeams);
-            else if (targetLeague === 'CBLOL') schedule = generateCBLOLRegularSchedule(lgTeams);
+            else if (targetLeague === 'CBLOL') schedule = generateCBLOLRegularSchedule(lgTeams); // Generates BO1s
             isUpdated = true;
         }
 
@@ -149,13 +137,17 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 isUpdated = true;
                 
                 let fScore = simResult.scoreString || simResult.score;
-                if (typeof fScore === 'object') {
-                    fScore = `${Math.max(fScore.A ?? 0, fScore.B ?? 0)}-${Math.min(fScore.A ?? 0, fScore.B ?? 0)}`;
-                }
-                if (!fScore) {
-                    const isBO1 = matchObj.format === 'BO1';
-                    const isBO5 = matchObj.format === 'BO5' || matchObj.type === 'playoff';
-                    fScore = `${isBO5 ? 3 : (isBO1 ? 1 : 2)}-0`;
+                
+                if (matchObj.format === 'BO1') {
+                    fScore = '1-0';
+                } else {
+                    if (typeof fScore === 'object') {
+                        fScore = `${Math.max(fScore.A ?? 0, fScore.B ?? 0)}-${Math.min(fScore.A ?? 0, fScore.B ?? 0)}`;
+                    }
+                    if (!fScore) {
+                        const isBO5 = matchObj.format === 'BO5' || matchObj.type === 'playoff';
+                        fScore = `${isBO5 ? 3 : 2}-0`;
+                    }
                 }
 
                 return {
@@ -163,7 +155,11 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                     t1: t1.id || t1.name, 
                     t2: t2.id || t2.name,
                     status: 'finished',
-                    result: { winner: simResult.winner?.name || simResult.winner, score: fScore, history: simResult.history || [] }
+                    result: { 
+                        winner: simResult.winner?.name || simResult.winner, 
+                        score: fScore, 
+                        history: [] // Memory Saver: Deletes huge logs for background foreign games
+                    }
                 };
             } catch (e) {
                 console.error("Engine Crash Blocked:", e);
@@ -172,6 +168,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 const reqWins = isBO5 ? 3 : (isBO1 ? 1 : 2);
                 const t1Wins = Math.random() > 0.5;
                 isUpdated = true;
+                
                 return {
                     ...matchObj,
                     t1: t1.id || t1.name, 
@@ -180,7 +177,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                     result: {
                         winner: t1Wins ? t1.name : t2.name,
                         score: t1Wins ? `${reqWins}-0` : `0-${reqWins}`,
-                        history: [{ logs: ['데이터 오류 복구됨'], picks: { A: [], B: [] }, bans: { A: [], B: [] } }] 
+                        history: [] 
                     }
                 };
             }
@@ -205,9 +202,9 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                         if (standings[loserName]) standings[loserName].l += 1;
                     }
                 });
-                seeds = Object.values(standings).sort((a,b) => b.w - a.w);
-                if (targetLeague === 'LCP') seeds = seeds.slice(0, 6).map((t, idx) => ({ ...t, seed: idx + 1 }));
-                else if (targetLeague === 'CBLOL') seeds = seeds.slice(0, 8).map((t, idx) => ({ ...t, seed: idx + 1 }));
+                const sorted = Object.values(standings).sort((a,b) => b.w - a.w);
+                if (targetLeague === 'LCP') seeds = sorted.slice(0, 6).map((t, idx) => ({ ...t, seed: idx + 1 }));
+                else if (targetLeague === 'CBLOL') seeds = sorted.slice(0, 8).map((t, idx) => ({ ...t, seed: idx + 1 }));
                 isUpdated = true;
             }
 
@@ -264,22 +261,19 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 simPlayoffMatch('lcp_po8');
 
             } else if (targetLeague === 'CBLOL') {
-                // --- 1. PLAY-INS ---
-                const pi1 = simPlayoffMatch('cblol_pi1'); // 7 vs 8 (Loser Out)
-                const pi2 = simPlayoffMatch('cblol_pi2'); // 5 vs 6 (Winner becomes Seed 5)
+                const pi1 = simPlayoffMatch('cblol_pi1');
+                const pi2 = simPlayoffMatch('cblol_pi2');
 
                 const pi3Match = playoffs.find(m => m.id === 'cblol_pi3');
                 if (pi3Match && pi1.winnerId && pi2.loserId) { 
                     pi3Match.t1 = pi1.winnerId; 
                     pi3Match.t2 = pi2.loserId; 
                 }
-                const pi3 = simPlayoffMatch('cblol_pi3'); // Winner becomes Seed 6
+                const pi3 = simPlayoffMatch('cblol_pi3');
 
-                // --- 2. UPPER BRACKET R1 ---
                 const po1Match = playoffs.find(m => m.id === 'cblol_po1');
                 const po2Match = playoffs.find(m => m.id === 'cblol_po2');
                 if (pi2.winnerId && pi3.winnerId && po1Match && !po1Match.t2) {
-                    // Seed 3 (po1.t1) chooses. 90% chance to pick the lower (Seed 6 = pi3.winner)
                     let pickSeed6 = Math.random() < 0.90;
                     po1Match.t2 = pickSeed6 ? pi3.winnerId : pi2.winnerId;
                     po2Match.t2 = pickSeed6 ? pi2.winnerId : pi3.winnerId;
@@ -288,11 +282,9 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 const po1 = simPlayoffMatch('cblol_po1');
                 const po2 = simPlayoffMatch('cblol_po2');
 
-                // --- 3. UPPER BRACKET R2 ---
                 const po3Match = playoffs.find(m => m.id === 'cblol_po3');
                 const po4Match = playoffs.find(m => m.id === 'cblol_po4');
                 if (po1.winnerId && po2.winnerId && po3Match && !po3Match.t2) {
-                    // Seed 1 (po3.t1) chooses. 90% chance to pick the lower original seed
                     const seedA = seeds.find(s => s.id === po1.winnerId || s.name === po1.winnerId)?.seed || 99;
                     const seedB = seeds.find(s => s.id === po2.winnerId || s.name === po2.winnerId)?.seed || 99;
                     const lowerSeedTeam = seedA > seedB ? po1.winnerId : po2.winnerId;
@@ -305,7 +297,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 const po3 = simPlayoffMatch('cblol_po3');
                 const po4 = simPlayoffMatch('cblol_po4');
 
-                // --- 4. UPPER FINAL ---
                 const po5Match = playoffs.find(m => m.id === 'cblol_po5');
                 if (po5Match && po3.winnerId && po4.winnerId) { 
                     po5Match.t1 = po3.winnerId; 
@@ -313,7 +304,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 }
                 const po5 = simPlayoffMatch('cblol_po5'); 
 
-                // --- 5. LOWER R1 ---
                 const po6Match = playoffs.find(m => m.id === 'cblol_po6');
                 if (po6Match && po1.loserId && po2.loserId) { 
                     po6Match.t1 = po1.loserId; 
@@ -321,10 +311,8 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 }
                 const po6 = simPlayoffMatch('cblol_po6');
 
-                // --- 6. LOWER R2 ---
                 const po7Match = playoffs.find(m => m.id === 'cblol_po7');
                 if (po7Match && po6.winnerId && po3.loserId && po4.loserId && !po7Match.t2) {
-                    // vs lower seed of Upper R2 losers
                     const seedL3 = seeds.find(s => s.id === po3.loserId || s.name === po3.loserId)?.seed || 99;
                     const seedL4 = seeds.find(s => s.id === po4.loserId || s.name === po4.loserId)?.seed || 99;
                     const lowerSeedLoser = seedL3 > seedL4 ? po3.loserId : po4.loserId;
@@ -334,10 +322,8 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 }
                 const po7 = simPlayoffMatch('cblol_po7');
 
-                // --- 7. LOWER R3 ---
                 const po8Match = playoffs.find(m => m.id === 'cblol_po8');
                 if (po8Match && po7.winnerId && po3.loserId && po4.loserId && !po8Match.t2) {
-                    // vs higher seed of Upper R2 losers
                     const seedL3 = seeds.find(s => s.id === po3.loserId || s.name === po3.loserId)?.seed || 99;
                     const seedL4 = seeds.find(s => s.id === po4.loserId || s.name === po4.loserId)?.seed || 99;
                     const higherSeedLoser = seedL3 < seedL4 ? po3.loserId : po4.loserId;
@@ -347,7 +333,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 }
                 const po8 = simPlayoffMatch('cblol_po8');
 
-                // --- 8. LOWER FINAL ---
                 const po9Match = playoffs.find(m => m.id === 'cblol_po9');
                 if (po9Match && po8.winnerId && po5.loserId) { 
                     po9Match.t1 = po8.winnerId; 
@@ -355,7 +340,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 }
                 const po9 = simPlayoffMatch('cblol_po9');
 
-                // --- 9. GRAND FINAL ---
                 const po10Match = playoffs.find(m => m.id === 'cblol_po10');
                 if (po10Match && po5.winnerId && po9.winnerId) { 
                     po10Match.t1 = po5.winnerId; 
@@ -365,17 +349,22 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
             }
         }
 
+        // ONLY save foreignMatches. LCK matches are completely untouched!
         if (isUpdated) {
+            const fullSchedule = [...schedule, ...playoffs];
             const updatedLeague = { ...league };
             if (!updatedLeague.foreignMatches) updatedLeague.foreignMatches = { LPL: [], LEC: [], LCS: [], LCP: [], CBLOL: [] };
-            updatedLeague.foreignMatches[targetLeague] = [...schedule, ...playoffs];
+            
+            updatedLeague.foreignMatches[targetLeague] = fullSchedule;
             updatedLeague.foreignPlayoffSeeds = updatedLeague.foreignPlayoffSeeds || {};
             updatedLeague.foreignPlayoffSeeds[targetLeague] = seeds;
 
             updateLeague(league.id, updatedLeague);
-            if (setLeague) setLeague(updatedLeague); else window.location.reload(); 
+            if (setLeague) setLeague(updatedLeague);
+            
+            if (forceRegen) setForceRegen(false);
         }
-    }, [needsSync, currentPendingLCK, targetLeague, activeMatches, league, setLeague, teams]);
+    }, [needsSync, currentPendingLCK, targetLeague, activeMatches, league, setLeague, teams, forceRegen]);
 
     return (
         <div className="bg-white rounded-lg border shadow-sm p-4 lg:p-8 min-h-[300px] lg:min-h-[600px] flex flex-col h-full lg:h-auto overflow-y-auto relative">
@@ -383,7 +372,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
             {needsSync && (
                 <div className="absolute inset-0 bg-white/80 z-50 flex flex-col items-center justify-center backdrop-blur-sm">
                     <div className="text-4xl animate-spin mb-4">⏳</div>
-                    <div className="text-lg font-black text-blue-600 animate-pulse">{targetLeague} 데이터를 동기화 중입니다...</div>
+                    <div className="text-lg font-black text-blue-600 animate-pulse">{targetLeague} 데이터를 복구 및 동기화 중입니다...</div>
                 </div>
             )}
 
@@ -407,9 +396,17 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 <h2 className="text-lg lg:text-2xl font-black text-gray-900 flex items-center gap-2">
                     📅 {activeTab === 'team_schedule' ? `${myTeam.name} 경기 일정` : `2026 ${displayLeague} 전체 일정`}
                 </h2>
+                {/* [MANUAL OVERRIDE BUTTON] visible only on foreign leagues to clear bad save data */}
+                {targetLeague && (
+                    <button 
+                        onClick={() => setForceRegen(true)}
+                        className="text-xs bg-red-100 text-red-600 hover:bg-red-200 px-3 py-1.5 rounded-md font-bold shadow-sm transition-all"
+                    >
+                        🔄 일정 재생성 (오류 수정)
+                    </button>
+                )}
             </div>
             
-            {/* [THE FIX] Added CBLOL to the allowed grid render list */}
             {['LCK', 'LCP', 'CBLOL'].includes(displayLeague) ? (
                 activeMatches.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 pb-4">
@@ -431,6 +428,9 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                                 else if (m.type === 'playin') { badgeColor = 'text-indigo-600'; badgeText = m.label || '플레이-인'; }
                                 else if (m.type === 'playoff') { badgeColor = 'text-yellow-600'; badgeText = m.label || '플레이오프'; }
 
+                                // [SAFE UI RENDERING] Respects LCK BO3/BO5 completely, uses 1-0 only for BO1s.
+                                const expectedFallbackScore = m.format === 'BO1' ? '1-0' : (m.format === 'BO5' ? '3-0' : '2-0');
+
                                 return (
                                     <div key={i} className={`p-3 lg:p-4 rounded-lg border flex flex-col gap-1 lg:gap-2 ${isMyMatch && displayLeague === 'LCK' ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-200' : 'bg-white border-gray-200'}`}>
                                         <div className="flex justify-between text-[10px] lg:text-xs font-bold text-gray-500">
@@ -446,8 +446,8 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                                             {isFinished ? (
                                                 <div className="flex flex-col items-center">
                                                     <span className="text-lg lg:text-xl text-gray-800">
-    {m.result?.score || (m.format === 'BO1' ? '1-0' : (m.format === 'BO5' ? '3-0' : '2-0'))} </span>
-
+                                                        {m.result?.score || expectedFallbackScore}
+                                                    </span>
                                                     <button 
                                                         onClick={() => onMatchClick && onMatchClick(m)}
                                                         className="mt-1 text-[9px] lg:text-[10px] bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 px-1.5 lg:px-2 py-0.5 rounded transition flex items-center gap-1 whitespace-nowrap"
