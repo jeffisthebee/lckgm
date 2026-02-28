@@ -1,6 +1,7 @@
 // src/components/ScheduleTab.jsx
 import React, { useState, useEffect } from 'react';
 import { quickSimulateMatch } from '../engine/simEngine';
+// Import CBLOL logic along with LCP
 import { generateLCPRegularSchedule, generateLCPPlayoffs, generateCBLOLRegularSchedule, generateCBLOLPlayoffs } from '../engine/scheduleLogic';
 import { FOREIGN_LEAGUES, FOREIGN_PLAYERS } from '../data/foreignLeagues';
 import { updateLeague } from '../engine/storage';
@@ -62,9 +63,11 @@ const getSafeRoster = (teamObj, allPlayers) => {
 const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, formatTeamName, onMatchClick }) => {
     const [currentLeague, setCurrentLeague] = useState('LCK');
     const displayLeague = activeTab === 'team_schedule' ? 'LCK' : currentLeague;
+
+    // Manual Override State
     const [forceRegen, setForceRegen] = useState(false);
 
-    // Target League ensures this engine ONLY manipulates foreign games.
+    // Target League determines which sync engine is currently running (Air-gapped from LCK)
     const targetLeague = ['LCP', 'CBLOL'].includes(displayLeague) ? displayLeague : null;
 
     const activeMatches = displayLeague === 'LCK' ? (league.matches || []) : (league.foreignMatches?.[displayLeague] || []);
@@ -73,14 +76,14 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
     
     // Scrubber: Identifies Corrupted Games
     const checkBadData = (matches, lg) => matches.some(m => {
-        // [FORCE REWRITE] If CBLOL regular matches were mistakenly saved as BO3, wipe and rebuild!
+        // [FORCE REWRITE] If CBLOL regular matches were mistakenly saved as BO3, trigger a wipe!
         if (lg === 'CBLOL' && (m.type === 'regular' || m.type === 'super') && m.format !== 'BO1') return true;
 
         const t1Str = String(m.t1); const t2Str = String(m.t2);
         if (m.status === 'finished') {
             if (!m.t1 || t1Str === 'TBD' || t1Str === 'null' || t1Str === 'undefined') return true;
             if (!m.t2 || t2Str === 'TBD' || t2Str === 'null' || t2Str === 'undefined') return true;
-            if (!m.result) return true;
+            if (!m.result || !m.result.winner) return true;
             if (m.result.history && m.result.history.length > 0 && m.result.history[0]?.logs?.includes('데이터 오류')) return true;
         }
         return false;
@@ -96,6 +99,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
 
     // --- DUAL-CORE AUTO-SYNC ENGINE ---
     useEffect(() => {
+        // AIR-GAP: Never touches LCK games.
         if (!needsSync || !targetLeague) return;
 
         const lgTeams = FOREIGN_LEAGUES[targetLeague] || [];
@@ -106,7 +110,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
         const hasBadData = forceRegen || checkBadData(activeMatches, targetLeague);
         
         if (schedule.length === 0 || hasBadData) {
-            console.log(`[Auto-Sync] Generating flawless ${targetLeague} schedule...`);
+            console.log(`[Auto-Sync] Regenerating flawless ${targetLeague} schedule...`);
             if (targetLeague === 'LCP') schedule = generateLCPRegularSchedule(lgTeams);
             else if (targetLeague === 'CBLOL') schedule = generateCBLOLRegularSchedule(lgTeams); // Generates BO1s
             isUpdated = true;
@@ -134,18 +138,18 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 isUpdated = true;
                 
                 let fScore = simResult.scoreString || simResult.score;
-                let finalWinner = simResult.winner?.name || simResult.winner;
-                let liteHistory = [];
+                let matchWinner = simResult.winner?.name || simResult.winner;
+                
+                // Keep POGs and KDA but delete the text logs to stop 5MB crash
+                let liteHistory = (simResult.history || []).map(set => ({ ...set, logs: [] }));
 
-                // [FIX 1] The BO1 Slicer
-                // Ensures the modal only sees 1 exact game, fixing the "상세 보기 shows BO3" glitch!
+                // [FIX 1] STRICT BO1 OVERRIDE & MODAL SYNC
                 if (matchObj.format === 'BO1') {
-                    fScore = '1-0';
-                    if (simResult.history && simResult.history.length > 0) {
-                        const firstGame = simResult.history[0];
-                        liteHistory = [{ ...firstGame, logs: [] }];
-                        finalWinner = firstGame.winner === 'BLUE' ? t1Obj.name : (firstGame.winner === 'RED' ? t2Obj.name : finalWinner);
+                    if (liteHistory.length > 0) {
+                        liteHistory = [liteHistory[0]]; // Force exactly 1 game for the detailed modal!
+                        matchWinner = liteHistory[0].winner; // Game 1 winner is the match winner
                     }
+                    fScore = '1-0';
                 } else {
                     if (typeof fScore === 'object') {
                         fScore = `${Math.max(fScore.A ?? 0, fScore.B ?? 0)}-${Math.min(fScore.A ?? 0, fScore.B ?? 0)}`;
@@ -154,15 +158,18 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                         const isBO5 = matchObj.format === 'BO5' || matchObj.type === 'playoff';
                         fScore = `${isBO5 ? 3 : 2}-0`;
                     }
-                    liteHistory = (simResult.history || []).map(set => ({ ...set, logs: [] }));
                 }
 
                 return {
                     ...matchObj,
-                    t1: t1Obj.name, 
-                    t2: t2Obj.name,
+                    t1: t1.id || t1.name, 
+                    t2: t2.id || t2.name,
                     status: 'finished',
-                    result: { winner: finalWinner, score: fScore, history: liteHistory }
+                    result: { 
+                        winner: matchWinner, 
+                        score: fScore, 
+                        history: liteHistory 
+                    }
                 };
             } catch (e) {
                 console.error("Engine Crash Blocked:", e);
@@ -174,10 +181,14 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 
                 return {
                     ...matchObj,
-                    t1: t1Obj.name, 
-                    t2: t2Obj.name,
+                    t1: t1.id || t1.name, 
+                    t2: t2.id || t2.name,
                     status: 'finished',
-                    result: { winner: t1Wins ? t1Obj.name : t2Obj.name, score: t1Wins ? `${reqWins}-0` : `0-${reqWins}`, history: [] }
+                    result: {
+                        winner: t1Wins ? t1.name : t2.name,
+                        score: t1Wins ? `${reqWins}-0` : `0-${reqWins}`,
+                        history: [{ logs: [], winner: t1Wins ? t1.name : t2.name }] 
+                    }
                 };
             }
         };
@@ -188,7 +199,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
         let seeds = league.foreignPlayoffSeeds?.[targetLeague] || [];
         
         if (schedule.every(m => m.status === 'finished')) {
-            // [FIX 2] Advanced Tiebreaker Integration (Guarantees Playoff Seed generation)
             if (seeds.length === 0 || hasBadData) {
                 const standings = {};
                 lgTeams.forEach(t => standings[t.name] = { w: 0, l: 0, diff: 0, h2h: {}, defeatedOpponents: [], id: t.id || t.name, name: t.name });
@@ -232,16 +242,28 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 const sorted = Object.values(standings).sort((a,b) => {
                     if (b.w !== a.w) return b.w - a.w; 
                     if (b.diff !== a.diff) return b.diff - a.diff; 
+                    
                     const tieKey = `${a.w}_${a.diff}`;
                     const tiedCount = tiedGroups[tieKey]?.length || 0;
+
                     if (tiedCount === 2) {
                         const aWinsVsB = a.h2h[b.name]?.w || 0;
                         const bWinsVsA = b.h2h[a.name]?.w || 0;
                         if (aWinsVsB !== bWinsVsA) return bWinsVsA - aWinsVsB;
                     }
-                    let sovWinsA = 0, sovDiffA = 0, sovWinsB = 0, sovDiffB = 0;
-                    a.defeatedOpponents.forEach(opp => { sovWinsA += (standings[opp]?.w || 0); sovDiffA += (standings[opp]?.diff || 0); });
-                    b.defeatedOpponents.forEach(opp => { sovWinsB += (standings[opp]?.w || 0); sovDiffB += (standings[opp]?.diff || 0); });
+
+                    let sovWinsA = 0, sovDiffA = 0;
+                    a.defeatedOpponents.forEach(opp => {
+                        sovWinsA += (standings[opp]?.w || 0);
+                        sovDiffA += (standings[opp]?.diff || 0);
+                    });
+
+                    let sovWinsB = 0, sovDiffB = 0;
+                    b.defeatedOpponents.forEach(opp => {
+                        sovWinsB += (standings[opp]?.w || 0);
+                        sovDiffB += (standings[opp]?.diff || 0);
+                    });
+
                     if (sovWinsB !== sovWinsA) return sovWinsB - sovWinsA;
                     if (sovDiffB !== sovDiffA) return sovDiffB - sovDiffA;
                     return 0;
@@ -252,7 +274,8 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 isUpdated = true;
             }
 
-            if (playoffs.length === 0) {
+            // [FIX 2] GUARANTEE FULL PLAYOFF GENERATION ON REGEN
+            if (playoffs.length === 0 || forceRegen) {
                 if (targetLeague === 'LCP') playoffs = generateLCPPlayoffs(seeds);
                 else if (targetLeague === 'CBLOL') playoffs = generateCBLOLPlayoffs(seeds);
                 isUpdated = true;
@@ -264,8 +287,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 
                 if (matchObj.status === 'finished') {
                     const wId = findGlobalTeam(matchObj.result.winner, teams).name;
-                    const t1Name = findGlobalTeam(matchObj.t1, teams).name;
-                    const lId = wId === t1Name ? matchObj.t2 : matchObj.t1;
+                    const lId = wId === findGlobalTeam(matchObj.t1, teams).name ? matchObj.t2 : matchObj.t1;
                     return { winnerId: wId, loserId: lId };
                 }
                 
@@ -277,8 +299,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
 
                 if (simulatedMatch.status === 'finished') {
                     const wId = findGlobalTeam(simulatedMatch.result.winner, teams).name;
-                    const t1Name = findGlobalTeam(matchObj.t1, teams).name;
-                    const lId = wId === t1Name ? matchObj.t2 : matchObj.t1;
+                    const lId = wId === findGlobalTeam(matchObj.t1, teams).name ? matchObj.t2 : matchObj.t1;
                     return { winnerId: wId, loserId: lId };
                 }
                 return { winnerId: null, loserId: null };
@@ -395,6 +416,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
             }
         }
 
+        // ONLY save foreignMatches. LCK matches are completely untouched!
         if (isUpdated) {
             const fullSchedule = [...schedule, ...playoffs];
             const updatedLeague = { ...league };
@@ -441,6 +463,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 <h2 className="text-lg lg:text-2xl font-black text-gray-900 flex items-center gap-2">
                     📅 {activeTab === 'team_schedule' ? `${myTeam.name} 경기 일정` : `2026 ${displayLeague} 전체 일정`}
                 </h2>
+                {/* [MANUAL OVERRIDE BUTTON] visible only on foreign leagues to clear bad save data */}
                 {targetLeague && (
                     <button 
                         onClick={() => setForceRegen(true)}
@@ -472,6 +495,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                                 else if (m.type === 'playin') { badgeColor = 'text-indigo-600'; badgeText = m.label || '플레이-인'; }
                                 else if (m.type === 'playoff') { badgeColor = 'text-yellow-600'; badgeText = m.label || '플레이오프'; }
 
+                                // [SAFE UI RENDERING] Respects LCK BO3/BO5 completely, uses 1-0 only for BO1s.
                                 const expectedFallbackScore = m.format === 'BO1' ? '1-0' : (m.format === 'BO5' ? '3-0' : '2-0');
 
                                 return (
