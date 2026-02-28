@@ -66,6 +66,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
     const [currentLeague, setCurrentLeague] = useState('LCK');
     const displayLeague = activeTab === 'team_schedule' ? 'LCK' : currentLeague;
 
+    // The manual safety switch
     const [forceRegen, setForceRegen] = useState(false);
 
     const targetLeague = ['LCP', 'CBLOL', 'LCS'].includes(displayLeague) ? displayLeague : null;
@@ -74,29 +75,12 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
     const pendingLCK = league.matches ? league.matches.filter(m => m.status === 'pending').sort(compareDatesObj) : [];
     const currentPendingLCK = pendingLCK.length > 0 ? pendingLCK[0] : { date: '99.99 (완료)', time: '23:59' };
     
-    const checkBadData = (matches, lg) => matches.some(m => {
-        if (lg === 'CBLOL' && (m.type === 'regular' || m.type === 'super') && m.format !== 'BO1') return true;
-
-        const t1Str = String(m.t1); const t2Str = String(m.t2);
-        
-        // [CRITICAL FIX] Prevent clone wipes if teams are "null". Only wipe if actual teams play themselves!
-        if (m.t1 && m.t2 && t1Str !== 'TBD' && t2Str !== 'TBD' && t1Str !== 'null' && t2Str !== 'null' && t1Str === t2Str) return true;
-
-        if (m.status === 'finished') {
-            if (!m.t1 || t1Str === 'TBD' || t1Str === 'null' || t1Str === 'undefined') return true;
-            if (!m.t2 || t2Str === 'TBD' || t2Str === 'null' || t2Str === 'undefined') return true;
-            if (!m.result || !m.result.winner) return true;
-            if (m.result.history && m.result.history.length > 0 && m.result.history[0]?.logs?.includes('데이터 오류')) return true;
-        }
-        return false;
-    });
-
+    // [THE FIX] Removed the auto-scrubber entirely. It will only sync on time passing OR if you press the manual button!
     const needsSync = targetLeague && (
         forceRegen ||
         activeMatches.length === 0 || 
         activeMatches.some(m => m.status === 'pending' && currentPendingLCK.date !== '99.99 (완료)' && compareDatesObj(m, currentPendingLCK) < 0) ||
-        (currentPendingLCK.date === '99.99 (완료)' && activeMatches.some(m => m.status === 'pending')) ||
-        checkBadData(activeMatches, targetLeague)
+        (currentPendingLCK.date === '99.99 (완료)' && activeMatches.some(m => m.status === 'pending'))
     );
 
     // LCK SELF-HEALER
@@ -125,9 +109,9 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
         let isUpdated = false;
 
         let schedule = activeMatches.filter(m => m.type === 'regular' || m.type === 'super');
-        const hasBadData = forceRegen || checkBadData(activeMatches, targetLeague);
         
-        if (schedule.length === 0 || hasBadData) {
+        // Manual Wipe logic perfectly replaces auto-wipe
+        if (schedule.length === 0 || forceRegen) {
             if (targetLeague === 'LCP') schedule = generateLCPRegularSchedule(lgTeams);
             else if (targetLeague === 'CBLOL') schedule = generateCBLOLRegularSchedule(lgTeams); 
             else if (targetLeague === 'LCS') schedule = generateLCSRegularSchedule(lgTeams);
@@ -177,6 +161,13 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                                     let t2Index = pool.findIndex((t, idx) => idx > 0 && !st[t1].played.includes(t));
                                     if (t2Index <= 0) t2Index = 1; 
                                     let t2 = pool[t2Index];
+
+                                    // [THE FIX] Absolute Clone Lock - DIG vs DIG is impossible now!
+                                    if (t1 === t2) {
+                                        const emergencyT2 = pool.find(t => t !== t1);
+                                        if (emergencyT2) t2 = emergencyT2;
+                                        else t2 = lgTeams.find(t => t.name !== t1).name; // Hard fallback
+                                    }
                                     
                                     m.t1 = t1;
                                     m.t2 = t2;
@@ -208,7 +199,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
             const t2Obj = findGlobalTeam(matchObj.t2, lgTeams);
             
             if (t1Obj.name === 'TBD' || t2Obj.name === 'TBD') return matchObj; 
-            if (t1Obj.name === t2Obj.name) return matchObj; 
+            if (t1Obj.name === t2Obj.name) return matchObj; // Final guard
 
             const t1 = { ...t1Obj, roster: getSafeRoster(t1Obj, lgPlayers) };
             const t2 = { ...t2Obj, roster: getSafeRoster(t2Obj, lgPlayers) };
@@ -275,11 +266,11 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
 
         schedule = schedule.map(simMatchIfPast);
 
-        let playoffs = hasBadData ? [] : activeMatches.filter(m => m.type === 'playoff' || m.type === 'playin');
-        let seeds = league.foreignPlayoffSeeds?.[targetLeague] || [];
+        let playoffs = forceRegen ? [] : activeMatches.filter(m => m.type === 'playoff' || m.type === 'playin');
+        let seeds = forceRegen ? [] : (league.foreignPlayoffSeeds?.[targetLeague] || []);
         
         if (schedule.every(m => m.status === 'finished')) {
-            if (seeds.length === 0 || hasBadData) {
+            if (seeds.length === 0) {
                 const standings = {};
                 lgTeams.forEach(t => standings[t.name] = { w: 0, l: 0, diff: 0, h2h: {}, defeatedOpponents: [], id: t.id || t.name, name: t.name });
                 
@@ -354,7 +345,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 isUpdated = true;
             }
 
-            if (playoffs.length === 0 || forceRegen || hasBadData) {
+            if (playoffs.length === 0) {
                 if (targetLeague === 'LCP') playoffs = generateLCPPlayoffs(seeds);
                 else if (targetLeague === 'CBLOL') playoffs = generateCBLOLPlayoffs(seeds);
                 else if (targetLeague === 'LCS') playoffs = generateLCSPlayoffs(seeds);
@@ -504,9 +495,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 const po1Match = playoffs.find(m => m.id === 'lcs_po1');
                 const po2Match = playoffs.find(m => m.id === 'lcs_po2');
                 
-                // [THE CRITICAL FIX] The "Existence Lock"
-                // It now refuses to assign Seed 3 and 4 until they actually exist in the standings!
-                // This permanently prevents the infinite mid-season loading screen loop.
                 if (po1Match && !po1Match.t2) {
                     const s3 = getSeedId(3);
                     const s4 = getSeedId(4);
@@ -586,7 +574,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
             {needsSync && (
                 <div className="absolute inset-0 bg-white/80 z-50 flex flex-col items-center justify-center backdrop-blur-sm">
                     <div className="text-4xl animate-spin mb-4">⏳</div>
-                    <div className="text-lg font-black text-blue-600 animate-pulse">{targetLeague} 데이터를 복구 및 동기화 중입니다...</div>
+                    <div className="text-lg font-black text-blue-600 animate-pulse">{targetLeague} 데이터를 동기화 중입니다...</div>
                 </div>
             )}
 
