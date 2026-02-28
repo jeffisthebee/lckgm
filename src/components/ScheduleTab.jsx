@@ -65,6 +65,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
     const displayLeague = activeTab === 'team_schedule' ? 'LCK' : currentLeague;
 
     // [THE FIX] targetLeague determines which sync engine is currently running!
+    // [THE FIX] targetLeague determines which sync engine is currently running!
     const targetLeague = ['LCP', 'CBLOL'].includes(displayLeague) ? displayLeague : null;
 
     const activeMatches = displayLeague === 'LCK' ? (league.matches || []) : (league.foreignMatches?.[displayLeague] || []);
@@ -72,7 +73,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
     const currentPendingLCK = pendingLCK.length > 0 ? pendingLCK[0] : { date: '99.99 (완료)', time: '23:59' };
     
     const hasBadDataCheck = (matches) => matches.some(m => {
-        // [FIX 1] Hunt down old CBLOL BO3 regular season games and flag them for a Redo!
+        // [FIX 1] Force rewrite if CBLOL regular matches are mistakenly saved as BO3!
         if (targetLeague === 'CBLOL' && m.type === 'regular' && m.format !== 'BO1') return true;
 
         const t1Str = String(m.t1); const t2Str = String(m.t2);
@@ -92,6 +93,22 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
         hasBadDataCheck(activeMatches)
     );
 
+    useEffect(() => {
+        if (displayLeague === 'LCK' && league.matches) {
+            const hasCorruptedFormat = league.matches.some(m => m.type !== 'playoff' && m.format === 'BO1');
+            if (hasCorruptedFormat) {
+                console.log("[Auto-Heal] Restoring LCK formats to BO3/BO5...");
+                const healedMatches = league.matches.map(m => {
+                    if (m.type === 'super') return { ...m, format: 'BO5' };
+                    if (m.type === 'regular') return { ...m, format: 'BO3' };
+                    return m;
+                });
+                const updatedLeague = { ...league, matches: healedMatches };
+                updateLeague(league.id, updatedLeague);
+                if (setLeague) setLeague(updatedLeague);
+            }
+        }
+    }, [displayLeague, league, setLeague]);  
     // --- DUAL-CORE AUTO-SYNC ENGINE ---
     useEffect(() => {
         if (!needsSync || !targetLeague) return;
@@ -132,18 +149,13 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 isUpdated = true;
                 
                 let fScore = simResult.scoreString || simResult.score;
-                
-                // [FIX 2a] STRICT BO1 OVERRIDE FOR CBLOL
-                if (matchObj.format === 'BO1') {
-                    fScore = '1-0';
-                } else {
-                    if (typeof fScore === 'object') {
-                        fScore = `${Math.max(fScore.A ?? 0, fScore.B ?? 0)}-${Math.min(fScore.A ?? 0, fScore.B ?? 0)}`;
-                    }
-                    if (!fScore) {
-                        const isBO5 = matchObj.format === 'BO5' || matchObj.type === 'playoff';
-                        fScore = `${isBO5 ? 3 : 2}-0`;
-                    }
+                if (typeof fScore === 'object') {
+                    fScore = `${Math.max(fScore.A ?? 0, fScore.B ?? 0)}-${Math.min(fScore.A ?? 0, fScore.B ?? 0)}`;
+                }
+                if (!fScore) {
+                    const isBO1 = matchObj.format === 'BO1';
+                    const isBO5 = matchObj.format === 'BO5' || matchObj.type === 'playoff';
+                    fScore = `${isBO5 ? 3 : (isBO1 ? 1 : 2)}-0`;
                 }
 
                 return {
@@ -151,11 +163,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                     t1: t1.id || t1.name, 
                     t2: t2.id || t2.name,
                     status: 'finished',
-                    result: { 
-                        winner: simResult.winner?.name || simResult.winner, 
-                        score: fScore, 
-                        history: [] // [CRITICAL MEMORY SAVER] Clears huge text logs to stop 5MB crashes
-                    }
+                    result: { winner: simResult.winner?.name || simResult.winner, score: fScore, history: simResult.history || [] }
                 };
             } catch (e) {
                 console.error("Engine Crash Blocked:", e);
@@ -172,7 +180,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                     result: {
                         winner: t1Wins ? t1.name : t2.name,
                         score: t1Wins ? `${reqWins}-0` : `0-${reqWins}`,
-                        history: [] // [CRITICAL MEMORY SAVER]
+                        history: [{ logs: ['데이터 오류 복구됨'], picks: { A: [], B: [] }, bans: { A: [], B: [] } }] 
                     }
                 };
             }
@@ -439,6 +447,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                                                 <div className="flex flex-col items-center">
                                                     <span className="text-lg lg:text-xl text-gray-800">
     {m.result?.score || (m.format === 'BO1' ? '1-0' : (m.format === 'BO5' ? '3-0' : '2-0'))} </span>
+
                                                     <button 
                                                         onClick={() => onMatchClick && onMatchClick(m)}
                                                         className="mt-1 text-[9px] lg:text-[10px] bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 px-1.5 lg:px-2 py-0.5 rounded transition flex items-center gap-1 whitespace-nowrap"
