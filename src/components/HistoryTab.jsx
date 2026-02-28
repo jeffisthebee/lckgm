@@ -299,13 +299,12 @@ const HistoryTab = ({ league }) => {
                   if (cblolRanks.length > 0) displayStandings = cblolRanks;
               }
 
-              // --- [NEW] LCS STANDINGS CALCULATOR ---
+              // --- [THE FIX] LCS STANDINGS CALCULATOR ---
               if (currentLeague === 'LCS' && record.matches && record.matches.length > 0) {
                   const lcsTeams = FOREIGN_LEAGUES['LCS'] || [];
                   const st = {};
                   lcsTeams.forEach(t => st[t.name] = { w: 0, l: 0, diff: 0, h2h: {}, defeatedOpponents: [], team: t });
 
-                  // Regular Season processing for tiebreakers
                   record.matches.filter(m => (m.type === 'regular' || m.type === 'super') && m.status === 'finished').forEach(m => {
                       const winner = m.result?.winner;
                       const t1 = findGlobalTeam(m.t1).name;
@@ -331,12 +330,11 @@ const HistoryTab = ({ league }) => {
                       }
                   });
 
-                  // Execute identical tiebreaker logic as StandingsTab
                   const tiedGroups = {};
                   Object.values(st).forEach(rec => {
                       const key = `${rec.w}_${rec.diff}`;
                       if (!tiedGroups[key]) tiedGroups[key] = [];
-                      tiedGroups[key].push(rec.name);
+                      tiedGroups[key].push(rec.team.name); // FIXED: properly tracks team name
                   });
 
                   const regSorted = Object.values(st).sort((a,b) => {
@@ -347,8 +345,8 @@ const HistoryTab = ({ league }) => {
                       const tiedCount = tiedGroups[tieKey]?.length || 0;
 
                       if (tiedCount === 2) {
-                          const aWinsVsB = a.h2h[b.name]?.w || 0;
-                          const bWinsVsA = b.h2h[a.name]?.w || 0;
+                          const aWinsVsB = a.h2h[b.team.name]?.w || 0; // FIXED
+                          const bWinsVsA = b.h2h[a.team.name]?.w || 0; // FIXED
                           if (aWinsVsB !== bWinsVsA) return bWinsVsA - aWinsVsB;
                       }
 
@@ -369,7 +367,6 @@ const HistoryTab = ({ league }) => {
                       return 0;
                   });
 
-                  // Map LCS playoff elimination path
                   const poMatches = record.matches.filter(m => (m.type === 'playoff' || m.type === 'playin') && m.status === 'finished');
                   const getLoser = (id) => {
                       const m = poMatches.find(x => x.id === id);
@@ -401,17 +398,16 @@ const HistoryTab = ({ league }) => {
                   addRank(3, third);
                   addRank(4, fourth);
 
-                  // 5th/6th sorted by regular season seed dominance
                   const fifthSixth = [r1L1, r1L2].filter(Boolean).sort((a, b) => {
-                      return regSorted.findIndex(x => x.name === a) - regSorted.findIndex(x => x.name === b); 
+                      return regSorted.findIndex(x => x.team.name === a) - regSorted.findIndex(x => x.team.name === b); 
                   });
                   fifthSixth.forEach((tName, i) => lcsRanks.push({ rank: 5 + i, team: st[tName]?.team || findGlobalTeam(tName) }));
 
                   addRank(7, playinLoser);
 
-                  // 8th is whoever is left in the regular season order
-                  const alreadyPlaced = new Set(lcsRanks.map(r => r.team.name));
-                  regSorted.filter(x => !alreadyPlaced.has(x.name)).forEach((r, i) => {
+                  // FIXED: Now properly filters out already placed teams so it doesn't duplicate them
+                  const alreadyPlaced = new Set(lcsRanks.filter(r => r.team).map(r => r.team.name));
+                  regSorted.filter(x => x.team && !alreadyPlaced.has(x.team.name)).forEach((r, i) => {
                       lcsRanks.push({ rank: lcsRanks.length + 1, team: r.team });
                   });
 
@@ -506,7 +502,6 @@ const HistoryTab = ({ league }) => {
                           </div>
                       </div>
 
-                      {/* 4. FINAL STANDINGS (FULL LIST) */}
                       <div className="bg-white rounded-xl border shadow-sm p-5">
                           <h3 className="text-lg font-black text-gray-800 mb-4 flex items-center gap-2">
                               <span className="text-xl">🏅</span> 최종 순위
@@ -537,7 +532,6 @@ const HistoryTab = ({ league }) => {
                                                               {tObj.name.slice(0,3)}
                                                           </div>
                                                           {tObj.fullName || tObj.name}
-                                                          {/* [NEW] Included LCS in the FST Badge Array! */}
                                                           {item.rank === 1 && ['LCP', 'CBLOL', 'LCS'].includes(currentLeague) && (
                                                               <span className="text-[10px] bg-purple-100 text-purple-700 border border-purple-200 px-2 py-0.5 rounded font-black whitespace-nowrap shadow-sm ml-1">
                                                                   FST 진출
