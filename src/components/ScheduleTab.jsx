@@ -102,14 +102,19 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
     // [THE FIX] Check for errors in the current league's active matches to hide/show the manual button
     const hasErrors = targetLeague ? checkBadData(activeMatches, targetLeague) : false;
 
-    // LCK SELF-HEALER
+    // LCK SELF-HEALER — fixes missing, null, or wrong format fields on LCK matches
     useEffect(() => {
         if (displayLeague === 'LCK' && league.matches) {
-            const hasCorruptedFormat = league.matches.some(m => m.type !== 'playoff' && m.format === 'BO1');
+            // Catch: format is 'BO1', undefined, null, or empty string on non-playoff matches
+            const hasCorruptedFormat = league.matches.some(m =>
+                m.type !== 'playoff' && (!m.format || m.format === 'BO1')
+            );
             if (hasCorruptedFormat) {
                 const healedMatches = league.matches.map(m => {
-                    if (m.type === 'super') return { ...m, format: 'BO5' };
+                    if (m.type === 'super')   return { ...m, format: 'BO5' };
                     if (m.type === 'regular') return { ...m, format: 'BO3' };
+                    // Ensure LCK playoff matches also have correct format
+                    if (m.type === 'playoff' && !m.format) return { ...m, format: 'BO5' };
                     return m;
                 });
                 const updatedLeague = { ...league, matches: healedMatches };

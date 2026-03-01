@@ -1,5 +1,4 @@
-
-    import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
     import { calculateIndividualIncome, simulateSet, runGameTickEngine, selectPickFromTop3, selectBanFromProbabilities } from '../engine/simEngine';
     import { DRAFT_SEQUENCE, championList } from '../data/constants'; 
     import { SYNERGIES } from '../data/synergies'; 
@@ -191,18 +190,26 @@
         const [globalBanList, setGlobalBanList] = useState(Array.isArray(externalGlobalBans) ? externalGlobalBans.slice() : []);
         const [matchHistory, setMatchHistory] = useState([]);
     
-        // --- Parse best-of (BO3/BO5/BO1) robustly from match.format or match.bestOf ---
+        // --- Parse best-of (BO3/BO5/BO1) robustly from match.format, type, or bestOf ---
         const bestOf = useMemo(() => {
+            // 1. Explicit format string wins if present ("BO3", "BO5", "BO1")
             const fmt = (match?.format || '').toString().toUpperCase();
-            const m = fmt.match(/BO(\d+)/);
-            if (m) return Number(m[1]);
+            const fmtMatch = fmt.match(/BO(\d+)/);
+            if (fmtMatch) return Number(fmtMatch[1]);
+            // 2. Explicit bestOf number
             if (typeof match?.bestOf === 'number' && match.bestOf > 0) return match.bestOf;
-            // Infer: finals often BO5, playoffs BO3, play-in commonly BO1/BO3
-            const stage = (match?.stage || '').toString().toLowerCase();
-            if (stage.includes('final')) return 5;
-            if (stage.includes('playoffs')) return 3;
+            // 3. Type-based inference — covers old saves where format was never saved
+            const type = (match?.type || '').toString().toLowerCase();
+            if (type === 'super')   return 5; // LCK Super Week = BO5
+            if (type === 'playoff') return 5; // All playoff rounds = BO5
+            if (type === 'playin')  return 3; // Play-in = BO3
+            if (type === 'regular') return 3; // LCK/foreign regular season = BO3
+            // 4. Stage / label text fallback
+            const stage = (match?.stage || match?.label || '').toString().toLowerCase();
+            if (stage.includes('final') || stage.includes('결승')) return 5;
+            if (stage.includes('playoff')) return 5;
             if (stage.includes('play-in') || stage.includes('playin')) return 3;
-            // default fallback
+            // 5. Safe default
             return 3;
         }, [match]);
     
@@ -1857,4 +1864,3 @@
           </div>
         );
     }
-    
