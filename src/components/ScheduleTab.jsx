@@ -94,10 +94,13 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
         forceRegen ||
         activeMatches.length === 0 || 
         activeMatches.some(m => m.status === 'pending' && currentPendingLCK.date !== '99.99 (완료)' && compareDatesObj(m, currentPendingLCK) < 0) ||
-        (currentPendingLCK.date === '99.99 (완료)' && activeMatches.some(m => m.status === 'pending')) ||
-        checkBadData(activeMatches, targetLeague)
+        (currentPendingLCK.date === '99.99 (완료)' && activeMatches.some(m => m.status === 'pending'))
     );
 
+    // [THE FIX] Check for errors in the current league's active matches to hide/show the manual button
+    const hasErrors = targetLeague ? checkBadData(activeMatches, targetLeague) : false;
+
+    // LCK SELF-HEALER
     useEffect(() => {
         if (displayLeague === 'LCK' && league.matches) {
             const hasCorruptedFormat = league.matches.some(m => m.type !== 'playoff' && m.format === 'BO1');
@@ -123,9 +126,8 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
         let isUpdated = false;
 
         let schedule = activeMatches.filter(m => m.type === 'regular' || m.type === 'super');
-        const hasBadData = forceRegen || checkBadData(activeMatches, targetLeague);
         
-        if (schedule.length === 0 || hasBadData) {
+        if (schedule.length === 0 || forceRegen) {
             if (targetLeague === 'LCP') schedule = generateLCPRegularSchedule(lgTeams);
             else if (targetLeague === 'CBLOL') schedule = generateCBLOLRegularSchedule(lgTeams); 
             else if (targetLeague === 'LCS') schedule = generateLCSRegularSchedule(lgTeams);
@@ -221,7 +223,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
             const t1Obj = findGlobalTeam(matchObj.t1, lgTeams);
             const t2Obj = findGlobalTeam(matchObj.t2, lgTeams);
             
-            // [THE ELEGANT FIX] Just wait! If they are TBD, let the multi-step cycle draw them naturally!
             if (!t1Obj.name || !t2Obj.name || t1Obj.name === 'TBD' || t2Obj.name === 'TBD') return matchObj; 
             if (t1Obj.name === t2Obj.name) return matchObj; 
 
@@ -294,7 +295,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
         let seeds = forceRegen ? [] : (league.foreignPlayoffSeeds?.[targetLeague] || []);
         
         if (schedule.every(m => m.status === 'finished')) {
-            if (seeds.length === 0 || hasBadData) {
+            if (seeds.length === 0) {
                 const standings = {};
                 lgTeams.forEach(t => standings[t.name] = { w: 0, l: 0, diff: 0, h2h: {}, defeatedOpponents: [], id: t.id || t.name, name: t.name });
                 
@@ -369,7 +370,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 isUpdated = true;
             }
 
-            if (playoffs.length === 0 || forceRegen || hasBadData) {
+            if (playoffs.length === 0 || forceRegen) {
                 if (targetLeague === 'LCP') playoffs = generateLCPPlayoffs(seeds);
                 else if (targetLeague === 'CBLOL') playoffs = generateCBLOLPlayoffs(seeds);
                 else if (targetLeague === 'LCS') playoffs = generateLCSPlayoffs(seeds);
@@ -388,7 +389,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 
                 if (currentPendingLCK.date !== '99.99 (완료)' && compareDatesObj(matchObj, currentPendingLCK) >= 0) return { winnerId: null, loserId: null };
 
-                // [THE ELEGANT FIX] No more force finishes! Skip gracefully if TBD.
                 if (!matchObj.t1 || !matchObj.t2 || matchObj.t1 === 'TBD' || matchObj.t2 === 'TBD' || matchObj.t1 === matchObj.t2) {
                     return { winnerId: null, loserId: null };
                 }
@@ -625,12 +625,13 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 <h2 className="text-lg lg:text-2xl font-black text-gray-900 flex items-center gap-2">
                     📅 {activeTab === 'team_schedule' ? `${myTeam.name} 경기 일정` : `2026 ${displayLeague} 전체 일정`}
                 </h2>
-                {targetLeague && (
+                {/* [THE FIX] The button ONLY renders when checkBadData confirms corrupted data! */}
+                {targetLeague && hasErrors && (
                     <button 
                         onClick={() => setForceRegen(true)}
-                        className="text-xs bg-red-100 text-red-600 hover:bg-red-200 px-3 py-1.5 rounded-md font-bold shadow-sm transition-all"
+                        className="text-xs bg-red-100 text-red-600 hover:bg-red-200 px-3 py-1.5 rounded-md font-bold shadow-sm transition-all animate-pulse"
                     >
-                        🔄 일정 재생성 (오류 수정)
+                        ⚠️ 데이터 오류 수정 (재생성)
                     </button>
                 )}
             </div>
