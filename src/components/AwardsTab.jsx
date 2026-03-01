@@ -432,7 +432,53 @@ export default function AwardsTab({ league, teams }) {
     const regularData = useMemo(() => computeAwards(activeLeagueData, activeTeams), [activeLeagueData, activeTeams]);
     const playoffData = useMemo(() => isPlayoffsFinished ? computePlayoffAwards(activeLeagueData, activeTeams) : null, [activeLeagueData, activeTeams, isPlayoffsFinished]);
 
-    const activeData = (viewMode === 'playoff' && playoffData) ? playoffData : regularData;
+    // Rewrite rankPoints + finalScore for leagues with a custom point scale (e.g. LEC 12-team)
+    const applyCustomPointScale = (data, scale) => {
+        if (!data || !scale) return data;
+        const rewritePlayer = (p) => {
+            if (!p) return p;
+            // Find this player's team rank in finalStandings
+            const standings = activeLeagueData.finalStandings || [];
+            const teamName = p.teamObj?.name || p.team || (p.teams && p.teams[0]);
+            const rank = standings.findIndex(s => {
+                const sName = typeof s === 'string' ? s : (s?.name || s?.id);
+                return sName === teamName;
+            });
+            const newRankPoints = rank >= 0 && rank < scale.length ? scale[rank] : 0;
+            const oldRankPoints = p.rankPoints || 0;
+            const diff = newRankPoints - oldRankPoints;
+            return {
+                ...p,
+                rankPoints: newRankPoints,
+                finalScore: (p.finalScore || 0) + diff,
+            };
+        };
+
+        const rewriteTeamMap = (teamMap) => {
+            if (!teamMap) return teamMap;
+            const out = {};
+            for (const role in teamMap) out[role] = rewritePlayer(teamMap[role]);
+            return out;
+        };
+
+        return {
+            ...data,
+            seasonMvp:   rewritePlayer(data.seasonMvp),
+            pogLeader:   rewritePlayer(data.pogLeader),
+            finalsMvp:   rewritePlayer(data.finalsMvp),
+            allProTeams: data.allProTeams ? {
+                1: rewriteTeamMap(data.allProTeams[1]),
+                2: rewriteTeamMap(data.allProTeams[2]),
+                3: rewriteTeamMap(data.allProTeams[3]),
+            } : data.allProTeams,
+        };
+    };
+
+    const customScale = activeLeagueData.customRankPointScale || null;
+    const patchedRegular = useMemo(() => applyCustomPointScale(regularData, customScale), [regularData, customScale]);
+    const patchedPlayoff = useMemo(() => applyCustomPointScale(playoffData, customScale), [playoffData, customScale]);
+
+    const activeData = (viewMode === 'playoff' && patchedPlayoff) ? patchedPlayoff : patchedRegular;
     const titlePrefix = currentLeague === 'LCK' ? 'LCK' : currentLeague;
 
     return (
