@@ -500,3 +500,134 @@ export const generateLCSPlayoffs = (seeds) => {
         { round: 4, match: 1, label: '결승전', t1: null, t2: null, date: '3.2 (월)', time: '06:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lcs_po8' }
     ];
 };
+
+const generateRoundRobinPairs = (ids) => {
+    const n = ids.length; // must be 12
+    const arr = [...ids];
+    const fixed = arr[0];
+    const rotating = arr.slice(1); // 11 elements
+    const rounds = [];
+
+    for (let r = 0; r < n - 1; r++) {
+        const round = [];
+        round.push([fixed, rotating[0]]);
+        for (let i = 1; i < n / 2; i++) {
+            round.push([rotating[i], rotating[n - 1 - i]]);
+        }
+        rounds.push(round);
+        // Rotate: last element moves to front
+        rotating.unshift(rotating.pop());
+    }
+    return rounds; // 11 rounds × 6 matches = 66 matches
+};
+
+export const generateLECRegularSchedule = (teams) => {
+    const ids = teams.map(t => t.id || t.name);
+    // Shuffle so pairings are random each season
+    const shuffled = [...ids].sort(() => Math.random() - 0.5);
+    const rounds = generateRoundRobinPairs(shuffled); // 11 rounds
+
+    // Day/time layout: 4 weeks, 6 slots per day at 01:00 / 01:45 / 02:30 / 03:15 / 04:00 / 04:45
+    const times = ['01:00', '01:45', '02:30', '03:15', '04:00', '04:45'];
+    const days = [
+        '1.18 (일)', '1.19 (월)', '1.20 (화)', // Week 1 (3 days = rounds 1-3)
+        '1.25 (일)', '1.26 (월)', '1.27 (화)', // Week 2 (3 days = rounds 4-6)
+        '2.1 (일)',  '2.2 (월)',  '2.3 (화)',  // Week 3 (3 days = rounds 7-9)
+        '2.8 (일)',  '2.9 (월)',                // Week 4 (2 days = rounds 10-11)
+    ];
+
+    const schedule = [];
+    let matchCounter = 0;
+
+    rounds.forEach((round, roundIdx) => {
+        const day = days[roundIdx];
+        round.forEach((pair, slotIdx) => {
+            matchCounter++;
+            schedule.push({
+                id: `lec_r${matchCounter}`,
+                t1: pair[0],
+                t2: pair[1],
+                date: day,
+                time: times[slotIdx],
+                type: 'regular',
+                format: 'BO1',
+                status: 'pending',
+                round: roundIdx + 1,
+            });
+        });
+    });
+
+    return schedule;
+};
+
+export const generateLECPlayoffs = (seeds) => {
+    const getSeed = (n) => {
+        const t = seeds.find(x => x.seed === n);
+        return t ? (t.id || t.name) : null;
+    };
+
+    // Seed 1 picks from {5,6,7,8}: 80% takes seed 8 (lowest), 20% takes seed 7
+    // Seed 2 picks from remaining: 80% takes the lowest remaining
+    // Seed 3 picks from remaining: 80% takes the lowest remaining
+    // Seed 4 gets the last one
+    const pool = [5, 6, 7, 8]; // seed numbers available for upper seeds to pick from
+    const pickOpponent = (available) => {
+        if (available.length === 1) return available[0];
+        const sorted = [...available].sort((a, b) => b - a); // highest seed number = weakest
+        return Math.random() < 0.80 ? sorted[0] : sorted[1];
+    };
+
+    const remaining = [...pool];
+    const s1pick = pickOpponent(remaining);
+    remaining.splice(remaining.indexOf(s1pick), 1);
+    const s2pick = pickOpponent(remaining);
+    remaining.splice(remaining.indexOf(s2pick), 1);
+    const s3pick = pickOpponent(remaining);
+    remaining.splice(remaining.indexOf(s3pick), 1);
+    const s4pick = remaining[0];
+
+    return [
+        // ─── Upper Bracket Round 1 ─────────────────────────────────────────────
+        { id: 'lec_po_ub1g1', label: '1라운드 승자조', t1: getSeed(1),    t2: getSeed(s1pick), date: '2.17 (화)', time: '00:45', type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 1 },
+        { id: 'lec_po_ub1g2', label: '1라운드 승자조', t1: getSeed(2),    t2: getSeed(s2pick), date: '2.17 (화)', time: '02:30', type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 2 },
+        { id: 'lec_po_ub1g3', label: '1라운드 승자조', t1: getSeed(3),    t2: getSeed(s3pick), date: '2.18 (수)', time: '00:45', type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 3 },
+        { id: 'lec_po_ub1g4', label: '1라운드 승자조', t1: getSeed(4),    t2: getSeed(s4pick), date: '2.18 (수)', time: '02:30', type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 4 },
+
+        // ─── Upper Bracket Round 2 ─────────────────────────────────────────────
+        // g1 wins vs g4 wins, g2 wins vs g3 wins
+        { id: 'lec_po_ub2g1', label: '2라운드 승자조', t1: null, t2: null, date: '2.21 (토)', time: '00:45', type: 'playoff', format: 'BO3', status: 'pending', round: 2, match: 1 },
+        { id: 'lec_po_ub2g2', label: '2라운드 승자조', t1: null, t2: null, date: '2.21 (토)', time: '02:30', type: 'playoff', format: 'BO3', status: 'pending', round: 2, match: 2 },
+
+        // ─── Lower Bracket Round 1 ─────────────────────────────────────────────
+        // g1 loser vs g4 loser, g2 loser vs g3 loser
+        { id: 'lec_po_lb1g1', label: '1라운드 패자조', t1: null, t2: null, date: '2.22 (일)', time: '00:45', type: 'playoff', format: 'BO3', status: 'pending', round: 1.1, match: 1 },
+        { id: 'lec_po_lb1g2', label: '1라운드 패자조', t1: null, t2: null, date: '2.22 (일)', time: '02:30', type: 'playoff', format: 'BO3', status: 'pending', round: 1.1, match: 2 },
+
+        // ─── Lower Bracket Round 2 ─────────────────────────────────────────────
+        // lb1g1 winner vs ub2g2 loser, lb1g2 winner vs ub2g1 loser
+        { id: 'lec_po_lb2g1', label: '2라운드 패자조', t1: null, t2: null, date: '2.23 (월)', time: '00:45', type: 'playoff', format: 'BO3', status: 'pending', round: 2.1, match: 1 },
+        { id: 'lec_po_lb2g2', label: '2라운드 패자조', t1: null, t2: null, date: '2.23 (월)', time: '02:30', type: 'playoff', format: 'BO3', status: 'pending', round: 2.1, match: 2 },
+
+        // ─── Upper Final (3라운드 승자조) ─────────────────────────────────────
+        // ub2g1 winner vs ub2g2 winner
+        { id: 'lec_po_ubf',   label: '3라운드 승자조', t1: null, t2: null, date: '2.24 (화)', time: '00:45', type: 'playoff', format: 'BO5', status: 'pending', round: 3, match: 1 },
+
+        // ─── Lower Semifinal (3라운드 패자조) ─────────────────────────────────
+        // lb2g1 winner vs lb2g2 winner
+        { id: 'lec_po_lbsf',  label: '3라운드 패자조', t1: null, t2: null, date: '2.28 (토)', time: '01:00', type: 'playoff', format: 'BO5', status: 'pending', round: 3.1, match: 1 },
+
+        // ─── 4라운드 ──────────────────────────────────────────────────────────
+        // lbsf winner vs ubf loser
+        { id: 'lec_po_r4',    label: '4라운드',         t1: null, t2: null, date: '3.1 (일)',  time: '01:00', type: 'playoff', format: 'BO5', status: 'pending', round: 4, match: 1 },
+
+        // ─── 결승 ─────────────────────────────────────────────────────────────
+        // r4 winner vs ubf winner
+        { id: 'lec_po_final', label: '결승전',           t1: null, t2: null, date: '3.2 (월)',  time: '01:00', type: 'playoff', format: 'BO5', status: 'pending', round: 5, match: 1 },
+    ];
+};
+
+
+
+
+
+

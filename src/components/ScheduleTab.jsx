@@ -4,7 +4,8 @@ import { quickSimulateMatch } from '../engine/simEngine';
 import { 
     generateLCPRegularSchedule, generateLCPPlayoffs, 
     generateCBLOLRegularSchedule, generateCBLOLPlayoffs,
-    generateLCSRegularSchedule, generateLCSPlayoffs 
+    generateLCSRegularSchedule, generateLCSPlayoffs,
+    generateLECRegularSchedule, generateLECPlayoffs
 } from '../engine/scheduleLogic';
 import { FOREIGN_LEAGUES, FOREIGN_PLAYERS } from '../data/foreignLeagues';
 import { updateLeague } from '../engine/storage';
@@ -68,7 +69,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
 
     const [forceRegen, setForceRegen] = useState(false);
 
-    const targetLeague = ['LCP', 'CBLOL', 'LCS'].includes(displayLeague) ? displayLeague : null;
+    const targetLeague = ['LCP', 'CBLOL', 'LCS', 'LEC'].includes(displayLeague) ? displayLeague : null;
 
     const activeMatches = displayLeague === 'LCK' ? (league.matches || []) : (league.foreignMatches?.[displayLeague] || []);
     const pendingLCK = league.matches ? league.matches.filter(m => m.status === 'pending').sort(compareDatesObj) : [];
@@ -76,6 +77,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
     
     const checkBadData = (matches, lg) => matches.some(m => {
         if (lg === 'CBLOL' && (m.type === 'regular' || m.type === 'super') && m.format !== 'BO1') return true;
+        if (lg === 'LEC' && m.type === 'regular' && m.format !== 'BO1') return true;
 
         const t1Str = String(m.t1); const t2Str = String(m.t2);
         
@@ -131,6 +133,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
             if (targetLeague === 'LCP') schedule = generateLCPRegularSchedule(lgTeams);
             else if (targetLeague === 'CBLOL') schedule = generateCBLOLRegularSchedule(lgTeams); 
             else if (targetLeague === 'LCS') schedule = generateLCSRegularSchedule(lgTeams);
+            else if (targetLeague === 'LEC') schedule = generateLECRegularSchedule(lgTeams);
             isUpdated = true;
         }
 
@@ -366,7 +369,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 });
 
                 if (targetLeague === 'LCP') seeds = sorted.slice(0, 6).map((t, idx) => ({ ...t, seed: idx + 1 }));
-                else if (targetLeague === 'CBLOL' || targetLeague === 'LCS') seeds = sorted.slice(0, 8).map((t, idx) => ({ ...t, seed: idx + 1 }));
+                else if (targetLeague === 'CBLOL' || targetLeague === 'LCS' || targetLeague === 'LEC') seeds = sorted.slice(0, 8).map((t, idx) => ({ ...t, seed: idx + 1 }));
                 isUpdated = true;
             }
 
@@ -374,6 +377,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 if (targetLeague === 'LCP') playoffs = generateLCPPlayoffs(seeds);
                 else if (targetLeague === 'CBLOL') playoffs = generateCBLOLPlayoffs(seeds);
                 else if (targetLeague === 'LCS') playoffs = generateLCSPlayoffs(seeds);
+                else if (targetLeague === 'LEC') playoffs = generateLECPlayoffs(seeds);
                 isUpdated = true;
             }
 
@@ -576,6 +580,90 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                     po8Match.t2 = po7.winnerId;
                 }
                 simPlayoffMatch('lcs_po8');
+
+            } else if (targetLeague === 'LEC') {
+                // ─── Upper Bracket Round 1 ─────────────────────────
+                const ub1g1 = simPlayoffMatch('lec_po_ub1g1');
+                const ub1g2 = simPlayoffMatch('lec_po_ub1g2');
+                const ub1g3 = simPlayoffMatch('lec_po_ub1g3');
+                const ub1g4 = simPlayoffMatch('lec_po_ub1g4');
+
+                // ─── Upper Bracket Round 2 ─────────────────────────
+                // g1 winner vs g4 winner, g2 winner vs g3 winner
+                const ub2g1Match = playoffs.find(m => m.id === 'lec_po_ub2g1');
+                if (ub2g1Match && ub1g1.winnerId && ub1g4.winnerId) {
+                    ub2g1Match.t1 = ub1g1.winnerId;
+                    ub2g1Match.t2 = ub1g4.winnerId;
+                }
+                const ub2g2Match = playoffs.find(m => m.id === 'lec_po_ub2g2');
+                if (ub2g2Match && ub1g2.winnerId && ub1g3.winnerId) {
+                    ub2g2Match.t1 = ub1g2.winnerId;
+                    ub2g2Match.t2 = ub1g3.winnerId;
+                }
+                const ub2g1 = simPlayoffMatch('lec_po_ub2g1');
+                const ub2g2 = simPlayoffMatch('lec_po_ub2g2');
+
+                // ─── Lower Bracket Round 1 ─────────────────────────
+                // g1 loser vs g4 loser, g2 loser vs g3 loser
+                const lb1g1Match = playoffs.find(m => m.id === 'lec_po_lb1g1');
+                if (lb1g1Match && ub1g1.loserId && ub1g4.loserId) {
+                    lb1g1Match.t1 = ub1g1.loserId;
+                    lb1g1Match.t2 = ub1g4.loserId;
+                }
+                const lb1g2Match = playoffs.find(m => m.id === 'lec_po_lb1g2');
+                if (lb1g2Match && ub1g2.loserId && ub1g3.loserId) {
+                    lb1g2Match.t1 = ub1g2.loserId;
+                    lb1g2Match.t2 = ub1g3.loserId;
+                }
+                const lb1g1 = simPlayoffMatch('lec_po_lb1g1');
+                const lb1g2 = simPlayoffMatch('lec_po_lb1g2');
+
+                // ─── Lower Bracket Round 2 ─────────────────────────
+                // lb1g1 winner vs ub2g2 loser, lb1g2 winner vs ub2g1 loser
+                const lb2g1Match = playoffs.find(m => m.id === 'lec_po_lb2g1');
+                if (lb2g1Match && lb1g1.winnerId && ub2g2.loserId) {
+                    lb2g1Match.t1 = lb1g1.winnerId;
+                    lb2g1Match.t2 = ub2g2.loserId;
+                }
+                const lb2g2Match = playoffs.find(m => m.id === 'lec_po_lb2g2');
+                if (lb2g2Match && lb1g2.winnerId && ub2g1.loserId) {
+                    lb2g2Match.t1 = lb1g2.winnerId;
+                    lb2g2Match.t2 = ub2g1.loserId;
+                }
+                const lb2g1 = simPlayoffMatch('lec_po_lb2g1');
+                const lb2g2 = simPlayoffMatch('lec_po_lb2g2');
+
+                // ─── Upper Final (3라운드 승자조) BO5 ──────────────
+                const ubfMatch = playoffs.find(m => m.id === 'lec_po_ubf');
+                if (ubfMatch && ub2g1.winnerId && ub2g2.winnerId) {
+                    ubfMatch.t1 = ub2g1.winnerId;
+                    ubfMatch.t2 = ub2g2.winnerId;
+                }
+                const ubf = simPlayoffMatch('lec_po_ubf');
+
+                // ─── Lower Semifinal (3라운드 패자조) BO5 ──────────
+                const lbsfMatch = playoffs.find(m => m.id === 'lec_po_lbsf');
+                if (lbsfMatch && lb2g1.winnerId && lb2g2.winnerId) {
+                    lbsfMatch.t1 = lb2g1.winnerId;
+                    lbsfMatch.t2 = lb2g2.winnerId;
+                }
+                const lbsf = simPlayoffMatch('lec_po_lbsf');
+
+                // ─── 4라운드: lbsf winner vs ubf loser BO5 ─────────
+                const r4Match = playoffs.find(m => m.id === 'lec_po_r4');
+                if (r4Match && lbsf.winnerId && ubf.loserId) {
+                    r4Match.t1 = lbsf.winnerId;
+                    r4Match.t2 = ubf.loserId;
+                }
+                const r4 = simPlayoffMatch('lec_po_r4');
+
+                // ─── 결승: r4 winner vs ubf winner BO5 ─────────────
+                const finalMatch = playoffs.find(m => m.id === 'lec_po_final');
+                if (finalMatch && r4.winnerId && ubf.winnerId) {
+                    finalMatch.t1 = r4.winnerId;
+                    finalMatch.t2 = ubf.winnerId;
+                }
+                simPlayoffMatch('lec_po_final');
             }
         }
 
@@ -636,7 +724,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 )}
             </div>
             
-            {['LCK', 'LCP', 'CBLOL', 'LCS'].includes(displayLeague) ? (
+            {['LCK', 'LCP', 'CBLOL', 'LCS', 'LEC'].includes(displayLeague) ? (
                 activeMatches.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 pb-4">
                         {activeMatches
