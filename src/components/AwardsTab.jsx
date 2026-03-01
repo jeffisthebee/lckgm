@@ -8,6 +8,19 @@ import { TEAM_COLORS } from '../data/constants';
 
 const globalPlayerList = Object.values(FOREIGN_PLAYERS || {}).flat().filter(Boolean);
 
+// Returns white or black text color for best contrast against a background hex color
+const getContrastText = (hexColor) => {
+    if (!hexColor || hexColor === 'transparent') return '#ffffff';
+    const hex = hexColor.replace('#', '');
+    if (hex.length < 6) return '#ffffff';
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    // Luminance formula
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance < 0.5 ? '#ffffff' : '#000000';
+};
+
 const getGlobalTeam = (teamIdentifier, lckTeams) => {
     if (!teamIdentifier) return null;
     let found = lckTeams.find(t => t.name === teamIdentifier || String(t.id) === String(teamIdentifier));
@@ -66,8 +79,8 @@ const PlayerCard = ({ player, rank, lckTeams }) => {
                 <RoleBadge role={player.role} />
             </div>
 
-            <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-md mt-4" 
-                 style={{ backgroundColor: bgColor }}>
+            <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs shadow-md mt-4" 
+                 style={{ backgroundColor: bgColor, color: getContrastText(bgColor) }}>
                 {displayTeamName}
             </div>
 
@@ -137,6 +150,7 @@ const MvpShowcaseCard = ({ player, title, badgeColor, lckTeams, size = 'large' }
                 <div className={`rounded-full border-4 flex items-center justify-center font-black shadow-2xl mb-4 relative ${badgeColor.replace('bg-', 'border-')}`}
                      style={{
                          backgroundColor: bgColor,
+                         color: getContrastText(bgColor),
                          width: size === 'large' ? '7rem' : '5rem', 
                          height: size === 'large' ? '7rem' : '5rem',
                          fontSize: size === 'large' ? '1.875rem' : '1.5rem'
@@ -377,11 +391,15 @@ export default function AwardsTab({ league, teams }) {
             }
         }
 
+        // Regular season standings = sorted by regular season W/L only (not playoffs)
+        const regularStandingsNames = regSorted.map(r => r.team?.name).filter(Boolean);
+
         return {
             ...league,
             matches: foreignMatches,
             standings: league.foreignStandings?.[currentLeague] || {},
             finalStandings: customFinalStandingsNames.length > 0 ? customFinalStandingsNames : (league.finalStandings || []),
+            regularStandings: regularStandingsNames,
             seasonSummary: {
                 ...league.seasonSummary,
                 finalStandings: customFinalStandingsNames.length > 0 ? customFinalStandingsNames : league.seasonSummary?.finalStandings
@@ -559,6 +577,14 @@ export default function AwardsTab({ league, teams }) {
 
         const finalsMvpName = finalsMvpNameDirect;
 
+        // If finalsMvpName was resolved but the player has no stats entry, create a stub so they appear
+        if (finalsMvpName && !players[finalsMvpName]) {
+            // Try to find team from the finals match
+            const finalMatch = targetMatches.find(m => m.id === finalMatchId || m.label === '결승전' || m.label?.toUpperCase() === 'GRAND FINAL');
+            const finalWinnerTeam = finalMatch?.result?.winner || '';
+            players[finalsMvpName] = { games: 1, totalScore: 0, pog: 0, role: null, team: finalWinnerTeam, kills: 0, deaths: 0, assists: 0 };
+        }
+
         const scored = Object.entries(players)
             .filter(([, d]) => d.games > 0)
             .map(([name, data]) => {
@@ -611,9 +637,9 @@ export default function AwardsTab({ league, teams }) {
         if (isLCK) return regularData;
         return computeAwardsFromScratch(
             activeLeagueData.matches || [], scaleToUse,
-            activeLeagueData.finalStandings || [], false
+            activeLeagueData.regularStandings || activeLeagueData.finalStandings || [], false
         );
-    }, [isLCK, scaleToUse, activeLeagueData.matches, activeLeagueData.finalStandings, regularData]);
+    }, [isLCK, scaleToUse, activeLeagueData.matches, activeLeagueData.regularStandings, activeLeagueData.finalStandings, regularData]);
 
     const patchedPlayoff = useMemo(() => {
         if (isLCK) return playoffData;
