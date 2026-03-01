@@ -1171,10 +1171,10 @@ setMyMatchResult({
         
         {/* Save confirmation toast */}
         {saveMessage && (
-            <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] bg-gray-900 text-green-400 font-bold text-sm px-6 py-3 rounded-full shadow-2xl border border-green-500 flex items-center gap-2 animate-fade-in">
-                {saveMessage}
-            </div>
-        )}
+    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] bg-gray-900 text-green-400 font-bold text-sm px-6 py-3 rounded-full shadow-2xl border border-green-500 flex items-center gap-2">
+        {saveMessage}
+    </div>
+)}
 
         {myMatchResult && (
           <DetailedMatchResultModal 
