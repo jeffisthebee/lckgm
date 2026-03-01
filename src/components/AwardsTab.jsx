@@ -195,7 +195,6 @@ export default function AwardsTab({ league, teams }) {
     const isLCK = currentLeague === 'LCK';
     const activeTeams = isLCK ? teams : (FOREIGN_LEAGUES[currentLeague] || []);
     
-    // [THE FIX] Pre-calculate the exact Final Standings here so the Stats Engine uses the right Multipliers!
     const activeLeagueData = useMemo(() => {
         if (isLCK) return league;
 
@@ -332,12 +331,6 @@ export default function AwardsTab({ league, teams }) {
                 customFinalStandingsNames = lcpRanks;
 
             } else if (currentLeague === 'LEC') {
-                // ── LEC Final Standings ──────────────────────────────
-                // 1st = winner of final, 2nd = loser of final
-                // 3rd = loser of 4라운드, 4th = loser of 3라운드 패자조
-                // 5/6 = losers of 2라운드 패자조 (by set-diff in loss, then reg seed)
-                // 7/8 = losers of 1라운드 패자조 (by set-diff in loss, then reg seed)
-                // 9–12 = regular season positions (not in playoffs)
                 const lecRanks = [];
                 const addRank = (tName) => { if (tName) lecRanks.push(tName); };
 
@@ -346,16 +339,14 @@ export default function AwardsTab({ league, teams }) {
                 addRank(getLoser('lec_po_r4'));
                 addRank(getLoser('lec_po_lbsf'));
 
-                // Helper: get set-diff from a finished match (loser's perspective = negative)
                 const getMatchSetDiff = (id) => {
                     const m = foreignMatches.find(x => x.id === id);
                     if (!m?.result?.score) return 0;
                     const parts = String(m.result.score).split(/[-:]/).map(Number);
                     if (parts.length !== 2) return 0;
-                    return Math.abs(parts[0] - parts[1]); // higher = closer match for loser
+                    return Math.abs(parts[0] - parts[1]); 
                 };
 
-                // 5/6: losers of lb2g1 and lb2g2 — better set-diff (closer loss) ranks higher
                 const lb2g1L = getLoser('lec_po_lb2g1');
                 const lb2g2L = getLoser('lec_po_lb2g2');
                 const fifthSixth = [lb2g1L, lb2g2L].filter(Boolean).sort((a, b) => {
@@ -363,13 +354,11 @@ export default function AwardsTab({ league, teams }) {
                     const mIdB = b === lb2g1L ? 'lec_po_lb2g1' : 'lec_po_lb2g2';
                     const diffA = getMatchSetDiff(mIdA);
                     const diffB = getMatchSetDiff(mIdB);
-                    if (diffB !== diffA) return diffB - diffA; // higher diff = closer series = better
-                    // Tiebreak by regular season seed (lower idx = better seed)
+                    if (diffB !== diffA) return diffB - diffA; 
                     return regSorted.findIndex(x => x.team.name === a) - regSorted.findIndex(x => x.team.name === b);
                 });
                 fifthSixth.forEach(tName => addRank(tName));
 
-                // 7/8: losers of lb1g1 and lb1g2 — same tiebreak logic
                 const lb1g1L = getLoser('lec_po_lb1g1');
                 const lb1g2L = getLoser('lec_po_lb1g2');
                 const seventhEighth = [lb1g1L, lb1g2L].filter(Boolean).sort((a, b) => {
@@ -382,14 +371,12 @@ export default function AwardsTab({ league, teams }) {
                 });
                 seventhEighth.forEach(tName => addRank(tName));
 
-                // 9–12: regular season losers not yet placed
                 const alreadyPlaced = new Set(lecRanks);
                 regSorted.filter(x => x.team && !alreadyPlaced.has(x.team.name)).forEach(r => lecRanks.push(r.team.name));
                 customFinalStandingsNames = lecRanks;
             }
         }
 
-        // LEC uses a 12-team point scale; other leagues use the standard scale
         const lecPointScale = currentLeague === 'LEC'
             ? [100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 5, 0]
             : null;
@@ -432,12 +419,7 @@ export default function AwardsTab({ league, teams }) {
     const regularData = useMemo(() => computeAwards(activeLeagueData, activeTeams), [activeLeagueData, activeTeams]);
     const playoffData = useMemo(() => isPlayoffsFinished ? computePlayoffAwards(activeLeagueData, activeTeams) : null, [activeLeagueData, activeTeams, isPlayoffsFinished]);
 
-    // ── Full awards recompute for leagues with a custom point scale (e.g. LEC 12-team) ──────────
-    // computeAwards() selects winners using its own internal scale, so patching scores after
-    // the fact still leaves the wrong players selected. Instead we read the raw match history
-    // and compute everything from scratch when a customRankPointScale is provided.
     const computeAwardsFromScratch = (matches, scale, finalStandings, forPlayoffs) => {
-        // Build team → rank points map
         const rankPtsMap = {};
         (finalStandings || []).forEach((entry, idx) => {
             const name = typeof entry === 'string' ? entry : (entry?.name || entry?.id || '');
@@ -460,11 +442,9 @@ export default function AwardsTab({ league, teams }) {
         const targetMatches = (matches || []).filter(m => {
             if (m.status !== 'finished') return false;
             if (forPlayoffs) return m.type === 'playoff';
-            // Regular mode: only regular season and super-week games, not playoffs/playin
             return m.type === 'regular' || m.type === 'super';
         });
 
-        // Determine the final match id for this league
         const finalMatchId = currentLeague === 'LEC' ? 'lec_po_final'
             : currentLeague === 'LCS' ? 'lcs_po8'
             : currentLeague === 'CBLOL' ? 'cblol_po10'
@@ -474,18 +454,30 @@ export default function AwardsTab({ league, teams }) {
         let finalsMvpNameDirect = null;
 
         for (const match of targetMatches) {
-            const isFinal = match.id === finalMatchId;
+            const isFinal = match.id === finalMatchId || match.label === '결승전' || match.label?.toUpperCase() === 'GRAND FINAL';
 
-            // Finals MVP: read the match-level posPlayer (same source the schedule uses)
+            // [THE FIX] The Finals MVP Fallback Hunter!
+            // If the posPlayer string was deleted to save memory, it recalculates the MVP by counting the POGs of the final sets!
             if (isFinal && match.result) {
                 const raw = match.result.posPlayer ?? match.result.posPlayerName ?? match.result.pogPlayer;
-                const resolved = typeof raw === 'string' ? raw.trim()
+                let resolved = typeof raw === 'string' ? raw.trim()
                     : (raw?.playerName || raw?.player || raw?.name || raw?.이름 || '').trim();
+                
+                if (!resolved && match.result.history) {
+                    const finalPogs = {};
+                    for (const set of safeArr(match.result.history)) {
+                        const pogRaw = set.pogPlayer ?? set.pog ?? set.posPlayer;
+                        const pogName = typeof pogRaw === 'string' ? pogRaw.trim() : (pogRaw?.playerName || '').trim();
+                        if (pogName) finalPogs[pogName] = (finalPogs[pogName] || 0) + 1;
+                    }
+                    const topFinalPog = Object.entries(finalPogs).sort((a,b) => b[1] - a[1])[0];
+                    if (topFinalPog) resolved = topFinalPog[0];
+                }
+                
                 if (resolved) finalsMvpNameDirect = resolved;
             }
 
             for (const set of safeArr(match.result?.history)) {
-                // Track set-level POG (for regular season MVP / playoff POG leader)
                 const pogRaw = set.pogPlayer ?? set.pog ?? set.posPlayer;
                 const pogName = typeof pogRaw === 'string' ? pogRaw.trim()
                     : (pogRaw?.playerName || '').trim();
@@ -577,7 +569,6 @@ export default function AwardsTab({ league, teams }) {
             activeLeagueData.matches || [], customScale,
             activeLeagueData.finalStandings || [], false
         );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [customScale, activeLeagueData.matches, activeLeagueData.finalStandings]);
 
     const patchedPlayoff = useMemo(() => {
@@ -587,7 +578,6 @@ export default function AwardsTab({ league, teams }) {
             activeLeagueData.matches || [], customScale,
             activeLeagueData.finalStandings || [], true
         );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [customScale, activeLeagueData.matches, activeLeagueData.finalStandings, isPlayoffsFinished]);
 
     const activeData = (viewMode === 'playoff' && patchedPlayoff) ? patchedPlayoff : patchedRegular;
