@@ -204,6 +204,59 @@ const TeamSection = ({ title, rank, players, lckTeams }) => {
 const LEC_SCALE  = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 5, 0]; // 12 teams
 const BASE_SCALE = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10];        // 10 teams
 
+// Takes a statsManager result and re-calculates every player's rankPoints + finalScore
+// using the provided standings order + scale, then re-sorts all-pro teams accordingly.
+// FMVP, pogLeader identity, pogCount, avgScore are all preserved as-is.
+const reapplyScale = (data, standingsNames, scale) => {
+    if (!data) return data;
+
+    const rankPtsMap = {};
+    (standingsNames || []).forEach((name, idx) => {
+        if (name) rankPtsMap[name] = idx < scale.length ? scale[idx] : 0;
+    });
+
+    const patchPlayer = (p) => {
+        if (!p) return p;
+        const teamName = p.teamObj?.name || p.team || '';
+        const newRankPoints = rankPtsMap[teamName] ?? 0;
+        const newFinalScore = newRankPoints
+            + (p.pogCount || 0) * 10
+            + (p.avgScore || 0)
+            + (p.isFinalsMvp ? 20 : 0)
+            + (p.isPogLeader ? 20 : 0)
+            + (p.mvpBonus || 0);
+        return { ...p, rankPoints: newRankPoints, finalScore: newFinalScore };
+    };
+
+    const pogLeader = patchPlayer(data.pogLeader);
+    const finalsMvp = patchPlayer(data.finalsMvp);
+
+    // Collect all unique players across all tiers so we can re-rank them
+    const ROLES = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
+    const allPlayersMap = {};
+    [1, 2, 3].forEach(tier => {
+        ROLES.forEach(role => {
+            const p = data.allProTeams?.[tier]?.[role];
+            if (p?.playerName) allPlayersMap[p.playerName] = patchPlayer(p);
+        });
+    });
+
+    // Re-build allProTeams: top 3 per role by new finalScore
+    const allProTeams = { 1: {}, 2: {}, 3: {} };
+    ROLES.forEach(role => {
+        const byRole = Object.values(allPlayersMap)
+            .filter(p => p.role === role)
+            .sort((a, b) => b.finalScore - a.finalScore);
+        [0, 1, 2].forEach(i => { if (byRole[i]) allProTeams[i + 1][role] = byRole[i]; });
+    });
+
+    // Re-pick seasonMvp as highest finalScore among all patched players
+    const allPatched = Object.values(allPlayersMap).sort((a, b) => b.finalScore - a.finalScore);
+    const seasonMvp = allPatched[0] || patchPlayer(data.seasonMvp);
+
+    return { ...data, seasonMvp, pogLeader, finalsMvp, allProTeams };
+};
+
 // --- Main Component ---
 export default function AwardsTab({ league, teams }) {
     const [currentLeague, setCurrentLeague] = useState('LCK');
@@ -469,13 +522,17 @@ export default function AwardsTab({ league, teams }) {
 
     const regularData = useMemo(() => {
         const data = isLEC ? lecRegularLeagueData : activeLeagueData;
-        return computeAwards(data, activeTeams);
+        const result = computeAwards(data, activeTeams);
+        if (isLEC) return reapplyScale(result, activeLeagueData.regularStandings || [], LEC_SCALE);
+        return result;
     }, [isLEC, lecRegularLeagueData, activeLeagueData, activeTeams]);
 
     const playoffData = useMemo(() => {
         if (!isPlayoffsFinished) return null;
         const data = isLEC ? lecPlayoffLeagueData : activeLeagueData;
-        return computePlayoffAwards(data, activeTeams);
+        const result = computePlayoffAwards(data, activeTeams);
+        if (isLEC) return reapplyScale(result, activeLeagueData.finalStandings || [], LEC_SCALE);
+        return result;
     }, [isLEC, lecPlayoffLeagueData, activeLeagueData, activeTeams, isPlayoffsFinished]);
 
     const activeData = (viewMode === 'playoff' && playoffData) ? playoffData : regularData;
