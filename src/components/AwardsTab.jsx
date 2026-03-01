@@ -460,7 +460,8 @@ export default function AwardsTab({ league, teams }) {
         const targetMatches = (matches || []).filter(m => {
             if (m.status !== 'finished') return false;
             if (forPlayoffs) return m.type === 'playoff';
-            return true; // all finished matches for regular
+            // Regular mode: only regular season and super-week games, not playoffs/playin
+            return m.type === 'regular' || m.type === 'super';
         });
 
         // Determine the final match id for this league
@@ -470,19 +471,27 @@ export default function AwardsTab({ league, teams }) {
             : currentLeague === 'LCP' ? 'lcp_po8' : null;
 
         const players = {};
-        const finalMatchPogs = [];
+        let finalsMvpNameDirect = null;
 
         for (const match of targetMatches) {
             const isFinal = match.id === finalMatchId;
+
+            // Finals MVP: read the match-level posPlayer (same source the schedule uses)
+            if (isFinal && match.result) {
+                const raw = match.result.posPlayer ?? match.result.posPlayerName ?? match.result.pogPlayer;
+                const resolved = typeof raw === 'string' ? raw.trim()
+                    : (raw?.playerName || raw?.player || raw?.name || raw?.이름 || '').trim();
+                if (resolved) finalsMvpNameDirect = resolved;
+            }
+
             for (const set of safeArr(match.result?.history)) {
-                // Track POG
+                // Track set-level POG (for regular season MVP / playoff POG leader)
                 const pogRaw = set.pogPlayer ?? set.pog ?? set.posPlayer;
                 const pogName = typeof pogRaw === 'string' ? pogRaw.trim()
                     : (pogRaw?.playerName || '').trim();
                 if (pogName) {
                     if (!players[pogName]) players[pogName] = { games: 0, totalScore: 0, pog: 0, role: null, team: null, kills: 0, deaths: 0, assists: 0 };
                     players[pogName].pog++;
-                    if (isFinal) finalMatchPogs.push(pogName);
                 }
 
                 const allPicks = [...safeArr(set.picks?.A), ...safeArr(set.picks?.B)];
@@ -514,7 +523,7 @@ export default function AwardsTab({ league, teams }) {
             .filter(([, d]) => d.pog > 0)
             .sort(([, a], [, b]) => b.pog - a.pog)[0]?.[0] || null;
 
-        const finalsMvpName = finalMatchPogs.length > 0 ? finalMatchPogs[finalMatchPogs.length - 1] : null;
+        const finalsMvpName = finalsMvpNameDirect;
 
         const scored = Object.entries(players)
             .filter(([, d]) => d.games > 0)
