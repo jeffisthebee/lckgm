@@ -52,6 +52,7 @@ const getOvrBadgeStyle = (ovr) => {
     
     // Mobile Sidebar State
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [saveMessage, setSaveMessage] = useState(''); // For save confirmation toast
   
     // 드래프트 상태
     const [isDrafting, setIsDrafting] = useState(false);
@@ -143,6 +144,80 @@ const getOvrBadgeStyle = (ovr) => {
 // [FIX] Manual Archive Function - Now saves Playoff Awards too!
 // [FIXED] Manual Archive Function
 // [FIXED] Manual Archive Function - Now saves LCK AND Foreign Leagues!
+// ── Helper: compute LEC regular-season standing order from raw matches ──────
+const computeLECRegularStandings = (fMatches, fTeams) => {
+    const st = {};
+    fTeams.forEach(t => st[t.name] = { w: 0, l: 0, diff: 0, h2h: {}, defeatedOpponents: [], team: t });
+
+    fMatches.filter(m => m.type === 'regular' && m.status === 'finished').forEach(m => {
+        const winner = m.result?.winner;
+        const t1 = fTeams.find(t => t.name === m.t1 || String(t.id) === String(m.t1))?.name || m.t1;
+        const t2 = fTeams.find(t => t.name === m.t2 || String(t.id) === String(m.t2))?.name || m.t2;
+        const loser = winner === t1 ? t2 : t1;
+        let diff = 0;
+        if (m.result?.score) {
+            const pts = String(m.result.score).split(/[-:]/).map(Number);
+            if (pts.length === 2 && !isNaN(pts[0]) && !isNaN(pts[1])) diff = Math.abs(pts[0] - pts[1]);
+        }
+        if (st[winner]) { st[winner].w++; st[winner].diff += diff; st[winner].defeatedOpponents.push(loser); if (!st[winner].h2h[loser]) st[winner].h2h[loser] = { w: 0, l: 0 }; st[winner].h2h[loser].w += 1; }
+        if (st[loser]) { st[loser].l++; st[loser].diff -= diff; if (!st[loser].h2h[winner]) st[loser].h2h[winner] = { w: 0, l: 0 }; st[loser].h2h[winner].l += 1; }
+    });
+
+    const tiedGroups = {};
+    Object.values(st).forEach(rec => { const key = `${rec.w}_${rec.diff}`; if (!tiedGroups[key]) tiedGroups[key] = []; tiedGroups[key].push(rec.team.name); });
+
+    return Object.values(st).sort((a, b) => {
+        if (b.w !== a.w) return b.w - a.w;
+        if (b.diff !== a.diff) return b.diff - a.diff;
+        const tieKey = `${a.w}_${a.diff}`;
+        if ((tiedGroups[tieKey]?.length || 0) === 2) { const aW = a.h2h[b.team.name]?.w || 0; const bW = b.h2h[a.team.name]?.w || 0; if (aW !== bW) return bW - aW; }
+        let sovA = 0, sovB = 0;
+        a.defeatedOpponents.forEach(o => { sovA += (st[o]?.w || 0); });
+        b.defeatedOpponents.forEach(o => { sovB += (st[o]?.w || 0); });
+        return sovB - sovA;
+    }).map(r => r.team.name);
+};
+
+// ── Helper: reapply LEC 12-team scale to already-computed awards ────────────
+const LEC_ARCHIVE_SCALE = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 5, 0];
+const reapplyLECScale = (data, fMatches, standingsNames, forPlayoffs) => {
+    if (!data) return data;
+    const rankPtsMap = {};
+    (standingsNames || []).forEach((name, idx) => { if (name) rankPtsMap[name] = idx < LEC_ARCHIVE_SCALE.length ? LEC_ARCHIVE_SCALE[idx] : 0; });
+    const safeArr = v => Array.isArray(v) ? v : [];
+    const normalizeRole = (r) => { if (!r) return 'UNKNOWN'; const up = String(r).toUpperCase(); if (['JGL','정글','JUNGLE'].includes(up)) return 'JGL'; if (['SUP','서포터','SUPP','SPT'].includes(up)) return 'SUP'; if (['ADC','원거리','BOT','BOTTOM','AD'].includes(up)) return 'ADC'; if (['MID','미드'].includes(up)) return 'MID'; if (['TOP','탑'].includes(up)) return 'TOP'; return up; };
+    const players = {};
+    const targetMatches = (fMatches || []).filter(m => { if (m.status !== 'finished') return false; return forPlayoffs ? m.type === 'playoff' : (m.type === 'regular' || m.type === 'super'); });
+    for (const match of targetMatches) {
+        for (const set of safeArr(match.result?.history)) {
+            const pogObj = set.pogPlayer; const pogName = typeof pogObj === 'string' ? pogObj.trim() : (pogObj?.playerName || '').trim();
+            if (pogName) { if (!players[pogName]) players[pogName] = { games: 0, totalScore: 0, pog: 0, role: null, team: null }; players[pogName].pog++; }
+            const allPicks = [...safeArr(set.picks?.A), ...safeArr(set.picks?.B)];
+            for (const p of allPicks) {
+                if (!p?.playerName) continue;
+                const name = p.playerName;
+                if (!players[name]) players[name] = { games: 0, totalScore: 0, pog: 0, role: null, team: null };
+                const k = p.stats?.kills ?? p.k ?? 0; const d = p.stats?.deaths ?? p.d ?? 0; const a = p.stats?.assists ?? p.a ?? 0; const dmg = p.stats?.damage ?? 0; const gold = p.currentGold ?? 0; const safeD = d === 0 ? 1 : d;
+                players[name].games++; players[name].totalScore += ((k + a) / safeD) * 3 + (dmg / 3000) + (gold / 1000) + (a * 0.65);
+                if (!players[name].role) players[name].role = p.role || p.playerData?.포지션;
+                if (!players[name].team) players[name].team = p.playerData?.팀 || p.playerData?.team;
+            }
+        }
+    }
+    const pogLeaderName = data.pogLeader?.playerName || null;
+    const finalsMvpName = data.finalsMvp?.playerName || null;
+    const scored = Object.entries(players).filter(([, d]) => d.games > 0).map(([name, d]) => {
+        const teamName = d.team || ''; const rankPoints = rankPtsMap[teamName] ?? 0; const avgScore = d.totalScore / d.games; const pogCount = d.pog;
+        const isPogLeader = name === pogLeaderName; const isFinalsMvp = name === finalsMvpName;
+        const finalScore = rankPoints + (pogCount * 10) + avgScore + (isFinalsMvp ? 20 : 0) + (isPogLeader ? 20 : 0);
+        return { playerName: name, role: normalizeRole(d.role), team: teamName, teamObj: { name: teamName }, rankPoints, avgScore, pogCount, isPogLeader, isFinalsMvp, mvpBonus: 0, finalScore };
+    }).sort((a, b) => b.finalScore - a.finalScore);
+    const ROLES = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
+    const allProTeams = { 1: {}, 2: {}, 3: {} }; const usedByRole = {}; ROLES.forEach(r => { usedByRole[r] = []; });
+    for (const tier of [1, 2, 3]) { for (const role of ROLES) { const eligible = scored.filter(p => p.role === role && !usedByRole[role].includes(p.playerName)); if (eligible[0]) { allProTeams[tier][role] = eligible[0]; usedByRole[role].push(eligible[0].playerName); } } }
+    return { ...data, seasonMvp: scored[0] || null, pogLeader: scored.find(p => p.isPogLeader) || null, finalsMvp: scored.find(p => p.isFinalsMvp) || null, allProTeams };
+};
+
 const handleManualArchive = () => {
   if (!league) return;
 
@@ -194,7 +269,7 @@ const handleManualArchive = () => {
   const cleanHistory = history.filter(h => !(h.year === currentYear && h.seasonName === currentSeasonName));
   const newHistory = [...cleanHistory, seasonSnapshot];
   
-  // --- 2. FOREIGN LEAGUES (LCP, etc.) ARCHIVE ---
+  // --- 2. FOREIGN LEAGUES ARCHIVE ---
   const newForeignHistory = { ...(league.foreignHistory || { LPL: [], LEC: [], LCS: [], LCP: [], CBLOL: [] }) };
 
   ['LPL', 'LEC', 'LCS', 'LCP', 'CBLOL'].forEach(lgName => {
@@ -202,15 +277,47 @@ const handleManualArchive = () => {
       
       if (fMatches.length > 0) {
           const fTeams = FOREIGN_LEAGUES[lgName] || [];
-          const pseudoLeague = { matches: fMatches }; // Mock league to feed the stats engine
-          
-          const fRegAwards = computeAwards(pseudoLeague, fTeams);
-          const fPlayoffAwards = computePlayoffAwards(pseudoLeague, fTeams);
+          const isLEC = lgName === 'LEC';
+
+          // For LEC: build pseudo-league with correct regularStandings + scale
+          let pseudoLeague;
+          if (isLEC) {
+              const regularStandingsNames = computeLECRegularStandings(fMatches, fTeams);
+              pseudoLeague = {
+                  matches: fMatches,
+                  regularStandings: regularStandingsNames,
+                  finalStandings: regularStandingsNames, // fallback; reapplyLECScale overrides
+                  customRankPointScale: LEC_ARCHIVE_SCALE,
+              };
+          } else {
+              pseudoLeague = { matches: fMatches };
+          }
+
+          let fRegAwards = computeAwards(pseudoLeague, fTeams);
+          let fPlayoffAwards = computePlayoffAwards(pseudoLeague, fTeams);
+
+          // For LEC: re-score using the 12-team scale with correct standings order
+          if (isLEC) {
+              const regStandings = pseudoLeague.regularStandings;
+              // Compute playoff final standings order for playoff awards
+              const getLoserById = (id) => { const m = fMatches.find(x => x.id === id); if (!m || !m.result?.winner) return null; const t1 = fTeams.find(t => t.name === m.t1 || String(t.id) === String(m.t1))?.name || m.t1; const t2 = fTeams.find(t => t.name === m.t2 || String(t.id) === String(m.t2))?.name || m.t2; return m.result.winner === t1 ? t2 : t1; };
+              const getWinnerById = (id) => fMatches.find(x => x.id === id)?.result?.winner || null;
+              const poStandings = [];
+              const addPO = (n) => { if (n && !poStandings.includes(n)) poStandings.push(n); };
+              addPO(getWinnerById('lec_po_final')); addPO(getLoserById('lec_po_final')); addPO(getLoserById('lec_po_r4')); addPO(getLoserById('lec_po_lbsf'));
+              [getLoserById('lec_po_lb2g1'), getLoserById('lec_po_lb2g2')].filter(Boolean).forEach(n => addPO(n));
+              [getLoserById('lec_po_lb1g1'), getLoserById('lec_po_lb1g2')].filter(Boolean).forEach(n => addPO(n));
+              regStandings.filter(n => !poStandings.includes(n)).forEach(n => addPO(n));
+              const finalPoStandings = poStandings.length > 0 ? poStandings : regStandings;
+
+              fRegAwards = reapplyLECScale(fRegAwards, fMatches, regStandings, false);
+              fPlayoffAwards = reapplyLECScale(fPlayoffAwards, fMatches, finalPoStandings, true);
+          }
 
           const fSnapshot = {
               year: currentYear,
-              seasonName: '스플릿 1', // Match the custom title in HistoryTab
-              matches: fMatches,      // CRITICAL: HistoryTab uses this to dynamically calculate final standings!
+              seasonName: '스플릿 1',
+              matches: fMatches,
               awards: {
                   regular: {
                       mvp: fRegAwards.seasonMvp,
@@ -241,17 +348,22 @@ const handleManualArchive = () => {
   setLeague(updatedLeague);
   updateLeague(league.id, updatedLeague);
   
-  alert("✅ 시즌 기록 저장 완료! (LCK 및 해외 리그 데이터 통합 저장됨)");
+  // Show toast notification instead of alert()
+  setSaveMessage('✅ 시즌 기록 저장 완료! (LCK 및 해외 리그 데이터 통합 저장됨)');
+  setTimeout(() => setSaveMessage(''), 4000);
 };
 
-    // [NEW] AUTO-ARCHIVE HISTORY EFFECT (Still kept for future seasons)
+    // AUTO-ARCHIVE: runs silently only when season just finished and not yet saved
+    // We use a ref to prevent re-triggering after manual save updates league state
+    const autoArchiveRanRef = useRef(false);
     useEffect(() => {
         if (!league || !league.matches) return;
-
+        if (autoArchiveRanRef.current) return; // Already ran this session
         if (isSeasonOver && !isSavedInHistory) {
+            autoArchiveRanRef.current = true;
             handleManualArchive();
         }
-    }, [league?.matches]); // Trigger when matches update
+    }, [isSeasonOver, isSavedInHistory]); // Use semantic flags, not raw matches reference
   
   // [CRITICAL FIX] handleMatchClick now injects round info for old saves
   // [CRITICAL FIX] Global Team Finder for the Modal!
@@ -1057,6 +1169,13 @@ setMyMatchResult({
     return (
       <div className="flex h-screen bg-gray-100 overflow-hidden font-sans relative">
         
+        {/* Save confirmation toast */}
+        {saveMessage && (
+            <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] bg-gray-900 text-green-400 font-bold text-sm px-6 py-3 rounded-full shadow-2xl border border-green-500 flex items-center gap-2 animate-fade-in">
+                {saveMessage}
+            </div>
+        )}
+
         {myMatchResult && (
           <DetailedMatchResultModal 
             result={myMatchResult.resultData} 
