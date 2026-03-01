@@ -8,6 +8,18 @@ import { TEAM_COLORS } from '../data/constants';
 
 const globalPlayerList = Object.values(FOREIGN_PLAYERS || {}).flat().filter(Boolean);
 
+// Returns white or black depending on background luminance so team name is always readable
+const getContrastText = (hexColor) => {
+    if (!hexColor || hexColor === 'transparent') return '#ffffff';
+    const hex = String(hexColor).replace('#', '');
+    if (hex.length < 6) return '#ffffff';
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    if (isNaN(r) || isNaN(g) || isNaN(b)) return '#ffffff';
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255 < 0.5 ? '#ffffff' : '#000000';
+};
+
 const getGlobalTeam = (teamIdentifier, lckTeams) => {
     if (!teamIdentifier) return null;
     let found = lckTeams.find(t => t.name === teamIdentifier || String(t.id) === String(teamIdentifier));
@@ -66,8 +78,8 @@ const PlayerCard = ({ player, rank, lckTeams }) => {
                 <RoleBadge role={player.role} />
             </div>
 
-            <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-md mt-4" 
-                 style={{ backgroundColor: bgColor }}>
+            <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs shadow-md mt-4" 
+                 style={{ backgroundColor: bgColor, color: getContrastText(bgColor) }}>
                 {displayTeamName}
             </div>
 
@@ -137,6 +149,7 @@ const MvpShowcaseCard = ({ player, title, badgeColor, lckTeams, size = 'large' }
                 <div className={`rounded-full border-4 flex items-center justify-center font-black shadow-2xl mb-4 relative ${badgeColor.replace('bg-', 'border-')}`}
                      style={{
                          backgroundColor: bgColor,
+                         color: getContrastText(bgColor),
                          width: size === 'large' ? '7rem' : '5rem', 
                          height: size === 'large' ? '7rem' : '5rem',
                          fontSize: size === 'large' ? '1.875rem' : '1.5rem'
@@ -394,11 +407,15 @@ export default function AwardsTab({ league, teams }) {
             ? [100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 5, 0]
             : null;
 
+        // Regular season standings = pure W/L order (no playoff influence)
+        const regularStandingsNames = regSorted.map(r => r.team?.name).filter(Boolean);
+
         return {
             ...league,
             matches: foreignMatches,
             standings: league.foreignStandings?.[currentLeague] || {},
             finalStandings: customFinalStandingsNames.length > 0 ? customFinalStandingsNames : (league.finalStandings || []),
+            regularStandings: regularStandingsNames,
             customRankPointScale: lecPointScale,
             seasonSummary: {
                 ...league.seasonSummary,
@@ -432,7 +449,197 @@ export default function AwardsTab({ league, teams }) {
     const regularData = useMemo(() => computeAwards(activeLeagueData, activeTeams), [activeLeagueData, activeTeams]);
     const playoffData = useMemo(() => isPlayoffsFinished ? computePlayoffAwards(activeLeagueData, activeTeams) : null, [activeLeagueData, activeTeams, isPlayoffsFinished]);
 
-    const activeData = (viewMode === 'playoff' && playoffData) ? playoffData : regularData;
+    // ── LEC-specific scratch computation ────────────────────────────────────
+    // computeAwards/computePlayoffAwards from statsManager use the old 10-team scale
+    // and don't know about regularStandings vs finalStandings.  For LEC we override both.
+    const LEC_SCALE = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 5, 0];
+    const BASE_SCALE = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10];
+
+    const computeAwardsFromScratch = (matches, scale, standingsNames, forPlayoffs) => {
+        const rankPtsMap = {};
+        (standingsNames || []).forEach((entry, idx) => {
+            const name = typeof entry === 'string' ? entry : (entry?.name || entry?.id || '');
+            if (name) rankPtsMap[name] = idx < scale.length ? scale[idx] : 0;
+        });
+
+        const safeArr = v => Array.isArray(v) ? v : [];
+        const normalizeRole = (r) => {
+            if (!r) return 'UNKNOWN';
+            const up = String(r).toUpperCase();
+            if (['JGL','정글','JUNGLE'].includes(up)) return 'JGL';
+            if (['SUP','서포터','SUPP','SPT'].includes(up)) return 'SUP';
+            if (['ADC','원거리','BOT','BOTTOM','AD'].includes(up)) return 'ADC';
+            if (['MID','미드'].includes(up)) return 'MID';
+            if (['TOP','탑'].includes(up)) return 'TOP';
+            return up;
+        };
+
+        const currentTeams = FOREIGN_LEAGUES[currentLeague] || [];
+        const targetMatches = (matches || []).filter(m => {
+            if (m.status !== 'finished') return false;
+            if (forPlayoffs) return m.type === 'playoff';
+            return m.type === 'regular' || m.type === 'super';
+        });
+
+        const finalMatchId = currentLeague === 'LEC' ? 'lec_po_final'
+            : currentLeague === 'LCS' ? 'lcs_po8'
+            : currentLeague === 'CBLOL' ? 'cblol_po10'
+            : currentLeague === 'LCP' ? 'lcp_po8' : null;
+
+        const players = {};
+        let finalsMvpNameDirect = null;
+
+        for (const match of targetMatches) {
+            const isFinal = match.id === finalMatchId || match.label === '결승전' || match.label?.toUpperCase() === 'GRAND FINAL';
+
+            if (isFinal && match.result) {
+                const finalWinner = match.result.winner;
+                const raw = match.result.posPlayer ?? match.result.posPlayerName ?? match.result.seriesMvp;
+                let resolved = typeof raw === 'string' ? raw.trim()
+                    : (raw?.playerName || raw?.player || raw?.name || raw?.이름 || '').trim();
+
+                if (!resolved && match.result.history) {
+                    const finalPogs = {};
+                    let highestScore = -999;
+                    let bestPlayerFallback = null;
+                    for (const set of safeArr(match.result.history)) {
+                        const pogRaw = set.pogPlayer ?? set.pog ?? set.posPlayer;
+                        const pogName = typeof pogRaw === 'string' ? pogRaw.trim() : (pogRaw?.playerName || '').trim();
+                        const allPicks = [...safeArr(set.picks?.A), ...safeArr(set.picks?.B)];
+                        if (pogName) {
+                            const pData = allPicks.find(p => p?.playerName === pogName);
+                            const pTeam = pData?.playerData?.팀 || pData?.playerData?.team || pData?.team;
+                            const gTeam = getGlobalTeam(pTeam, currentTeams)?.name || pTeam;
+                            if (gTeam === finalWinner || String(pTeam) === String(finalWinner)) {
+                                finalPogs[pogName] = (finalPogs[pogName] || 0) + 1;
+                            }
+                        }
+                        for (const p of allPicks) {
+                            if (!p?.playerName) continue;
+                            const pTeam = p?.playerData?.팀 || p?.playerData?.team || p?.team;
+                            const gTeam = getGlobalTeam(pTeam, currentTeams)?.name || pTeam;
+                            if (gTeam === finalWinner || String(pTeam) === String(finalWinner)) {
+                                const k = p.stats?.kills ?? p.k ?? 0;
+                                const d = p.stats?.deaths ?? p.d ?? 0;
+                                const a = p.stats?.assists ?? p.a ?? 0;
+                                const dmg = p.stats?.damage ?? 0;
+                                const gold = p.currentGold ?? 0;
+                                const safeD = d === 0 ? 1 : d;
+                                const setScore = ((k + a) / safeD) * 3 + (dmg / 3000) + (gold / 1000) + (a * 0.65);
+                                if (setScore > highestScore) { highestScore = setScore; bestPlayerFallback = p.playerName; }
+                            }
+                        }
+                    }
+                    const sortedPogs = Object.entries(finalPogs).sort((a, b) => b[1] - a[1]);
+                    resolved = sortedPogs.length > 0 ? sortedPogs[0][0] : (bestPlayerFallback || '');
+                }
+                if (resolved) finalsMvpNameDirect = resolved;
+            }
+
+            for (const set of safeArr(match.result?.history)) {
+                const pogRaw = set.pogPlayer ?? set.pog ?? set.posPlayer;
+                const pogName = typeof pogRaw === 'string' ? pogRaw.trim() : (pogRaw?.playerName || '').trim();
+                if (pogName) {
+                    if (!players[pogName]) players[pogName] = { games: 0, totalScore: 0, pog: 0, role: null, team: null, kills: 0, deaths: 0, assists: 0 };
+                    players[pogName].pog++;
+                }
+                const allPicks = [...safeArr(set.picks?.A), ...safeArr(set.picks?.B)];
+                for (const p of allPicks) {
+                    if (!p?.playerName) continue;
+                    const name = p.playerName;
+                    if (!players[name]) players[name] = { games: 0, totalScore: 0, pog: 0, role: null, team: null, kills: 0, deaths: 0, assists: 0 };
+                    const k = p.stats?.kills ?? p.k ?? 0;
+                    const d = p.stats?.deaths ?? p.d ?? 0;
+                    const a = p.stats?.assists ?? p.a ?? 0;
+                    const dmg = p.stats?.damage ?? 0;
+                    const gold = p.currentGold ?? 0;
+                    const safeD = d === 0 ? 1 : d;
+                    players[name].games++;
+                    players[name].totalScore += ((k + a) / safeD) * 3 + (dmg / 3000) + (gold / 1000) + (a * 0.65);
+                    players[name].kills += k; players[name].deaths += d; players[name].assists += a;
+                    if (!players[name].role) players[name].role = p.role || p.playerData?.포지션;
+                    if (!players[name].team) players[name].team = p.playerData?.팀 || p.playerData?.team;
+                }
+            }
+        }
+
+        const pogLeaderName = Object.entries(players).filter(([, d]) => d.pog > 0).sort(([, a], [, b]) => b.pog - a.pog)[0]?.[0] || null;
+        const finalsMvpName = finalsMvpNameDirect;
+
+        // If FMVP was resolved but player has no stats entry (e.g. no picks data), create a stub
+        if (finalsMvpName && !players[finalsMvpName]) {
+            const finalMatch = targetMatches.find(m => m.id === finalMatchId || m.label === '결승전' || m.label?.toUpperCase() === 'GRAND FINAL');
+            players[finalsMvpName] = { games: 1, totalScore: 0, pog: 0, role: null, team: finalMatch?.result?.winner || '', kills: 0, deaths: 0, assists: 0 };
+        }
+
+        const scored = Object.entries(players)
+            .filter(([, d]) => d.games > 0)
+            .map(([name, data]) => {
+                const teamName = data.team || '';
+                const rankPoints = rankPtsMap[teamName] ?? 0;
+                const avgScore = data.totalScore / data.games;
+                const pogCount = data.pog;
+                const isPogLeader = name === pogLeaderName;
+                const isFinalsMvp = name === finalsMvpName;
+                const finalScore = rankPoints + (pogCount * 10) + avgScore + (isFinalsMvp ? 20 : 0) + (isPogLeader ? 20 : 0);
+                return {
+                    playerName: name, role: normalizeRole(data.role),
+                    team: teamName, teamObj: { name: teamName },
+                    rankPoints, avgScore, pogCount,
+                    isPogLeader, isFinalsMvp, mvpBonus: 0, finalScore,
+                    kills: data.kills, deaths: data.deaths, assists: data.assists,
+                };
+            })
+            .sort((a, b) => b.finalScore - a.finalScore);
+
+        const ROLES = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
+        const allProTeams = { 1: {}, 2: {}, 3: {} };
+        const usedByRole = {};
+        ROLES.forEach(r => { usedByRole[r] = []; });
+        for (const tier of [1, 2, 3]) {
+            for (const role of ROLES) {
+                const eligible = scored.filter(p => p.role === role && !usedByRole[role].includes(p.playerName));
+                if (eligible[0]) { allProTeams[tier][role] = eligible[0]; usedByRole[role].push(eligible[0].playerName); }
+            }
+        }
+
+        return {
+            seasonMvp:  scored[0] || null,
+            pogLeader:  scored.find(p => p.isPogLeader) || null,
+            finalsMvp:  scored.find(p => p.isFinalsMvp) || null,
+            allProTeams,
+        };
+    };
+
+    // For LEC: use scratch computation with correct 12-team scale + proper standings for each view
+    const isLEC = currentLeague === 'LEC';
+    const scaleToUse = isLEC ? LEC_SCALE : BASE_SCALE;
+
+    const lecRegularData = useMemo(() => {
+        if (!isLEC) return null;
+        return computeAwardsFromScratch(
+            activeLeagueData.matches || [],
+            LEC_SCALE,
+            activeLeagueData.regularStandings || [],
+            false
+        );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isLEC, activeLeagueData.matches, activeLeagueData.regularStandings]);
+
+    const lecPlayoffData = useMemo(() => {
+        if (!isLEC || !isPlayoffsFinished) return null;
+        return computeAwardsFromScratch(
+            activeLeagueData.matches || [],
+            LEC_SCALE,
+            activeLeagueData.finalStandings || [],
+            true
+        );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isLEC, isPlayoffsFinished, activeLeagueData.matches, activeLeagueData.finalStandings]);
+
+    const activeData = isLEC
+        ? (viewMode === 'playoff' && lecPlayoffData ? lecPlayoffData : lecRegularData)
+        : (viewMode === 'playoff' && playoffData ? playoffData : regularData);
     const titlePrefix = currentLeague === 'LCK' ? 'LCK' : currentLeague;
 
     return (
