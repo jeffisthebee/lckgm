@@ -414,6 +414,113 @@ const HistoryTab = ({ league }) => {
                   if (lcsRanks.length > 0) displayStandings = lcsRanks;
               }
 
+              // ── LEC FINAL STANDINGS ─────────────────────────────────────────────
+              if (currentLeague === 'LEC' && record.matches && record.matches.length > 0) {
+                  const lecTeams = FOREIGN_LEAGUES['LEC'] || [];
+                  const st = {};
+                  lecTeams.forEach(t => st[t.name] = { w: 0, l: 0, diff: 0, h2h: {}, defeatedOpponents: [], team: t });
+
+                  record.matches.filter(m => m.type === 'regular' && m.status === 'finished').forEach(m => {
+                      const winner = m.result?.winner;
+                      const t1 = findGlobalTeam(m.t1).name;
+                      const t2 = findGlobalTeam(m.t2).name;
+                      const loser = winner === t1 ? t2 : t1;
+                      let diff = 0;
+                      if (m.result?.score) {
+                          const pts = String(m.result.score).split(/[-:]/).map(Number);
+                          if (pts.length === 2 && !isNaN(pts[0]) && !isNaN(pts[1])) diff = Math.abs(pts[0] - pts[1]);
+                      }
+                      if (st[winner]) {
+                          st[winner].w++; st[winner].diff += diff; st[winner].defeatedOpponents.push(loser);
+                          if (!st[winner].h2h[loser]) st[winner].h2h[loser] = { w: 0, l: 0 };
+                          st[winner].h2h[loser].w += 1;
+                      }
+                      if (st[loser]) {
+                          st[loser].l++; st[loser].diff -= diff;
+                          if (!st[loser].h2h[winner]) st[loser].h2h[winner] = { w: 0, l: 0 };
+                          st[loser].h2h[winner].l += 1;
+                      }
+                  });
+
+                  const tiedGroups = {};
+                  Object.values(st).forEach(rec => {
+                      const key = `${rec.w}_${rec.diff}`;
+                      if (!tiedGroups[key]) tiedGroups[key] = [];
+                      tiedGroups[key].push(rec.team.name);
+                  });
+
+                  const regSorted = Object.values(st).sort((a, b) => {
+                      if (b.w !== a.w) return b.w - a.w;
+                      if (b.diff !== a.diff) return b.diff - a.diff;
+                      const tieKey = `${a.w}_${a.diff}`;
+                      if ((tiedGroups[tieKey]?.length || 0) === 2) {
+                          const aW = a.h2h[b.team.name]?.w || 0;
+                          const bW = b.h2h[a.team.name]?.w || 0;
+                          if (aW !== bW) return bW - aW;
+                      }
+                      let sovA = 0, sovB = 0;
+                      a.defeatedOpponents.forEach(o => { sovA += (st[o]?.w || 0); });
+                      b.defeatedOpponents.forEach(o => { sovB += (st[o]?.w || 0); });
+                      return sovB - sovA;
+                  });
+
+                  const poMatches = record.matches.filter(m => m.type === 'playoff' && m.status === 'finished');
+                  const getLoserById = (id) => {
+                      const m = poMatches.find(x => x.id === id);
+                      if (!m || !m.result?.winner) return null;
+                      const t1 = findGlobalTeam(m.t1).name;
+                      const t2 = findGlobalTeam(m.t2).name;
+                      return m.result.winner === t1 ? t2 : t1;
+                  };
+                  const getWinnerById = (id) => poMatches.find(x => x.id === id)?.result?.winner || null;
+                  const getMatchSetDiff = (id) => {
+                      const m = poMatches.find(x => x.id === id);
+                      if (!m?.result?.score) return 0;
+                      const parts = String(m.result.score).split(/[-:]/).map(Number);
+                      return parts.length === 2 ? Math.abs(parts[0] - parts[1]) : 0;
+                  };
+
+                  const lecRanks = [];
+                  const addRank = (rank, tName) => {
+                      if (tName) lecRanks.push({ rank, team: st[tName]?.team || findGlobalTeam(tName) });
+                  };
+
+                  addRank(1, getWinnerById('lec_po_final'));
+                  addRank(2, getLoserById('lec_po_final'));
+                  addRank(3, getLoserById('lec_po_r4'));
+                  addRank(4, getLoserById('lec_po_lbsf'));
+
+                  // 5/6: losers of lb2g1 and lb2g2, sorted by set-diff then reg seed
+                  const lb2g1L = getLoserById('lec_po_lb2g1');
+                  const lb2g2L = getLoserById('lec_po_lb2g2');
+                  [lb2g1L, lb2g2L].filter(Boolean).sort((a, b) => {
+                      const mIdA = a === lb2g1L ? 'lec_po_lb2g1' : 'lec_po_lb2g2';
+                      const mIdB = b === lb2g1L ? 'lec_po_lb2g1' : 'lec_po_lb2g2';
+                      const dA = getMatchSetDiff(mIdA), dB = getMatchSetDiff(mIdB);
+                      if (dB !== dA) return dB - dA;
+                      return regSorted.findIndex(x => x.team.name === a) - regSorted.findIndex(x => x.team.name === b);
+                  }).forEach((tName, i) => lecRanks.push({ rank: 5 + i, team: st[tName]?.team || findGlobalTeam(tName) }));
+
+                  // 7/8: losers of lb1g1 and lb1g2, same tiebreak logic
+                  const lb1g1L = getLoserById('lec_po_lb1g1');
+                  const lb1g2L = getLoserById('lec_po_lb1g2');
+                  [lb1g1L, lb1g2L].filter(Boolean).sort((a, b) => {
+                      const mIdA = a === lb1g1L ? 'lec_po_lb1g1' : 'lec_po_lb1g2';
+                      const mIdB = b === lb1g1L ? 'lec_po_lb1g1' : 'lec_po_lb1g2';
+                      const dA = getMatchSetDiff(mIdA), dB = getMatchSetDiff(mIdB);
+                      if (dB !== dA) return dB - dA;
+                      return regSorted.findIndex(x => x.team.name === a) - regSorted.findIndex(x => x.team.name === b);
+                  }).forEach((tName, i) => lecRanks.push({ rank: 7 + i, team: st[tName]?.team || findGlobalTeam(tName) }));
+
+                  // 9–12: regular season finishers not already placed
+                  const alreadyPlaced = new Set(lecRanks.filter(r => r.team).map(r => r.team.name));
+                  regSorted.filter(x => x.team && !alreadyPlaced.has(x.team.name)).forEach((r, i) => {
+                      lecRanks.push({ rank: lecRanks.length + 1, team: r.team });
+                  });
+
+                  if (lecRanks.length > 0) displayStandings = lecRanks;
+              }
+
               const champTeamObj = record.champion ? findGlobalTeam(record.champion.name) : (displayStandings.length > 0 ? findGlobalTeam(displayStandings[0].team.name) : null);
               const championColor = TEAM_COLORS[champTeamObj?.name] || champTeamObj?.colors?.primary || '#333';
               const championDisplayShort = champTeamObj?.name || 'TBD';
@@ -532,7 +639,7 @@ const HistoryTab = ({ league }) => {
                                                               {tObj.name.slice(0,3)}
                                                           </div>
                                                           {tObj.fullName || tObj.name}
-                                                          {item.rank === 1 && ['LCP', 'CBLOL', 'LCS'].includes(currentLeague) && (
+                                                          {item.rank === 1 && ['LCP', 'CBLOL', 'LCS', 'LEC'].includes(currentLeague) && (
                                                               <span className="text-[10px] bg-purple-100 text-purple-700 border border-purple-200 px-2 py-0.5 rounded font-black whitespace-nowrap shadow-sm ml-1">
                                                                   FST 진출
                                                               </span>

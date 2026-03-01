@@ -330,14 +330,76 @@ export default function AwardsTab({ league, teams }) {
                 const alreadyPlaced = new Set(lcpRanks);
                 regSorted.filter(x => x.team && !alreadyPlaced.has(x.team.name)).forEach(r => lcpRanks.push(r.team.name));
                 customFinalStandingsNames = lcpRanks;
+
+            } else if (currentLeague === 'LEC') {
+                // ── LEC Final Standings ──────────────────────────────
+                // 1st = winner of final, 2nd = loser of final
+                // 3rd = loser of 4라운드, 4th = loser of 3라운드 패자조
+                // 5/6 = losers of 2라운드 패자조 (by set-diff in loss, then reg seed)
+                // 7/8 = losers of 1라운드 패자조 (by set-diff in loss, then reg seed)
+                // 9–12 = regular season positions (not in playoffs)
+                const lecRanks = [];
+                const addRank = (tName) => { if (tName) lecRanks.push(tName); };
+
+                addRank(getWinner('lec_po_final'));
+                addRank(getLoser('lec_po_final'));
+                addRank(getLoser('lec_po_r4'));
+                addRank(getLoser('lec_po_lbsf'));
+
+                // Helper: get set-diff from a finished match (loser's perspective = negative)
+                const getMatchSetDiff = (id) => {
+                    const m = foreignMatches.find(x => x.id === id);
+                    if (!m?.result?.score) return 0;
+                    const parts = String(m.result.score).split(/[-:]/).map(Number);
+                    if (parts.length !== 2) return 0;
+                    return Math.abs(parts[0] - parts[1]); // higher = closer match for loser
+                };
+
+                // 5/6: losers of lb2g1 and lb2g2 — better set-diff (closer loss) ranks higher
+                const lb2g1L = getLoser('lec_po_lb2g1');
+                const lb2g2L = getLoser('lec_po_lb2g2');
+                const fifthSixth = [lb2g1L, lb2g2L].filter(Boolean).sort((a, b) => {
+                    const mIdA = a === lb2g1L ? 'lec_po_lb2g1' : 'lec_po_lb2g2';
+                    const mIdB = b === lb2g1L ? 'lec_po_lb2g1' : 'lec_po_lb2g2';
+                    const diffA = getMatchSetDiff(mIdA);
+                    const diffB = getMatchSetDiff(mIdB);
+                    if (diffB !== diffA) return diffB - diffA; // higher diff = closer series = better
+                    // Tiebreak by regular season seed (lower idx = better seed)
+                    return regSorted.findIndex(x => x.team.name === a) - regSorted.findIndex(x => x.team.name === b);
+                });
+                fifthSixth.forEach(tName => addRank(tName));
+
+                // 7/8: losers of lb1g1 and lb1g2 — same tiebreak logic
+                const lb1g1L = getLoser('lec_po_lb1g1');
+                const lb1g2L = getLoser('lec_po_lb1g2');
+                const seventhEighth = [lb1g1L, lb1g2L].filter(Boolean).sort((a, b) => {
+                    const mIdA = a === lb1g1L ? 'lec_po_lb1g1' : 'lec_po_lb1g2';
+                    const mIdB = b === lb1g1L ? 'lec_po_lb1g1' : 'lec_po_lb1g2';
+                    const diffA = getMatchSetDiff(mIdA);
+                    const diffB = getMatchSetDiff(mIdB);
+                    if (diffB !== diffA) return diffB - diffA;
+                    return regSorted.findIndex(x => x.team.name === a) - regSorted.findIndex(x => x.team.name === b);
+                });
+                seventhEighth.forEach(tName => addRank(tName));
+
+                // 9–12: regular season losers not yet placed
+                const alreadyPlaced = new Set(lecRanks);
+                regSorted.filter(x => x.team && !alreadyPlaced.has(x.team.name)).forEach(r => lecRanks.push(r.team.name));
+                customFinalStandingsNames = lecRanks;
             }
         }
+
+        // LEC uses a 12-team point scale; other leagues use the standard scale
+        const lecPointScale = currentLeague === 'LEC'
+            ? [100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 5, 0]
+            : null;
 
         return {
             ...league,
             matches: foreignMatches,
             standings: league.foreignStandings?.[currentLeague] || {},
             finalStandings: customFinalStandingsNames.length > 0 ? customFinalStandingsNames : (league.finalStandings || []),
+            customRankPointScale: lecPointScale,
             seasonSummary: {
                 ...league.seasonSummary,
                 finalStandings: customFinalStandingsNames.length > 0 ? customFinalStandingsNames : league.seasonSummary?.finalStandings
@@ -354,7 +416,9 @@ export default function AwardsTab({ league, teams }) {
             m.round === 5 || 
             String(m.round) === "5" || 
             (currentLeague === 'LCP' && m.round === 4) ||
-            (currentLeague === 'LCS' && m.id === 'lcs_po8') || // Explicitly ensure LCS finals detection!
+            (currentLeague === 'LCS' && m.id === 'lcs_po8') ||
+            (currentLeague === 'CBLOL' && m.id === 'cblol_po10') ||
+            (currentLeague === 'LEC' && m.id === 'lec_po_final') ||
             (m.label && (m.label.includes('결승') || m.label.toUpperCase().includes('FINAL')))
         );
 
