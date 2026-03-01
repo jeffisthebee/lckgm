@@ -145,13 +145,15 @@ const StandingsTab = ({
                                 let statusBadge = null;
                                 const matches = league.foreignMatches?.[currentLeague] || [];
 
-                                // [THE FIX] Added LCS and Dynamic Round Detection for the Champion!
-                                if (['LCP', 'CBLOL', 'LCS'].includes(currentLeague)) {
-                                    let finalRoundNum = 5; // Default CBLOL is round 5
-                                    if (currentLeague === 'LCP') finalRoundNum = 4;
-                                    if (currentLeague === 'LCS') finalRoundNum = 4;
-                                    
-                                    const finalMatch = matches.find(m => m.type === 'playoff' && m.round === finalRoundNum);
+                                if (['LCP', 'CBLOL', 'LCS', 'LEC'].includes(currentLeague)) {
+                                    // Use match IDs for reliable final detection (round numbers are inconsistent)
+                                    const finalMatchId = {
+                                        'LCP':   'lcp_po8',
+                                        'CBLOL': 'cblol_po10',
+                                        'LCS':   'lcs_po8',
+                                        'LEC':   'lec_po_final',
+                                    }[currentLeague];
+                                    const finalMatch = matches.find(m => m.id === finalMatchId);
                                     const isChampion = finalMatch && finalMatch.status === 'finished' && finalMatch.result?.winner === t.name;
 
                                     if (currentLeague === 'LCP') {
@@ -203,6 +205,19 @@ const StandingsTab = ({
                                         } else {
                                             const totalRegular = matches.filter(m => (m.type === 'regular' || m.type === 'super')).length;
                                             const finishedRegular = matches.filter(m => (m.type === 'regular' || m.type === 'super') && m.status === 'finished').length;
+                                            if (totalRegular > 0 && totalRegular === finishedRegular) statusBadge = <span className="block sm:inline text-[10px] sm:text-xs bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded sm:ml-2 mt-1 sm:mt-0 font-bold w-fit whitespace-nowrap">탈락</span>;
+                                        }
+                                    } else if (currentLeague === 'LEC') {
+                                        if (idx < 8) { // 1st–8th go to playoffs
+                                            statusBadge = (
+                                                <div className="flex items-center gap-1 sm:ml-2 mt-1 sm:mt-0">
+                                                    <span className="text-[10px] sm:text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded font-bold whitespace-nowrap">PO {idx + 1}시드</span>
+                                                    {isChampion && <span className="text-[10px] sm:text-xs bg-purple-100 text-purple-700 border border-purple-300 px-1.5 py-0.5 rounded font-black whitespace-nowrap shadow-sm">FST 진출</span>}
+                                                </div>
+                                            );
+                                        } else {
+                                            const totalRegular = matches.filter(m => m.type === 'regular').length;
+                                            const finishedRegular = matches.filter(m => m.type === 'regular' && m.status === 'finished').length;
                                             if (totalRegular > 0 && totalRegular === finishedRegular) statusBadge = <span className="block sm:inline text-[10px] sm:text-xs bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded sm:ml-2 mt-1 sm:mt-0 font-bold w-fit whitespace-nowrap">탈락</span>;
                                         }
                                     }
