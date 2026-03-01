@@ -388,6 +388,7 @@ export default function AwardsTab({ league, teams }) {
 
         const foreignMatches = league.foreignMatches?.[currentLeague] || [];
         let customFinalStandingsNames = [];
+        let regularStandingsNames = [];   // defined at outer scope so it's always accessible
 
         if (foreignMatches.length > 0) {
             const currentTeams = FOREIGN_LEAGUES[currentLeague] || [];
@@ -461,6 +462,9 @@ export default function AwardsTab({ league, teams }) {
                 if (sovDiffB !== sovDiffA) return sovDiffB - sovDiffA;
                 return 0;
             });
+
+            // Capture regular season order right after regSorted is built
+            regularStandingsNames = regSorted.map(r => r.team?.name).filter(Boolean);
 
             if (currentLeague === 'LCS') {
                 const lcsRanks = [];
@@ -580,9 +584,6 @@ export default function AwardsTab({ league, teams }) {
         const lecPointScale = currentLeague === 'LEC'
             ? [100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 5, 0]
             : null;
-
-        // Regular season standings = pure W/L order, no playoff influence
-        const regularStandingsNames = regSorted.map(r => r.team?.name).filter(Boolean);
 
         return {
             ...league,
