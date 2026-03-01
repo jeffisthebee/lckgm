@@ -432,51 +432,154 @@ export default function AwardsTab({ league, teams }) {
     const regularData = useMemo(() => computeAwards(activeLeagueData, activeTeams), [activeLeagueData, activeTeams]);
     const playoffData = useMemo(() => isPlayoffsFinished ? computePlayoffAwards(activeLeagueData, activeTeams) : null, [activeLeagueData, activeTeams, isPlayoffsFinished]);
 
-    // Rewrite rankPoints + finalScore for leagues with a custom point scale (e.g. LEC 12-team)
-    const applyCustomPointScale = (data, scale) => {
-        if (!data || !scale) return data;
-        const rewritePlayer = (p) => {
-            if (!p) return p;
-            // Find this player's team rank in finalStandings
-            const standings = activeLeagueData.finalStandings || [];
-            const teamName = p.teamObj?.name || p.team || (p.teams && p.teams[0]);
-            const rank = standings.findIndex(s => {
-                const sName = typeof s === 'string' ? s : (s?.name || s?.id);
-                return sName === teamName;
-            });
-            const newRankPoints = rank >= 0 && rank < scale.length ? scale[rank] : 0;
-            const oldRankPoints = p.rankPoints || 0;
-            const diff = newRankPoints - oldRankPoints;
-            return {
-                ...p,
-                rankPoints: newRankPoints,
-                finalScore: (p.finalScore || 0) + diff,
-            };
+    // ── Full awards recompute for leagues with a custom point scale (e.g. LEC 12-team) ──────────
+    // computeAwards() selects winners using its own internal scale, so patching scores after
+    // the fact still leaves the wrong players selected. Instead we read the raw match history
+    // and compute everything from scratch when a customRankPointScale is provided.
+    const computeAwardsFromScratch = (matches, scale, finalStandings, forPlayoffs) => {
+        // Build team → rank points map
+        const rankPtsMap = {};
+        (finalStandings || []).forEach((entry, idx) => {
+            const name = typeof entry === 'string' ? entry : (entry?.name || entry?.id || '');
+            if (name) rankPtsMap[name] = idx < scale.length ? scale[idx] : 0;
+        });
+
+        const safeArr = v => Array.isArray(v) ? v : [];
+
+        const normalizeRole = (r) => {
+            if (!r) return 'UNKNOWN';
+            const up = String(r).toUpperCase();
+            if (['JGL','정글','JUNGLE'].includes(up)) return 'JGL';
+            if (['SUP','서포터','SUPP','SPT'].includes(up)) return 'SUP';
+            if (['ADC','원거리','BOT','BOTTOM','AD'].includes(up)) return 'ADC';
+            if (['MID','미드'].includes(up)) return 'MID';
+            if (['TOP','탑'].includes(up)) return 'TOP';
+            return up;
         };
 
-        const rewriteTeamMap = (teamMap) => {
-            if (!teamMap) return teamMap;
-            const out = {};
-            for (const role in teamMap) out[role] = rewritePlayer(teamMap[role]);
-            return out;
-        };
+        const targetMatches = (matches || []).filter(m => {
+            if (m.status !== 'finished') return false;
+            if (forPlayoffs) return m.type === 'playoff';
+            return true; // all finished matches for regular
+        });
+
+        // Determine the final match id for this league
+        const finalMatchId = currentLeague === 'LEC' ? 'lec_po_final'
+            : currentLeague === 'LCS' ? 'lcs_po8'
+            : currentLeague === 'CBLOL' ? 'cblol_po10'
+            : currentLeague === 'LCP' ? 'lcp_po8' : null;
+
+        const players = {};
+        const finalMatchPogs = [];
+
+        for (const match of targetMatches) {
+            const isFinal = match.id === finalMatchId;
+            for (const set of safeArr(match.result?.history)) {
+                // Track POG
+                const pogRaw = set.pogPlayer ?? set.pog ?? set.posPlayer;
+                const pogName = typeof pogRaw === 'string' ? pogRaw.trim()
+                    : (pogRaw?.playerName || '').trim();
+                if (pogName) {
+                    if (!players[pogName]) players[pogName] = { games: 0, totalScore: 0, pog: 0, role: null, team: null, kills: 0, deaths: 0, assists: 0 };
+                    players[pogName].pog++;
+                    if (isFinal) finalMatchPogs.push(pogName);
+                }
+
+                const allPicks = [...safeArr(set.picks?.A), ...safeArr(set.picks?.B)];
+                for (const p of allPicks) {
+                    if (!p?.playerName) continue;
+                    const name = p.playerName;
+                    if (!players[name]) players[name] = { games: 0, totalScore: 0, pog: 0, role: null, team: null, kills: 0, deaths: 0, assists: 0 };
+
+                    const k = p.stats?.kills ?? p.k ?? 0;
+                    const d = p.stats?.deaths ?? p.d ?? 0;
+                    const a = p.stats?.assists ?? p.a ?? 0;
+                    const dmg = p.stats?.damage ?? 0;
+                    const gold = p.currentGold ?? 0;
+                    const safeD = d === 0 ? 1 : d;
+                    const setScore = ((k + a) / safeD) * 3 + (dmg / 3000) + (gold / 1000) + (a * 0.65);
+
+                    players[name].games++;
+                    players[name].totalScore += setScore;
+                    players[name].kills += k;
+                    players[name].deaths += d;
+                    players[name].assists += a;
+                    if (!players[name].role) players[name].role = p.role || p.playerData?.포지션;
+                    if (!players[name].team) players[name].team = p.playerData?.팀 || p.playerData?.team;
+                }
+            }
+        }
+
+        const pogLeaderName = Object.entries(players)
+            .filter(([, d]) => d.pog > 0)
+            .sort(([, a], [, b]) => b.pog - a.pog)[0]?.[0] || null;
+
+        const finalsMvpName = finalMatchPogs.length > 0 ? finalMatchPogs[finalMatchPogs.length - 1] : null;
+
+        const scored = Object.entries(players)
+            .filter(([, d]) => d.games > 0)
+            .map(([name, data]) => {
+                const teamName = data.team || '';
+                const rankPoints = rankPtsMap[teamName] ?? 0;
+                const avgScore = data.totalScore / data.games;
+                const pogCount = data.pog;
+                const isPogLeader = name === pogLeaderName;
+                const isFinalsMvp = name === finalsMvpName;
+                const finalScore = rankPoints + (pogCount * 10) + avgScore
+                    + (isFinalsMvp ? 20 : 0) + (isPogLeader ? 20 : 0);
+                return {
+                    playerName: name, role: normalizeRole(data.role),
+                    team: teamName, teamObj: { name: teamName },
+                    rankPoints, avgScore, pogCount,
+                    isPogLeader, isFinalsMvp, mvpBonus: 0, finalScore,
+                    kills: data.kills, deaths: data.deaths, assists: data.assists,
+                };
+            })
+            .sort((a, b) => b.finalScore - a.finalScore);
+
+        const ROLES = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
+        const allProTeams = { 1: {}, 2: {}, 3: {} };
+        const usedByRole = {};
+        ROLES.forEach(r => { usedByRole[r] = []; });
+
+        for (const tier of [1, 2, 3]) {
+            for (const role of ROLES) {
+                const eligible = scored.filter(p => p.role === role && !usedByRole[role].includes(p.playerName));
+                if (eligible[0]) {
+                    allProTeams[tier][role] = eligible[0];
+                    usedByRole[role].push(eligible[0].playerName);
+                }
+            }
+        }
 
         return {
-            ...data,
-            seasonMvp:   rewritePlayer(data.seasonMvp),
-            pogLeader:   rewritePlayer(data.pogLeader),
-            finalsMvp:   rewritePlayer(data.finalsMvp),
-            allProTeams: data.allProTeams ? {
-                1: rewriteTeamMap(data.allProTeams[1]),
-                2: rewriteTeamMap(data.allProTeams[2]),
-                3: rewriteTeamMap(data.allProTeams[3]),
-            } : data.allProTeams,
+            seasonMvp:   scored[0] || null,
+            pogLeader:   scored.find(p => p.isPogLeader) || null,
+            finalsMvp:   scored.find(p => p.isFinalsMvp) || null,
+            allProTeams,
         };
     };
 
     const customScale = activeLeagueData.customRankPointScale || null;
-    const patchedRegular = useMemo(() => applyCustomPointScale(regularData, customScale), [regularData, customScale]);
-    const patchedPlayoff = useMemo(() => applyCustomPointScale(playoffData, customScale), [playoffData, customScale]);
+
+    const patchedRegular = useMemo(() => {
+        if (!customScale) return regularData;
+        return computeAwardsFromScratch(
+            activeLeagueData.matches || [], customScale,
+            activeLeagueData.finalStandings || [], false
+        );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [customScale, activeLeagueData.matches, activeLeagueData.finalStandings]);
+
+    const patchedPlayoff = useMemo(() => {
+        if (!customScale) return playoffData;
+        if (!isPlayoffsFinished) return null;
+        return computeAwardsFromScratch(
+            activeLeagueData.matches || [], customScale,
+            activeLeagueData.finalStandings || [], true
+        );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [customScale, activeLeagueData.matches, activeLeagueData.finalStandings, isPlayoffsFinished]);
 
     const activeData = (viewMode === 'playoff' && patchedPlayoff) ? patchedPlayoff : patchedRegular;
     const titlePrefix = currentLeague === 'LCK' ? 'LCK' : currentLeague;
