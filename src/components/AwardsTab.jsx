@@ -190,7 +190,7 @@ const TeamSection = ({ title, rank, players, lckTeams }) => {
 // --- Main Component ---
 export default function AwardsTab({ league, teams }) {
     const [currentLeague, setCurrentLeague] = useState('LCK');
-    const [viewMode, setViewMode] = useState('regular'); // 'regular' | 'playoff'
+    const [viewMode, setViewMode] = useState('regular'); 
 
     const isLCK = currentLeague === 'LCK';
     const activeTeams = isLCK ? teams : (FOREIGN_LEAGUES[currentLeague] || []);
@@ -377,16 +377,11 @@ export default function AwardsTab({ league, teams }) {
             }
         }
 
-        const lecPointScale = currentLeague === 'LEC'
-            ? [100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 5, 0]
-            : null;
-
         return {
             ...league,
             matches: foreignMatches,
             standings: league.foreignStandings?.[currentLeague] || {},
             finalStandings: customFinalStandingsNames.length > 0 ? customFinalStandingsNames : (league.finalStandings || []),
-            customRankPointScale: lecPointScale,
             seasonSummary: {
                 ...league.seasonSummary,
                 finalStandings: customFinalStandingsNames.length > 0 ? customFinalStandingsNames : league.seasonSummary?.finalStandings
@@ -452,26 +447,73 @@ export default function AwardsTab({ league, teams }) {
 
         const players = {};
         let finalsMvpNameDirect = null;
+        const currentTeams = FOREIGN_LEAGUES[currentLeague] || [];
 
         for (const match of targetMatches) {
             const isFinal = match.id === finalMatchId || match.label === '결승전' || match.label?.toUpperCase() === 'GRAND FINAL';
 
-            // [THE FIX] The Finals MVP Fallback Hunter!
-            // If the posPlayer string was deleted to save memory, it recalculates the MVP by counting the POGs of the final sets!
+            // [THE CRITICAL FIX] Strictly enforce Series MVP from Schedule data, and never give it to a losing player!
             if (isFinal && match.result) {
-                const raw = match.result.posPlayer ?? match.result.posPlayerName ?? match.result.pogPlayer;
+                const finalWinner = match.result.winner;
+                
+                // 1. Prioritize reading directly from the saved match result
+                const raw = match.result.posPlayer ?? match.result.posPlayerName ?? match.result.seriesMvp;
                 let resolved = typeof raw === 'string' ? raw.trim()
                     : (raw?.playerName || raw?.player || raw?.name || raw?.이름 || '').trim();
                 
+                // 2. If Schedule didn't save it explicitly, calculate it manually BUT strictly filter by WINNING TEAM
                 if (!resolved && match.result.history) {
                     const finalPogs = {};
+                    let highestScore = -999;
+                    let bestPlayerFallback = null;
+
                     for (const set of safeArr(match.result.history)) {
                         const pogRaw = set.pogPlayer ?? set.pog ?? set.posPlayer;
                         const pogName = typeof pogRaw === 'string' ? pogRaw.trim() : (pogRaw?.playerName || '').trim();
-                        if (pogName) finalPogs[pogName] = (finalPogs[pogName] || 0) + 1;
+                        
+                        const allPicks = [...safeArr(set.picks?.A), ...safeArr(set.picks?.B)];
+                        
+                        // Check if POG belongs to the Champion Team
+                        if (pogName) {
+                            const pData = allPicks.find(p => p?.playerName === pogName);
+                            const pTeam = pData?.playerData?.팀 || pData?.playerData?.team || pData?.team;
+                            const gTeam = getGlobalTeam(pTeam, currentTeams)?.name || pTeam;
+                            
+                            if (gTeam === finalWinner || String(pTeam) === String(finalWinner)) {
+                                finalPogs[pogName] = (finalPogs[pogName] || 0) + 1;
+                            }
+                        }
+
+                        // Also track overall highest stat score on winning team as a secondary fallback
+                        for (const p of allPicks) {
+                            if (!p?.playerName) continue;
+                            const pTeam = p?.playerData?.팀 || p?.playerData?.team || p?.team;
+                            const gTeam = getGlobalTeam(pTeam, currentTeams)?.name || pTeam;
+
+                            if (gTeam === finalWinner || String(pTeam) === String(finalWinner)) {
+                                const k = p.stats?.kills ?? p.k ?? 0;
+                                const d = p.stats?.deaths ?? p.d ?? 0;
+                                const a = p.stats?.assists ?? p.a ?? 0;
+                                const dmg = p.stats?.damage ?? 0;
+                                const gold = p.currentGold ?? 0;
+                                const safeD = d === 0 ? 1 : d;
+                                const setScore = ((k + a) / safeD) * 3 + (dmg / 3000) + (gold / 1000) + (a * 0.65);
+
+                                if (setScore > highestScore) {
+                                    highestScore = setScore;
+                                    bestPlayerFallback = p.playerName;
+                                }
+                            }
+                        }
                     }
-                    const topFinalPog = Object.entries(finalPogs).sort((a,b) => b[1] - a[1])[0];
-                    if (topFinalPog) resolved = topFinalPog[0];
+
+                    // Tally and award MVP
+                    const sortedPogs = Object.entries(finalPogs).sort((a,b) => b[1] - a[1]);
+                    if (sortedPogs.length > 0) {
+                        resolved = sortedPogs[0][0]; // Player on Winning Team with most POGs
+                    } else if (bestPlayerFallback) {
+                        resolved = bestPlayerFallback; // Player on Winning Team with highest score
+                    }
                 }
                 
                 if (resolved) finalsMvpNameDirect = resolved;
@@ -561,24 +603,26 @@ export default function AwardsTab({ league, teams }) {
         };
     };
 
-    const customScale = activeLeagueData.customRankPointScale || null;
+    // [THE FIX] Ensure ALL Foreign Leagues bypass the default statsManager so Finals IDs map perfectly!
+    const baseScale = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10];
+    const scaleToUse = currentLeague === 'LEC' ? [100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 5, 0] : baseScale;
 
     const patchedRegular = useMemo(() => {
-        if (!customScale) return regularData;
+        if (isLCK) return regularData;
         return computeAwardsFromScratch(
-            activeLeagueData.matches || [], customScale,
+            activeLeagueData.matches || [], scaleToUse,
             activeLeagueData.finalStandings || [], false
         );
-    }, [customScale, activeLeagueData.matches, activeLeagueData.finalStandings]);
+    }, [isLCK, scaleToUse, activeLeagueData.matches, activeLeagueData.finalStandings, regularData]);
 
     const patchedPlayoff = useMemo(() => {
-        if (!customScale) return playoffData;
+        if (isLCK) return playoffData;
         if (!isPlayoffsFinished) return null;
         return computeAwardsFromScratch(
-            activeLeagueData.matches || [], customScale,
+            activeLeagueData.matches || [], scaleToUse,
             activeLeagueData.finalStandings || [], true
         );
-    }, [customScale, activeLeagueData.matches, activeLeagueData.finalStandings, isPlayoffsFinished]);
+    }, [isLCK, scaleToUse, activeLeagueData.matches, activeLeagueData.finalStandings, isPlayoffsFinished, playoffData]);
 
     const activeData = (viewMode === 'playoff' && patchedPlayoff) ? patchedPlayoff : patchedRegular;
     const titlePrefix = currentLeague === 'LCK' ? 'LCK' : currentLeague;
