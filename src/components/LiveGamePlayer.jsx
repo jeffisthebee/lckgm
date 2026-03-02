@@ -1020,132 +1020,132 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         };
     
         // --- GAME PHASE TICK (Unchanged) ---
-        useEffect(() => {
-          // [FIX] Guardrail: Don't start ticking if simulationData is missing or invalid
-          if (phase !== 'GAME' || !simulationData || !simulationData.logs || playbackSpeed === 0) return;
-          
-          const finalSec = Number(simulationData.totalSeconds || simulationData.totalSeconds === 0 ? simulationData.totalSeconds : (simulationData.totalMinutes ? simulationData.totalMinutes * 60 : 1800));
-          const intervalMs = 1000 / Math.max(0.1, playbackSpeed);
-      
-          const timer = setInterval(() => {
-            setGameTime(prevTime => {
-              const nextTime = prevTime + 1;
-              const currentMinute = Math.floor(nextTime / 60) + 1; 
-      
-              // A. Process Logs
-              const currentLogs = (simulationData.logs || []).filter(l => {
-                   const m = (l || '').match(/^\s*\[(\d+):(\d{1,2})\]/);
-                   return m && ((parseInt(m[1],10)*60 + parseInt(m[2],10)) === nextTime);
-              });
-      
-              // B. Update Stats
-              setLiveStats(prevStats => {
-                const nextStats = { 
-                    ...prevStats, 
-                    kills: { ...prevStats.kills },
-                    towers: { ...prevStats.towers },
-                    players: prevStats.players.map(p => ({...p})) 
-                };
-          
-                if (currentLogs.length > 0) {
-                    setDisplayLogs(prevLogs => [...prevLogs, ...currentLogs].slice(-15));
-                    // Log Parsing logic
-                    currentLogs.forEach(l => {
-                        if (!l) return;
-                        if (l.includes('⚔️') || l.includes('🛡️')) {
-                            try {
-                                const parts = l.split('➜');
-                                if (parts.length < 2) return;
-                                const extractName = (str) => {
-                                    const openParenIndex = str.indexOf('(');
-                                    const preParen = openParenIndex === -1 ? str : str.substring(0, openParenIndex); 
-                                    const lastBracketIndex = preParen.lastIndexOf(']');
-                                    if (lastBracketIndex === -1) return preParen.trim();
-                                    return preParen.substring(lastBracketIndex + 1).trim();
-                                };
-                                const killerName = extractName(parts[0]);
-                                const victimName = extractName(parts[1]);
+        // --- GAME PHASE TICK (Unchanged logic, completely fixed memory leak) ---
+    useEffect(() => {
+        // Guardrail: Don't start ticking if simulationData is missing or invalid
+        if (phase !== 'GAME' || !simulationData || !simulationData.logs || playbackSpeed === 0) return;
+        
+        const finalSec = Number(simulationData.totalSeconds || simulationData.totalSeconds === 0 ? simulationData.totalSeconds : (simulationData.totalMinutes ? simulationData.totalMinutes * 60 : 1800));
+        const intervalMs = 1000 / Math.max(0.1, playbackSpeed);
     
-                                if (killerName && victimName) {
-                                    const killer = nextStats.players.find(p => p.playerName === killerName);
-                                    const victim = nextStats.players.find(p => p.playerName === victimName);
-                                    if (killer && victim && killer.side !== victim.side) {
-                                        killer.k = (killer.k || 0) + 1;
-                                        nextStats.kills[killer.side] = (nextStats.kills[killer.side] || 0) + 1;
-                                        killer.currentGold = (killer.currentGold || 0) + 300;
-                                        victim.d = (victim.d || 0) + 1;
-                                        killer.xp = (killer.xp || 0) + 100 + ((victim.lvl || 1) * 25);
-                                        
-                                        if (!killer.stats) killer.stats = { damage: 0 };
-                                        killer.stats.damage = (killer.stats.damage || 0) + 500 + ((killer.lvl || 1) * 50);
+        const timer = setInterval(() => {
+          setGameTime(prevTime => {
+            const nextTime = prevTime + 1;
+            const currentMinute = Math.floor(nextTime / 60) + 1; 
     
-                                        if (l.includes('assists:')) {
-                                            const assistStr = l.split('assists:')[1]?.trim() || '';
-                                            const rawAssisters = assistStr.split(',').map(s => s.split('[')[0].split('(')[0].trim()).filter(Boolean);
-                                            rawAssisters.forEach(aName => {
-                                                const assister = nextStats.players.find(p => p.playerName === aName && p.side === killer.side);
-                                                if (assister) { assister.a = (assister.a || 0) + 1; assister.currentGold = (assister.currentGold || 0) + 150; assister.xp = (assister.xp || 0) + 50 + ((victim.lvl || 1) * 10); }
-                                            });
-                                        }
-                                    }
-                                }
-                            } catch (err) { console.warn(err); }
-                        }
-                        if (l.includes('포탑') || l.includes('억제기')) {
-                            if (l.includes(simulationData.blueTeam?.name)) { nextStats.towers.BLUE = (nextStats.towers.BLUE||0) + 1; nextStats.players.filter(p => p.side === 'BLUE').forEach(p => p.currentGold = (p.currentGold||0) + 100); } 
-                            else if (l.includes(simulationData.redTeam?.name)) { nextStats.towers.RED = (nextStats.towers.RED||0) + 1; nextStats.players.filter(p => p.side === 'RED').forEach(p => p.currentGold = (p.currentGold||0) + 100); }
-                        }
-                    });
-                }
-                // Passive Income
-                nextStats.players.forEach(p => {
-                    const calculateIncome = (minute) => {
-                         // Simple passive logic for visual feed (actual logic is in simEngine)
-                         return { gold: 120, xp: 60 + (minute * 5) };
-                    };
-                    const income = calculateIndividualIncome(p, currentMinute, 1.0); 
-                    if (income.gold > 0) p.currentGold = (p.currentGold || 0) + (income.gold / 60);
-                    if (income.xp > 0) p.xp = (p.xp || 0) + (income.xp / 60);
-                    if (p.lvl < 18) { const reqXp = 180 + (p.lvl * 100); if (p.xp >= reqXp) { p.xp -= reqXp; p.lvl++; } }
-                });
-                nextStats.gold.BLUE = Math.floor(nextStats.players.filter(p=>p.side==='BLUE').reduce((a,b)=>a+(b.currentGold||0),0));
-                nextStats.gold.RED = Math.floor(nextStats.players.filter(p=>p.side==='RED').reduce((a,b)=>a+(b.currentGold||0),0));
-                return nextStats;
-              });
-    
-              if (nextTime >= finalSec) {
-                  setGameTime(finalSec);
-                  const finalKills = simulationData?.gameResult?.finalKills || liveStatsRef.current?.kills || { BLUE: 0, RED: 0 };
-                  setLiveStats(st => ({ ...st, kills: finalKills }));
-                  
-                  // [FIXED] Manual Mode Stats Persistence
-                  // Update simulationData with the final stats so calculatePOS and History use the correct values (not 0)
-                  if (isManualMode) {
-                    const finalPlayers = liveStatsRef.current.players;
-                    const finalPicksA = finalPlayers.filter(p => p.side === 'BLUE');
-                    const finalPicksB = finalPlayers.filter(p => p.side === 'RED');
-                    
-                    setSimulationData(prev => (prev ? ({ ...prev, picks: { A: finalPicksA, B: finalPicksB } }) : prev));
-                  }
-                  
-                  if (isManualMode && !simulationData?.pogPlayer) {
-                       const manualPog = calculateManualPog(
-                           liveStatsRef.current.players?.filter(p => p.side === 'BLUE') || [],
-                           liveStatsRef.current.players?.filter(p => p.side === 'RED') || [],
-                           (simulationData?.winnerName === manualTeams.blue?.name) ? 'BLUE' : 'RED',
-                           Math.floor((simulationData?.totalMinutes || (finalSec/60)) || 30)
-                       );
-                       setSimulationData(prev => (prev ? ({ ...prev, pogPlayer: manualPog }) : prev));
-                  }
-                  
-                  setTimeout(() => setPhase('SET_RESULT'), 1000);
-                  return finalSec;
-              }
-              return nextTime;
+            // A. Process Logs
+            const currentLogs = (simulationData.logs || []).filter(l => {
+                 const m = (l || '').match(/^\s*\[(\d+):(\d{1,2})\]/);
+                 return m && ((parseInt(m[1],10)*60 + parseInt(m[2],10)) === nextTime);
             });
-          }, intervalMs);
-          return () => clearInterval(timer);
-        }, [phase, simulationData, playbackSpeed, isManualMode, manualTeams]);
+    
+            // B. Update Stats
+            setLiveStats(prevStats => {
+              const nextStats = { 
+                  ...prevStats, 
+                  kills: { ...prevStats.kills },
+                  towers: { ...prevStats.towers },
+                  players: prevStats.players.map(p => ({...p})) 
+              };
+        
+              if (currentLogs.length > 0) {
+                  setDisplayLogs(prevLogs => [...prevLogs, ...currentLogs].slice(-15));
+                  currentLogs.forEach(l => {
+                      if (!l) return;
+                      if (l.includes('⚔️') || l.includes('🛡️')) {
+                          try {
+                              const parts = l.split('➜');
+                              if (parts.length < 2) return;
+                              const extractName = (str) => {
+                                  const openParenIndex = str.indexOf('(');
+                                  const preParen = openParenIndex === -1 ? str : str.substring(0, openParenIndex); 
+                                  const lastBracketIndex = preParen.lastIndexOf(']');
+                                  if (lastBracketIndex === -1) return preParen.trim();
+                                  return preParen.substring(lastBracketIndex + 1).trim();
+                              };
+                              const killerName = extractName(parts[0]);
+                              const victimName = extractName(parts[1]);
+  
+                              if (killerName && victimName) {
+                                  const killer = nextStats.players.find(p => p.playerName === killerName);
+                                  const victim = nextStats.players.find(p => p.playerName === victimName);
+                                  if (killer && victim && killer.side !== victim.side) {
+                                      killer.k = (killer.k || 0) + 1;
+                                      nextStats.kills[killer.side] = (nextStats.kills[killer.side] || 0) + 1;
+                                      killer.currentGold = (killer.currentGold || 0) + 300;
+                                      victim.d = (victim.d || 0) + 1;
+                                      killer.xp = (killer.xp || 0) + 100 + ((victim.lvl || 1) * 25);
+                                      
+                                      if (!killer.stats) killer.stats = { damage: 0 };
+                                      killer.stats.damage = (killer.stats.damage || 0) + 500 + ((killer.lvl || 1) * 50);
+  
+                                      if (l.includes('assists:')) {
+                                          const assistStr = l.split('assists:')[1]?.trim() || '';
+                                          const rawAssisters = assistStr.split(',').map(s => s.split('[')[0].split('(')[0].trim()).filter(Boolean);
+                                          rawAssisters.forEach(aName => {
+                                              const assister = nextStats.players.find(p => p.playerName === aName && p.side === killer.side);
+                                              if (assister) { assister.a = (assister.a || 0) + 1; assister.currentGold = (assister.currentGold || 0) + 150; assister.xp = (assister.xp || 0) + 50 + ((victim.lvl || 1) * 10); }
+                                          });
+                                      }
+                                  }
+                              }
+                          } catch (err) { console.warn(err); }
+                      }
+                      if (l.includes('포탑') || l.includes('억제기')) {
+                          if (l.includes(simulationData.blueTeam?.name)) { nextStats.towers.BLUE = (nextStats.towers.BLUE||0) + 1; nextStats.players.filter(p => p.side === 'BLUE').forEach(p => p.currentGold = (p.currentGold||0) + 100); } 
+                          else if (l.includes(simulationData.redTeam?.name)) { nextStats.towers.RED = (nextStats.towers.RED||0) + 1; nextStats.players.filter(p => p.side === 'RED').forEach(p => p.currentGold = (p.currentGold||0) + 100); }
+                      }
+                  });
+              }
+              // Passive Income
+              nextStats.players.forEach(p => {
+                  const income = calculateIndividualIncome(p, currentMinute, 1.0); 
+                  if (income.gold > 0) p.currentGold = (p.currentGold || 0) + (income.gold / 60);
+                  if (income.xp > 0) p.xp = (p.xp || 0) + (income.xp / 60);
+                  if (p.lvl < 18) { const reqXp = 180 + (p.lvl * 100); if (p.xp >= reqXp) { p.xp -= reqXp; p.lvl++; } }
+              });
+              nextStats.gold.BLUE = Math.floor(nextStats.players.filter(p=>p.side==='BLUE').reduce((a,b)=>a+(b.currentGold||0),0));
+              nextStats.gold.RED = Math.floor(nextStats.players.filter(p=>p.side==='RED').reduce((a,b)=>a+(b.currentGold||0),0));
+              return nextStats;
+            });
+  
+            // --- [THE FIX IS HERE] ---
+            if (nextTime >= finalSec) {
+                // 1. Instantly kill the ticking interval so it doesn't queue ghost timeouts!
+                clearInterval(timer);
+                
+                const finalKills = simulationData?.gameResult?.finalKills || liveStatsRef.current?.kills || { BLUE: 0, RED: 0 };
+                setLiveStats(st => ({ ...st, kills: finalKills }));
+                
+                if (isManualMode) {
+                  const finalPlayers = liveStatsRef.current.players;
+                  const finalPicksA = finalPlayers.filter(p => p.side === 'BLUE');
+                  const finalPicksB = finalPlayers.filter(p => p.side === 'RED');
+                  
+                  setSimulationData(prev => (prev ? ({ ...prev, picks: { A: finalPicksA, B: finalPicksB } }) : prev));
+                }
+                
+                if (isManualMode && !simulationData?.pogPlayer) {
+                     const manualPog = calculateManualPog(
+                         liveStatsRef.current.players?.filter(p => p.side === 'BLUE') || [],
+                         liveStatsRef.current.players?.filter(p => p.side === 'RED') || [],
+                         (simulationData?.winnerName === manualTeams.blue?.name) ? 'BLUE' : 'RED',
+                         Math.floor((simulationData?.totalMinutes || (finalSec/60)) || 30)
+                     );
+                     setSimulationData(prev => (prev ? ({ ...prev, pogPlayer: manualPog }) : prev));
+                }
+                
+                // Exactly one timeout is queued, which will fire perfectly.
+                setTimeout(() => setPhase('SET_RESULT'), 1000);
+                
+                return finalSec;
+            }
+            return nextTime;
+          });
+        }, intervalMs);
+        
+        return () => clearInterval(timer);
+      }, [phase, simulationData, playbackSpeed, isManualMode, manualTeams]);
     
         // --- RENDER HELPERS ---
         const getActivePlayerName = (pos) => activeUserRoster[pos]?.이름 || "선택 안됨";
