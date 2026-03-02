@@ -206,8 +206,7 @@ const LEC_SCALE  = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 5, 0];         // 1
 const BASE_SCALE = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10];                 // 10 teams
 
 // Re-calculates ALL player scores from match history using the correct scale,
-// then re-picks seasonMvp and All-Pro teams from the full pool.
-// statsManager's finalsMvp and pogLeader are preserved (identity + patched score).
+// strictly filters out play-in games for playoff awards, and builds true rankings.
 const reapplyScale = (data, matches, standingsNames, scale, forPlayoffs) => {
     if (!data) return data;
 
@@ -232,12 +231,14 @@ const reapplyScale = (data, matches, standingsNames, scale, forPlayoffs) => {
     const players = {};
     const targetMatches = (matches || []).filter(m => {
         if (m.status !== 'finished') return false;
-        return forPlayoffs ? m.type === 'playoff' || m.type === 'playin' : (m.type === 'regular' || m.type === 'super');
+        // FIX: Strictly exclude 'playin' matches for Playoff Awards!
+        if (forPlayoffs) return m.type === 'playoff'; 
+        return m.type === 'regular' || m.type === 'super';
     });
 
     for (const match of targetMatches) {
         for (const set of safeArr(match.result?.history)) {
-            // Count POGs
+            // Count POGs (now cleanly separated from play-ins)
             const pogObj = set.pogPlayer;
             const pogName = typeof pogObj === 'string' ? pogObj.trim() : (pogObj?.playerName || '').trim();
             if (pogName) {
@@ -264,8 +265,22 @@ const reapplyScale = (data, matches, standingsNames, scale, forPlayoffs) => {
         }
     }
 
-    // Who did statsManager identify as pogLeader / finalsMvp?
-    const pogLeaderName = data.pogLeader?.playerName || null;
+    // Recalculate pure POG Leader without play-in pollution
+    let maxPog = 0;
+    let computedPogLeader = null;
+    Object.entries(players).forEach(([name, d]) => {
+        if (d.pog > maxPog) {
+            maxPog = d.pog;
+            computedPogLeader = name;
+        } else if (d.pog === maxPog && maxPog > 0) {
+            // Tie breaker: total score
+            if (d.totalScore > (players[computedPogLeader]?.totalScore || 0)) {
+                computedPogLeader = name;
+            }
+        }
+    });
+
+    const pogLeaderName = computedPogLeader || data.pogLeader?.playerName || null;
     const finalsMvpName = data.finalsMvp?.playerName || null;
 
     // Score every player with the correct scale
@@ -325,6 +340,15 @@ export default function AwardsTab({ league, teams }) {
         const foreignMatches = league.foreignMatches?.[currentLeague] || [];
         let customFinalStandingsNames = [];
         let regularStandingsNames = []; 
+        let seedStandingsNames = [];
+
+        // FIX: Extract the true Regular Season Seedings!
+        const playoffSeeds = league.foreignPlayoffSeeds?.[currentLeague] || [];
+        if (playoffSeeds.length > 0) {
+            seedStandingsNames = [...playoffSeeds]
+                .sort((a, b) => a.seed - b.seed)
+                .map(s => s.name || s.id);
+        }
 
         if (foreignMatches.length > 0) {
             const currentTeams = FOREIGN_LEAGUES[currentLeague] || [];
@@ -356,6 +380,7 @@ export default function AwardsTab({ league, teams }) {
                 return Math.abs(parts[0] - parts[1]);
             };
 
+            // Calculate raw W/L purely as a fallback for incomplete schedules
             const st = {};
             currentTeams.forEach(t => st[t.name] = { w: 0, l: 0, diff: 0, h2h: {}, defeatedOpponents: [], team: t });
 
@@ -407,8 +432,8 @@ export default function AwardsTab({ league, teams }) {
                 return 0;
             });
 
-            // Capture regular season order right after regSorted is built
             regularStandingsNames = regSorted.map(r => r.team?.name).filter(Boolean);
+            const fallbackStandings = seedStandingsNames.length > 0 ? seedStandingsNames : regularStandingsNames;
 
             if (currentLeague === 'LPL') {
                 const lplRanks = [];
@@ -429,9 +454,9 @@ export default function AwardsTab({ league, teams }) {
                         const mIdB = b === loserA ? id1 : id2;
                         const diffA = getMatchSetDiff(mIdA);
                         const diffB = getMatchSetDiff(mIdB);
-                        // Smaller differential is better (e.g. losing 2-3 is diff 1, losing 0-3 is diff 3)
                         if (diffA !== diffB) return diffA - diffB;
-                        return regSorted.findIndex(x => x.team.name === a) - regSorted.findIndex(x => x.team.name === b);
+                        // Tiebreaker uses official seed ranking instead of raw W/L
+                        return fallbackStandings.indexOf(a) - fallbackStandings.indexOf(b);
                     });
                 };
 
@@ -451,9 +476,9 @@ export default function AwardsTab({ league, teams }) {
                 const eleventhTwelfth = sortTiedPairs('lpl_pi3', 'lpl_pi4');
                 eleventhTwelfth.forEach(tName => addRank(tName));
 
-                // 13/14
+                // 13/14 (Pull the remaining unplaced teams from the official seeds)
                 const alreadyPlaced = new Set(lplRanks);
-                regSorted.filter(x => x.team && !alreadyPlaced.has(x.team.name)).forEach(r => lplRanks.push(r.team.name));
+                fallbackStandings.filter(x => x && !alreadyPlaced.has(x)).forEach(r => lplRanks.push(r));
                 customFinalStandingsNames = lplRanks;
 
             } else if (currentLeague === 'LCS') {
@@ -467,14 +492,12 @@ export default function AwardsTab({ league, teams }) {
 
                 const r1L1 = getLoser('lcs_po4');
                 const r1L2 = getLoser('lcs_po5');
-                const fifthSixth = [r1L1, r1L2].filter(Boolean).sort((a, b) => {
-                    return regSorted.findIndex(x => x.team.name === a) - regSorted.findIndex(x => x.team.name === b); 
-                });
+                const fifthSixth = [r1L1, r1L2].filter(Boolean).sort((a, b) => fallbackStandings.indexOf(a) - fallbackStandings.indexOf(b));
                 fifthSixth.forEach(tName => addRank(tName));
                 addRank(getLoser('lcs_pi1'));
 
                 const alreadyPlaced = new Set(lcsRanks);
-                regSorted.filter(x => x.team && !alreadyPlaced.has(x.team.name)).forEach(r => lcsRanks.push(r.team.name));
+                fallbackStandings.filter(x => x && !alreadyPlaced.has(x)).forEach(r => lcsRanks.push(r));
                 customFinalStandingsNames = lcsRanks;
                 
             } else if (currentLeague === 'CBLOL') {
@@ -489,7 +512,7 @@ export default function AwardsTab({ league, teams }) {
                 addRank(getLoser('cblol_po6'));
 
                 const alreadyPlaced = new Set(cblolRanks);
-                regSorted.filter(x => x.team && !alreadyPlaced.has(x.team.name)).forEach(r => cblolRanks.push(r.team.name));
+                fallbackStandings.filter(x => x && !alreadyPlaced.has(x)).forEach(r => cblolRanks.push(r));
                 customFinalStandingsNames = cblolRanks;
 
             } else if (currentLeague === 'LCP') {
@@ -503,13 +526,11 @@ export default function AwardsTab({ league, teams }) {
 
                 const r1L1 = getLoserByRound(1, 1);
                 const r1L2 = getLoserByRound(1, 2);
-                const fifthSixth = [r1L1, r1L2].filter(Boolean).sort((a, b) => {
-                    return regSorted.findIndex(x => x.team.name === a) - regSorted.findIndex(x => x.team.name === b); 
-                });
+                const fifthSixth = [r1L1, r1L2].filter(Boolean).sort((a, b) => fallbackStandings.indexOf(a) - fallbackStandings.indexOf(b));
                 fifthSixth.forEach(tName => addRank(tName));
 
                 const alreadyPlaced = new Set(lcpRanks);
-                regSorted.filter(x => x.team && !alreadyPlaced.has(x.team.name)).forEach(r => lcpRanks.push(r.team.name));
+                fallbackStandings.filter(x => x && !alreadyPlaced.has(x)).forEach(r => lcpRanks.push(r));
                 customFinalStandingsNames = lcpRanks;
 
             } else if (currentLeague === 'LEC') {
@@ -529,7 +550,7 @@ export default function AwardsTab({ league, teams }) {
                     const diffA = getMatchSetDiff(mIdA);
                     const diffB = getMatchSetDiff(mIdB);
                     if (diffB !== diffA) return diffB - diffA;
-                    return regSorted.findIndex(x => x.team.name === a) - regSorted.findIndex(x => x.team.name === b);
+                    return fallbackStandings.indexOf(a) - fallbackStandings.indexOf(b);
                 });
                 fifthSixth.forEach(tName => addRank(tName));
 
@@ -541,12 +562,12 @@ export default function AwardsTab({ league, teams }) {
                     const diffA = getMatchSetDiff(mIdA);
                     const diffB = getMatchSetDiff(mIdB);
                     if (diffB !== diffA) return diffB - diffA;
-                    return regSorted.findIndex(x => x.team.name === a) - regSorted.findIndex(x => x.team.name === b);
+                    return fallbackStandings.indexOf(a) - fallbackStandings.indexOf(b);
                 });
                 seventhEighth.forEach(tName => addRank(tName));
 
                 const alreadyPlaced = new Set(lecRanks);
-                regSorted.filter(x => x.team && !alreadyPlaced.has(x.team.name)).forEach(r => lecRanks.push(r.team.name));
+                fallbackStandings.filter(x => x && !alreadyPlaced.has(x)).forEach(r => lecRanks.push(r));
                 customFinalStandingsNames = lecRanks;
             }
         }
@@ -561,8 +582,8 @@ export default function AwardsTab({ league, teams }) {
             matches: foreignMatches,
             standings: league.foreignStandings?.[currentLeague] || {},
             finalStandings,
-            // For custom scales, statsManager needs reg-season order + extended scale
-            regularStandings: regularStandingsNames,
+            // Output true seeded standings to the custom formatter
+            regularStandings: seedStandingsNames.length > 0 ? seedStandingsNames : regularStandingsNames,
             customRankPointScale: targetScale,
             seasonSummary: {
                 ...league.seasonSummary,
@@ -603,7 +624,7 @@ export default function AwardsTab({ league, teams }) {
         if (!hasCustomScale) return null;
         return {
             ...activeLeagueData,
-            // Override finalStandings with regular season order for regular-season rank points
+            // Override finalStandings with regular season true seed order
             finalStandings: activeLeagueData.regularStandings || [],
             customRankPointScale: currentScale,
         };
