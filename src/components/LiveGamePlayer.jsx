@@ -305,8 +305,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
     
         // Small helper to resolve a player's display name from a roster robustly
         const resolvePlayerNameForRole = (roster = [], role, preferredName) => {
-            // [FIXED] Aggressive check: If engine gives 'Unknown', ignore it and try to find real name
-            if (preferredName && preferredName !== 'Unknown' && preferredName !== 'Bot') return preferredName;
+            // [FIXED] Aggressive check: catch all 'Unknown*' variants the engine may emit
+            if (preferredName && !preferredName.startsWith('Unknown') && preferredName !== 'Bot') return preferredName;
             
             if (!Array.isArray(roster) || roster.length === 0) return 'Unknown';
             
@@ -353,10 +353,15 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
           setSearchTerm('');
           setManualUserSide(null);
     
+          // FIX: Clear simulationData in a separate tick FIRST so React commits the null
+          // before the new simulation runs. If both setSimulationData(null) and
+          // setSimulationData(newData) are in the same synchronous block, React batches
+          // them and only the last one takes effect — so the DRAFT phase would start with
+          // the old set's data still in state, replaying the same picks.
+          setSimulationData(null);
+
           setTimeout(() => {
               try {
-                  // Safe to clear stale simulationData here — phase is LOADING so the SET_RESULT guard won't trigger
-                  setSimulationData(null);
                   // Prepare Roster Objects (Inject Active User Roster) with robust fallbacks
                   const safeUserRosterArray = makeSafeRosterArray(activeUserRoster, userTeam?.name);
     
@@ -518,7 +523,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                       }
                       
                       // [CRITICAL FIX] If name is still Unknown/generic, try to resolve via helper or Index
-                      if (finalPlayerName === 'Unknown' || finalPlayerName === 'Bot') {
+                      if (!finalPlayerName || finalPlayerName === 'Bot' || finalPlayerName.startsWith('Unknown')) {
                            // Try role helper
                            if (roleCandidate) {
                                 finalPlayerName = resolvePlayerNameForRole(teamRoster, roleCandidate, null);
@@ -570,11 +575,18 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                           const champName = p.champName || p.champion || p.name || '';
                           const champTier = p.tier || activeChampionList.find(c => c.name === champName)?.tier || p.tier || '-';
                           
+                          // Look up role from champion list if engine pick object lacks a role field
+                          // (draftLogic.mapPicks does not include role in the pick object)
+                          const pickRole = p.role || p.position
+                              || activeChampionList.find(c => c.name === champName)?.role
+                              || '';
                           // Use the same robust logic for the UI list
-                          let resolvedName = resolvePlayerNameForRole(sortedRoster, p.role || p.position || '', p.playerName);
+                          let resolvedName = resolvePlayerNameForRole(sortedRoster, pickRole, p.playerName);
                           
-                          // UI List Fallback by index if resolvePlayerNameForRole fails (sorted roster ensures SUP is at idx 4)
-                          if ((!resolvedName || resolvedName === 'Unknown') && sortedRoster[idx]) {
+                          // UI List Fallback by index if resolvePlayerNameForRole fails.
+                          // sortedRoster is sorted TOP/JGL/MID/ADC/SUP so idx 4 = support.
+                          // mapPicks in draftLogic also iterates in that order, so indices align.
+                          if ((!resolvedName || resolvedName === 'Unknown' || resolvedName.startsWith('Unknown')) && sortedRoster[idx]) {
                               resolvedName = sortedRoster[idx].이름 || sortedRoster[idx].name || 'Unknown';
                           }
     
