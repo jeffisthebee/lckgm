@@ -626,8 +626,231 @@ export const generateLECPlayoffs = (seeds) => {
     ];
 };
 
+// ==========================================
+// [NEW] LPL SCHEDULE LOGIC (Group Stage Format)
+// ==========================================
 
+export const generateLPLRegularSchedule = (teams) => {
+    const getID = (t) => t.id || t.name;
+    const allTeams = teams.map(getID);
 
+    // Group definitions (등봉조, 인내조, 열반조)
+    const topGroupNames = ['AL', 'BLG', 'WBG', 'JDG', 'TES', 'IG']; // 등봉조
+    const midGroupNames = ['NIP', 'WE', 'EDG', 'TT'];               // 인내조
+    const botGroupNames = ['LNG', 'OMG', 'LGD', 'UP'];              // 열반조
 
+    const generateDoubleRoundRobin = (groupTeamNames) => {
+        const groupTeams = allTeams.filter(id => groupTeamNames.some(name => id.includes(name) || name.includes(id)));
+        const pairs = [];
+        for (let i = 0; i < groupTeams.length; i++) {
+            for (let j = i + 1; j < groupTeams.length; j++) {
+                pairs.push({ t1: groupTeams[i], t2: groupTeams[j] });
+                pairs.push({ t1: groupTeams[j], t2: groupTeams[i] });
+            }
+        }
+        return pairs;
+    };
 
+    const topMatches = generateDoubleRoundRobin(topGroupNames); // 30 matches
+    const midMatches = generateDoubleRoundRobin(midGroupNames); // 12 matches
+    const botMatches = generateDoubleRoundRobin(botGroupNames); // 12 matches
 
+    let allMatchesPool = [...topMatches, ...midMatches, ...botMatches];
+
+    const slots = [
+        // Week 1 (11 games)
+        { date: '1.14 (수)', time: '18:00', week: 1 }, { date: '1.14 (수)', time: '20:00', week: 1 },
+        { date: '1.15 (목)', time: '16:00', week: 1 }, { date: '1.15 (목)', time: '18:00', week: 1 }, { date: '1.15 (목)', time: '20:00', week: 1 },
+        { date: '1.16 (금)', time: '18:00', week: 1 }, { date: '1.16 (금)', time: '20:00', week: 1 },
+        { date: '1.17 (토)', time: '18:00', week: 1 }, { date: '1.17 (토)', time: '20:00', week: 1 },
+        { date: '1.18 (일)', time: '18:00', week: 1 }, { date: '1.18 (일)', time: '20:00', week: 1 },
+        // Week 2 (17 games)
+        { date: '1.19 (월)', time: '16:00', week: 2 }, { date: '1.19 (월)', time: '18:00', week: 2 }, { date: '1.19 (월)', time: '20:00', week: 2 },
+        { date: '1.20 (화)', time: '18:00', week: 2 }, { date: '1.20 (화)', time: '20:00', week: 2 },
+        { date: '1.21 (수)', time: '18:00', week: 2 }, { date: '1.21 (수)', time: '20:00', week: 2 },
+        { date: '1.22 (목)', time: '16:00', week: 2 }, { date: '1.22 (목)', time: '18:00', week: 2 }, { date: '1.22 (목)', time: '20:00', week: 2 },
+        { date: '1.23 (금)', time: '16:00', week: 2 }, { date: '1.23 (금)', time: '18:00', week: 2 }, { date: '1.23 (금)', time: '20:00', week: 2 },
+        { date: '1.24 (토)', time: '18:00', week: 2 }, { date: '1.24 (토)', time: '20:00', week: 2 },
+        { date: '1.25 (일)', time: '18:00', week: 2 }, { date: '1.25 (일)', time: '20:00', week: 2 },
+        // Week 3 (16 games)
+        { date: '1.26 (월)', time: '18:00', week: 3 }, { date: '1.26 (월)', time: '20:00', week: 3 },
+        { date: '1.27 (화)', time: '16:00', week: 3 }, { date: '1.27 (화)', time: '18:00', week: 3 }, { date: '1.27 (화)', time: '20:00', week: 3 },
+        { date: '1.28 (수)', time: '16:00', week: 3 }, { date: '1.28 (수)', time: '18:00', week: 3 }, { date: '1.28 (수)', time: '20:00', week: 3 },
+        { date: '1.29 (목)', time: '18:00', week: 3 }, { date: '1.29 (목)', time: '20:00', week: 3 },
+        { date: '1.30 (금)', time: '18:00', week: 3 }, { date: '1.30 (금)', time: '20:00', week: 3 },
+        { date: '1.31 (토)', time: '18:00', week: 3 }, { date: '1.31 (토)', time: '20:00', week: 3 },
+        { date: '2.1 (일)', time: '18:00', week: 3 },  { date: '2.1 (일)', time: '20:00', week: 3 },
+        // Week 4 (10 games)
+        { date: '2.2 (월)', time: '18:00', week: 4 },  { date: '2.2 (월)', time: '20:00', week: 4 },
+        { date: '2.3 (화)', time: '18:00', week: 4 },  { date: '2.3 (화)', time: '20:00', week: 4 },
+        { date: '2.4 (수)', time: '18:00', week: 4 },  { date: '2.4 (수)', time: '20:00', week: 4 },
+        { date: '2.5 (목)', time: '18:00', week: 4 },  { date: '2.5 (목)', time: '20:00', week: 4 },
+        { date: '2.6 (금)', time: '18:00', week: 4 },  { date: '2.6 (금)', time: '20:00', week: 4 }
+    ];
+
+    const weeklyLimits = {
+        1: { max: 2 },
+        2: { max: 4 },
+        3: { max: 3 },
+        4: { max: 2 }
+    };
+
+    let schedule = [];
+    let success = false;
+    let attempts = 0;
+
+    // Retry loop to ensure constraints are met
+    while (!success && attempts < 50) {
+        attempts++;
+        schedule = [];
+        let tempPool = [...allMatchesPool].sort(() => Math.random() - 0.5);
+        let valid = true;
+
+        let teamWeeklyCounts = {};
+        allTeams.forEach(t => teamWeeklyCounts[t] = {1:0, 2:0, 3:0, 4:0});
+
+        for (let i = 0; i < slots.length; i++) {
+            const slot = slots[i];
+            let bestIdx = -1;
+            
+            for (let j = 0; j < tempPool.length; j++) {
+                const match = tempPool[j];
+                const t1 = match.t1;
+                const t2 = match.t2;
+
+                // Check constraints
+                const playedToday = schedule.some(m => m.date === slot.date && (m.t1 === t1 || m.t2 === t1 || m.t1 === t2 || m.t2 === t2));
+                const t1UnderMax = teamWeeklyCounts[t1][slot.week] < weeklyLimits[slot.week].max;
+                const t2UnderMax = teamWeeklyCounts[t2][slot.week] < weeklyLimits[slot.week].max;
+
+                if (!playedToday && t1UnderMax && t2UnderMax) {
+                    bestIdx = j;
+                    break;
+                }
+            }
+            
+            if (bestIdx === -1) {
+                valid = false;
+                break; // Dead end, start over
+            }
+            
+            const selected = tempPool.splice(bestIdx, 1)[0];
+            teamWeeklyCounts[selected.t1][slot.week]++;
+            teamWeeklyCounts[selected.t2][slot.week]++;
+            
+            schedule.push({
+                ...slot,
+                t1: selected.t1,
+                t2: selected.t2,
+                id: 'lpl_' + Date.now() + '_' + i,
+                type: 'regular',
+                format: 'BO3',
+                status: 'pending'
+            });
+        }
+        
+        // Ensure minimum 1 game per week per team
+        if (valid) {
+            for (let team of allTeams) {
+                if (teamWeeklyCounts[team][1] < 1 || teamWeeklyCounts[team][2] < 1 || teamWeeklyCounts[team][3] < 1 || teamWeeklyCounts[team][4] < 1) {
+                    valid = false;
+                    break;
+                }
+            }
+        }
+
+        if (valid) success = true;
+    }
+
+    // Fallback if random placement fails too many times to prevent crashing
+    if (!success) {
+        console.warn("LPL Scheduler hit fallback: Relaxing min/max constraints to generate valid dates.");
+        // Re-run simple greedy without week limits (same as original code)
+        schedule = [];
+        let fallbackPool = [...allMatchesPool].sort(() => Math.random() - 0.5);
+        for (let i = 0; i < slots.length; i++) {
+            const slot = slots[i];
+            let bestIdx = fallbackPool.findIndex(match => !schedule.some(m => m.date === slot.date && (m.t1 === match.t1 || m.t2 === match.t1 || m.t1 === match.t2 || m.t2 === match.t2)));
+            if (bestIdx === -1) bestIdx = 0;
+            const selected = fallbackPool.splice(bestIdx, 1)[0];
+            schedule.push({ ...slot, t1: selected.t1, t2: selected.t2, id: 'lpl_fb_' + Date.now() + i, type: 'regular', format: 'BO3', status: 'pending' });
+        }
+    }
+
+    return schedule;
+};
+
+// ==========================================
+// [NEW] LPL PLAYOFFS LOGIC
+// ==========================================
+
+export const generateLPLPlayoffs = (seeds) => {
+    // We assume 'seeds' is a fully sorted array of the 14 teams based on regular season performance.
+    // Index 0 to 5: 등봉조 1st - 6th (T1 - T6)
+    // Index 6 to 9: 인내조 1st - 4th (M1 - M4)
+    // Index 10 to 11: 열반조 1st - 2nd (B1 - B2)
+    const getSeedId = (index) => {
+        if (!seeds || !seeds[index]) return null;
+        return seeds[index].id || seeds[index].name;
+    };
+
+    // 등봉조 (Top Group)
+    const t1 = getSeedId(0);
+    const t2 = getSeedId(1);
+    const t3 = getSeedId(2);
+    const t4 = getSeedId(3);
+    const t5 = getSeedId(4);
+    const t6 = getSeedId(5);
+
+    // 인내조 (Mid Group)
+    const m1 = getSeedId(6);
+    const m2 = getSeedId(7);
+    const m3 = getSeedId(8);
+    const m4 = getSeedId(9);
+
+    // 열반조 (Bot Group)
+    const b1 = getSeedId(10);
+    const b2 = getSeedId(11);
+
+    return [
+        // --- PLAY-IN STAGE (BO5) ---
+        { round: 0.1, match: 1, label: '플레이인 1R G1', t1: t5, t2: m2, date: '2.9 (월)', time: '15:00', type: 'playin', format: 'BO5', status: 'pending', id: 'lpl_pi1' },
+        { round: 0.1, match: 2, label: '플레이인 1R G2', t1: t6, t2: m1, date: '2.9 (월)', time: '18:00', type: 'playin', format: 'BO5', status: 'pending', id: 'lpl_pi2' },
+        
+        { round: 0.2, match: 1, label: '플레이인 2R G1', t1: m4, t2: b1, date: '2.10 (화)', time: '15:00', type: 'playin', format: 'BO5', status: 'pending', id: 'lpl_pi3' },
+        { round: 0.2, match: 2, label: '플레이인 2R G2', t1: m3, t2: b2, date: '2.10 (화)', time: '18:00', type: 'playin', format: 'BO5', status: 'pending', id: 'lpl_pi4' },
+        
+        { round: 0.3, match: 1, label: '플레이인 3R G1', t1: null, t2: null, date: '2.11 (수)', time: '15:00', type: 'playin', format: 'BO5', status: 'pending', id: 'lpl_pi5' },
+        { round: 0.3, match: 2, label: '플레이인 3R G2', t1: null, t2: null, date: '2.11 (수)', time: '18:00', type: 'playin', format: 'BO5', status: 'pending', id: 'lpl_pi6' },
+
+        // --- PLAYOFFS UPPER BRACKET R1 ---
+        { round: 1, match: 1, label: '1라운드 승자조 G1', t1: t1, t2: null, date: '2.24 (화)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po1' },
+        { round: 1, match: 2, label: '1라운드 승자조 G2', t1: t4, t2: null, date: '2.24 (화)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po2' },
+        { round: 1, match: 3, label: '1라운드 승자조 G3', t1: t2, t2: null, date: '2.25 (수)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po3' },
+        { round: 1, match: 4, label: '1라운드 승자조 G4', t1: t3, t2: null, date: '2.25 (수)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po4' },
+
+        // --- PLAYOFFS UPPER BRACKET R2 ---
+        { round: 2, match: 1, label: '2라운드 승자조 G1', t1: null, t2: null, date: '2.26 (목)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po5' },
+        { round: 2, match: 2, label: '2라운드 승자조 G2', t1: null, t2: null, date: '2.27 (금)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po6' },
+
+        // --- PLAYOFFS LOWER BRACKET R1 ---
+        { round: 1.1, match: 1, label: '1라운드 패자조 G1', t1: null, t2: null, date: '2.28 (토)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po7' },
+        { round: 1.1, match: 2, label: '1라운드 패자조 G2', t1: null, t2: null, date: '3.1 (일)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po8' },
+
+        // --- PLAYOFFS LOWER BRACKET R2 ---
+        { round: 2.1, match: 1, label: '2라운드 패자조 G1', t1: null, t2: null, date: '3.2 (월)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po9' },
+        { round: 2.1, match: 2, label: '2라운드 패자조 G2', t1: null, t2: null, date: '3.3 (화)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po10' },
+
+        // --- PLAYOFFS UPPER BRACKET R3 ---
+        { round: 3, match: 1, label: '3라운드 승자조', t1: null, t2: null, date: '3.4 (수)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po11' },
+
+        // --- PLAYOFFS LOWER BRACKET R3 ---
+        { round: 3.1, match: 1, label: '3라운드 패자조', t1: null, t2: null, date: '3.5 (목)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po12' },
+
+        // --- PLAYOFFS ROUND 4 (LOWER FINAL) ---
+        { round: 4, match: 1, label: '4라운드', t1: null, t2: null, date: '3.7 (토)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po13' },
+
+        // --- GRAND FINAL ---
+        { round: 5, match: 1, label: '결승전', t1: null, t2: null, date: '3.8 (일)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po14' }
+    ];
+};

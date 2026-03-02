@@ -5,7 +5,8 @@ import {
     generateLCPRegularSchedule, generateLCPPlayoffs, 
     generateCBLOLRegularSchedule, generateCBLOLPlayoffs,
     generateLCSRegularSchedule, generateLCSPlayoffs,
-    generateLECRegularSchedule, generateLECPlayoffs
+    generateLECRegularSchedule, generateLECPlayoffs,
+    generateLPLRegularSchedule, generateLPLPlayoffs
 } from '../engine/scheduleLogic';
 import { FOREIGN_LEAGUES, FOREIGN_PLAYERS } from '../data/foreignLeagues';
 import { updateLeague } from '../engine/storage';
@@ -69,7 +70,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
 
     const [forceRegen, setForceRegen] = useState(false);
 
-    const targetLeague = ['LCP', 'CBLOL', 'LCS', 'LEC'].includes(displayLeague) ? displayLeague : null;
+    const targetLeague = ['LPL', 'LCP', 'CBLOL', 'LCS', 'LEC'].includes(displayLeague) ? displayLeague : null;
 
     const activeMatches = displayLeague === 'LCK' ? (league.matches || []) : (league.foreignMatches?.[displayLeague] || []);
     const pendingLCK = league.matches ? league.matches.filter(m => m.status === 'pending').sort(compareDatesObj) : [];
@@ -99,13 +100,10 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
         (currentPendingLCK.date === '99.99 (완료)' && activeMatches.some(m => m.status === 'pending'))
     );
 
-    // [THE FIX] Check for errors in the current league's active matches to hide/show the manual button
     const hasErrors = targetLeague ? checkBadData(activeMatches, targetLeague) : false;
 
-    // LCK SELF-HEALER — fixes missing, null, or wrong format fields on LCK matches
     useEffect(() => {
         if (displayLeague === 'LCK' && league.matches) {
-            // Catch: format is 'BO1', undefined, null, or empty string on non-playoff matches
             const hasCorruptedFormat = league.matches.some(m =>
                 m.type !== 'playoff' && (!m.format || m.format === 'BO1')
             );
@@ -113,7 +111,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 const healedMatches = league.matches.map(m => {
                     if (m.type === 'super')   return { ...m, format: 'BO5' };
                     if (m.type === 'regular') return { ...m, format: 'BO3' };
-                    // Ensure LCK playoff matches also have correct format
                     if (m.type === 'playoff' && !m.format) return { ...m, format: 'BO5' };
                     return m;
                 });
@@ -124,7 +121,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
         }
     }, [displayLeague, league, setLeague]);
 
-    // --- DUAL-CORE AUTO-SYNC ENGINE ---
     useEffect(() => {
         if (!needsSync || !targetLeague) return;
 
@@ -135,14 +131,14 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
         let schedule = activeMatches.filter(m => m.type === 'regular' || m.type === 'super');
         
         if (schedule.length === 0 || forceRegen) {
-            if (targetLeague === 'LCP') schedule = generateLCPRegularSchedule(lgTeams);
+            if (targetLeague === 'LPL') schedule = generateLPLRegularSchedule(lgTeams);
+            else if (targetLeague === 'LCP') schedule = generateLCPRegularSchedule(lgTeams);
             else if (targetLeague === 'CBLOL') schedule = generateCBLOLRegularSchedule(lgTeams); 
             else if (targetLeague === 'LCS') schedule = generateLCSRegularSchedule(lgTeams);
             else if (targetLeague === 'LEC') schedule = generateLECRegularSchedule(lgTeams);
             isUpdated = true;
         }
 
-        // --- LCS SWISS DRAW ALGORITHM ---
         if (targetLeague === 'LCS') {
             const getSwissStandings = (pastMatches) => {
                 const st = {};
@@ -373,13 +369,28 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                     return 0;
                 });
 
-                if (targetLeague === 'LCP') seeds = sorted.slice(0, 6).map((t, idx) => ({ ...t, seed: idx + 1 }));
+                if (targetLeague === 'LPL') {
+                    const getGroupRankings = (groupNames) => {
+                        return sorted.filter(t => groupNames.some(name => t.id.includes(name) || t.name.includes(name)));
+                    };
+                    const topGroup = getGroupRankings(['AL', 'BLG', 'WBG', 'JDG', 'TES', 'IG']);
+                    const midGroup = getGroupRankings(['NIP', 'WE', 'EDG', 'TT']);
+                    const botGroup = getGroupRankings(['LNG', 'OMG', 'LGD', 'UP']);
+                    
+                    seeds = [
+                        ...topGroup.slice(0, 6).map((t, idx) => ({ ...t, seed: idx + 1 })),
+                        ...midGroup.slice(0, 4).map((t, idx) => ({ ...t, seed: idx + 7 })),
+                        ...botGroup.slice(0, 2).map((t, idx) => ({ ...t, seed: idx + 11 }))
+                    ];
+                }
+                else if (targetLeague === 'LCP') seeds = sorted.slice(0, 6).map((t, idx) => ({ ...t, seed: idx + 1 }));
                 else if (targetLeague === 'CBLOL' || targetLeague === 'LCS' || targetLeague === 'LEC') seeds = sorted.slice(0, 8).map((t, idx) => ({ ...t, seed: idx + 1 }));
                 isUpdated = true;
             }
 
             if (playoffs.length === 0 || forceRegen) {
-                if (targetLeague === 'LCP') playoffs = generateLCPPlayoffs(seeds);
+                if (targetLeague === 'LPL') playoffs = generateLPLPlayoffs(seeds);
+                else if (targetLeague === 'LCP') playoffs = generateLCPPlayoffs(seeds);
                 else if (targetLeague === 'CBLOL') playoffs = generateCBLOLPlayoffs(seeds);
                 else if (targetLeague === 'LCS') playoffs = generateLCSPlayoffs(seeds);
                 else if (targetLeague === 'LEC') playoffs = generateLECPlayoffs(seeds);
@@ -416,7 +427,77 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
 
             const getSeedId = (s) => seeds.find(x => x.seed === s)?.name || null;
 
-            if (targetLeague === 'LCP') {
+            if (targetLeague === 'LPL') {
+                const pi1g1 = simPlayoffMatch('lpl_pi1g1');
+                const pi1g2 = simPlayoffMatch('lpl_pi1g2');
+                const pi2g1 = simPlayoffMatch('lpl_pi2g1');
+                const pi2g2 = simPlayoffMatch('lpl_pi2g2');
+
+                const pi3g1Match = playoffs.find(m => m.id === 'lpl_pi3g1');
+                if (pi3g1Match && pi1g1.loserId && pi2g1.winnerId) { pi3g1Match.t1 = pi1g1.loserId; pi3g1Match.t2 = pi2g1.winnerId; }
+                const pi3g1 = simPlayoffMatch('lpl_pi3g1');
+
+                const pi3g2Match = playoffs.find(m => m.id === 'lpl_pi3g2');
+                if (pi3g2Match && pi1g2.loserId && pi2g2.winnerId) { pi3g2Match.t1 = pi1g2.loserId; pi3g2Match.t2 = pi2g2.winnerId; }
+                const pi3g2 = simPlayoffMatch('lpl_pi3g2');
+
+                const po1w_g1Match = playoffs.find(m => m.id === 'lpl_po1w_g1');
+                if (po1w_g1Match && pi3g2.winnerId) po1w_g1Match.t2 = pi3g2.winnerId;
+                const po1w_g1 = simPlayoffMatch('lpl_po1w_g1');
+
+                const po1w_g2Match = playoffs.find(m => m.id === 'lpl_po1w_g2');
+                if (po1w_g2Match && pi1g1.winnerId) po1w_g2Match.t2 = pi1g1.winnerId;
+                const po1w_g2 = simPlayoffMatch('lpl_po1w_g2');
+
+                const po1w_g3Match = playoffs.find(m => m.id === 'lpl_po1w_g3');
+                if (po1w_g3Match && pi3g1.winnerId) po1w_g3Match.t2 = pi3g1.winnerId;
+                const po1w_g3 = simPlayoffMatch('lpl_po1w_g3');
+
+                const po1w_g4Match = playoffs.find(m => m.id === 'lpl_po1w_g4');
+                if (po1w_g4Match && pi1g2.winnerId) po1w_g4Match.t2 = pi1g2.winnerId;
+                const po1w_g4 = simPlayoffMatch('lpl_po1w_g4');
+
+                const po1l_g1Match = playoffs.find(m => m.id === 'lpl_po1l_g1');
+                if (po1l_g1Match && po1w_g1.loserId && po1w_g2.loserId) { po1l_g1Match.t1 = po1w_g1.loserId; po1l_g1Match.t2 = po1w_g2.loserId; }
+                const po1l_g1 = simPlayoffMatch('lpl_po1l_g1');
+
+                const po1l_g2Match = playoffs.find(m => m.id === 'lpl_po1l_g2');
+                if (po1l_g2Match && po1w_g3.loserId && po1w_g4.loserId) { po1l_g2Match.t1 = po1w_g3.loserId; po1l_g2Match.t2 = po1w_g4.loserId; }
+                const po1l_g2 = simPlayoffMatch('lpl_po1l_g2');
+
+                const po2w_g1Match = playoffs.find(m => m.id === 'lpl_po2w_g1');
+                if (po2w_g1Match && po1w_g1.winnerId && po1w_g2.winnerId) { po2w_g1Match.t1 = po1w_g1.winnerId; po2w_g1Match.t2 = po1w_g2.winnerId; }
+                const po2w_g1 = simPlayoffMatch('lpl_po2w_g1');
+
+                const po2w_g2Match = playoffs.find(m => m.id === 'lpl_po2w_g2');
+                if (po2w_g2Match && po1w_g3.winnerId && po1w_g4.winnerId) { po2w_g2Match.t1 = po1w_g3.winnerId; po2w_g2Match.t2 = po1w_g4.winnerId; }
+                const po2w_g2 = simPlayoffMatch('lpl_po2w_g2');
+
+                const po2l_g1Match = playoffs.find(m => m.id === 'lpl_po2l_g1');
+                if (po2l_g1Match && po1l_g1.winnerId && po2w_g2.loserId) { po2l_g1Match.t1 = po1l_g1.winnerId; po2l_g1Match.t2 = po2w_g2.loserId; }
+                const po2l_g1 = simPlayoffMatch('lpl_po2l_g1');
+
+                const po2l_g2Match = playoffs.find(m => m.id === 'lpl_po2l_g2');
+                if (po2l_g2Match && po1l_g2.winnerId && po2w_g1.loserId) { po2l_g2Match.t1 = po1l_g2.winnerId; po2l_g2Match.t2 = po2w_g1.loserId; }
+                const po2l_g2 = simPlayoffMatch('lpl_po2l_g2');
+
+                const po3wMatch = playoffs.find(m => m.id === 'lpl_po3w');
+                if (po3wMatch && po2w_g1.winnerId && po2w_g2.winnerId) { po3wMatch.t1 = po2w_g1.winnerId; po3wMatch.t2 = po2w_g2.winnerId; }
+                const po3w = simPlayoffMatch('lpl_po3w');
+
+                const po3lMatch = playoffs.find(m => m.id === 'lpl_po3l');
+                if (po3lMatch && po2l_g1.winnerId && po2l_g2.winnerId) { po3lMatch.t1 = po2l_g1.winnerId; po3lMatch.t2 = po2l_g2.winnerId; }
+                const po3l = simPlayoffMatch('lpl_po3l');
+
+                const po4Match = playoffs.find(m => m.id === 'lpl_po4');
+                if (po4Match && po3w.loserId && po3l.winnerId) { po4Match.t1 = po3w.loserId; po4Match.t2 = po3l.winnerId; }
+                const po4 = simPlayoffMatch('lpl_po4');
+
+                const finalMatch = playoffs.find(m => m.id === 'lpl_final');
+                if (finalMatch && po3w.winnerId && po4.winnerId) { finalMatch.t1 = po3w.winnerId; finalMatch.t2 = po4.winnerId; }
+                simPlayoffMatch('lpl_final');
+
+            } else if (targetLeague === 'LCP') {
                 const r1m1 = simPlayoffMatch('lcp_po1');
                 const r1m2 = simPlayoffMatch('lcp_po2');
                 const po3 = playoffs.find(m => m.id === 'lcp_po3');
@@ -587,14 +668,11 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 simPlayoffMatch('lcs_po8');
 
             } else if (targetLeague === 'LEC') {
-                // ─── Upper Bracket Round 1 ─────────────────────────
                 const ub1g1 = simPlayoffMatch('lec_po_ub1g1');
                 const ub1g2 = simPlayoffMatch('lec_po_ub1g2');
                 const ub1g3 = simPlayoffMatch('lec_po_ub1g3');
                 const ub1g4 = simPlayoffMatch('lec_po_ub1g4');
 
-                // ─── Upper Bracket Round 2 ─────────────────────────
-                // g1 winner vs g4 winner, g2 winner vs g3 winner
                 const ub2g1Match = playoffs.find(m => m.id === 'lec_po_ub2g1');
                 if (ub2g1Match && ub1g1.winnerId && ub1g4.winnerId) {
                     ub2g1Match.t1 = ub1g1.winnerId;
@@ -608,8 +686,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 const ub2g1 = simPlayoffMatch('lec_po_ub2g1');
                 const ub2g2 = simPlayoffMatch('lec_po_ub2g2');
 
-                // ─── Lower Bracket Round 1 ─────────────────────────
-                // g1 loser vs g4 loser, g2 loser vs g3 loser
                 const lb1g1Match = playoffs.find(m => m.id === 'lec_po_lb1g1');
                 if (lb1g1Match && ub1g1.loserId && ub1g4.loserId) {
                     lb1g1Match.t1 = ub1g1.loserId;
@@ -623,8 +699,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 const lb1g1 = simPlayoffMatch('lec_po_lb1g1');
                 const lb1g2 = simPlayoffMatch('lec_po_lb1g2');
 
-                // ─── Lower Bracket Round 2 ─────────────────────────
-                // lb1g1 winner vs ub2g2 loser, lb1g2 winner vs ub2g1 loser
                 const lb2g1Match = playoffs.find(m => m.id === 'lec_po_lb2g1');
                 if (lb2g1Match && lb1g1.winnerId && ub2g2.loserId) {
                     lb2g1Match.t1 = lb1g1.winnerId;
@@ -638,7 +712,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 const lb2g1 = simPlayoffMatch('lec_po_lb2g1');
                 const lb2g2 = simPlayoffMatch('lec_po_lb2g2');
 
-                // ─── Upper Final (3라운드 승자조) BO5 ──────────────
                 const ubfMatch = playoffs.find(m => m.id === 'lec_po_ubf');
                 if (ubfMatch && ub2g1.winnerId && ub2g2.winnerId) {
                     ubfMatch.t1 = ub2g1.winnerId;
@@ -646,7 +719,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 }
                 const ubf = simPlayoffMatch('lec_po_ubf');
 
-                // ─── Lower Semifinal (3라운드 패자조) BO5 ──────────
                 const lbsfMatch = playoffs.find(m => m.id === 'lec_po_lbsf');
                 if (lbsfMatch && lb2g1.winnerId && lb2g2.winnerId) {
                     lbsfMatch.t1 = lb2g1.winnerId;
@@ -654,7 +726,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 }
                 const lbsf = simPlayoffMatch('lec_po_lbsf');
 
-                // ─── 4라운드: lbsf winner vs ubf loser BO5 ─────────
                 const r4Match = playoffs.find(m => m.id === 'lec_po_r4');
                 if (r4Match && lbsf.winnerId && ubf.loserId) {
                     r4Match.t1 = lbsf.winnerId;
@@ -662,7 +733,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 }
                 const r4 = simPlayoffMatch('lec_po_r4');
 
-                // ─── 결승: r4 winner vs ubf winner BO5 ─────────────
                 const finalMatch = playoffs.find(m => m.id === 'lec_po_final');
                 if (finalMatch && r4.winnerId && ubf.winnerId) {
                     finalMatch.t1 = r4.winnerId;
@@ -718,7 +788,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 <h2 className="text-lg lg:text-2xl font-black text-gray-900 flex items-center gap-2">
                     📅 {activeTab === 'team_schedule' ? `${myTeam.name} 경기 일정` : `2026 ${displayLeague} 전체 일정`}
                 </h2>
-                {/* [THE FIX] The button ONLY renders when checkBadData confirms corrupted data! */}
                 {targetLeague && hasErrors && (
                     <button 
                         onClick={() => setForceRegen(true)}
@@ -729,7 +798,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 )}
             </div>
             
-            {['LCK', 'LCP', 'CBLOL', 'LCS', 'LEC'].includes(displayLeague) ? (
+            {['LCK', 'LPL', 'LCP', 'CBLOL', 'LCS', 'LEC'].includes(displayLeague) ? (
                 activeMatches.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 pb-4">
                         {activeMatches
