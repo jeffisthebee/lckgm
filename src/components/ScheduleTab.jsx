@@ -84,8 +84,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
         
         if (m.t1 && m.t2 && t1Str !== 'TBD' && t2Str !== 'TBD' && t1Str !== 'null' && t2Str !== 'null' && t1Str === t2Str) return true;
 
-        // [THE FIX] Only flag missing teams as "Bad Data" if it's the regular season! 
-        // Playoff games are supposed to have missing teams naturally.
         if (m.status === 'finished') {
             if ((m.type === 'regular' || m.type === 'super')) {
                 if (!m.t1 || t1Str === 'TBD' || t1Str === 'null' || t1Str === 'undefined') return true;
@@ -234,6 +232,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
 
             try {
                 const simResult = quickSimulateMatch(t1, t2, matchObj.format, matchMetaList);
+                // [THE FIX] isUpdated is cleanly set only when a simulation triggers successfully!
                 isUpdated = true;
                 
                 let fScore = simResult.scoreString || simResult.score;
@@ -346,14 +345,16 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 });
 
                 if (targetLeague === 'LPL') {
-                    // [THE FIX] Absolute strict string matching to prevent missing seeds
+                    // [THE FIX] Absolute robust string matching. Checks ID and Name perfectly!
                     const getGroupRankings = (groupNames) => {
-                        return sorted.filter(t => groupNames.some(name => {
-                            const upperTId = String(t.id).toUpperCase().trim();
-                            const upperTName = String(t.name).toUpperCase().trim();
-                            const upperName = String(name).toUpperCase().trim();
-                            return upperTId === upperName || upperTName === upperName || upperTName.startsWith(upperName) || upperTName.includes(upperName + ' ');
-                        }));
+                        return sorted.filter(t => {
+                            const tId = String(t.id).toUpperCase().trim();
+                            const tName = String(t.name).toUpperCase().trim();
+                            return groupNames.some(gn => {
+                                const g = gn.toUpperCase();
+                                return tId === g || tName === g || tId.split(' ')[0] === g || tName.split(' ')[0] === g;
+                            });
+                        });
                     };
 
                     const topGroup = getGroupRankings(['AL', 'BLG', 'WBG', 'JDG', 'TES', 'IG']);
@@ -404,24 +405,24 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 
                 if (currentPendingLCK.date !== '99.99 (완료)' && compareDatesObj(matchObj, currentPendingLCK) >= 0) return { winnerId: null, loserId: null };
 
-                // [THE FIX] Perfectly wait for teams to be assigned before simulating, avoiding crashes!
                 if (!matchObj.t1 || !matchObj.t2 || matchObj.t1 === 'TBD' || matchObj.t2 === 'TBD' || matchObj.t1 === 'null' || matchObj.t2 === 'null' || matchObj.t1 === matchObj.t2) {
                     return { winnerId: null, loserId: null };
                 }
 
                 const simulatedMatch = simMatchIfPast(matchObj);
-                Object.assign(matchObj, simulatedMatch); 
-                isUpdated = true;
-
+                
+                // [THE CRITICAL FIX] ONLY mark isUpdated = true if the match ACTUALLY finished simulation! 
+                // Previously, it blindly marked it true even if skipped, causing an infinite loop.
                 if (simulatedMatch.status === 'finished') {
+                    Object.assign(matchObj, simulatedMatch); 
                     const wId = findGlobalTeam(simulatedMatch.result.winner, teams).name;
                     const lId = wId === findGlobalTeam(matchObj.t1, teams).name ? matchObj.t2 : matchObj.t1;
                     return { winnerId: wId, loserId: lId };
                 }
+                
                 return { winnerId: null, loserId: null };
             };
 
-            // Absolute Backfill Helpers to push teams down the bracket
             const assignT1 = (match, t1) => { if (match && (!match.t1 || match.t1 === 'TBD' || match.t1 === 'null') && t1) { match.t1 = t1; isUpdated = true; } };
             const assignT2 = (match, t2) => { if (match && (!match.t2 || match.t2 === 'TBD' || match.t2 === 'null') && t2) { match.t2 = t2; isUpdated = true; } };
             const assignTeam = (match, t1, t2) => { assignT1(match, t1); assignT2(match, t2); };
