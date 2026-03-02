@@ -370,18 +370,35 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 });
 
                 if (targetLeague === 'LPL') {
+                    // [THE FIX] Absolute Case-Insensitive String Matcher
                     const getGroupRankings = (groupNames) => {
-                        return sorted.filter(t => groupNames.some(name => t.id.includes(name) || t.name.includes(name)));
+                        return sorted.filter(t => groupNames.some(name => {
+                            const upperTId = String(t.id).toUpperCase();
+                            const upperTName = String(t.name).toUpperCase();
+                            const upperName = String(name).toUpperCase();
+                            return upperTId.includes(upperName) || upperTName.includes(upperName) || upperName.includes(upperTId) || upperName.includes(upperTName);
+                        }));
                     };
+
                     const topGroup = getGroupRankings(['AL', 'BLG', 'WBG', 'JDG', 'TES', 'IG']);
                     const midGroup = getGroupRankings(['NIP', 'WE', 'EDG', 'TT']);
                     const botGroup = getGroupRankings(['LNG', 'OMG', 'LGD', 'UP']);
                     
-                    seeds = [
+                    const extractedSeeds = [
                         ...topGroup.slice(0, 6).map((t, idx) => ({ ...t, seed: idx + 1 })),
                         ...midGroup.slice(0, 4).map((t, idx) => ({ ...t, seed: idx + 7 })),
                         ...botGroup.slice(0, 2).map((t, idx) => ({ ...t, seed: idx + 11 }))
                     ];
+
+                    // [THE FIX] Absolute Seed Guarantee. Ensures seeds 1-12 always exist!
+                    const placedIds = extractedSeeds.map(s => s.id);
+                    const unplaced = sorted.filter(s => !placedIds.includes(s.id));
+                    for (let i = 1; i <= 12; i++) {
+                        if (!extractedSeeds.find(s => s.seed === i)) {
+                            if (unplaced.length > 0) extractedSeeds.push({ ...unplaced.shift(), seed: i });
+                        }
+                    }
+                    seeds = extractedSeeds;
                 }
                 else if (targetLeague === 'LCP') seeds = sorted.slice(0, 6).map((t, idx) => ({ ...t, seed: idx + 1 }));
                 else if (targetLeague === 'CBLOL' || targetLeague === 'LCS' || targetLeague === 'LEC') seeds = sorted.slice(0, 8).map((t, idx) => ({ ...t, seed: idx + 1 }));
@@ -410,6 +427,16 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 if (currentPendingLCK.date !== '99.99 (완료)' && compareDatesObj(matchObj, currentPendingLCK) >= 0) return { winnerId: null, loserId: null };
 
                 if (!matchObj.t1 || !matchObj.t2 || matchObj.t1 === 'TBD' || matchObj.t2 === 'TBD' || matchObj.t1 === matchObj.t2) {
+                    // [THE FIX] Deadlock Breaker! If season is over and teams are STILL missing, forcefully end the game!
+                    if (currentPendingLCK.date === '99.99 (완료)' || forceRegen) {
+                         isUpdated = true;
+                         const fallbackWinner = (matchObj.t1 && matchObj.t1 !== 'TBD') ? matchObj.t1 : 
+                                                (matchObj.t2 && matchObj.t2 !== 'TBD') ? matchObj.t2 : 'Unknown';
+                         matchObj.status = 'finished';
+                         matchObj.result = { winner: fallbackWinner, score: '0-0', history: [] };
+                         const lId = fallbackWinner === matchObj.t1 ? matchObj.t2 : matchObj.t1;
+                         return { winnerId: fallbackWinner, loserId: lId };
+                    }
                     return { winnerId: null, loserId: null };
                 }
 
@@ -425,97 +452,108 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 return { winnerId: null, loserId: null };
             };
 
+            // Helpers to correctly flag `isUpdated` when calculating the bracket
+            const assignTeam = (match, t1, t2) => {
+                if (match && (!match.t1 || !match.t2) && t1 && t2) {
+                    match.t1 = t1; match.t2 = t2; isUpdated = true;
+                }
+            };
+            const assignT2 = (match, t2) => {
+                if (match && !match.t2 && t2) {
+                    match.t2 = t2; isUpdated = true;
+                }
+            };
+
             if (targetLeague === 'LPL') {
-                // --- [THE FIX] Perfectly mapped to the specific IDs from scheduleLogic.js! ---
                 const pi1g1 = simPlayoffMatch('lpl_pi_r1_g1');
                 const pi1g2 = simPlayoffMatch('lpl_pi_r1_g2');
                 const pi2g1 = simPlayoffMatch('lpl_pi_r2_g1');
                 const pi2g2 = simPlayoffMatch('lpl_pi_r2_g2');
 
                 const pi3g1Match = playoffs.find(m => m.id === 'lpl_pi_r3_g1');
-                if (pi3g1Match && pi1g1.loserId && pi2g1.winnerId) { pi3g1Match.t1 = pi1g1.loserId; pi3g1Match.t2 = pi2g1.winnerId; }
+                assignTeam(pi3g1Match, pi1g1.loserId, pi2g1.winnerId);
                 const pi3g1 = simPlayoffMatch('lpl_pi_r3_g1');
 
                 const pi3g2Match = playoffs.find(m => m.id === 'lpl_pi_r3_g2');
-                if (pi3g2Match && pi1g2.loserId && pi2g2.winnerId) { pi3g2Match.t1 = pi1g2.loserId; pi3g2Match.t2 = pi2g2.winnerId; }
+                assignTeam(pi3g2Match, pi1g2.loserId, pi2g2.winnerId);
                 const pi3g2 = simPlayoffMatch('lpl_pi_r3_g2');
 
                 const po1ub1Match = playoffs.find(m => m.id === 'lpl_po_1r_ub1');
-                if (po1ub1Match && pi3g2.winnerId) po1ub1Match.t2 = pi3g2.winnerId;
+                assignT2(po1ub1Match, pi3g2.winnerId);
                 const po1ub1 = simPlayoffMatch('lpl_po_1r_ub1');
 
                 const po1ub2Match = playoffs.find(m => m.id === 'lpl_po_1r_ub2');
-                if (po1ub2Match && pi1g1.winnerId) po1ub2Match.t2 = pi1g1.winnerId;
+                assignT2(po1ub2Match, pi1g1.winnerId);
                 const po1ub2 = simPlayoffMatch('lpl_po_1r_ub2');
 
                 const po1ub3Match = playoffs.find(m => m.id === 'lpl_po_1r_ub3');
-                if (po1ub3Match && pi3g1.winnerId) po1ub3Match.t2 = pi3g1.winnerId;
+                assignT2(po1ub3Match, pi3g1.winnerId);
                 const po1ub3 = simPlayoffMatch('lpl_po_1r_ub3');
 
                 const po1ub4Match = playoffs.find(m => m.id === 'lpl_po_1r_ub4');
-                if (po1ub4Match && pi1g2.winnerId) po1ub4Match.t2 = pi1g2.winnerId;
+                assignT2(po1ub4Match, pi1g2.winnerId);
                 const po1ub4 = simPlayoffMatch('lpl_po_1r_ub4');
 
                 const po2ub1Match = playoffs.find(m => m.id === 'lpl_po_2r_ub1');
-                if (po2ub1Match && po1ub1.winnerId && po1ub2.winnerId) { po2ub1Match.t1 = po1ub1.winnerId; po2ub1Match.t2 = po1ub2.winnerId; }
+                assignTeam(po2ub1Match, po1ub1.winnerId, po1ub2.winnerId);
                 const po2ub1 = simPlayoffMatch('lpl_po_2r_ub1');
 
                 const po2ub2Match = playoffs.find(m => m.id === 'lpl_po_2r_ub2');
-                if (po2ub2Match && po1ub3.winnerId && po1ub4.winnerId) { po2ub2Match.t1 = po1ub3.winnerId; po2ub2Match.t2 = po1ub4.winnerId; }
+                assignTeam(po2ub2Match, po1ub3.winnerId, po1ub4.winnerId);
                 const po2ub2 = simPlayoffMatch('lpl_po_2r_ub2');
 
                 const po1lb1Match = playoffs.find(m => m.id === 'lpl_po_1r_lb1');
-                if (po1lb1Match && po1ub1.loserId && po1ub2.loserId) { po1lb1Match.t1 = po1ub1.loserId; po1lb1Match.t2 = po1ub2.loserId; }
+                assignTeam(po1lb1Match, po1ub1.loserId, po1ub2.loserId);
                 const po1lb1 = simPlayoffMatch('lpl_po_1r_lb1');
 
                 const po1lb2Match = playoffs.find(m => m.id === 'lpl_po_1r_lb2');
-                if (po1lb2Match && po1ub3.loserId && po1ub4.loserId) { po1lb2Match.t1 = po1ub3.loserId; po1lb2Match.t2 = po1ub4.loserId; }
+                assignTeam(po1lb2Match, po1ub3.loserId, po1ub4.loserId);
                 const po1lb2 = simPlayoffMatch('lpl_po_1r_lb2');
 
                 const po2lb1Match = playoffs.find(m => m.id === 'lpl_po_2r_lb1');
-                if (po2lb1Match && po1lb1.winnerId && po2ub2.loserId) { po2lb1Match.t1 = po1lb1.winnerId; po2lb1Match.t2 = po2ub2.loserId; }
+                assignTeam(po2lb1Match, po1lb1.winnerId, po2ub2.loserId);
                 const po2lb1 = simPlayoffMatch('lpl_po_2r_lb1');
 
                 const po2lb2Match = playoffs.find(m => m.id === 'lpl_po_2r_lb2');
-                if (po2lb2Match && po1lb2.winnerId && po2ub1.loserId) { po2lb2Match.t1 = po1lb2.winnerId; po2lb2Match.t2 = po2ub1.loserId; }
+                assignTeam(po2lb2Match, po1lb2.winnerId, po2ub1.loserId);
                 const po2lb2 = simPlayoffMatch('lpl_po_2r_lb2');
 
                 const po3ubMatch = playoffs.find(m => m.id === 'lpl_po_3r_ub');
-                if (po3ubMatch && po2ub1.winnerId && po2ub2.winnerId) { po3ubMatch.t1 = po2ub1.winnerId; po3ubMatch.t2 = po2ub2.winnerId; }
+                assignTeam(po3ubMatch, po2ub1.winnerId, po2ub2.winnerId);
                 const po3ub = simPlayoffMatch('lpl_po_3r_ub');
 
                 const po3lbMatch = playoffs.find(m => m.id === 'lpl_po_3r_lb');
-                if (po3lbMatch && po2lb1.winnerId && po2lb2.winnerId) { po3lbMatch.t1 = po2lb1.winnerId; po3lbMatch.t2 = po2lb2.winnerId; }
+                assignTeam(po3lbMatch, po2lb1.winnerId, po2lb2.winnerId);
                 const po3lb = simPlayoffMatch('lpl_po_3r_lb');
 
                 const po4lbMatch = playoffs.find(m => m.id === 'lpl_po_4r_lb');
-                if (po4lbMatch && po3ub.loserId && po3lb.winnerId) { po4lbMatch.t1 = po3ub.loserId; po4lbMatch.t2 = po3lb.winnerId; }
+                assignTeam(po4lbMatch, po3ub.loserId, po3lb.winnerId);
                 const po4lb = simPlayoffMatch('lpl_po_4r_lb');
 
                 const finalMatch = playoffs.find(m => m.id === 'lpl_po_final');
-                if (finalMatch && po3ub.winnerId && po4lb.winnerId) { finalMatch.t1 = po3ub.winnerId; finalMatch.t2 = po4lb.winnerId; }
+                assignTeam(finalMatch, po3ub.winnerId, po4lb.winnerId);
                 simPlayoffMatch('lpl_po_final');
 
             } else if (targetLeague === 'LCP') {
                 const r1m1 = simPlayoffMatch('lcp_po1');
                 const r1m2 = simPlayoffMatch('lcp_po2');
                 const po3 = playoffs.find(m => m.id === 'lcp_po3');
-                if (po3 && r1m1.winnerId) po3.t2 = r1m1.winnerId;
+                assignT2(po3, r1m1.winnerId);
                 const r2m1 = simPlayoffMatch('lcp_po3');
                 const po4 = playoffs.find(m => m.id === 'lcp_po4');
-                if (po4 && r1m2.winnerId) po4.t2 = r1m2.winnerId;
+                assignT2(po4, r1m2.winnerId);
                 const r2m2 = simPlayoffMatch('lcp_po4');
                 const po5 = playoffs.find(m => m.id === 'lcp_po5');
-                if (po5 && r2m1.winnerId && r2m2.winnerId) { po5.t1 = r2m1.winnerId; po5.t2 = r2m2.winnerId; }
+                assignTeam(po5, r2m1.winnerId, r2m2.winnerId);
                 const r3m1 = simPlayoffMatch('lcp_po5');
                 const po6 = playoffs.find(m => m.id === 'lcp_po6');
-                if (po6 && r2m1.loserId && r2m2.loserId) { po6.t1 = r2m1.loserId; po6.t2 = r2m2.loserId; }
+                assignTeam(po6, r2m1.loserId, r2m2.loserId);
                 const r2lm1 = simPlayoffMatch('lcp_po6');
                 const po7 = playoffs.find(m => m.id === 'lcp_po7');
-                if (po7 && r2lm1.winnerId && r3m1.loserId) { po7.t1 = r2lm1.winnerId; po7.t2 = r3m1.loserId; }
+                assignTeam(po7, r2lm1.winnerId, r3m1.loserId);
                 const r3lm1 = simPlayoffMatch('lcp_po7');
                 const po8 = playoffs.find(m => m.id === 'lcp_po8');
-                if (po8 && r3m1.winnerId && r3lm1.winnerId) { po8.t1 = r3m1.winnerId; po8.t2 = r3lm1.winnerId; }
+                assignTeam(po8, r3m1.winnerId, r3lm1.winnerId);
                 simPlayoffMatch('lcp_po8');
 
             } else if (targetLeague === 'CBLOL') {
@@ -523,10 +561,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 const pi2 = simPlayoffMatch('cblol_pi2');
 
                 const pi3Match = playoffs.find(m => m.id === 'cblol_pi3');
-                if (pi3Match && pi1.winnerId && pi2.loserId) { 
-                    pi3Match.t1 = pi1.winnerId; 
-                    pi3Match.t2 = pi2.loserId; 
-                }
+                assignTeam(pi3Match, pi1.winnerId, pi2.loserId);
                 const pi3 = simPlayoffMatch('cblol_pi3');
 
                 const po1Match = playoffs.find(m => m.id === 'cblol_po1');
@@ -556,17 +591,11 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 const po4 = simPlayoffMatch('cblol_po4');
 
                 const po5Match = playoffs.find(m => m.id === 'cblol_po5');
-                if (po5Match && po3.winnerId && po4.winnerId) { 
-                    po5Match.t1 = po3.winnerId; 
-                    po5Match.t2 = po4.winnerId; 
-                }
+                assignTeam(po5Match, po3.winnerId, po4.winnerId);
                 const po5 = simPlayoffMatch('cblol_po5'); 
 
                 const po6Match = playoffs.find(m => m.id === 'cblol_po6');
-                if (po6Match && po1.loserId && po2.loserId) { 
-                    po6Match.t1 = po1.loserId; 
-                    po6Match.t2 = po2.loserId; 
-                }
+                assignTeam(po6Match, po1.loserId, po2.loserId);
                 const po6 = simPlayoffMatch('cblol_po6');
 
                 const po7Match = playoffs.find(m => m.id === 'cblol_po7');
@@ -592,17 +621,11 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 const po8 = simPlayoffMatch('cblol_po8');
 
                 const po9Match = playoffs.find(m => m.id === 'cblol_po9');
-                if (po9Match && po8.winnerId && po5.loserId) { 
-                    po9Match.t1 = po8.winnerId; 
-                    po9Match.t2 = po5.loserId; 
-                }
+                assignTeam(po9Match, po8.winnerId, po5.loserId);
                 const po9 = simPlayoffMatch('cblol_po9');
 
                 const po10Match = playoffs.find(m => m.id === 'cblol_po10');
-                if (po10Match && po5.winnerId && po9.winnerId) { 
-                    po10Match.t1 = po5.winnerId; 
-                    po10Match.t2 = po9.winnerId; 
-                }
+                assignTeam(po10Match, po5.winnerId, po9.winnerId);
                 simPlayoffMatch('cblol_po10');
             
             } else if (targetLeague === 'LCS') {
@@ -625,45 +648,27 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 const po2 = simPlayoffMatch('lcs_po2');
 
                 const po3Match = playoffs.find(m => m.id === 'lcs_po3');
-                if (po3Match && po1.winnerId && po2.winnerId) { 
-                    po3Match.t1 = po1.winnerId; 
-                    po3Match.t2 = po2.winnerId; 
-                }
+                assignTeam(po3Match, po1.winnerId, po2.winnerId);
                 const po3 = simPlayoffMatch('lcs_po3'); 
 
                 const po4Match = playoffs.find(m => m.id === 'lcs_po4');
-                if (po4Match && po1.loserId) { 
-                    po4Match.t2 = po1.loserId; 
-                }
+                assignT2(po4Match, po1.loserId);
                 const po4 = simPlayoffMatch('lcs_po4');
 
                 const po5Match = playoffs.find(m => m.id === 'lcs_po5');
-                if (po5Match && pi1.winnerId && po2.loserId && !po5Match.t1) { 
-                    po5Match.t1 = pi1.winnerId; 
-                    po5Match.t2 = po2.loserId; 
-                    isUpdated = true;
-                }
+                assignTeam(po5Match, pi1.winnerId, po2.loserId);
                 const po5 = simPlayoffMatch('lcs_po5');
 
                 const po6Match = playoffs.find(m => m.id === 'lcs_po6');
-                if (po6Match && po4.winnerId && po5.winnerId) {
-                    po6Match.t1 = po4.winnerId; 
-                    po6Match.t2 = po5.winnerId;
-                }
+                assignTeam(po6Match, po4.winnerId, po5.winnerId);
                 const po6 = simPlayoffMatch('lcs_po6');
 
                 const po7Match = playoffs.find(m => m.id === 'lcs_po7');
-                if (po7Match && po3.loserId && po6.winnerId) {
-                    po7Match.t1 = po3.loserId; 
-                    po7Match.t2 = po6.winnerId;
-                }
+                assignTeam(po7Match, po3.loserId, po6.winnerId);
                 const po7 = simPlayoffMatch('lcs_po7');
 
                 const po8Match = playoffs.find(m => m.id === 'lcs_po8');
-                if (po8Match && po3.winnerId && po7.winnerId) {
-                    po8Match.t1 = po3.winnerId; 
-                    po8Match.t2 = po7.winnerId;
-                }
+                assignTeam(po8Match, po3.winnerId, po7.winnerId);
                 simPlayoffMatch('lcs_po8');
 
             } else if (targetLeague === 'LEC') {
@@ -673,70 +678,46 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 const ub1g4 = simPlayoffMatch('lec_po_ub1g4');
 
                 const ub2g1Match = playoffs.find(m => m.id === 'lec_po_ub2g1');
-                if (ub2g1Match && ub1g1.winnerId && ub1g4.winnerId) {
-                    ub2g1Match.t1 = ub1g1.winnerId;
-                    ub2g1Match.t2 = ub1g4.winnerId;
-                }
+                assignTeam(ub2g1Match, ub1g1.winnerId, ub1g4.winnerId);
+                
                 const ub2g2Match = playoffs.find(m => m.id === 'lec_po_ub2g2');
-                if (ub2g2Match && ub1g2.winnerId && ub1g3.winnerId) {
-                    ub2g2Match.t1 = ub1g2.winnerId;
-                    ub2g2Match.t2 = ub1g3.winnerId;
-                }
+                assignTeam(ub2g2Match, ub1g2.winnerId, ub1g3.winnerId);
+                
                 const ub2g1 = simPlayoffMatch('lec_po_ub2g1');
                 const ub2g2 = simPlayoffMatch('lec_po_ub2g2');
 
                 const lb1g1Match = playoffs.find(m => m.id === 'lec_po_lb1g1');
-                if (lb1g1Match && ub1g1.loserId && ub1g4.loserId) {
-                    lb1g1Match.t1 = ub1g1.loserId;
-                    lb1g1Match.t2 = ub1g4.loserId;
-                }
+                assignTeam(lb1g1Match, ub1g1.loserId, ub1g4.loserId);
+                
                 const lb1g2Match = playoffs.find(m => m.id === 'lec_po_lb1g2');
-                if (lb1g2Match && ub1g2.loserId && ub1g3.loserId) {
-                    lb1g2Match.t1 = ub1g2.loserId;
-                    lb1g2Match.t2 = ub1g3.loserId;
-                }
+                assignTeam(lb1g2Match, ub1g2.loserId, ub1g3.loserId);
+                
                 const lb1g1 = simPlayoffMatch('lec_po_lb1g1');
                 const lb1g2 = simPlayoffMatch('lec_po_lb1g2');
 
                 const lb2g1Match = playoffs.find(m => m.id === 'lec_po_lb2g1');
-                if (lb2g1Match && lb1g1.winnerId && ub2g2.loserId) {
-                    lb2g1Match.t1 = lb1g1.winnerId;
-                    lb2g1Match.t2 = ub2g2.loserId;
-                }
+                assignTeam(lb2g1Match, lb1g1.winnerId, ub2g2.loserId);
+                
                 const lb2g2Match = playoffs.find(m => m.id === 'lec_po_lb2g2');
-                if (lb2g2Match && lb1g2.winnerId && ub2g1.loserId) {
-                    lb2g2Match.t1 = lb1g2.winnerId;
-                    lb2g2Match.t2 = ub2g1.loserId;
-                }
+                assignTeam(lb2g2Match, lb1g2.winnerId, ub2g1.loserId);
+                
                 const lb2g1 = simPlayoffMatch('lec_po_lb2g1');
                 const lb2g2 = simPlayoffMatch('lec_po_lb2g2');
 
                 const ubfMatch = playoffs.find(m => m.id === 'lec_po_ubf');
-                if (ubfMatch && ub2g1.winnerId && ub2g2.winnerId) {
-                    ubfMatch.t1 = ub2g1.winnerId;
-                    ubfMatch.t2 = ub2g2.winnerId;
-                }
+                assignTeam(ubfMatch, ub2g1.winnerId, ub2g2.winnerId);
                 const ubf = simPlayoffMatch('lec_po_ubf');
 
                 const lbsfMatch = playoffs.find(m => m.id === 'lec_po_lbsf');
-                if (lbsfMatch && lb2g1.winnerId && lb2g2.winnerId) {
-                    lbsfMatch.t1 = lb2g1.winnerId;
-                    lbsfMatch.t2 = lb2g2.winnerId;
-                }
+                assignTeam(lbsfMatch, lb2g1.winnerId, lb2g2.winnerId);
                 const lbsf = simPlayoffMatch('lec_po_lbsf');
 
                 const r4Match = playoffs.find(m => m.id === 'lec_po_r4');
-                if (r4Match && lbsf.winnerId && ubf.loserId) {
-                    r4Match.t1 = lbsf.winnerId;
-                    r4Match.t2 = ubf.loserId;
-                }
+                assignTeam(r4Match, lbsf.winnerId, ubf.loserId);
                 const r4 = simPlayoffMatch('lec_po_r4');
 
                 const finalMatch = playoffs.find(m => m.id === 'lec_po_final');
-                if (finalMatch && r4.winnerId && ubf.winnerId) {
-                    finalMatch.t1 = r4.winnerId;
-                    finalMatch.t2 = ubf.winnerId;
-                }
+                assignTeam(finalMatch, r4.winnerId, ubf.winnerId);
                 simPlayoffMatch('lec_po_final');
             }
         }
