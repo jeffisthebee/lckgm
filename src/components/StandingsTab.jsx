@@ -145,81 +145,70 @@ const StandingsTab = ({
                                 let statusBadge = null;
                                 const matches = league.foreignMatches?.[currentLeague] || [];
 
-                                if (['LCP', 'CBLOL', 'LCS', 'LEC'].includes(currentLeague)) {
-                                    // Use match IDs for reliable final detection (round numbers are inconsistent)
+                                if (['LCP', 'CBLOL', 'LCS', 'LEC', 'LPL'].includes(currentLeague)) {
+                                    
+                                    // 1. DETERMINE FST QUALIFICATION (Strictly after Finals conclude)
+                                    let isFst = false;
                                     const finalMatchId = {
                                         'LCP':   'lcp_po8',
                                         'CBLOL': 'cblol_po10',
                                         'LCS':   'lcs_po8',
                                         'LEC':   'lec_po_final',
+                                        'LPL':   'lpl_po14'
                                     }[currentLeague];
-                                    const finalMatch = matches.find(m => m.id === finalMatchId);
-                                    const isChampion = finalMatch && finalMatch.status === 'finished' && finalMatch.result?.winner === t.name;
 
-                                    if (currentLeague === 'LCP') {
-                                        if (idx < 6) {
-                                            statusBadge = (
-                                                <div className="flex items-center gap-1 sm:ml-2 mt-1 sm:mt-0">
-                                                    <span className="text-[10px] sm:text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded font-bold whitespace-nowrap">PO {idx + 1}시드</span>
-                                                    {isChampion && <span className="text-[10px] sm:text-xs bg-purple-100 text-purple-700 border border-purple-300 px-1.5 py-0.5 rounded font-black whitespace-nowrap shadow-sm">FST 진출</span>}
-                                                </div>
-                                            );
+                                    const finalMatch = matches.find(m => m.id === finalMatchId);
+                                    if (finalMatch && finalMatch.status === 'finished') {
+                                        const wName = finalMatch.result?.winner;
+                                        const getTeamName = (idOrName) => {
+                                            const found = (FOREIGN_LEAGUES[currentLeague] || []).find(x => x.id === idOrName || x.name === idOrName);
+                                            return found ? found.name : idOrName;
+                                        };
+                                        const team1 = getTeamName(finalMatch.t1);
+                                        const team2 = getTeamName(finalMatch.t2);
+                                        const lName = wName === team1 ? team2 : team1;
+                                        
+                                        if (t.name === wName || t.name === lName) isFst = true;
+                                    }
+
+                                    // 2. DETERMINE PLAYOFF/PLAY-IN SEED
+                                    const totalRegular = matches.filter(m => m.type === 'regular' || m.type === 'super').length;
+                                    const finishedRegular = matches.filter(m => (m.type === 'regular' || m.type === 'super') && m.status === 'finished').length;
+                                    const isRegularDone = totalRegular > 0 && totalRegular === finishedRegular;
+
+                                    let badgeText = '';
+                                    let badgeClass = '';
+
+                                    const seeds = league.foreignPlayoffSeeds?.[currentLeague] || [];
+                                    const mySeedObj = seeds.find(s => s.name === t.name || s.id === t.name || s.id === t.id);
+                                    const mySeed = mySeedObj ? mySeedObj.seed : null;
+
+                                    if (isRegularDone) {
+                                        if (mySeed) {
+                                            let isPlayin = false;
+                                            if (currentLeague === 'CBLOL' && mySeed >= 5 && mySeed <= 8) isPlayin = true;
+                                            if (currentLeague === 'LCS' && mySeed >= 6 && mySeed <= 7) isPlayin = true;
+                                            
+                                            if (isPlayin) {
+                                                 badgeText = `PI ${mySeed}시드`;
+                                                 badgeClass = "bg-indigo-100 text-indigo-700";
+                                            } else {
+                                                 badgeText = `PO ${mySeed}시드`;
+                                                 badgeClass = "bg-yellow-100 text-yellow-700";
+                                            }
                                         } else {
-                                            const totalRegular = matches.filter(m => (m.type === 'regular' || m.type === 'super')).length;
-                                            const finishedRegular = matches.filter(m => (m.type === 'regular' || m.type === 'super') && m.status === 'finished').length;
-                                            if (totalRegular > 0 && totalRegular === finishedRegular) statusBadge = <span className="block sm:inline text-[10px] sm:text-xs bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded sm:ml-2 mt-1 sm:mt-0 font-bold w-fit whitespace-nowrap">탈락</span>;
+                                            badgeText = "탈락";
+                                            badgeClass = "bg-gray-200 text-gray-500";
                                         }
-                                    } else if (currentLeague === 'CBLOL') {
-                                        if (idx < 4) { // 1st ~ 4th
-                                            statusBadge = (
-                                                <div className="flex items-center gap-1 sm:ml-2 mt-1 sm:mt-0">
-                                                    <span className="text-[10px] sm:text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded font-bold whitespace-nowrap">PO {idx + 1}시드</span>
-                                                    {isChampion && <span className="text-[10px] sm:text-xs bg-purple-100 text-purple-700 border border-purple-300 px-1.5 py-0.5 rounded font-black whitespace-nowrap shadow-sm">FST 진출</span>}
-                                                </div>
-                                            );
-                                        } else if (idx < 8) { // 5th ~ 8th
-                                            statusBadge = (
-                                                <div className="flex items-center gap-1 sm:ml-2 mt-1 sm:mt-0">
-                                                    <span className="text-[10px] sm:text-xs bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-bold whitespace-nowrap">PI {idx + 1}시드</span>
-                                                </div>
-                                            );
-                                        } else {
-                                            const totalRegular = matches.filter(m => (m.type === 'regular' || m.type === 'super')).length;
-                                            const finishedRegular = matches.filter(m => (m.type === 'regular' || m.type === 'super') && m.status === 'finished').length;
-                                            if (totalRegular > 0 && totalRegular === finishedRegular) statusBadge = <span className="block sm:inline text-[10px] sm:text-xs bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded sm:ml-2 mt-1 sm:mt-0 font-bold w-fit whitespace-nowrap">탈락</span>;
-                                        }
-                                    } else if (currentLeague === 'LCS') {
-                                        if (idx < 5) { // 1st ~ 5th
-                                            statusBadge = (
-                                                <div className="flex items-center gap-1 sm:ml-2 mt-1 sm:mt-0">
-                                                    <span className="text-[10px] sm:text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded font-bold whitespace-nowrap">PO {idx + 1}시드</span>
-                                                    {isChampion && <span className="text-[10px] sm:text-xs bg-purple-100 text-purple-700 border border-purple-300 px-1.5 py-0.5 rounded font-black whitespace-nowrap shadow-sm">FST 진출</span>}
-                                                </div>
-                                            );
-                                        } else if (idx < 7) { // 6th ~ 7th
-                                            statusBadge = (
-                                                <div className="flex items-center gap-1 sm:ml-2 mt-1 sm:mt-0">
-                                                    <span className="text-[10px] sm:text-xs bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-bold whitespace-nowrap">PI {idx + 1}시드</span>
-                                                </div>
-                                            );
-                                        } else {
-                                            const totalRegular = matches.filter(m => (m.type === 'regular' || m.type === 'super')).length;
-                                            const finishedRegular = matches.filter(m => (m.type === 'regular' || m.type === 'super') && m.status === 'finished').length;
-                                            if (totalRegular > 0 && totalRegular === finishedRegular) statusBadge = <span className="block sm:inline text-[10px] sm:text-xs bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded sm:ml-2 mt-1 sm:mt-0 font-bold w-fit whitespace-nowrap">탈락</span>;
-                                        }
-                                    } else if (currentLeague === 'LEC') {
-                                        if (idx < 8) { // 1st–8th go to playoffs
-                                            statusBadge = (
-                                                <div className="flex items-center gap-1 sm:ml-2 mt-1 sm:mt-0">
-                                                    <span className="text-[10px] sm:text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded font-bold whitespace-nowrap">PO {idx + 1}시드</span>
-                                                    {isChampion && <span className="text-[10px] sm:text-xs bg-purple-100 text-purple-700 border border-purple-300 px-1.5 py-0.5 rounded font-black whitespace-nowrap shadow-sm">FST 진출</span>}
-                                                </div>
-                                            );
-                                        } else {
-                                            const totalRegular = matches.filter(m => m.type === 'regular').length;
-                                            const finishedRegular = matches.filter(m => m.type === 'regular' && m.status === 'finished').length;
-                                            if (totalRegular > 0 && totalRegular === finishedRegular) statusBadge = <span className="block sm:inline text-[10px] sm:text-xs bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded sm:ml-2 mt-1 sm:mt-0 font-bold w-fit whitespace-nowrap">탈락</span>;
-                                        }
+                                    }
+
+                                    if (badgeText || isFst) {
+                                        statusBadge = (
+                                            <div className="flex items-center gap-1 sm:ml-2 mt-1 sm:mt-0">
+                                                {badgeText && <span className={`text-[10px] sm:text-xs px-1.5 py-0.5 rounded font-bold whitespace-nowrap ${badgeClass}`}>{badgeText}</span>}
+                                                {isFst && <span className="text-[10px] sm:text-xs bg-purple-100 text-purple-700 border border-purple-300 px-1.5 py-0.5 rounded font-black whitespace-nowrap shadow-sm">FST 진출</span>}
+                                            </div>
+                                        );
                                     }
                                 }
 
@@ -227,9 +216,11 @@ const StandingsTab = ({
                                     <tr key={t.id || t.name} className="hover:bg-gray-50 transition">
                                         <td className={`py-2 ${pxClass} text-center font-bold text-gray-600`}>{idx + 1}</td>
                                         <td className={`py-2 ${pxClass} font-bold text-gray-800`}>
-                                            <div className="flex items-center gap-1.5 sm:gap-2">
-                                                <div className="w-4 h-4 sm:w-5 sm:h-5 rounded-full text-white text-[8px] sm:text-[10px] flex-shrink-0 flex items-center justify-center" style={{ backgroundColor: teamColor }}>{t.name.slice(0,3)}</div>
-                                                <span className="truncate max-w-[60px] sm:max-w-full">{t.fullName || t.name}</span>
+                                            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
+                                                <div className="flex items-center gap-1.5 sm:gap-2">
+                                                    <div className="w-4 h-4 sm:w-5 sm:h-5 rounded-full text-white text-[8px] sm:text-[10px] flex-shrink-0 flex items-center justify-center" style={{ backgroundColor: teamColor }}>{t.name.slice(0,3)}</div>
+                                                    <span className="truncate max-w-[60px] sm:max-w-full">{t.fullName || t.name}</span>
+                                                </div>
                                                 {statusBadge}
                                             </div>
                                         </td>
@@ -341,11 +332,13 @@ const StandingsTab = ({
                                                         <tr key={id} onClick={() => setViewingTeamId(id)} className={`cursor-pointer hover:bg-gray-50 transition ${isMyTeam ? `bg-${group.color}-50` : ''}`}>
                                                             <td className="py-2 px-2 sm:py-3 sm:px-4 text-center font-bold text-gray-600">{idx + 1}</td>
                                                             <td className="py-2 px-2 sm:py-3 sm:px-4 font-bold text-gray-800">
-                                                                <div className="flex items-center gap-2">
-                                                                    <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full text-white text-[10px] flex-shrink-0 flex items-center justify-center" style={{ backgroundColor: t.colors.primary }}>{t.name}</div>
-                                                                    <span className="truncate">{t.fullName}</span>
+                                                                <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full text-white text-[10px] flex-shrink-0 flex items-center justify-center" style={{ backgroundColor: t.colors.primary }}>{t.name}</div>
+                                                                        <span className="truncate">{t.fullName}</span>
+                                                                    </div>
+                                                                    {statusBadge && <div className="mt-1 sm:mt-0">{statusBadge}</div>}
                                                                 </div>
-                                                                {statusBadge}
                                                             </td>
                                                             <td className="py-2 px-2 sm:py-3 sm:px-4 text-center font-bold text-blue-600">{rec.w}</td>
                                                             <td className="py-2 px-2 sm:py-3 sm:px-4 text-center font-bold text-red-600">{rec.l}</td>
