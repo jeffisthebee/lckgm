@@ -749,9 +749,16 @@ export const generateLPLRegularSchedule = (teams) => {
             });
         }
         
-        // [FIX] Removed impossible min-per-week constraint: mid/bot teams only have 6 total
-        // games, but max 2+4=6 in weeks 1-2 means greedy can exhaust them before weeks 3-4.
-        // This caused all 50 retries to fail every season. Simple weekly-max check is sufficient.
+        // Ensure minimum 1 game per week per team
+        if (valid) {
+            for (let team of allTeams) {
+                if (teamWeeklyCounts[team][1] < 1 || teamWeeklyCounts[team][2] < 1 || teamWeeklyCounts[team][3] < 1 || teamWeeklyCounts[team][4] < 1) {
+                    valid = false;
+                    break;
+                }
+            }
+        }
+
         if (valid) success = true;
     }
 
@@ -807,43 +814,43 @@ export const generateLPLPlayoffs = (seeds) => {
 
     return [
         // --- PLAY-IN STAGE (BO5) ---
-        { round: 0.1, match: 1, label: '플레이인 1R G1', t1: t5, t2: m2, date: '2.9 (월)', time: '15:00', type: 'playin', format: 'BO5', status: 'pending', id: 'lpl_pi_r1_g1' },
-        { round: 0.1, match: 2, label: '플레이인 1R G2', t1: t6, t2: m1, date: '2.9 (월)', time: '18:00', type: 'playin', format: 'BO5', status: 'pending', id: 'lpl_pi_r1_g2' },
+        { round: 0.1, match: 1, label: '플레이인 1R G1', t1: t5, t2: m2, date: '2.9 (월)', time: '15:00', type: 'playin', format: 'BO5', status: 'pending', id: 'lpl_pi1' },
+        { round: 0.1, match: 2, label: '플레이인 1R G2', t1: t6, t2: m1, date: '2.9 (월)', time: '18:00', type: 'playin', format: 'BO5', status: 'pending', id: 'lpl_pi2' },
         
-        { round: 0.2, match: 1, label: '플레이인 2R G1', t1: m4, t2: b1, date: '2.10 (화)', time: '15:00', type: 'playin', format: 'BO5', status: 'pending', id: 'lpl_pi_r2_g1' },
-        { round: 0.2, match: 2, label: '플레이인 2R G2', t1: m3, t2: b2, date: '2.10 (화)', time: '18:00', type: 'playin', format: 'BO5', status: 'pending', id: 'lpl_pi_r2_g2' },
+        { round: 0.2, match: 1, label: '플레이인 2R G1', t1: m4, t2: b1, date: '2.10 (화)', time: '15:00', type: 'playin', format: 'BO5', status: 'pending', id: 'lpl_pi3' },
+        { round: 0.2, match: 2, label: '플레이인 2R G2', t1: m3, t2: b2, date: '2.10 (화)', time: '18:00', type: 'playin', format: 'BO5', status: 'pending', id: 'lpl_pi4' },
         
-        { round: 0.3, match: 1, label: '플레이인 3R G1', t1: null, t2: null, date: '2.11 (수)', time: '15:00', type: 'playin', format: 'BO5', status: 'pending', id: 'lpl_pi_r3_g1' },
-        { round: 0.3, match: 2, label: '플레이인 3R G2', t1: null, t2: null, date: '2.11 (수)', time: '18:00', type: 'playin', format: 'BO5', status: 'pending', id: 'lpl_pi_r3_g2' },
+        { round: 0.3, match: 1, label: '플레이인 3R G1', t1: null, t2: null, date: '2.11 (수)', time: '15:00', type: 'playin', format: 'BO5', status: 'pending', id: 'lpl_pi5' },
+        { round: 0.3, match: 2, label: '플레이인 3R G2', t1: null, t2: null, date: '2.11 (수)', time: '18:00', type: 'playin', format: 'BO5', status: 'pending', id: 'lpl_pi6' },
 
         // --- PLAYOFFS UPPER BRACKET R1 ---
-        { round: 1, match: 1, label: '1라운드 승자조 G1', t1: t1, t2: null, date: '2.24 (화)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po_1r_ub1' },
-        { round: 1, match: 2, label: '1라운드 승자조 G2', t1: t4, t2: null, date: '2.24 (화)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po_1r_ub2' },
-        { round: 1, match: 3, label: '1라운드 승자조 G3', t1: t2, t2: null, date: '2.25 (수)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po_1r_ub3' },
-        { round: 1, match: 4, label: '1라운드 승자조 G4', t1: t3, t2: null, date: '2.25 (수)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po_1r_ub4' },
+        { round: 1, match: 1, label: '1라운드 승자조 G1', t1: t1, t2: null, date: '2.24 (화)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po1' },
+        { round: 1, match: 2, label: '1라운드 승자조 G2', t1: t4, t2: null, date: '2.24 (화)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po2' },
+        { round: 1, match: 3, label: '1라운드 승자조 G3', t1: t2, t2: null, date: '2.25 (수)', time: '15:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po3' },
+        { round: 1, match: 4, label: '1라운드 승자조 G4', t1: t3, t2: null, date: '2.25 (수)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po4' },
 
         // --- PLAYOFFS UPPER BRACKET R2 ---
-        { round: 2, match: 1, label: '2라운드 승자조 G1', t1: null, t2: null, date: '2.26 (목)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po_2r_ub1' },
-        { round: 2, match: 2, label: '2라운드 승자조 G2', t1: null, t2: null, date: '2.27 (금)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po_2r_ub2' },
+        { round: 2, match: 1, label: '2라운드 승자조 G1', t1: null, t2: null, date: '2.26 (목)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po5' },
+        { round: 2, match: 2, label: '2라운드 승자조 G2', t1: null, t2: null, date: '2.27 (금)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po6' },
 
         // --- PLAYOFFS LOWER BRACKET R1 ---
-        { round: 1.1, match: 1, label: '1라운드 패자조 G1', t1: null, t2: null, date: '2.28 (토)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po_1r_lb1' },
-        { round: 1.1, match: 2, label: '1라운드 패자조 G2', t1: null, t2: null, date: '3.1 (일)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po_1r_lb2' },
+        { round: 1.1, match: 1, label: '1라운드 패자조 G1', t1: null, t2: null, date: '2.28 (토)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po7' },
+        { round: 1.1, match: 2, label: '1라운드 패자조 G2', t1: null, t2: null, date: '3.1 (일)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po8' },
 
         // --- PLAYOFFS LOWER BRACKET R2 ---
-        { round: 2.1, match: 1, label: '2라운드 패자조 G1', t1: null, t2: null, date: '3.2 (월)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po_2r_lb1' },
-        { round: 2.1, match: 2, label: '2라운드 패자조 G2', t1: null, t2: null, date: '3.3 (화)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po_2r_lb2' },
+        { round: 2.1, match: 1, label: '2라운드 패자조 G1', t1: null, t2: null, date: '3.2 (월)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po9' },
+        { round: 2.1, match: 2, label: '2라운드 패자조 G2', t1: null, t2: null, date: '3.3 (화)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po10' },
 
         // --- PLAYOFFS UPPER BRACKET R3 ---
-        { round: 3, match: 1, label: '3라운드 승자조', t1: null, t2: null, date: '3.4 (수)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po_3r_ub' },
+        { round: 3, match: 1, label: '3라운드 승자조', t1: null, t2: null, date: '3.4 (수)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po11' },
 
         // --- PLAYOFFS LOWER BRACKET R3 ---
-        { round: 3.1, match: 1, label: '3라운드 패자조', t1: null, t2: null, date: '3.5 (목)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po_3r_lb' },
+        { round: 3.1, match: 1, label: '3라운드 패자조', t1: null, t2: null, date: '3.5 (목)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po12' },
 
         // --- PLAYOFFS ROUND 4 (LOWER FINAL) ---
-        { round: 4, match: 1, label: '4라운드', t1: null, t2: null, date: '3.7 (토)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po_4r_lb' },
+        { round: 4, match: 1, label: '4라운드', t1: null, t2: null, date: '3.7 (토)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po13' },
 
         // --- GRAND FINAL ---
-        { round: 5, match: 1, label: '결승전', t1: null, t2: null, date: '3.8 (일)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po_final' }
+        { round: 5, match: 1, label: '결승전', t1: null, t2: null, date: '3.8 (일)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po14' }
     ];
 };

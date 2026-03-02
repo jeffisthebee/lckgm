@@ -232,8 +232,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
 
             try {
                 const simResult = quickSimulateMatch(t1, t2, matchObj.format, matchMetaList);
-                // [THE FIX] isUpdated is cleanly set only when a simulation triggers successfully!
-                isUpdated = true;
                 
                 let fScore = simResult.scoreString || simResult.score;
                 let matchWinner = simResult.winner?.name || simResult.winner;
@@ -263,7 +261,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 const isBO5 = matchObj.format === 'BO5' || matchObj.type === 'playoff';
                 const reqWins = isBO5 ? 3 : (isBO1 ? 1 : 2);
                 const t1Wins = Math.random() > 0.5;
-                isUpdated = true;
                 
                 return {
                     ...matchObj,
@@ -279,7 +276,13 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
             }
         };
 
-        schedule = schedule.map(simMatchIfPast);
+        schedule = schedule.map((match) => {
+            const simmed = simMatchIfPast(match);
+            if (simmed.status === 'finished' && match.status !== 'finished') {
+                isUpdated = true;
+            }
+            return simmed;
+        });
 
         let playoffs = forceRegen ? [] : activeMatches.filter(m => m.type === 'playoff' || m.type === 'playin');
         let seeds = forceRegen ? [] : (league.foreignPlayoffSeeds?.[targetLeague] || []);
@@ -345,16 +348,13 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 });
 
                 if (targetLeague === 'LPL') {
-                    // [THE FIX] Absolute robust string matching. Checks ID and Name perfectly!
                     const getGroupRankings = (groupNames) => {
-                        return sorted.filter(t => {
-                            const tId = String(t.id).toUpperCase().trim();
-                            const tName = String(t.name).toUpperCase().trim();
-                            return groupNames.some(gn => {
-                                const g = gn.toUpperCase();
-                                return tId === g || tName === g || tId.split(' ')[0] === g || tName.split(' ')[0] === g;
-                            });
-                        });
+                        return sorted.filter(t => groupNames.some(name => {
+                            const upperTId = String(t.id).toUpperCase().trim();
+                            const upperTName = String(t.name).toUpperCase().trim();
+                            const upperName = String(name).toUpperCase().trim();
+                            return upperTId === upperName || upperTName === upperName || upperTName.startsWith(upperName) || upperTName.includes(upperName + ' ');
+                        }));
                     };
 
                     const topGroup = getGroupRankings(['AL', 'BLG', 'WBG', 'JDG', 'TES', 'IG']);
@@ -393,6 +393,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 isUpdated = true;
             }
 
+            // [THE FIX] Flawless State Lock to prevent Infinite Loops!
             const simPlayoffMatch = (id) => {
                 const matchObj = playoffs.find(m => m.id === id);
                 if (!matchObj) return { winnerId: null, loserId: null };
@@ -411,15 +412,15 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
 
                 const simulatedMatch = simMatchIfPast(matchObj);
                 
-                // [THE CRITICAL FIX] ONLY mark isUpdated = true if the match ACTUALLY finished simulation! 
-                // Previously, it blindly marked it true even if skipped, causing an infinite loop.
+                // ONLY trigger a save if the match actually completely simulated to 'finished'
                 if (simulatedMatch.status === 'finished') {
                     Object.assign(matchObj, simulatedMatch); 
+                    isUpdated = true; 
                     const wId = findGlobalTeam(simulatedMatch.result.winner, teams).name;
                     const lId = wId === findGlobalTeam(matchObj.t1, teams).name ? matchObj.t2 : matchObj.t1;
                     return { winnerId: wId, loserId: lId };
                 }
-                
+
                 return { winnerId: null, loserId: null };
             };
 
