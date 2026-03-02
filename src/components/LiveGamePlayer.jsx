@@ -784,7 +784,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                     const chosenRole = champ.role || filterRole || 'MID';
     
                     // Use positionMatches to find the player, so SUP variants are handled
-                    const playerName = (team?.roster || []).find(p => positionMatches(p.포지션, chosenRole) || positionMatches(p.position, chosenRole))?.이름 || 'Unknown';
+                    const foundPlayer = (team?.roster || []).find(p => positionMatches(p.포지션, chosenRole) || positionMatches(p.position, chosenRole) || positionMatches(p.role, chosenRole));
+                    const playerName = foundPlayer?.이름 || foundPlayer?.name || foundPlayer?.playerName || 'Unknown';
                     const pickObj = { champName: champ.name, tier: champ.tier, role: chosenRole, playerName }; // Saving tier here
     
                     if (emptyIdx !== -1) {
@@ -1157,7 +1158,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         };
     
         // --- LOADING SCREEN ---
-        if ((!simulationData && !isManualMode && phase !== 'SET_RESULT' && phase !== 'ROSTER_SELECTION' && phase !== 'SIDE_SELECTION' && phase !== 'LOADING') || (isManualMode && !manualTeams.blue && phase !== 'ROSTER_SELECTION' && phase !== 'SIDE_SELECTION')) {
+        if ((!simulationData && !isManualMode && phase !== 'SET_RESULT' && phase !== 'ROSTER_SELECTION' && phase !== 'SIDE_SELECTION' && phase !== 'LOADING') || (isManualMode && !manualTeams.blue && phase !== 'ROSTER_SELECTION' && phase !== 'SIDE_SELECTION' && phase !== 'LOADING')) {
             return <div className="fixed inset-0 bg-black text-white flex items-center justify-center z-[200] font-bold text-3xl">경기 로딩 중...</div>;
         }
         
@@ -1188,8 +1189,9 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         const displayWinsB = winsB + ((phase === 'SET_RESULT' && !currentWinnerIsA && simulationData?.winnerName) ? 1 : 0);
         const isMatchFinished = displayWinsA >= targetWins || displayWinsB >= targetWins;
     
-        // [CRITICAL FIX] If in result phase but data is missing (during transition), return null
-        if (phase === 'SET_RESULT' && !simulationData) return null;
+        // [CRITICAL FIX] If in result phase but data is missing (during transition), show loading instead of null.
+        // Returning null unmounts the component which causes a crash between sets.
+        if (phase === 'SET_RESULT' && !simulationData) return <div className="fixed inset-0 bg-black text-white flex items-center justify-center z-[200] font-bold text-3xl">세트 전환 중...</div>;
     
         return (
           <div className="fixed inset-0 bg-gray-900 z-[200] flex flex-col text-white font-sans h-[100dvh]">
@@ -1818,8 +1820,12 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                 } catch (err) { console.warn("onMatchComplete error:", err); }
                             } else {
                                 // --- NEXT SET LOGIC ---
-                                // Reset locks and simulation state to prevent crashes between sets across formats
+                                // [FIX] Set phase to LOADING *first* before clearing simulationData,
+                                // to avoid the guard "if (phase === 'SET_RESULT' && !simulationData) return null"
+                                // firing on the intermediate render and causing an unmount/crash.
                                 setPhase('LOADING'); 
+                                
+                                // Now safe to clear simulationData since phase is no longer SET_RESULT
                                 setSimulationData(null); 
                                 setLiveStats({ kills: { BLUE: 0, RED: 0 }, gold: { BLUE: 2500, RED: 2500 }, towers: { BLUE: 0, RED: 0 }, players: [] });
                                 setResultProcessed(false); // unlock for next sets
