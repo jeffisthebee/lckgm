@@ -164,6 +164,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         // New: track which side the USER is on (BLUE/RED) in manual mode to avoid name-compare errors
         const [manualUserSide, setManualUserSide] = useState(null);
         const finalizeManualDraftCalledRef = useRef(false); // guard against double-invocation
+        const startSetCalledRef = useRef(false); // guard: prevent startSet firing >1x per READY transition
         // -------------------------
     
         // --- DRAFT STATE ---
@@ -610,7 +611,19 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         }, [currentSet, teamA, teamB, globalBanList, simOptions, onClose, matchHistory, isManualMode, activeUserRoster, preselectedSide, isUserTeamA, userTeam, cpuTeam, match, activeChampionList]);
     
         useEffect(() => {
-          if (phase === 'READY') startSet();
+            if (phase === 'READY') {
+                // Guard: only call startSet once per READY transition.
+                // startSet is a useCallback with many deps (globalBanList, matchHistory, etc.)
+                // so it gets recreated after button-handler state updates, causing this
+                // effect to re-fire with phase still === 'READY' and trigger a second run
+                // which replays the previous set with stale picks.
+                if (startSetCalledRef.current) return;
+                startSetCalledRef.current = true;
+                startSet();
+            } else {
+                // Reset the guard whenever phase leaves READY
+                startSetCalledRef.current = false;
+            }
         }, [phase, startSet]);
     
         // --- PHASE TRANSITION HANDLERS ---
