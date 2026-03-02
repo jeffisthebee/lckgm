@@ -425,77 +425,76 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 return { winnerId: null, loserId: null };
             };
 
-            const getSeedId = (s) => seeds.find(x => x.seed === s)?.name || null;
-
             if (targetLeague === 'LPL') {
-                const pi1g1 = simPlayoffMatch('lpl_pi1g1');
-                const pi1g2 = simPlayoffMatch('lpl_pi1g2');
-                const pi2g1 = simPlayoffMatch('lpl_pi2g1');
-                const pi2g2 = simPlayoffMatch('lpl_pi2g2');
+                // --- [THE FIX] Perfectly mapped to the specific IDs from scheduleLogic.js! ---
+                const pi1g1 = simPlayoffMatch('lpl_pi_r1_g1');
+                const pi1g2 = simPlayoffMatch('lpl_pi_r1_g2');
+                const pi2g1 = simPlayoffMatch('lpl_pi_r2_g1');
+                const pi2g2 = simPlayoffMatch('lpl_pi_r2_g2');
 
-                const pi3g1Match = playoffs.find(m => m.id === 'lpl_pi3g1');
+                const pi3g1Match = playoffs.find(m => m.id === 'lpl_pi_r3_g1');
                 if (pi3g1Match && pi1g1.loserId && pi2g1.winnerId) { pi3g1Match.t1 = pi1g1.loserId; pi3g1Match.t2 = pi2g1.winnerId; }
-                const pi3g1 = simPlayoffMatch('lpl_pi3g1');
+                const pi3g1 = simPlayoffMatch('lpl_pi_r3_g1');
 
-                const pi3g2Match = playoffs.find(m => m.id === 'lpl_pi3g2');
+                const pi3g2Match = playoffs.find(m => m.id === 'lpl_pi_r3_g2');
                 if (pi3g2Match && pi1g2.loserId && pi2g2.winnerId) { pi3g2Match.t1 = pi1g2.loserId; pi3g2Match.t2 = pi2g2.winnerId; }
-                const pi3g2 = simPlayoffMatch('lpl_pi3g2');
+                const pi3g2 = simPlayoffMatch('lpl_pi_r3_g2');
 
-                const po1w_g1Match = playoffs.find(m => m.id === 'lpl_po1w_g1');
-                if (po1w_g1Match && pi3g2.winnerId) po1w_g1Match.t2 = pi3g2.winnerId;
-                const po1w_g1 = simPlayoffMatch('lpl_po1w_g1');
+                const po1ub1Match = playoffs.find(m => m.id === 'lpl_po_1r_ub1');
+                if (po1ub1Match && pi3g2.winnerId) po1ub1Match.t2 = pi3g2.winnerId;
+                const po1ub1 = simPlayoffMatch('lpl_po_1r_ub1');
 
-                const po1w_g2Match = playoffs.find(m => m.id === 'lpl_po1w_g2');
-                if (po1w_g2Match && pi1g1.winnerId) po1w_g2Match.t2 = pi1g1.winnerId;
-                const po1w_g2 = simPlayoffMatch('lpl_po1w_g2');
+                const po1ub2Match = playoffs.find(m => m.id === 'lpl_po_1r_ub2');
+                if (po1ub2Match && pi1g1.winnerId) po1ub2Match.t2 = pi1g1.winnerId;
+                const po1ub2 = simPlayoffMatch('lpl_po_1r_ub2');
 
-                const po1w_g3Match = playoffs.find(m => m.id === 'lpl_po1w_g3');
-                if (po1w_g3Match && pi3g1.winnerId) po1w_g3Match.t2 = pi3g1.winnerId;
-                const po1w_g3 = simPlayoffMatch('lpl_po1w_g3');
+                const po1ub3Match = playoffs.find(m => m.id === 'lpl_po_1r_ub3');
+                if (po1ub3Match && pi3g1.winnerId) po1ub3Match.t2 = pi3g1.winnerId;
+                const po1ub3 = simPlayoffMatch('lpl_po_1r_ub3');
 
-                const po1w_g4Match = playoffs.find(m => m.id === 'lpl_po1w_g4');
-                if (po1w_g4Match && pi1g2.winnerId) po1w_g4Match.t2 = pi1g2.winnerId;
-                const po1w_g4 = simPlayoffMatch('lpl_po1w_g4');
+                const po1ub4Match = playoffs.find(m => m.id === 'lpl_po_1r_ub4');
+                if (po1ub4Match && pi1g2.winnerId) po1ub4Match.t2 = pi1g2.winnerId;
+                const po1ub4 = simPlayoffMatch('lpl_po_1r_ub4');
 
-                const po1l_g1Match = playoffs.find(m => m.id === 'lpl_po1l_g1');
-                if (po1l_g1Match && po1w_g1.loserId && po1w_g2.loserId) { po1l_g1Match.t1 = po1w_g1.loserId; po1l_g1Match.t2 = po1w_g2.loserId; }
-                const po1l_g1 = simPlayoffMatch('lpl_po1l_g1');
+                const po2ub1Match = playoffs.find(m => m.id === 'lpl_po_2r_ub1');
+                if (po2ub1Match && po1ub1.winnerId && po1ub2.winnerId) { po2ub1Match.t1 = po1ub1.winnerId; po2ub1Match.t2 = po1ub2.winnerId; }
+                const po2ub1 = simPlayoffMatch('lpl_po_2r_ub1');
 
-                const po1l_g2Match = playoffs.find(m => m.id === 'lpl_po1l_g2');
-                if (po1l_g2Match && po1w_g3.loserId && po1w_g4.loserId) { po1l_g2Match.t1 = po1w_g3.loserId; po1l_g2Match.t2 = po1w_g4.loserId; }
-                const po1l_g2 = simPlayoffMatch('lpl_po1l_g2');
+                const po2ub2Match = playoffs.find(m => m.id === 'lpl_po_2r_ub2');
+                if (po2ub2Match && po1ub3.winnerId && po1ub4.winnerId) { po2ub2Match.t1 = po1ub3.winnerId; po2ub2Match.t2 = po1ub4.winnerId; }
+                const po2ub2 = simPlayoffMatch('lpl_po_2r_ub2');
 
-                const po2w_g1Match = playoffs.find(m => m.id === 'lpl_po2w_g1');
-                if (po2w_g1Match && po1w_g1.winnerId && po1w_g2.winnerId) { po2w_g1Match.t1 = po1w_g1.winnerId; po2w_g1Match.t2 = po1w_g2.winnerId; }
-                const po2w_g1 = simPlayoffMatch('lpl_po2w_g1');
+                const po1lb1Match = playoffs.find(m => m.id === 'lpl_po_1r_lb1');
+                if (po1lb1Match && po1ub1.loserId && po1ub2.loserId) { po1lb1Match.t1 = po1ub1.loserId; po1lb1Match.t2 = po1ub2.loserId; }
+                const po1lb1 = simPlayoffMatch('lpl_po_1r_lb1');
 
-                const po2w_g2Match = playoffs.find(m => m.id === 'lpl_po2w_g2');
-                if (po2w_g2Match && po1w_g3.winnerId && po1w_g4.winnerId) { po2w_g2Match.t1 = po1w_g3.winnerId; po2w_g2Match.t2 = po1w_g4.winnerId; }
-                const po2w_g2 = simPlayoffMatch('lpl_po2w_g2');
+                const po1lb2Match = playoffs.find(m => m.id === 'lpl_po_1r_lb2');
+                if (po1lb2Match && po1ub3.loserId && po1ub4.loserId) { po1lb2Match.t1 = po1ub3.loserId; po1lb2Match.t2 = po1ub4.loserId; }
+                const po1lb2 = simPlayoffMatch('lpl_po_1r_lb2');
 
-                const po2l_g1Match = playoffs.find(m => m.id === 'lpl_po2l_g1');
-                if (po2l_g1Match && po1l_g1.winnerId && po2w_g2.loserId) { po2l_g1Match.t1 = po1l_g1.winnerId; po2l_g1Match.t2 = po2w_g2.loserId; }
-                const po2l_g1 = simPlayoffMatch('lpl_po2l_g1');
+                const po2lb1Match = playoffs.find(m => m.id === 'lpl_po_2r_lb1');
+                if (po2lb1Match && po1lb1.winnerId && po2ub2.loserId) { po2lb1Match.t1 = po1lb1.winnerId; po2lb1Match.t2 = po2ub2.loserId; }
+                const po2lb1 = simPlayoffMatch('lpl_po_2r_lb1');
 
-                const po2l_g2Match = playoffs.find(m => m.id === 'lpl_po2l_g2');
-                if (po2l_g2Match && po1l_g2.winnerId && po2w_g1.loserId) { po2l_g2Match.t1 = po1l_g2.winnerId; po2l_g2Match.t2 = po2w_g1.loserId; }
-                const po2l_g2 = simPlayoffMatch('lpl_po2l_g2');
+                const po2lb2Match = playoffs.find(m => m.id === 'lpl_po_2r_lb2');
+                if (po2lb2Match && po1lb2.winnerId && po2ub1.loserId) { po2lb2Match.t1 = po1lb2.winnerId; po2lb2Match.t2 = po2ub1.loserId; }
+                const po2lb2 = simPlayoffMatch('lpl_po_2r_lb2');
 
-                const po3wMatch = playoffs.find(m => m.id === 'lpl_po3w');
-                if (po3wMatch && po2w_g1.winnerId && po2w_g2.winnerId) { po3wMatch.t1 = po2w_g1.winnerId; po3wMatch.t2 = po2w_g2.winnerId; }
-                const po3w = simPlayoffMatch('lpl_po3w');
+                const po3ubMatch = playoffs.find(m => m.id === 'lpl_po_3r_ub');
+                if (po3ubMatch && po2ub1.winnerId && po2ub2.winnerId) { po3ubMatch.t1 = po2ub1.winnerId; po3ubMatch.t2 = po2ub2.winnerId; }
+                const po3ub = simPlayoffMatch('lpl_po_3r_ub');
 
-                const po3lMatch = playoffs.find(m => m.id === 'lpl_po3l');
-                if (po3lMatch && po2l_g1.winnerId && po2l_g2.winnerId) { po3lMatch.t1 = po2l_g1.winnerId; po3lMatch.t2 = po2l_g2.winnerId; }
-                const po3l = simPlayoffMatch('lpl_po3l');
+                const po3lbMatch = playoffs.find(m => m.id === 'lpl_po_3r_lb');
+                if (po3lbMatch && po2lb1.winnerId && po2lb2.winnerId) { po3lbMatch.t1 = po2lb1.winnerId; po3lbMatch.t2 = po2lb2.winnerId; }
+                const po3lb = simPlayoffMatch('lpl_po_3r_lb');
 
-                const po4Match = playoffs.find(m => m.id === 'lpl_po4');
-                if (po4Match && po3w.loserId && po3l.winnerId) { po4Match.t1 = po3w.loserId; po4Match.t2 = po3l.winnerId; }
-                const po4 = simPlayoffMatch('lpl_po4');
+                const po4lbMatch = playoffs.find(m => m.id === 'lpl_po_4r_lb');
+                if (po4lbMatch && po3ub.loserId && po3lb.winnerId) { po4lbMatch.t1 = po3ub.loserId; po4lbMatch.t2 = po3lb.winnerId; }
+                const po4lb = simPlayoffMatch('lpl_po_4r_lb');
 
-                const finalMatch = playoffs.find(m => m.id === 'lpl_final');
-                if (finalMatch && po3w.winnerId && po4.winnerId) { finalMatch.t1 = po3w.winnerId; finalMatch.t2 = po4.winnerId; }
-                simPlayoffMatch('lpl_final');
+                const finalMatch = playoffs.find(m => m.id === 'lpl_po_final');
+                if (finalMatch && po3ub.winnerId && po4lb.winnerId) { finalMatch.t1 = po3ub.winnerId; finalMatch.t2 = po4lb.winnerId; }
+                simPlayoffMatch('lpl_po_final');
 
             } else if (targetLeague === 'LCP') {
                 const r1m1 = simPlayoffMatch('lcp_po1');
