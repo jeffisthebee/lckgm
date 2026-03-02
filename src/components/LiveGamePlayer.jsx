@@ -192,6 +192,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         });
         const liveStatsRef = useRef(liveStats);
         useEffect(() => { liveStatsRef.current = liveStats; }, [liveStats]);
+        const gameEndFiredRef = useRef(false); // guard: setPhase('SET_RESULT') fires exactly once per game
       
         const [globalBanList, setGlobalBanList] = useState(Array.isArray(externalGlobalBans) ? externalGlobalBans.slice() : []);
         const [matchHistory, setMatchHistory] = useState([]);
@@ -366,6 +367,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 
           setTimeout(() => {
               try {
+                  gameEndFiredRef.current = false; // reset for the new game
                   // Prepare Roster Objects (Inject Active User Roster) with robust fallbacks
                   const safeUserRosterArray = makeSafeRosterArray(activeUserRoster, userTeam?.name);
     
@@ -950,6 +952,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                     }))
                 });
             
+                gameEndFiredRef.current = false; // reset for this new manual game
                 setGameTime(0);
                 setDisplayLogs([]);
                 setPhase('GAME');
@@ -1121,9 +1124,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
               return nextStats;
             });
   
-            // --- [THE FIX IS HERE] ---
-            if (nextTime >= finalSec) {
-                // 1. Instantly kill the ticking interval so it doesn't queue ghost timeouts!
+            if (nextTime >= finalSec && !gameEndFiredRef.current) {
+                gameEndFiredRef.current = true; // prevent ghost re-entry
                 clearInterval(timer);
                 
                 const finalKills = simulationData?.gameResult?.finalKills || liveStatsRef.current?.kills || { BLUE: 0, RED: 0 };
@@ -1157,7 +1159,11 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         }, intervalMs);
         
         return () => clearInterval(timer);
-      }, [phase, simulationData, playbackSpeed, isManualMode, manualTeams]);
+      // NOTE: simulationData intentionally excluded from deps.
+      // Mid-game updates to simulationData (picks/pogPlayer patches) would restart
+      // the interval and fire a ghost setPhase('SET_RESULT') into the next set's draft.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [phase, playbackSpeed, isManualMode, manualTeams]);
     
         // --- RENDER HELPERS ---
         const getActivePlayerName = (pos) => activeUserRoster[pos]?.이름 || "선택 안됨";
