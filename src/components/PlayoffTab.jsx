@@ -68,7 +68,6 @@ const PlayoffTab = ({
     };
     const computedCblolSeeds = getCblolSeeds();
 
-    // --- [NEW] LCS SEED GENERATOR ---
     const getLcsSeeds = () => {
         let base = league.foreignPlayoffSeeds?.['LCS'] || [];
         
@@ -81,7 +80,6 @@ const PlayoffTab = ({
             base = Object.values(st).sort((a, b) => b.w - a.w).map((t, idx) => ({ ...t, seed: idx + 1 }));
         }
 
-        // Override Seed 6 from Playin Match
         const lcsMatches = league.foreignMatches?.['LCS'] || [];
         const pi1 = lcsMatches.find(m => m.id === 'lcs_pi1');
         const pi1Winner = pi1?.status === 'finished' ? findGlobalTeam(pi1.result?.winner).name : null;
@@ -93,7 +91,6 @@ const PlayoffTab = ({
     };
     const computedLcsSeeds = getLcsSeeds();
 
-    // --- LEC SEED GENERATOR ---
     const getLecSeeds = () => {
         let base = league.foreignPlayoffSeeds?.['LEC'] || [];
         if (!base || base.length === 0) {
@@ -139,6 +136,7 @@ const PlayoffTab = ({
                     : currentLeague === 'CBLOL'  ? computedCblolSeeds
                     : currentLeague === 'LCS'    ? computedLcsSeeds
                     : currentLeague === 'LEC'    ? computedLecSeeds
+                    : currentLeague === 'LPL'    ? (league.foreignPlayoffSeeds?.['LPL'] || []) // [FIX] Added LPL Seed mapping!
                     : (league.playoffSeeds || []);
                     
         const seedInfo = seeds.find(s => 
@@ -190,6 +188,149 @@ const PlayoffTab = ({
         return null;
     };
 
+    // --- LPL BRACKET RENDERER ---
+    const renderLPLBracket = () => {
+        const allMatches = league.foreignMatches?.['LPL'] || [];
+        const findM = (id) => allMatches.find(m => m.id === id);
+
+        const getSeedToken = (num) => {
+            const seeds = league.foreignPlayoffSeeds?.['LPL'] || [];
+            const s = seeds.find(x => x.seed === num);
+            return s ? (s.id || s.name) : null;
+        };
+
+        // ── Play-in Stage ──────────────────────────────────────────────
+        const dispPi1 = displayMatch(findM('lpl_pi1'), getSeedToken(5), getSeedToken(8));
+        const dispPi2 = displayMatch(findM('lpl_pi2'), getSeedToken(6), getSeedToken(7));
+        
+        const dispPi3 = displayMatch(findM('lpl_pi3'), getSeedToken(10), getSeedToken(11));
+        const dispPi4 = displayMatch(findM('lpl_pi4'), getSeedToken(9), getSeedToken(12));
+
+        const dispPi5 = displayMatch(findM('lpl_pi5'), getMatchLoser(dispPi1), getMatchWinner(dispPi3));
+        const dispPi6 = displayMatch(findM('lpl_pi6'), getMatchLoser(dispPi2), getMatchWinner(dispPi4));
+
+        // ── Upper Bracket Round 1 ──────────────────────────────────────
+        const dispPo1 = displayMatch(findM('lpl_po1'), getSeedToken(1), getMatchWinner(dispPi5));
+        const dispPo2 = displayMatch(findM('lpl_po2'), getSeedToken(4), getMatchWinner(dispPi1));
+        const dispPo3 = displayMatch(findM('lpl_po3'), getSeedToken(2), getMatchWinner(dispPi6));
+        const dispPo4 = displayMatch(findM('lpl_po4'), getSeedToken(3), getMatchWinner(dispPi2));
+
+        // ── Upper Bracket Round 2 ──────────────────────────────────────
+        const dispPo5 = displayMatch(findM('lpl_po5'), getMatchWinner(dispPo1), getMatchWinner(dispPo2));
+        const dispPo6 = displayMatch(findM('lpl_po6'), getMatchWinner(dispPo3), getMatchWinner(dispPo4));
+
+        // ── Lower Bracket Round 1 ──────────────────────────────────────
+        const dispPo7 = displayMatch(findM('lpl_po7'), getMatchLoser(dispPo1), getMatchLoser(dispPo2));
+        const dispPo8 = displayMatch(findM('lpl_po8'), getMatchLoser(dispPo3), getMatchLoser(dispPo4));
+
+        // ── Lower Bracket Round 2 ──────────────────────────────────────
+        const dispPo9 = displayMatch(findM('lpl_po9'), getMatchWinner(dispPo7), getMatchLoser(dispPo6));
+        const dispPo10 = displayMatch(findM('lpl_po10'), getMatchWinner(dispPo8), getMatchLoser(dispPo5));
+
+        // ── Upper & Lower Finals (Round 3) ─────────────────────────────
+        const dispPo11 = displayMatch(findM('lpl_po11'), getMatchWinner(dispPo5), getMatchWinner(dispPo6));
+        const dispPo12 = displayMatch(findM('lpl_po12'), getMatchWinner(dispPo9), getMatchWinner(dispPo10));
+
+        // ── Lower Grand Final (Round 4) ────────────────────────────────
+        const dispPo13 = displayMatch(findM('lpl_po13'), getMatchLoser(dispPo11), getMatchWinner(dispPo12));
+
+        // ── Grand Final ────────────────────────────────────────────────
+        const dispPo14 = displayMatch(findM('lpl_po14'), getMatchWinner(dispPo11), getMatchWinner(dispPo13));
+
+        return (
+            <div className="flex-1 overflow-x-auto pb-8">
+                <div className="flex flex-col space-y-16 min-w-[1500px] relative pt-12">
+
+                    {/* ── 플레이-인 (Play-In) ─────────────────────── */}
+                    <div className="relative border-b-2 border-dashed border-gray-200 pb-10">
+                        <h3 className="text-lg font-black text-indigo-600 mb-8 absolute -top-2">플레이-인 (Play-In)</h3>
+                        <div className="flex items-start space-x-12 mt-8">
+                            <BracketColumn title="플레이-인 1R">
+                                <div className="flex flex-col space-y-6">
+                                    <MatchupBox match={dispPi1} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                    <MatchupBox match={dispPi2} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                </div>
+                            </BracketColumn>
+                            <BracketColumn title="플레이-인 2R">
+                                <div className="flex flex-col space-y-6">
+                                    <MatchupBox match={dispPi3} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                    <MatchupBox match={dispPi4} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                </div>
+                            </BracketColumn>
+                            <BracketColumn title="플레이-인 3R">
+                                <div className="flex flex-col space-y-6">
+                                    <MatchupBox match={dispPi5} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                    <MatchupBox match={dispPi6} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                </div>
+                            </BracketColumn>
+                        </div>
+                    </div>
+
+                    {/* ── 승자조 (Upper Bracket) ─────────────────────── */}
+                    <div className="relative border-b-2 border-dashed border-gray-200 pb-12">
+                        <h3 className="text-lg font-black text-blue-600 mb-8 absolute -top-2">승자조 (Upper Bracket)</h3>
+                        <div className="flex items-start justify-between mt-8">
+                            <BracketColumn title="승자조 1라운드">
+                                <div className="flex flex-col space-y-6">
+                                    <MatchupBox match={dispPo1} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                    <MatchupBox match={dispPo2} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                    <MatchupBox match={dispPo3} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                    <MatchupBox match={dispPo4} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                </div>
+                            </BracketColumn>
+                            <BracketColumn title="승자조 2라운드">
+                                <div className="flex flex-col space-y-6 pt-16">
+                                    <MatchupBox match={dispPo5} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                    <MatchupBox match={dispPo6} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                </div>
+                            </BracketColumn>
+                            <BracketColumn title="승자조 결승">
+                                <div className="flex flex-col justify-center pt-32">
+                                    <MatchupBox match={dispPo11} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                </div>
+                            </BracketColumn>
+                            <BracketColumn title="🏆 결승전">
+                                <div className="flex flex-col justify-center pt-32">
+                                    <MatchupBox match={dispPo14} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                </div>
+                            </BracketColumn>
+                        </div>
+                    </div>
+
+                    {/* ── 패자조 (Lower Bracket) ─────────────────────── */}
+                    <div className="relative pt-8">
+                        <h3 className="text-lg font-black text-red-600 mb-8 absolute -top-2">패자조 (Lower Bracket)</h3>
+                        <div className="flex items-start space-x-10 mt-8">
+                            <BracketColumn title="패자조 1라운드">
+                                <div className="flex flex-col space-y-6">
+                                    <MatchupBox match={dispPo7} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                    <MatchupBox match={dispPo8} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                </div>
+                            </BracketColumn>
+                            <BracketColumn title="패자조 2라운드">
+                                <div className="flex flex-col space-y-6">
+                                    <MatchupBox match={dispPo9} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                    <MatchupBox match={dispPo10} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                </div>
+                            </BracketColumn>
+                            <BracketColumn title="패자조 3라운드">
+                                <div className="flex flex-col justify-center pt-6">
+                                    <MatchupBox match={dispPo12} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                </div>
+                            </BracketColumn>
+                            <BracketColumn title="결승 진출전">
+                                <div className="flex flex-col justify-center pt-6">
+                                    <MatchupBox match={dispPo13} onClick={handleMatchClick} formatTeamName={getBracketDisplayName} />
+                                </div>
+                            </BracketColumn>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        );
+    };
+
     // --- LCS BRACKET RENDERER ---
     const renderLCSBracket = () => {
         const allMatches = league.foreignMatches?.['LCS'] || [];
@@ -200,31 +341,26 @@ const PlayoffTab = ({
             return s ? (s.id || s.name) : null;
         };
 
-        // --- Play-in ---
         const dispPi1 = displayMatch(findM('lcs_pi1'), getSeedToken(6), getSeedToken(7));
 
-        // --- Upper Bracket ---
         const mPo1 = findM('lcs_po1');
         const mPo2 = findM('lcs_po2');
-        const dispPo1 = displayMatch(mPo1, getSeedToken(1), mPo1?.t2 || getSeedToken(4)); // t2 dynamically picked
+        const dispPo1 = displayMatch(mPo1, getSeedToken(1), mPo1?.t2 || getSeedToken(4)); 
         const dispPo2 = displayMatch(mPo2, getSeedToken(2), mPo2?.t2 || getSeedToken(3)); 
         const dispPo3 = displayMatch(findM('lcs_po3'), getMatchWinner(dispPo1), getMatchWinner(dispPo2));
 
-        // --- Lower Bracket ---
         const dispPo4 = displayMatch(findM('lcs_po4'), getSeedToken(5), getMatchLoser(dispPo1));
         const dispPo5 = displayMatch(findM('lcs_po5'), getMatchWinner(dispPi1) || getSeedToken(6), getMatchLoser(dispPo2));
         
         const dispPo6 = displayMatch(findM('lcs_po6'), getMatchWinner(dispPo4), getMatchWinner(dispPo5));
         const dispPo7 = displayMatch(findM('lcs_po7'), getMatchLoser(dispPo3), getMatchWinner(dispPo6));
 
-        // --- Grand Finals ---
         const dispFinal = displayMatch(findM('lcs_po8'), getMatchWinner(dispPo3), getMatchWinner(dispPo7));
 
         return (
             <div className="flex-1 overflow-x-auto pb-8">
                 <div className="flex flex-col space-y-16 min-w-[1100px] relative pt-12">
                     
-                    {/* Playin */}
                     <div className="relative border-b-2 border-dashed border-gray-200 pb-10">
                         <h3 className="text-lg font-black text-indigo-600 mb-8 absolute -top-2">플레이-인 (Play-In)</h3>
                         <div className="flex items-start space-x-16 mt-8">
@@ -234,7 +370,6 @@ const PlayoffTab = ({
                         </div>
                     </div>
 
-                    {/* Upper Bracket */}
                     <div className="relative border-b-2 border-dashed border-gray-200 pb-10">
                         <h3 className="text-lg font-black text-blue-600 mb-8 absolute -top-2">승자조 (Upper Bracket)</h3>
                         <div className="flex items-start mt-8 space-x-10">
@@ -257,7 +392,6 @@ const PlayoffTab = ({
                         </div>
                     </div>
 
-                    {/* Lower Bracket */}
                     <div className="relative pt-8">
                         <h3 className="text-lg font-black text-red-600 mb-8 absolute -top-2">패자조 (Lower Bracket)</h3>
                         <div className="flex items-start space-x-10 mt-8">
@@ -310,7 +444,6 @@ const PlayoffTab = ({
         return (
             <div className="flex-1 overflow-x-auto pb-8">
                 <div className="flex flex-col space-y-24 min-w-[1200px] relative pt-12">
-                    {/* Upper Bracket */}
                     <div className="relative border-b-2 border-dashed pb-16">
                         <h3 className="text-lg font-black text-blue-600 mb-8 absolute -top-2">승자조 (Upper Bracket)</h3>
                         <div className="flex justify-between items-center mt-8">
@@ -335,7 +468,6 @@ const PlayoffTab = ({
                         </div>
                     </div>
 
-                    {/* Lower Bracket */}
                     <div className="relative pt-8">
                         <h3 className="text-lg font-black text-red-600 mb-8 absolute -top-2">패자조 (Lower Bracket)</h3>
                         <div className="flex justify-start items-center space-x-24 mt-8">
@@ -351,7 +483,6 @@ const PlayoffTab = ({
             </div>
         );
     };
-
 
     const renderCBLOLBracket = () => {
         const allMatches = league.foreignMatches?.['CBLOL'] || [];
@@ -445,7 +576,6 @@ const PlayoffTab = ({
         );
     };
 
-    // --- LEC BRACKET RENDERER ---
     const renderLECBracket = () => {
         const allMatches = league.foreignMatches?.['LEC'] || [];
         const findM = (id) => allMatches.find(m => m.id === id);
@@ -455,45 +585,32 @@ const PlayoffTab = ({
             return s ? (s.id || s.name) : null;
         };
 
-        // ── Upper Bracket Round 1 ────────────────────────────────────────
-        // S1 vs S8, S2 vs S7, S3 vs S6, S4 vs S5
         const dispUb1g1 = displayMatch(findM('lec_po_ub1g1'), getSeedToken(1), getSeedToken(8));
         const dispUb1g2 = displayMatch(findM('lec_po_ub1g2'), getSeedToken(2), getSeedToken(7));
         const dispUb1g3 = displayMatch(findM('lec_po_ub1g3'), getSeedToken(3), getSeedToken(6));
         const dispUb1g4 = displayMatch(findM('lec_po_ub1g4'), getSeedToken(4), getSeedToken(5));
 
-        // ── Upper Bracket Round 2 ────────────────────────────────────────
-        // ub1g1W vs ub1g4W,  ub1g2W vs ub1g3W
         const dispUb2g1 = displayMatch(findM('lec_po_ub2g1'), getMatchWinner(dispUb1g1), getMatchWinner(dispUb1g4));
         const dispUb2g2 = displayMatch(findM('lec_po_ub2g2'), getMatchWinner(dispUb1g2), getMatchWinner(dispUb1g3));
 
-        // ── Lower Bracket Round 1 ────────────────────────────────────────
-        // ub1g1L vs ub1g4L,  ub1g2L vs ub1g3L
         const dispLb1g1 = displayMatch(findM('lec_po_lb1g1'), getMatchLoser(dispUb1g1), getMatchLoser(dispUb1g4));
         const dispLb1g2 = displayMatch(findM('lec_po_lb1g2'), getMatchLoser(dispUb1g2), getMatchLoser(dispUb1g3));
 
-        // ── Lower Bracket Round 2 ────────────────────────────────────────
-        // lb1g1W vs ub2g2L,  lb1g2W vs ub2g1L
         const dispLb2g1 = displayMatch(findM('lec_po_lb2g1'), getMatchWinner(dispLb1g1), getMatchLoser(dispUb2g2));
         const dispLb2g2 = displayMatch(findM('lec_po_lb2g2'), getMatchWinner(dispLb1g2), getMatchLoser(dispUb2g1));
 
-        // ── Upper Final ──────────────────────────────────────────────────
         const dispUbf = displayMatch(findM('lec_po_ubf'), getMatchWinner(dispUb2g1), getMatchWinner(dispUb2g2));
 
-        // ── Lower Semifinal ──────────────────────────────────────────────
         const dispLbsf = displayMatch(findM('lec_po_lbsf'), getMatchWinner(dispLb2g1), getMatchWinner(dispLb2g2));
 
-        // ── Round 4: lbsfW vs ubfL ───────────────────────────────────────
         const dispR4 = displayMatch(findM('lec_po_r4'), getMatchWinner(dispLbsf), getMatchLoser(dispUbf));
 
-        // ── Grand Final: r4W vs ubfW ─────────────────────────────────────
         const dispFinal = displayMatch(findM('lec_po_final'), getMatchWinner(dispUbf), getMatchWinner(dispR4));
 
         return (
             <div className="flex-1 overflow-x-auto pb-8">
                 <div className="flex flex-col space-y-16 min-w-[1400px] relative pt-12">
 
-                    {/* ── 승자조 (Upper Bracket) ─────────────────────── */}
                     <div className="relative border-b-2 border-dashed border-gray-200 pb-12">
                         <h3 className="text-lg font-black text-blue-600 mb-8 absolute -top-2">승자조 (Upper Bracket)</h3>
                         <div className="flex items-start justify-between mt-8">
@@ -524,7 +641,6 @@ const PlayoffTab = ({
                         </div>
                     </div>
 
-                    {/* ── 패자조 (Lower Bracket) ─────────────────────── */}
                     <div className="relative pt-8">
                         <h3 className="text-lg font-black text-red-600 mb-8 absolute -top-2">패자조 (Lower Bracket)</h3>
                         <div className="flex items-start space-x-10 mt-8">
@@ -677,6 +793,14 @@ const PlayoffTab = ({
                         <div className="text-xl font-bold">LCP 플레이오프 대진표 준비 중</div>
                     </div>
                 )
+            ) : currentLeague === 'LPL' ? (
+                (league.foreignMatches?.['LPL']?.some(m => m.type === 'playoff' || m.type === 'playin') || isLckFinished)
+                    ? renderLPLBracket()
+                    : (
+                        <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
+                            <div className="text-xl font-bold">LPL 플레이오프 대진표 준비 중</div>
+                        </div>
+                    )
             ) : currentLeague === 'CBLOL' ? (
                 (league.foreignMatches?.['CBLOL']?.some(m => m.type === 'playoff' || m.type === 'playin') || isLckFinished)
                     ? renderCBLOLBracket()
@@ -685,7 +809,6 @@ const PlayoffTab = ({
                             <div className="text-xl font-bold">CBLOL 플레이오프 대진표 준비 중</div>
                         </div>
                     )
-            // --- [THE FIX] ADDED LCS RENDER TRIGGER ---
             ) : currentLeague === 'LCS' ? (
                 (league.foreignMatches?.['LCS']?.some(m => m.type === 'playoff' || m.type === 'playin') || isLckFinished)
                     ? renderLCSBracket()
