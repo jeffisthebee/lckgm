@@ -183,6 +183,110 @@ const HistoryTab = ({ league }) => {
 
               let displayStandings = record.finalStandings || [];
 
+              // ── LPL FINAL STANDINGS ─────────────────────────────────────────────
+              if (currentLeague === 'LPL' && record.matches && record.matches.length > 0) {
+                  const lplTeams = FOREIGN_LEAGUES['LPL'] || [];
+                  const st = {};
+                  lplTeams.forEach(t => st[t.name] = { w: 0, l: 0, diff: 0, h2h: {}, defeatedOpponents: [], team: t });
+
+                  record.matches.filter(m => (m.type === 'regular' || m.type === 'super') && m.status === 'finished').forEach(m => {
+                      const winner = m.result?.winner;
+                      const t1 = findGlobalTeam(m.t1).name;
+                      const t2 = findGlobalTeam(m.t2).name;
+                      const loser = winner === t1 ? t2 : t1;
+                      let diff = 0;
+                      if (m.result?.score) {
+                          const pts = String(m.result.score).split(/[-:]/).map(Number);
+                          if (pts.length === 2 && !isNaN(pts[0]) && !isNaN(pts[1])) diff = Math.abs(pts[0] - pts[1]);
+                      }
+                      if (st[winner]) {
+                          st[winner].w++; st[winner].diff += diff; st[winner].defeatedOpponents.push(loser);
+                          if (!st[winner].h2h[loser]) st[winner].h2h[loser] = { w: 0, l: 0 };
+                          st[winner].h2h[loser].w += 1;
+                      }
+                      if (st[loser]) {
+                          st[loser].l++; st[loser].diff -= diff;
+                          if (!st[loser].h2h[winner]) st[loser].h2h[winner] = { w: 0, l: 0 };
+                          st[loser].h2h[winner].l += 1;
+                      }
+                  });
+
+                  const tiedGroups = {};
+                  Object.values(st).forEach(rec => {
+                      const key = `${rec.w}_${rec.diff}`;
+                      if (!tiedGroups[key]) tiedGroups[key] = [];
+                      tiedGroups[key].push(rec.team.name);
+                  });
+
+                  const regSorted = Object.values(st).sort((a,b) => {
+                      if (b.w !== a.w) return b.w - a.w;
+                      if (b.diff !== a.diff) return b.diff - a.diff;
+                      const tieKey = `${a.w}_${a.diff}`;
+                      if ((tiedGroups[tieKey]?.length || 0) === 2) {
+                          const aW = a.h2h[b.team.name]?.w || 0;
+                          const bW = b.h2h[a.team.name]?.w || 0;
+                          if (aW !== bW) return bW - aW;
+                      }
+                      let sovA = 0, sovB = 0;
+                      a.defeatedOpponents.forEach(o => { sovA += (st[o]?.w || 0); sovA += (st[o]?.diff || 0); });
+                      b.defeatedOpponents.forEach(o => { sovB += (st[o]?.w || 0); sovB += (st[o]?.diff || 0); });
+                      return sovB - sovA;
+                  });
+
+                  const poMatches = record.matches.filter(m => (m.type === 'playoff' || m.type === 'playin') && m.status === 'finished');
+                  const getLoser = (id) => {
+                      const m = poMatches.find(x => x.id === id);
+                      if (!m || !m.result?.winner) return null;
+                      const t1 = findGlobalTeam(m.t1).name;
+                      const t2 = findGlobalTeam(m.t2).name;
+                      return m.result.winner === t1 ? t2 : t1;
+                  };
+                  const getWinner = (id) => poMatches.find(x => x.id === id)?.result?.winner || null;
+                  const getMatchSetDiff = (id) => {
+                      const m = poMatches.find(x => x.id === id);
+                      if (!m?.result?.score) return 0;
+                      const parts = String(m.result.score).split(/[-:]/).map(Number);
+                      return parts.length === 2 ? Math.abs(parts[0] - parts[1]) : 0;
+                  };
+
+                  const lplRanks = [];
+                  const addRank = (rank, tName) => {
+                      if (tName) lplRanks.push({ rank, team: st[tName]?.team || findGlobalTeam(tName) });
+                  };
+
+                  let currentRank = 1;
+                  addRank(currentRank++, getWinner('lpl_po14'));
+                  addRank(currentRank++, getLoser('lpl_po14'));
+                  addRank(currentRank++, getLoser('lpl_po13'));
+                  addRank(currentRank++, getLoser('lpl_po12'));
+
+                  const sortTiedPairs = (id1, id2, startRank) => {
+                      const loserA = getLoser(id1);
+                      const loserB = getLoser(id2);
+                      [loserA, loserB].filter(Boolean).sort((a, b) => {
+                          const mIdA = a === loserA ? id1 : id2;
+                          const mIdB = b === loserA ? id1 : id2;
+                          const diffA = getMatchSetDiff(mIdA);
+                          const diffB = getMatchSetDiff(mIdB);
+                          if (diffA !== diffB) return diffA - diffB;
+                          return regSorted.findIndex(x => x.team.name === a) - regSorted.findIndex(x => x.team.name === b);
+                      }).forEach((tName, i) => addRank(startRank + i, tName));
+                  };
+
+                  sortTiedPairs('lpl_po9', 'lpl_po10', 5);
+                  sortTiedPairs('lpl_po7', 'lpl_po8', 7);
+                  sortTiedPairs('lpl_pi5', 'lpl_pi6', 9);
+                  sortTiedPairs('lpl_pi3', 'lpl_pi4', 11);
+
+                  const alreadyPlaced = new Set(lplRanks.map(r => r.team.name));
+                  regSorted.filter(x => !alreadyPlaced.has(x.team.name)).forEach((r, i) => {
+                      addRank(13 + i, r.team.name);
+                  });
+
+                  if (lplRanks.length > 0) displayStandings = lplRanks;
+              }
+
+              // ── LCP FINAL STANDINGS ─────────────────────────────────────────────
               if (currentLeague === 'LCP' && record.matches && record.matches.length > 0) {
                   const lcpTeams = FOREIGN_LEAGUES['LCP'] || [];
                   const st = {};
@@ -239,6 +343,7 @@ const HistoryTab = ({ league }) => {
                   if (lcpRanks.length > 0) displayStandings = lcpRanks;
               }
 
+              // ── CBLOL FINAL STANDINGS ─────────────────────────────────────────────
               if (currentLeague === 'CBLOL' && record.matches && record.matches.length > 0) {
                   const cblolTeams = FOREIGN_LEAGUES['CBLOL'] || [];
                   const st = {};
@@ -299,7 +404,7 @@ const HistoryTab = ({ league }) => {
                   if (cblolRanks.length > 0) displayStandings = cblolRanks;
               }
 
-              // --- [THE FIX] LCS STANDINGS CALCULATOR ---
+              // ── LCS FINAL STANDINGS ─────────────────────────────────────────────
               if (currentLeague === 'LCS' && record.matches && record.matches.length > 0) {
                   const lcsTeams = FOREIGN_LEAGUES['LCS'] || [];
                   const st = {};
@@ -334,7 +439,7 @@ const HistoryTab = ({ league }) => {
                   Object.values(st).forEach(rec => {
                       const key = `${rec.w}_${rec.diff}`;
                       if (!tiedGroups[key]) tiedGroups[key] = [];
-                      tiedGroups[key].push(rec.team.name); // FIXED: properly tracks team name
+                      tiedGroups[key].push(rec.team.name);
                   });
 
                   const regSorted = Object.values(st).sort((a,b) => {
@@ -345,8 +450,8 @@ const HistoryTab = ({ league }) => {
                       const tiedCount = tiedGroups[tieKey]?.length || 0;
 
                       if (tiedCount === 2) {
-                          const aWinsVsB = a.h2h[b.team.name]?.w || 0; // FIXED
-                          const bWinsVsA = b.h2h[a.team.name]?.w || 0; // FIXED
+                          const aWinsVsB = a.h2h[b.team.name]?.w || 0;
+                          const bWinsVsA = b.h2h[a.team.name]?.w || 0;
                           if (aWinsVsB !== bWinsVsA) return bWinsVsA - aWinsVsB;
                       }
 
@@ -405,7 +510,6 @@ const HistoryTab = ({ league }) => {
 
                   addRank(7, playinLoser);
 
-                  // FIXED: Now properly filters out already placed teams so it doesn't duplicate them
                   const alreadyPlaced = new Set(lcsRanks.filter(r => r.team).map(r => r.team.name));
                   regSorted.filter(x => x.team && !alreadyPlaced.has(x.team.name)).forEach((r, i) => {
                       lcsRanks.push({ rank: lcsRanks.length + 1, team: r.team });
@@ -521,7 +625,11 @@ const HistoryTab = ({ league }) => {
                   if (lecRanks.length > 0) displayStandings = lecRanks;
               }
 
-              const champTeamObj = record.champion ? findGlobalTeam(record.champion.name) : (displayStandings.length > 0 ? findGlobalTeam(displayStandings[0].team.name) : null);
+              // Safely determine Champion
+              const champTeamObj = record.champion 
+                  ? findGlobalTeam(record.champion.name) 
+                  : (displayStandings.length > 0 ? findGlobalTeam(displayStandings[0].team.name) : null);
+                  
               const championColor = TEAM_COLORS[champTeamObj?.name] || champTeamObj?.colors?.primary || '#333';
               const championDisplayShort = champTeamObj?.name || 'TBD';
               const championDisplayFull = champTeamObj?.fullName || 'Unknown Team';
@@ -639,7 +747,7 @@ const HistoryTab = ({ league }) => {
                                                               {tObj.name.slice(0,3)}
                                                           </div>
                                                           {tObj.fullName || tObj.name}
-                                                          {item.rank === 1 && ['LCP', 'CBLOL', 'LCS', 'LEC'].includes(currentLeague) && (
+                                                          {item.rank <= 2 && ['LPL', 'LCP', 'CBLOL', 'LCS', 'LEC'].includes(currentLeague) && (
                                                               <span className="text-[10px] bg-purple-100 text-purple-700 border border-purple-200 px-2 py-0.5 rounded font-black whitespace-nowrap shadow-sm ml-1">
                                                                   FST 진출
                                                               </span>
