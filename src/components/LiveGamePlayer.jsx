@@ -135,7 +135,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         const [winsA, setWinsA] = useState(0);
         const [winsB, setWinsB] = useState(0);
         
-        // Phase: ROSTER_SELECTION -> SIDE_SELECTION -> READY -> LOADING -> DRAFT -> GAME -> SET_RESULT
+        // Phase: ROSTER_SELECTION -> SIDE_SELECTION -> LOADING -> DRAFT -> GAME -> SET_RESULT
+        // (startSet is triggered directly from handleRosterConfirm via setStartSetTrigger)
         const [phase, setPhase] = useState('ROSTER_SELECTION'); 
         
         // Mobile Tab State
@@ -164,7 +165,10 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         // New: track which side the USER is on (BLUE/RED) in manual mode to avoid name-compare errors
         const [manualUserSide, setManualUserSide] = useState(null);
         const finalizeManualDraftCalledRef = useRef(false); // guard against double-invocation
-        const startSetCalledRef = useRef(false); // guard: prevent startSet firing >1x per READY transition
+        // Use an incrementing trigger instead of watching [phase, startSet].
+        // startSet is a useCallback with 15+ deps so it rebuilds constantly, causing
+        // the old useEffect to fire multiple times and replay old picks.
+        const [startSetTrigger, setStartSetTrigger] = useState(0);
         // -------------------------
     
         // --- DRAFT STATE ---
@@ -622,21 +626,15 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
           }, 500);
         }, [currentSet, teamA, teamB, globalBanList, simOptions, onClose, matchHistory, isManualMode, activeUserRoster, preselectedSide, isUserTeamA, userTeam, cpuTeam, match, activeChampionList]);
     
+        // Fire startSet exactly once per explicit trigger increment.
+        // This replaces the old useEffect([phase, startSet]) pattern which was unreliable
+        // because startSet (a useCallback with 15+ deps) rebuilt on every state update,
+        // causing the effect to re-fire while phase was still 'READY' and replay old picks.
         useEffect(() => {
-            if (phase === 'READY') {
-                // Guard: only call startSet once per READY transition.
-                // startSet is a useCallback with many deps (globalBanList, matchHistory, etc.)
-                // so it gets recreated after button-handler state updates, causing this
-                // effect to re-fire with phase still === 'READY' and trigger a second run
-                // which replays the previous set with stale picks.
-                if (startSetCalledRef.current) return;
-                startSetCalledRef.current = true;
-                startSet();
-            } else {
-                // Reset the guard whenever phase leaves READY
-                startSetCalledRef.current = false;
-            }
-        }, [phase, startSet]);
+            if (startSetTrigger === 0) return; // skip initial mount
+            startSet();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        }, [startSetTrigger]); // intentionally omit startSet — we want the version at trigger time
     
         // --- PHASE TRANSITION HANDLERS ---
         const handleRosterConfirm = () => {
@@ -644,7 +642,9 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                 alert("로스터가 불완전하거나 중복된 선수가 있습니다. 5명을 모두 채워주세요.");
                 return;
             }
-            setPhase('READY');
+            // Fire the trigger — this calls startSet() exactly once, with the current closure
+            // values (currentSet, globalBanList, matchHistory etc.) captured right now.
+            setStartSetTrigger(t => t + 1);
         };
     
         const handlePlayerSelect = (position, player) => {
