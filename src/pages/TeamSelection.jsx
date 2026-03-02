@@ -2,14 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { teams } from '../data/teams';
 import { difficulties, championList } from '../data/constants';
-
-// [NEW] Import the global team data helper
 import { FOREIGN_LEAGUES } from '../data/foreignLeagues';
-
-// Paste addLeague helper here
-const getLeagues = () => { const s = localStorage.getItem('lckgm_leagues'); return s ? JSON.parse(s) : []; };
-const saveLeagues = (l) => localStorage.setItem('lckgm_leagues', JSON.stringify(l));
-const addLeague = (l) => { const list = getLeagues(); list.push(l); saveLeagues(list); return list; };
+import { saveLeague } from '../engine/storage';
 
 function getTextColor(hex) { const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16); return (r*299+g*587+b*114)/1000>128?'#000000':'#FFFFFF'; }
 
@@ -19,9 +13,9 @@ export default function TeamSelection() {
     const navigate = useNavigate();
     const current = teams[idx];
   
-    const handleStart = () => {
+    const handleStart = async () => {
       const newId = Date.now().toString();
-      addLeague({
+      await saveLeague({
         id: newId,
         leagueName: `2026 LCK 컵 - ${current.name}`,
         team: current,
@@ -37,22 +31,19 @@ export default function TeamSelection() {
         metaVersion: '16.01',
 
         // -- [NEW GLOBAL DATA] --
-        // This loads the team JSONs into the save file
         foreignLeagues: FOREIGN_LEAGUES, 
         
-        // This creates blank standings for the other leagues to use later
         foreignStandings: {
             LPL: {}, LEC: {}, LCS: {}, LCP: {}, CBLOL: {}
         },
         
-        // This creates blank match schedules for the other leagues
         foreignMatches: {
             LPL: [], LEC: [], LCS: [], LCP: [], CBLOL: []
         },
 
         foreignHistory: {
           LPL: [], LEC: [], LCS: [], LCP: [], CBLOL: []
-      }
+        }
       });
       setTimeout(() => navigate(`/league/${newId}`), 50);
     };
@@ -65,7 +56,6 @@ export default function TeamSelection() {
         >
           <h2 className="text-2xl sm:text-3xl font-black mb-4 sm:mb-8 text-gray-900">팀 선택</h2>
           
-          {/* Main Layout: Stack vertically on portrait, Side-by-side on Landscape(sm) and Desktop */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-6 sm:gap-10">
             
             {/* Left Column: Team Display */}

@@ -81,8 +81,8 @@ const getOvrBadgeStyle = (ovr) => {
     };
   
     useEffect(() => {
-      const loadData = () => {
-        const found = getLeagueById(leagueId);
+      const loadData = async () => {
+        const found = await getLeagueById(leagueId);
         if (found) {
           const sanitizedLeague = {
               ...found,
@@ -90,7 +90,7 @@ const getOvrBadgeStyle = (ovr) => {
               currentChampionList: found.currentChampionList || championList
           };
           setLeague(sanitizedLeague);
-          updateLeague(leagueId, { lastPlayed: new Date().toISOString() });
+          await updateLeague(leagueId, { lastPlayed: new Date().toISOString() });
           setViewingTeamId(sanitizedLeague.team.id);
           recalculateStandings(sanitizedLeague);
         }
@@ -218,7 +218,7 @@ const reapplyLECScale = (data, fMatches, standingsNames, forPlayoffs) => {
     return { ...data, seasonMvp: scored[0] || null, pogLeader: scored.find(p => p.isPogLeader) || null, finalsMvp: scored.find(p => p.isFinalsMvp) || null, allProTeams };
 };
 
-const handleManualArchive = () => {
+const handleManualArchive = async () => {
   if (!league) return;
 
   const currentYear = league.year || 2026;
@@ -346,7 +346,7 @@ const handleManualArchive = () => {
   };
   
   setLeague(updatedLeague);
-  updateLeague(league.id, updatedLeague);
+  await updateLeague(league.id, updatedLeague);
   
   // Show toast notification instead of alert()
   setSaveMessage('✅ 시즌 기록 저장 완료! (LCK 및 해외 리그 데이터 통합 저장됨)');
@@ -474,7 +474,7 @@ setMyMatchResult({
   
     
   
-    const applyMatchResult = (targetMatch, result) => {
+    const applyMatchResult = async (targetMatch, result) => {
       const updatedMatches = league.matches.map(m => {
           if (m.id === targetMatch.id) {
               return { ...m, status: 'finished', result: { winner: result.winner, score: result.scoreString } };
@@ -483,7 +483,7 @@ setMyMatchResult({
       });
   
       const updatedLeague = { ...league, matches: updatedMatches };
-      updateLeague(league.id, { matches: updatedMatches });
+      await updateLeague(league.id, { matches: updatedMatches });
       setLeague(updatedLeague);
       recalculateStandings(updatedLeague); 
       
@@ -491,16 +491,16 @@ setMyMatchResult({
       checkAndGenerateNextPlayoffRound(updatedMatches);
     };
   
-    const generatePlayInRound2 = (matches, seed1, seed2, pickedTeam, remainingTeam) => {
+    const generatePlayInRound2 = async (matches, seed1, seed2, pickedTeam, remainingTeam) => {
       const newMatches = createPlayInRound2Matches(matches, seed1, seed2, pickedTeam, remainingTeam);
       
-      updateLeague(league.id, { matches: newMatches });
+      await updateLeague(league.id, { matches: newMatches });
       setLeague(prev => ({ ...prev, matches: newMatches }));
       alert("플레이-인 2라운드 대진이 완성되었습니다!");
       setOpponentChoice(null);
   };
   
-  const checkAndGenerateNextPlayInRound = (matches) => {
+  const checkAndGenerateNextPlayInRound = async (matches) => {
     // 1. Check if Round 1 is finished
     const r1Matches = matches.filter(m => m.type === 'playin' && m.round === 1);
     const r1Finished = r1Matches.length > 0 && r1Matches.every(m => m.status === 'finished');
@@ -557,13 +557,13 @@ setMyMatchResult({
   
     if (r2Finished && !finalExists) {
       const newMatches = createPlayInFinalMatch(matches, teams);
-      updateLeague(league.id, { matches: newMatches });
+      await updateLeague(league.id, { matches: newMatches });
       setLeague(prev => ({ ...prev, matches: newMatches }));
       alert("🛡️ 플레이-인 최종전(2라운드 패자 대결) 대진이 완성되었습니다!");
   }
   };
   
-  const checkAndGenerateNextPlayoffRound = (currentMatches) => {
+  const checkAndGenerateNextPlayoffRound = async (currentMatches) => {
     if (!league.playoffSeeds) return;
   
     const getWinner = m => teams.find(t => t.name === m.result.winner).id;
@@ -581,7 +581,7 @@ setMyMatchResult({
         const seed1 = league.playoffSeeds.find(s => s.seed === 1).id;
         const seed2 = league.playoffSeeds.find(s => s.seed === 2).id;
   
-        const generateR2Matches = (pickedWinner) => {
+        const generateR2Matches = async (pickedWinner) => {
           const remainingWinner = r1Winners.find(w => w.id !== pickedWinner.id).id;
           
           const newMatches = createPlayoffRound2Matches(
@@ -594,7 +594,7 @@ setMyMatchResult({
               r1Losers[1].id
           );
           
-          updateLeague(league.id, { matches: newMatches });
+          await updateLeague(league.id, { matches: newMatches });
           setLeague(prev => ({ ...prev, matches: newMatches }));
           alert("👑 플레이오프 2라운드 대진이 완성되었습니다!");
           setOpponentChoice(null);
@@ -630,7 +630,7 @@ setMyMatchResult({
 
   if (r2Finished && !r3Exists) {
       const newMatches = createPlayoffRound3Matches(currentMatches, league.playoffSeeds, teams);
-      updateLeague(league.id, { matches: newMatches });
+      await updateLeague(league.id, { matches: newMatches });
       setLeague(prev => ({ ...prev, matches: newMatches }));
       alert("👑 플레이오프 3라운드 승자조 및 2라운드 패자조 경기가 생성되었습니다!");
       return;
@@ -642,7 +642,7 @@ setMyMatchResult({
 
     if (r2_2Match?.status === 'finished' && r3wMatch?.status === 'finished' && !r3lExists) {
         const newMatches = createPlayoffLoserRound3Match(currentMatches, league.playoffSeeds, teams);
-        updateLeague(league.id, { matches: newMatches });
+        await updateLeague(league.id, { matches: newMatches });
         setLeague(prev => ({ ...prev, matches: newMatches }));
         alert("👑 플레이오프 3라운드 패자조 경기가 생성되었습니다!");
         return;
@@ -654,7 +654,7 @@ setMyMatchResult({
 
     if (r3lMatch?.status === 'finished' && r3wMatch?.status === 'finished' && !r4Exists) {
         const newMatches = createPlayoffQualifierMatch(currentMatches, teams);
-        updateLeague(league.id, { matches: newMatches });
+        await updateLeague(league.id, { matches: newMatches });
         setLeague(prev => ({ ...prev, matches: newMatches }));
         alert("👑 플레이오프 결승 진출전이 생성되었습니다!");
         return;
@@ -665,7 +665,7 @@ setMyMatchResult({
 
     if (r4Match?.status === 'finished' && r3wMatch?.status === 'finished' && !finalExists) {
         const newMatches = createPlayoffFinalMatch(currentMatches, teams);
-        updateLeague(league.id, { matches: newMatches });
+        await updateLeague(league.id, { matches: newMatches });
         setLeague(prev => ({ ...prev, matches: newMatches }));
         alert("🏆 대망의 결승전이 생성되었습니다!");
         return;
@@ -738,7 +738,7 @@ setMyMatchResult({
       }
     };
     
-  const handleProceedNextMatch = () => {
+  const handleProceedNextMatch = async () => {
     try {
       if (!nextGlobalMatch) return;
   
@@ -779,7 +779,7 @@ setMyMatchResult({
   
         const updatedLeague = { ...league, matches: updatedMatches };
         
-        updateLeague(league.id, updatedLeague);
+        await updateLeague(league.id, updatedLeague);
         setLeague(updatedLeague);
         recalculateStandings(updatedLeague); 
   
@@ -845,7 +845,7 @@ setMyMatchResult({
       }
     };
   
-    const handleLiveMatchComplete = (match, resultData) => {
+    const handleLiveMatchComplete = async (match, resultData) => {
       // 1. 매치 결과 업데이트
       const updatedMatches = league.matches.map(m => {
           if (m.id === match.id) {
@@ -865,7 +865,7 @@ setMyMatchResult({
   
       // 2. 리그 데이터 저장 및 상태 갱신
       const updatedLeague = { ...league, matches: updatedMatches };
-      updateLeague(league.id, updatedLeague);
+      await updateLeague(league.id, updatedLeague);
       setLeague(updatedLeague);
       recalculateStandings(updatedLeague);
   
@@ -945,13 +945,11 @@ setMyMatchResult({
       finalizeDraft({ baron, elder });
     };
   
-    const finalizeDraft = (groups) => {
+    const finalizeDraft = async (groups) => {
       const matches = generateSchedule(groups.baron, groups.elder);
-      const updated = updateLeague(league.id, { groups, matches });
-      if (updated) {
-        setLeague(prev => ({...prev, ...updated}));
-        setTimeout(() => { setIsDrafting(false); setActiveTab('standings'); alert("팀 구성 및 일정이 완료되었습니다!"); }, 500);
-      }
+      await updateLeague(league.id, { groups, matches });
+      setLeague(prev => ({ ...prev, groups, matches }));
+      setTimeout(() => { setIsDrafting(false); setActiveTab('standings'); alert("팀 구성 및 일정이 완료되었습니다!"); }, 500);
     };
   
     const handlePrevTeam = () => { const idx = teams.findIndex(t => t.id === viewingTeam.id); setViewingTeamId(teams[(idx - 1 + teams.length) % teams.length].id); };
@@ -982,7 +980,7 @@ setMyMatchResult({
     
     // REPLACE the old "handleGenerateSuperWeek" with THIS:
 
-    const handleGenerateSuperWeek = () => {
+    const handleGenerateSuperWeek = async () => {
       const newMetaVersion = '16.02';
       
       if (league.metaVersion === newMetaVersion) {
@@ -1014,12 +1012,12 @@ setMyMatchResult({
       };
   
       setLeague(prev => ({ ...prev, ...newLeagueState }));
-      updateLeague(league.id, newLeagueState);
+      await updateLeague(league.id, newLeagueState);
   
       alert(`🔥 16.02 메타 패치 및 슈퍼위크 업데이트 완료!`);
     };
 
-    const handleGeneratePlayIn = () => {
+    const handleGeneratePlayIn = async () => {
       // 1. Calculate inputs
       const bWins = calculateGroupPoints(league, 'baron');
       const eWins = calculateGroupPoints(league, 'elder');
@@ -1037,7 +1035,7 @@ setMyMatchResult({
       const updatedMatches = [...league.matches, ...newMatches];
       const updateData = { matches: updatedMatches, playInSeeds, seasonSummary };
       
-      updateLeague(league.id, updateData); 
+      await updateLeague(league.id, updateData); 
       setLeague(prev => ({ ...prev, ...updateData }));
       
       setShowPlayInBracket(true);
@@ -1094,7 +1092,7 @@ setMyMatchResult({
       const seed3Team = playoffSeeds.find(s => s.seed === 3);
       const playInTeamsForSelection = playoffSeeds.filter(s => s.seed >= 4);
   
-      const generateR1Matches = (pickedTeam) => {
+      const generateR1Matches = async (pickedTeam) => {
           const remainingTeams = playInTeamsForSelection.filter(t => t.id !== pickedTeam.id);
           const r1m1 = { id: Date.now() + 300, round: 1, match: 1, label: '1라운드', t1: seed3Team.id, t2: pickedTeam.id, date: '2.11 (수)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: seed3Team.id };
           const r1m2 = { id: Date.now() + 301, round: 1, match: 2, label: '1라운드', t1: remainingTeams[0].id, t2: remainingTeams[1].id, date: '2.12 (목)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: 'coin' };
@@ -1104,7 +1102,7 @@ setMyMatchResult({
           }
   
           const newMatches = [...league.matches, r1m1, r1m2];
-          updateLeague(league.id, { matches: newMatches, playoffSeeds });
+          await updateLeague(league.id, { matches: newMatches, playoffSeeds });
           setLeague(prev => ({ ...prev, matches: newMatches, playoffSeeds }));
           alert("👑 플레이오프 1라운드 대진이 완성되었습니다!");
           setOpponentChoice(null);
