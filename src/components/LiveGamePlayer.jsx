@@ -163,6 +163,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         const [userSelectedRole, setUserSelectedRole] = useState(false); 
         // New: track which side the USER is on (BLUE/RED) in manual mode to avoid name-compare errors
         const [manualUserSide, setManualUserSide] = useState(null);
+        const finalizeManualDraftCalledRef = useRef(false); // guard against double-invocation
         // -------------------------
     
         // --- DRAFT STATE ---
@@ -332,6 +333,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         const startSet = useCallback(() => {
           // ensure result lock is cleared at the very start of a new run
           setResultProcessed(false);
+          finalizeManualDraftCalledRef.current = false; // reset guard for new set
           setPhase('LOADING');
           setDraftStep(0);
           setDraftTimer(isManualMode ? 25 : 15);
@@ -352,6 +354,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
     
           setTimeout(() => {
               try {
+                  // Safe to clear stale simulationData here — phase is LOADING so the SET_RESULT guard won't trigger
+                  setSimulationData(null);
                   // Prepare Roster Objects (Inject Active User Roster) with robust fallbacks
                   const safeUserRosterArray = makeSafeRosterArray(activeUserRoster, userTeam?.name);
     
@@ -554,16 +558,23 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                   // --- IMPORTANT PATCH:
                   // Build UI-friendly pick objects that always include playerName (fix opponent SUPPORT 'Unknown' issue)
                   const buildUIPickList = (picksList = [], teamRoster = []) => {
+                      // Sort roster into canonical role order before index-based lookup
+                      const roleOrder = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
+                      const sortedRoster = [...(teamRoster || [])].sort((a, b) => {
+                          const posA = normalizePosition(a.포지션 || a.position || 'MID');
+                          const posB = normalizePosition(b.포지션 || b.position || 'MID');
+                          return roleOrder.indexOf(posA) - roleOrder.indexOf(posB);
+                      });
                       return safeArray(picksList).map((p, idx) => {
                           const champName = p.champName || p.champion || p.name || '';
                           const champTier = p.tier || activeChampionList.find(c => c.name === champName)?.tier || p.tier || '-';
                           
                           // Use the same robust logic for the UI list
-                          let resolvedName = resolvePlayerNameForRole(teamRoster, p.role || p.position || '', p.playerName);
+                          let resolvedName = resolvePlayerNameForRole(sortedRoster, p.role || p.position || '', p.playerName);
                           
-                          // UI List Fallback by index if resolvePlayerNameForRole fails
-                          if ((!resolvedName || resolvedName === 'Unknown') && teamRoster[idx]) {
-                              resolvedName = teamRoster[idx].이름 || teamRoster[idx].name || 'Unknown';
+                          // UI List Fallback by index if resolvePlayerNameForRole fails (sorted roster ensures SUP is at idx 4)
+                          if ((!resolvedName || resolvedName === 'Unknown') && sortedRoster[idx]) {
+                              resolvedName = sortedRoster[idx].이름 || sortedRoster[idx].name || 'Unknown';
                           }
     
                           return {
@@ -814,6 +825,10 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
     
         // --- FINALIZE MANUAL DRAFT ---
         const finalizeManualDraft = () => {
+            // Guard against double-invocation (useEffect can fire multiple times)
+            if (finalizeManualDraftCalledRef.current) return;
+            finalizeManualDraftCalledRef.current = true;
+
             if (!manualTeams.blue || !manualTeams.red) {
                 console.error("Critical Error: Teams not initialized");
                 alert("Error: Teams not initialized. Please restart.");
@@ -1825,8 +1840,10 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                 // firing on the intermediate render and causing an unmount/crash.
                                 setPhase('LOADING'); 
                                 
-                                // Now safe to clear simulationData since phase is no longer SET_RESULT
-                                setSimulationData(null); 
+                                // [FIX v2] Do NOT call setSimulationData(null) here — doing so can create a
+                                // brief render frame where phase is still SET_RESULT but simulationData is null,
+                                // causing the "세트 전환 중..." black screen. simulationData will be overwritten
+                                // naturally when the next set's simulation starts.
                                 setLiveStats({ kills: { BLUE: 0, RED: 0 }, gold: { BLUE: 2500, RED: 2500 }, towers: { BLUE: 0, RED: 0 }, players: [] });
                                 setResultProcessed(false); // unlock for next sets
                                 
