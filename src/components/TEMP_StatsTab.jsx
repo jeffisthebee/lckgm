@@ -55,11 +55,10 @@ const isRegularType = (t) => {
 const isPlayinType = (t) => normalizeType(t).includes('playin') || normalizeType(t) === 'playin';
 
 export default function StatsTab({ league }) {
-  // [NEW] League Switcher Memory
+  // League Switcher Memory
   const [currentLeague, setCurrentLeague] = useState('LCK');
   
   const [posFilter, setPosFilter] = useState('ALL');
-  // Changed from regularOnly boolean to a stage string filter
   const [stageFilter, setStageFilter] = useState('ALL'); // 'ALL', 'PLAYIN', 'REGULAR', 'PLAYOFF'
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSection, setActiveSection] = useState('POG'); // 'POG', 'RATING', 'META', 'KDA'
@@ -74,8 +73,7 @@ export default function StatsTab({ league }) {
     let totalBans = 0;
     let totalGames = 0;
 
-    // [NEW] Direct the logic to the correct matches array based on the selected league
-    // [NEW] Direct the logic to the correct matches array based on the selected league
+    // Direct the logic to the correct matches array based on the selected league
     let activeMatches = [];
     if (currentLeague === 'LCK') activeMatches = league?.matches || [];
     else if (currentLeague === 'FST') activeMatches = league?.fst?.matches || [];
@@ -95,8 +93,40 @@ export default function StatsTab({ league }) {
       if (!match || match.status !== 'finished') continue;
       
       // === STAGE FILTER LOGIC ===
-      // === STAGE FILTER LOGIC ===
-      
+      if (stageFilter === 'REGULAR') {
+        if (currentLeague === 'FST') {
+            if (!match.fstRound?.startsWith('GG')) continue;
+        } else if (!isRegularType(match.type)) continue;
+      } else if (stageFilter === 'PLAYIN') {
+        if (currentLeague === 'FST') continue; // FST doesn't have play-in
+        if (!isPlayinType(match.type)) continue;
+      } else if (stageFilter === 'PLAYOFF') {
+        if (currentLeague === 'FST') {
+            if (match.fstRound?.startsWith('GG')) continue;
+        } else if (!isPlayoffType(match.type)) continue;
+      }
+
+      const history = safeArray(match.result?.history);
+
+      // Series-level POS normalization (robust)
+      const rawSeriesPos = match.result?.posPlayer ?? match.posPlayer ?? match.result?.posPlayerName ?? match.posPlayerName;
+      let seriesPosName = null;
+      if (rawSeriesPos) {
+        if (typeof rawSeriesPos === 'string') {
+          seriesPosName = rawSeriesPos.trim();
+        } else if (typeof rawSeriesPos === 'object') {
+          seriesPosName = (rawSeriesPos.playerName || rawSeriesPos.player || rawSeriesPos.name || rawSeriesPos.이름 || '').trim() || null;
+        } else {
+          seriesPosName = String(rawSeriesPos).trim();
+        }
+      }
+
+      // Only add series POS if this match is a playoff series (explicit)
+      const isPlayoffContext = currentLeague === 'FST' ? !match.fstRound?.startsWith('GG') : isPlayoffType(match.type);
+      if (seriesPosName && isPlayoffContext) {
+        players[seriesPosName] = players[seriesPosName] || { games: 0, totalScore: 0, pog: 0, kills: 0, deaths: 0, assists: 0, champCounts: {} };
+        players[seriesPosName].pog += 1;
+      }
 
       for (const set of history) {
         totalGames++;
@@ -261,7 +291,6 @@ export default function StatsTab({ league }) {
       <div className="p-4 sm:p-6 border-b border-gray-100 flex-shrink-0">
         
         {/* The League Switcher Buttons */}
-        {/* The League Switcher Buttons */}
         <div className="flex gap-2 p-2 mb-4 bg-gray-100 overflow-x-auto shrink-0 rounded-lg">
             {['LCK', 'LPL', 'LEC', 'LCS', 'LCP', 'CBLOL', ...(league?.fst ? ['FST'] : [])].map(lg => (
                 <button
@@ -406,7 +435,6 @@ export default function StatsTab({ league }) {
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                    {/* [FIX] Removed slice(0, 50) */}
                     {applyFilters(playerRatings).map((p, i) => (
                     <tr key={p.name} className="hover:bg-blue-50/50 transition text-xs sm:text-sm">
                         <td className="py-2 px-2 sm:py-3 sm:px-4 text-center font-black text-gray-400">{i + 1}</td>
@@ -447,7 +475,6 @@ export default function StatsTab({ league }) {
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-                {/* [FIX] Removed slice(0, 60) */}
                 {championMeta.map((c, i) => (
                 <div key={c.name} className="bg-white p-3 sm:p-4 rounded-xl border hover:shadow-md transition flex items-center justify-between">
                     <div className="flex items-center gap-3 sm:gap-4">
@@ -488,7 +515,6 @@ export default function StatsTab({ league }) {
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                    {/* [FIX] Removed slice(0, 50) */}
                     {applyFilters(kdaLeaders).map((p, i) => (
                     <tr key={p.name} className="hover:bg-red-50/50 transition text-xs sm:text-sm">
                         <td className="py-2 px-2 sm:py-3 sm:px-4 text-center font-black text-gray-400">{i + 1}</td>
