@@ -790,7 +790,10 @@ const HistoryTab = ({ league }) => {
                                                           )}
                                                       </td>
                                                       <td className="p-3 text-right font-medium text-gray-600">
-                                                          {item.rank === 1 ? '0.5억' : item.rank === 2 ? '0.25억' : item.rank === 3 ? '0.2억' : '0.1억'}
+                                                          {currentLeague === 'FST'
+                                                              ? `${([6, 4, 3, 2, 1, 1, 1, 1][item.rank - 1] ?? 0)}억`
+                                                              : (item.rank === 1 ? '0.5억' : item.rank === 2 ? '0.25억' : item.rank === 3 ? '0.2억' : '0.1억')
+                                                          }
                                                       </td>
                                                   </tr>
                                               );

@@ -165,9 +165,60 @@ const getOvrBadgeStyle = (ovr) => {
         else if (myId === runnerUpId) earned = 0.25;
         else if (myId === thirdId) earned = 0.2;
 
+        // FST prize money (added on top of LCK prize)
+        if (isFSTOver && league.fst) {
+          const FST_PRIZES = [6, 4, 3, 2, 1, 1, 1, 1];
+          const fstMatches = league.fst.matches || [];
+          const fstTeams   = league.fst.teams   || [];
+          const myName     = league.team?.name;
+
+          const fstFindM = (round) => fstMatches.find(m => m.fstRound === round);
+          const fstGetW  = (m) => {
+            if (!m?.result?.winner) return null;
+            return fstTeams.find(t => t.name === m.result.winner)?.name || m.result.winner;
+          };
+          const fstGetL  = (m) => {
+            if (!m?.result?.winner) return null;
+            const wName   = fstGetW(m);
+            const wId     = fstTeams.find(t => t.name === wName)?.fstId;
+            const loserId = wId
+              ? (m.t1 === wId ? m.t2 : m.t1)
+              : (fstTeams.find(t => t.fstId === m.t1)?.name === wName ? m.t2 : m.t1);
+            return fstTeams.find(t => t.fstId === loserId)?.name;
+          };
+          const fstGetWonSets = (m, teamName) => {
+            if (!m?.result?.score) return 0;
+            const parts = String(m.result.score).split(/[-:]/).map(Number);
+            if (parts.length !== 2) return 0;
+            return fstGetW(m) === teamName ? Math.max(parts[0], parts[1]) : Math.min(parts[0], parts[1]);
+          };
+
+          const finals = fstFindM('Finals');
+          const pg1 = fstFindM('PG1'); const pg2 = fstFindM('PG2');
+          const gg9 = fstFindM('GG9'); const gg10 = fstFindM('GG10');
+          const gg7 = fstFindM('GG7'); const gg8 = fstFindM('GG8');
+
+          const fstRanks = [];
+          const addFR = (n) => { if (n && !fstRanks.includes(n)) fstRanks.push(n); };
+          addFR(fstGetW(finals));
+          addFR(fstGetL(finals));
+          [pg1, pg2]
+            .map(m => { const l = fstGetL(m); return l ? { name: l, s: fstGetWonSets(m, l) } : null; })
+            .filter(Boolean).sort((a, b) => b.s - a.s).forEach(t => addFR(t.name));
+          [gg9, gg10]
+            .map(m => { const l = fstGetL(m); return l ? { name: l, s: fstGetWonSets(m, l) } : null; })
+            .filter(Boolean).sort((a, b) => b.s - a.s).forEach(t => addFR(t.name));
+          [gg7, gg8]
+            .map(m => { const l = fstGetL(m); return l ? { name: l, s: fstGetWonSets(m, l) } : null; })
+            .filter(Boolean).sort((a, b) => b.s - a.s).forEach(t => addFR(t.name));
+
+          const myFSTRank = fstRanks.indexOf(myName);
+          if (myFSTRank >= 0) earned += FST_PRIZES[myFSTRank] || 0;
+        }
+
         setPrizeMoney(earned);
       }
-    }, [league, isSeasonOver]);
+    }, [league, isSeasonOver, isFSTOver]);
 
     // [NEW] Manual Archive Function
     // In src/pages/Dashboard.jsx
@@ -1592,7 +1643,13 @@ const handleMatchClick = (match) => {
     if (isSeasonOver) {
       effectiveDate = '시즌 종료';
     } else if (nextGlobalMatch) {
-      effectiveDate = nextGlobalMatch.date;
+      const lastFinished = league.matches
+        .filter(m => m.status === 'finished')
+        .sort((a, b) => parseDate(b.date) - parseDate(a.date))[0];
+      // Stay on the last played date until we actually start a new day's games
+      effectiveDate = (lastFinished && lastFinished.date !== nextGlobalMatch.date)
+        ? lastFinished.date
+        : nextGlobalMatch.date;
     } else if (hasDrafted) {
       const lastMatch = league.matches.filter(m => m.status === 'finished').sort((a,b) => parseDate(b.date) - parseDate(a.date))[0];
       if (isPlayInFinished) effectiveDate = "2.9 (월) 이후";
