@@ -353,8 +353,8 @@ const reapplyScale = (data, matches, standingsNames, scale, forPlayoffs) => {
             m.id === 'lpl_po14' || m.id === 'lec_po_final' || 
             m.id === 'lcs_po8' || m.id === 'cblol_po10' || 
             (m.round === 4 && m.id?.startsWith('lcp_')) ||
-            (m.label && (m.label.trim() === '결승' || m.label.includes('결승전') || m.label.toUpperCase() === 'FINAL' || m.label.toUpperCase().includes('GRAND FINAL'))) ||
-            (m.roundName && (m.roundName.trim() === '결승' || m.roundName.includes('결승전') || m.roundName.toUpperCase().includes('GRAND FINAL')))
+            (m.label && (m.label.trim() === '결승' || m.label.trim() === '결승전' || m.label.toUpperCase() === 'FINAL' || m.label.toUpperCase().includes('GRAND FINAL'))) ||
+            (m.roundName && (m.roundName.trim() === '결승' || m.roundName.trim() === '결승전' || m.roundName.toUpperCase().includes('GRAND FINAL')))
         );
         if (finalsMatch && finalsMatch.result?.history && finalsMatch.result?.winner) {
             fallbackFinalsMvp = calculatePOS(finalsMatch.result.history, finalsMatch.result.winner);
@@ -766,7 +766,7 @@ export default function AwardsTab({ league, teams }) {
             (currentLeague === 'LCS' && m.id === 'lcs_po8') ||
             (currentLeague === 'CBLOL' && m.id === 'cblol_po10') ||
             (currentLeague === 'LEC' && m.id === 'lec_po_final') ||
-            (m.label && (m.label.includes('결승') || m.label.toUpperCase().includes('FINAL')))
+            (m.label && (m.label.trim() === '결승' || m.label.toUpperCase() === 'FINAL' || m.label.toUpperCase().includes('GRAND FINAL')))
         );
 
         if (explicitFinal) {
