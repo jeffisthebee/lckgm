@@ -64,50 +64,6 @@ const getSafeRoster = (teamObj, allPlayers) => {
     });
 };
 
-// --- HELPER: ROBUST POS CALCULATION ---
-// Ensures the MVP is always pulled from the actual series winning team
-const calculatePOS = (history, winningTeamName) => {
-    if (!history || !Array.isArray(history) || history.length === 0) return null;
-    const playerScores = {};
-    const winName = winningTeamName?.trim()?.toUpperCase();
-
-    history.forEach(game => {
-        const picksA = game.picks?.A || [];
-        const picksB = game.picks?.B || [];
-        
-        let isTeamA = false;
-        for (let p of picksA) {
-            const tName = p?.playerData?.팀 || p?.팀 || p?.team;
-            if (tName && tName.trim().toUpperCase() === winName) {
-                isTeamA = true;
-                break;
-            }
-        }
-        const targetPicks = isTeamA ? picksA : picksB;
-
-        (targetPicks || []).forEach(p => {
-            if (!p || !p.playerName) return;
-            if (!playerScores[p.playerName]) playerScores[p.playerName] = { ...p, totalScore: 0, games: 0, playerData: p.playerData };
-            const stats = p.stats || { kills: p.k || 0, deaths: p.d || 0, assists: p.a || 0, damage: 0 };
-            const k = stats.kills ?? p.k ?? 0;
-            const d = (stats.deaths ?? p.d) || 0;
-            const safeD = d === 0 ? 1 : d;
-            const a = stats.assists ?? p.a ?? 0;
-            const gold = p.currentGold || 0;
-            const damage = stats.damage || 0;
-            let score = ((k + a) / safeD * 3) + (damage / 3000) + (gold / 1000) + (a * 0.65);
-            const role = p.playerData?.포지션 || p.role || 'MID';
-            if (['TOP', '탑'].includes(role)) score *= 1.05;
-            if (['JGL', '정글'].includes(role)) score *= 1.07;
-            if (['SUP', '서포터'].includes(role)) score *= 1.10;
-            playerScores[p.playerName].totalScore += score;
-            playerScores[p.playerName].games += 1;
-        });
-    });
-    const sorted = Object.values(playerScores).sort((a, b) => b.totalScore - a.totalScore);
-    return sorted[0]; 
-};
-
 const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, formatTeamName, onMatchClick, onFSTSimulate }) => {
     const [currentLeague, setCurrentLeague] = useState('LCK');
     const displayLeague = activeTab === 'team_schedule' ? 'LCK' : currentLeague;
@@ -835,13 +791,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                             if (m.fstRound === 'Finals') badgeText = '🥇 결승';
                             else if (m.fstRound === 'PG1' || m.fstRound === 'PG2') badgeText = '🏆 플레이오프';
 
-                            let posPlayer = null;
-                            let mvpLabel = '시리즈 MVP';
-                            if (isFinished && m.result) {
-                                posPlayer = m.result.posPlayer || calculatePOS(m.result.history, m.result.winner);
-                                if (m.fstRound === 'Finals') mvpLabel = '파이널 MVP';
-                            }
-
                             return (
                                 <div key={i} className={`p-3 lg:p-4 rounded-lg border flex flex-col gap-1 lg:gap-2 ${
                                     m.fstRound === 'Finals' ? 'bg-yellow-50 border-yellow-400 ring-1 ring-yellow-300' :
@@ -862,14 +811,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                                             {isFinished ? (
                                                 <div className="flex flex-col items-center">
                                                     <span className="text-lg lg:text-xl text-gray-800">{m.result?.score || '3-0'}</span>
-                                                    
-                                                    {/* NEW: DYNAMIC MVP BADGE */}
-                                                    {posPlayer && (
-                                                        <div className={`text-[9px] lg:text-[10px] px-1.5 py-0.5 rounded font-bold mt-1 mb-1 whitespace-nowrap shadow-sm ${mvpLabel === '파이널 MVP' ? 'bg-yellow-100 text-yellow-700 border border-yellow-300' : 'bg-purple-100 text-purple-700 border border-purple-200'}`}>
-                                                            {mvpLabel}: {posPlayer.playerName}
-                                                        </div>
-                                                    )}
-
                                                     <button
                                                         onClick={() => onMatchClick && onMatchClick(m)}
                                                         className="mt-1 text-[9px] lg:text-[10px] bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 px-1.5 lg:px-2 py-0.5 rounded transition flex items-center gap-1 whitespace-nowrap"
@@ -930,14 +871,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                                     const t2Name = t2Fst?.name || 'TBD';
                                     const isFinished = m.status === 'finished';
                                     const isMyFSTMatch = m.t1 === myFSTTeam?.fstId || m.t2 === myFSTTeam?.fstId;
-                                    
-                                    let posPlayer = null;
-                                    let mvpLabel = '시리즈 MVP';
-                                    if (isFinished && m.result) {
-                                        posPlayer = m.result.posPlayer || calculatePOS(m.result.history, m.result.winner);
-                                        if (m.fstRound === 'Finals') mvpLabel = '파이널 MVP';
-                                    }
-
                                     return (
                                         <div key={i} className={`p-3 rounded-lg border flex flex-col gap-1 ${isMyFSTMatch ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-200' : 'bg-white border-gray-200'}`}>
                                             <div className="flex justify-between text-[10px] font-bold text-gray-500">
@@ -950,17 +883,11 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                                                     {isFinished ? (
                                                         <div className="flex flex-col items-center">
                                                             <span className="text-base text-gray-800">{m.result?.score || '3-0'}</span>
-                                                            {/* NEW: DYNAMIC MVP BADGE */}
-                                                            {posPlayer && (
-                                                                <div className={`text-[8px] px-1 py-0.5 rounded font-bold mt-1 shadow-sm whitespace-nowrap ${mvpLabel === '파이널 MVP' ? 'bg-yellow-100 text-yellow-700 border border-yellow-300' : 'bg-purple-100 text-purple-700 border border-purple-200'}`}>
-                                                                    {mvpLabel}: {posPlayer.playerName}
-                                                                </div>
-                                                            )}
-                                                            <button 
+                                                            <button
                                                                 onClick={() => onMatchClick && onMatchClick(m)}
-                                                                className="mt-1 text-[8px] bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 px-1.5 py-0.5 rounded transition"
+                                                                className="mt-1 text-[9px] lg:text-[10px] bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 px-1.5 lg:px-2 py-0.5 rounded transition flex items-center gap-1 whitespace-nowrap"
                                                             >
-                                                                상세보기
+                                                                <span>📊</span> <span className="hidden sm:inline">상세보기</span><span className="sm:hidden">기록</span>
                                                             </button>
                                                         </div>
                                                     ) : (
@@ -1002,27 +929,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
 
                                 const expectedFallbackScore = m.format === 'BO1' ? '1-0' : (m.format === 'BO5' ? '3-0' : '2-0');
 
-                                let posPlayer = null;
-                                let mvpLabel = '시리즈 MVP';
-                                if (isFinished && m.result && m.format !== 'BO1') {
-                                    posPlayer = m.result.posPlayer || calculatePOS(m.result.history, m.result.winner);
-                                    
-                                    // Robust check ensuring ONLY true grand finals get the "Finals MVP" label
-                                    const isFinals = 
-                                        m.round == 5 || 
-                                        String(m.round) === "5" ||
-                                        m.roundIndex == 5 ||
-                                        m.id === 'lpl_po14' || 
-                                        m.id === 'lcs_po8' || 
-                                        m.id === 'cblol_po10' || 
-                                        m.id === 'lec_po_final' || 
-                                        (m.round === 4 && m.id?.startsWith('lcp_')) ||
-                                        (m.label && m.label.toString().includes('결승전')) || 
-                                        (m.label && m.label.toString().toUpperCase().includes('GRAND FINAL'));
-                                        
-                                    if (isFinals) mvpLabel = '파이널 MVP';
-                                }
-
                                 return (
                                     <div key={i} className={`p-3 lg:p-4 rounded-lg border flex flex-col gap-1 lg:gap-2 ${isMyMatch && displayLeague === 'LCK' ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-200' : 'bg-white border-gray-200'}`}>
                                         <div className="flex justify-between text-[10px] lg:text-xs font-bold text-gray-500">
@@ -1040,14 +946,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                                                     <span className="text-lg lg:text-xl text-gray-800">
                                                         {m.result?.score || expectedFallbackScore}
                                                     </span>
-                                                    
-                                                    {/* NEW: DYNAMIC MVP BADGE */}
-                                                    {posPlayer && (
-                                                        <div className={`text-[9px] lg:text-[10px] px-1.5 py-0.5 rounded font-bold mt-1 mb-1 whitespace-nowrap shadow-sm ${mvpLabel === '파이널 MVP' ? 'bg-yellow-100 text-yellow-700 border border-yellow-300' : 'bg-purple-100 text-purple-700 border border-purple-200'}`}>
-                                                            {mvpLabel}: {posPlayer.playerName}
-                                                        </div>
-                                                    )}
-
                                                     <button 
                                                         onClick={() => onMatchClick && onMatchClick(m)}
                                                         className="mt-1 text-[9px] lg:text-[10px] bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 px-1.5 lg:px-2 py-0.5 rounded transition flex items-center gap-1 whitespace-nowrap"

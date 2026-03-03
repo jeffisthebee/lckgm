@@ -2,30 +2,52 @@
 import React, { useState, useMemo } from 'react';
 
 // --- HELPER: Calculate POS (Player of the Series) ---
-const calculatePOS = (history, isTeamAWinner) => {
-  if (!history || !Array.isArray(history) || history.length === 0) return null;
+const calculatePOS = (history, winningTeamName) => {
+    if (!history || !Array.isArray(history) || history.length === 0) return null;
 
-  const playerScores = {};
+    const playerScores = {};
 
-  history.forEach(game => {
-      const picksA = game.picks?.A || [];
-      const picksB = game.picks?.B || [];
-      
-      // Directly select the correct team based on the match score boolean
-      const targetPicks = isTeamAWinner ? picksA : picksB;
+    history.forEach(game => {
+        const picksA = game.picks?.A || [];
+        const picksB = game.picks?.B || [];
+
+        const winName = winningTeamName?.trim().toLowerCase();
+
+        // Robustly identify which side belongs to the series winner
+        // Check team name from first pick on each side (case-insensitive, partial match)
+        const teamAName = picksA[0]?.playerData?.팀?.trim().toLowerCase();
+        const teamBName = picksB[0]?.playerData?.팀?.trim().toLowerCase();
+
+        const aMatchesWinner = teamAName && winName && (
+            teamAName === winName ||
+            teamAName.includes(winName) ||
+            winName.includes(teamAName)
+        );
+        const bMatchesWinner = teamBName && winName && (
+            teamBName === winName ||
+            teamBName.includes(winName) ||
+            winName.includes(teamBName)
+        );
+
+        // Prefer the side that explicitly matches; if neither matches, skip this game
+        // to avoid awarding MVP to the wrong team
+        let targetPicks = null;
+        if (aMatchesWinner && !bMatchesWinner) targetPicks = picksA;
+        else if (bMatchesWinner && !aMatchesWinner) targetPicks = picksB;
+        else if (aMatchesWinner && bMatchesWinner) targetPicks = picksA; // tie-break: pick A
+        else return; // can't identify winner's side — skip game entirely
 
         (targetPicks || []).forEach(p => {
             if (!p) return;
             if (!playerScores[p.playerName]) {
-                playerScores[p.playerName] = { 
-                    ...p, 
-                    totalScore: 0, 
+                playerScores[p.playerName] = {
+                    ...p,
+                    totalScore: 0,
                     games: 0,
-                    // Preserve specific fields needed for display
-                    playerData: p.playerData 
+                    playerData: p.playerData
                 };
             }
-            
+
             // Safe Stat Extraction
             const stats = p.stats || { kills: p.k || 0, deaths: p.d || 0, assists: p.a || 0, damage: 0 };
             const k = stats.kills ?? p.k ?? 0;
@@ -34,10 +56,10 @@ const calculatePOS = (history, isTeamAWinner) => {
             const a = stats.assists ?? p.a ?? 0;
             const gold = p.currentGold || 0;
             const damage = stats.damage || 0;
-            
+
             // POS Formula
             let score = ((k + a) / safeD * 3) + (damage / 3000) + (gold / 1000) + (a * 0.65);
-            
+
             // Role Multipliers
             const role = p.playerData?.포지션 || p.role || 'MID';
             if (['TOP', '탑'].includes(role)) score *= 1.05;
@@ -50,7 +72,7 @@ const calculatePOS = (history, isTeamAWinner) => {
     });
 
     const sorted = Object.values(playerScores).sort((a, b) => b.totalScore - a.totalScore);
-    return sorted[0]; 
+    return sorted[0];
 };
 
 export default function DetailedMatchResultModal({ result, onClose, teamA, teamB }) {
@@ -60,13 +82,12 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
     if (!result || !result.history || result.history.length === 0) return null;
 
     // Parse Match Score (e.g. "2:1") correctly
-    // Parse Match Score (e.g. "2:1" or "3-1") correctly
     let matchScoreA = 0;
     let matchScoreB = 0;
-    if (result.score && typeof result.score === 'string' && (result.score.includes(':') || result.score.includes('-'))) {
-        const parts = result.score.split(/[:-]/);
-        matchScoreA = parseInt(parts[0], 10) || 0;
-        matchScoreB = parseInt(parts[1], 10) || 0;
+    if (result.score && typeof result.score === 'string' && result.score.includes(':')) {
+        const parts = result.score.split(':');
+        matchScoreA = parseInt(parts[0], 10);
+        matchScoreB = parseInt(parts[1], 10);
     } else {
         matchScoreA = result.scoreA || 0;
         matchScoreB = result.scoreB || 0;
@@ -77,12 +98,20 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
     const isBo5 = (matchScoreA === 3 || matchScoreB === 3) || (result.format === 'BO5');
     
     // --- FINAL MVP LOGIC (STRICT) ---
-    const isFinals = 
-        result.round == 5 || 
-        result.roundIndex == 5 ||
-        result.fstRound === 'Finals' ||
-        (result.roundName && result.roundName.toString().toUpperCase().includes('GRAND FINAL')) ||
-        (result.roundName && result.roundName.toString().includes('결승'));
+    // Only flag as Finals if the round name/label explicitly says so.
+    // Do NOT use result.round == 5 — that matches any full 5-game BO5 series, not just the Finals.
+    const isFinals =
+        (result.roundName && (
+            result.roundName.toString().toUpperCase().includes('GRAND FINAL') ||
+            result.roundName.toString().includes('결승전') ||
+            result.roundName.toString().trim() === '결승'
+        )) ||
+        (result.label && (
+            result.label.toString().trim() === '결승' ||
+            result.label.toString().includes('결승전') ||
+            result.label.toString().toUpperCase().includes('GRAND FINAL') ||
+            result.label.toString().toUpperCase() === 'FINAL'
+        ));
 
     const posPlayer = useMemo(() => {
         // 1. If explicitly passed (e.g. from LiveGamePlayer), use it
@@ -90,8 +119,7 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
 
         // 2. If not passed, but it is a BO5, calculate it on the fly
         if (isBo5) {
-            // RELY ON result.winner directly if available, fallback to score math
-            const winnerName = result.winner || (matchScoreA > matchScoreB ? teamA.name : teamB.name);
+            const winnerName = matchScoreA > matchScoreB ? teamA.name : teamB.name;
             return calculatePOS(result.history, winnerName);
         }
 
