@@ -15,10 +15,23 @@ const calculatePOS = (history, winningTeamName) => {
     history.forEach(game => {
         const picksA = game.picks?.A || [];
         const picksB = game.picks?.B || [];
-        const winName = winningTeamName?.trim();
-        const teamAName = picksA[0]?.playerData?.팀?.trim();
-        const isTeamASeriesWinner = teamAName === winName;
-        const targetPicks = isTeamASeriesWinner ? picksA : picksB;
+        const winName = winningTeamName?.trim().toLowerCase();
+
+        // Robustly identify which side belongs to the series winner (case-insensitive + partial match)
+        const teamAName = picksA[0]?.playerData?.팀?.trim().toLowerCase();
+        const teamBName = picksB[0]?.playerData?.팀?.trim().toLowerCase();
+        const aMatchesWinner = teamAName && winName && (
+            teamAName === winName || teamAName.includes(winName) || winName.includes(teamAName)
+        );
+        const bMatchesWinner = teamBName && winName && (
+            teamBName === winName || teamBName.includes(winName) || winName.includes(teamBName)
+        );
+
+        let targetPicks = null;
+        if (aMatchesWinner && !bMatchesWinner) targetPicks = picksA;
+        else if (bMatchesWinner && !aMatchesWinner) targetPicks = picksB;
+        else if (aMatchesWinner && bMatchesWinner) targetPicks = picksA; // tie-break
+        else return; // can't identify winner's side — skip to avoid awarding MVP to wrong team
 
         (targetPicks || []).forEach(p => {
             if (!p) return;
@@ -40,7 +53,7 @@ const calculatePOS = (history, winningTeamName) => {
         });
     });
     const sorted = Object.values(playerScores).sort((a, b) => b.totalScore - a.totalScore);
-    return sorted[0]; 
+    return sorted[0];
 };
 
 // Returns white or black text for best contrast against a background hex color
@@ -332,15 +345,16 @@ const reapplyScale = (data, matches, standingsNames, scale, forPlayoffs) => {
         }
     });
 
-    // --- NEW FALLBACK FOR FINALS MVP (Dynamic Calculation for un-saved FST/LPL Finals) ---
+    // --- FALLBACK FOR FINALS MVP (Dynamic Calculation for un-saved FST/LPL Finals) ---
     let fallbackFinalsMvp = null;
     if (forPlayoffs) {
         const finalsMatch = targetMatches.find(m => 
-            m.fstRound === 'Finals' || 
-            m.round === 5 || String(m.round) === "5" ||
+            m.fstRound === 'Finals' ||
             m.id === 'lpl_po14' || m.id === 'lec_po_final' || 
             m.id === 'lcs_po8' || m.id === 'cblol_po10' || 
-            (m.round === 4 && m.id?.startsWith('lcp_'))
+            (m.round === 4 && m.id?.startsWith('lcp_')) ||
+            (m.label && (m.label.trim() === '결승' || m.label.includes('결승전') || m.label.toUpperCase() === 'FINAL' || m.label.toUpperCase().includes('GRAND FINAL'))) ||
+            (m.roundName && (m.roundName.trim() === '결승' || m.roundName.includes('결승전') || m.roundName.toUpperCase().includes('GRAND FINAL')))
         );
         if (finalsMatch && finalsMatch.result?.history && finalsMatch.result?.winner) {
             fallbackFinalsMvp = calculatePOS(finalsMatch.result.history, finalsMatch.result.winner);
@@ -440,13 +454,6 @@ export default function AwardsTab({ league, teams }) {
                  return getW(m) === teamName ? Math.max(parts[0], parts[1]) : Math.min(parts[0], parts[1]);
             };
 
-            const sortTiedPairs = (m1, m2, t1Name, t2Name) => {
-                 const sets1 = getWonSets(m1, t1Name);
-                 const sets2 = getWonSets(m2, t2Name);
-                 if (sets1 !== sets2) return sets2 - sets1; 
-                 return 0; 
-            };
-
             const gg5 = findM('GG5'); const gg6 = findM('GG6');
             const gg7 = findM('GG7'); const gg8 = findM('GG8');
             const gg9 = findM('GG9'); const gg10 = findM('GG10');
@@ -468,20 +475,30 @@ export default function AwardsTab({ league, teams }) {
             addP(getW(finals)); // 1st: Winner of finals
             addP(getL(finals)); // 2nd: Loser of finals
             
-            // 3rd / 4th: Loser of PG1 / PG2 
+            // 3rd / 4th: Loser of PG1 / PG2 — team paired with its own match (not positional)
+            // The loser who won more sets (closer match) ranks higher
             const l_pg1 = getL(pg1); const l_pg2 = getL(pg2);
-            const thirdFourth = [l_pg1, l_pg2].filter(Boolean).sort((a, b) => sortTiedPairs(pg1, pg2, a, b));
-            thirdFourth.forEach(addP);
+            const pg1Loser = l_pg1 ? { name: l_pg1, setsWon: getWonSets(pg1, l_pg1) } : null;
+            const pg2Loser = l_pg2 ? { name: l_pg2, setsWon: getWonSets(pg2, l_pg2) } : null;
+            [pg1Loser, pg2Loser].filter(Boolean)
+                .sort((a, b) => b.setsWon - a.setsWon)
+                .forEach(t => addP(t.name));
 
             // 5th / 6th: Loser of GG9 / GG10 (3rd in groups)
             const l_gg9 = getL(gg9); const l_gg10 = getL(gg10);
-            const fifthSixth = [l_gg9, l_gg10].filter(Boolean).sort((a, b) => sortTiedPairs(gg9, gg10, a, b));
-            fifthSixth.forEach(addP);
+            const gg9Loser = l_gg9 ? { name: l_gg9, setsWon: getWonSets(gg9, l_gg9) } : null;
+            const gg10Loser = l_gg10 ? { name: l_gg10, setsWon: getWonSets(gg10, l_gg10) } : null;
+            [gg9Loser, gg10Loser].filter(Boolean)
+                .sort((a, b) => b.setsWon - a.setsWon)
+                .forEach(t => addP(t.name));
 
             // 7th / 8th: Loser of GG7 / GG8 (4th in groups)
             const l_gg7 = getL(gg7); const l_gg8 = getL(gg8);
-            const seventhEighth = [l_gg7, l_gg8].filter(Boolean).sort((a, b) => sortTiedPairs(gg7, gg8, a, b));
-            seventhEighth.forEach(addP);
+            const gg7Loser = l_gg7 ? { name: l_gg7, setsWon: getWonSets(gg7, l_gg7) } : null;
+            const gg8Loser = l_gg8 ? { name: l_gg8, setsWon: getWonSets(gg8, l_gg8) } : null;
+            [gg7Loser, gg8Loser].filter(Boolean)
+                .sort((a, b) => b.setsWon - a.setsWon)
+                .forEach(t => addP(t.name));
 
             // Fallback sweep to catch any missing
             groupRanks.forEach(addP);
