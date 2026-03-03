@@ -109,15 +109,12 @@ const getOvrBadgeStyle = (ovr) => {
     const hasFST = !!league?.fst;
     const isFSTReady = isSeasonOver && !hasFST;
 
-    // FST: next pending FST match + whether player's team is in it
+    // FST: next pending FST match (isMyNextFSTMatch computed after myTeam is defined, below)
     const nextFSTMatch = hasFST
       ? (league.fst.matches || []).find(m => m.status === 'pending' && m.t1 && m.t2)
       : null;
     const nextFSTMatchT1 = nextFSTMatch ? (league.fst?.teams || []).find(t => t.fstId === nextFSTMatch.t1) : null;
     const nextFSTMatchT2 = nextFSTMatch ? (league.fst?.teams || []).find(t => t.fstId === nextFSTMatch.t2) : null;
-    const isMyNextFSTMatch = nextFSTMatch
-      ? (nextFSTMatchT1?.name === myTeam?.name || nextFSTMatchT2?.name === myTeam?.name)
-      : false;
     
     // Check if History is already saved
     const isSavedInHistory = league?.history?.some(
@@ -488,7 +485,12 @@ setMyMatchResult({
   
     const t1 = nextGlobalMatch ? teams.find(t => t.id === safeId(nextGlobalMatch.t1)) : null;
     const t2 = nextGlobalMatch ? teams.find(t => t.id === safeId(nextGlobalMatch.t2)) : null;
-  
+
+    // isMyNextFSTMatch MUST be here — after myTeam is defined
+    const isMyNextFSTMatch = nextFSTMatch
+      ? (nextFSTMatchT1?.name === myTeam?.name || nextFSTMatchT2?.name === myTeam?.name)
+      : false;
+
     
   
     const applyMatchResult = (targetMatch, result) => {
