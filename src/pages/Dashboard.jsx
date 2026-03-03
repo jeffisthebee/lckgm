@@ -1976,7 +1976,7 @@ const handleMatchClick = (match) => {
             )}
             
             {hasDrafted && nextGlobalMatch && !isMyNextMatch && 
-             !(nextGlobalMatch.type === 'super' && league.metaVersion !== '16.02') && (
+             (
                 <button 
                   onClick={handleProceedNextMatch} 
                   className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-2 animate-pulse transition whitespace-nowrap"
