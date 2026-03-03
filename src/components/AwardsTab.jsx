@@ -20,10 +20,14 @@ const getContrastText = (hexColor) => {
     return (0.299 * r + 0.587 * g + 0.114 * b) / 255 < 0.5 ? '#ffffff' : '#000000';
 };
 
-const getGlobalTeam = (teamIdentifier, lckTeams) => {
+const getGlobalTeam = (teamIdentifier, lckTeams, fstTeams = []) => {
     if (!teamIdentifier) return null;
     let found = lckTeams.find(t => t.name === teamIdentifier || String(t.id) === String(teamIdentifier));
     if (found) return found;
+    if (fstTeams && fstTeams.length > 0) {
+        found = fstTeams.find(t => t.name === teamIdentifier || String(t.fstId) === String(teamIdentifier));
+        if (found) return found;
+    }
     for (const lg in FOREIGN_LEAGUES) {
         found = (FOREIGN_LEAGUES[lg] || []).find(t => t.name === teamIdentifier || String(t.id) === String(teamIdentifier));
         if (found) return found;
@@ -49,7 +53,7 @@ const RoleBadge = ({ role }) => {
 };
 
 // --- PlayerCard Component ---
-const PlayerCard = ({ player, rank, lckTeams }) => {
+const PlayerCard = ({ player, rank, lckTeams, fstTeams }) => {
     if (!player) return (
         <div className="w-full h-[220px] bg-gray-50 rounded-xl border border-dashed border-gray-300 flex items-center justify-center text-xs text-gray-400">
             N/A
@@ -61,7 +65,7 @@ const PlayerCard = ({ player, rank, lckTeams }) => {
     const ign = player.playerName;
 
     const teamNameRef = player.teamObj?.name || player.team || (player.teams && player.teams[0]);
-    const globalTeam = getGlobalTeam(teamNameRef, lckTeams);
+    const globalTeam = getGlobalTeam(teamNameRef, lckTeams, fstTeams);
     const displayTeamName = globalTeam?.name || teamNameRef || 'FA';
     
     const bgColor = TEAM_COLORS[displayTeamName] || globalTeam?.colors?.primary || player.teamObj?.colors?.primary || '#333';
@@ -121,7 +125,7 @@ const PlayerCard = ({ player, rank, lckTeams }) => {
 };
 
 // --- MvpShowcaseCard Component ---
-const MvpShowcaseCard = ({ player, title, badgeColor, lckTeams, size = 'large' }) => {
+const MvpShowcaseCard = ({ player, title, badgeColor, lckTeams, fstTeams, size = 'large' }) => {
     if (!player) return (
         <div className={`relative bg-gray-800 rounded-2xl border border-gray-700 p-8 flex items-center justify-center text-gray-500 font-bold ${size === 'large' ? 'w-full max-w-lg mx-auto' : 'w-full'}`}>
             데이터 없음
@@ -129,7 +133,7 @@ const MvpShowcaseCard = ({ player, title, badgeColor, lckTeams, size = 'large' }
     );
 
     const teamNameRef = player.teamObj?.name || player.team || (player.teams && player.teams[0]);
-    const globalTeam = getGlobalTeam(teamNameRef, lckTeams);
+    const globalTeam = getGlobalTeam(teamNameRef, lckTeams, fstTeams);
     const displayTeamName = globalTeam?.name || teamNameRef || 'FA';
     
     const bgColor = TEAM_COLORS[displayTeamName] || globalTeam?.colors?.primary || player.teamObj?.colors?.primary || '#333';
@@ -177,7 +181,7 @@ const MvpShowcaseCard = ({ player, title, badgeColor, lckTeams, size = 'large' }
 };
 
 // --- TeamSection Component ---
-const TeamSection = ({ title, rank, players, lckTeams }) => {
+const TeamSection = ({ title, rank, players, lckTeams, fstTeams }) => {
     const roles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
     const headerStyles = {
         1: 'bg-yellow-500 text-white border-yellow-600',
@@ -194,19 +198,22 @@ const TeamSection = ({ title, rank, players, lckTeams }) => {
                 <div className="h-px bg-gray-200 flex-1"></div>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 lg:gap-3 px-1">
-                {roles.map(role => ( <PlayerCard key={role} player={safePlayers[role]} rank={rank} lckTeams={lckTeams} /> ))}
+                {roles.map(role => ( <PlayerCard key={role} player={safePlayers[role]} rank={rank} lckTeams={lckTeams} fstTeams={fstTeams} /> ))}
             </div>
         </div>
     );
 };
 
-// Point scales — defined at module level, never change
+// Point scales — defined at module level
 const LPL_SCALE  = [100, 90, 80, 70, 65, 60, 55, 50, 40, 30, 20, 10, 5, 0]; // 14 teams
 const LEC_SCALE  = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 5, 0];         // 12 teams
 const BASE_SCALE = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10];                 // 10 teams
 
-// Re-calculates ALL player scores from match history using the correct scale,
-// strictly filters out play-in games for playoff awards, and builds true rankings.
+// [NEW] FST specific scales based on 8 teams
+const FST_GROUP_SCALE = [100, 100, 80, 80, 60, 60, 40, 40];
+const FST_PLAYOFF_SCALE = [100, 80, 60, 50, 40, 30, 20, 10];
+
+// Re-calculates ALL player scores from match history using the correct scale
 const reapplyScale = (data, matches, standingsNames, scale, forPlayoffs) => {
     if (!data) return data;
 
@@ -231,14 +238,21 @@ const reapplyScale = (data, matches, standingsNames, scale, forPlayoffs) => {
     const players = {};
     const targetMatches = (matches || []).filter(m => {
         if (m.status !== 'finished') return false;
-        // FIX: Strictly exclude 'playin' matches for Playoff Awards!
+        
+        // FST match filtering
+        if (m.type === 'fst' || m.fstRound) {
+            if (forPlayoffs) return ['PG1', 'PG2', 'Finals'].includes(m.fstRound);
+            return m.fstRound && m.fstRound.startsWith('GG');
+        }
+
+        // Regular/PO Match filtering
         if (forPlayoffs) return m.type === 'playoff'; 
         return m.type === 'regular' || m.type === 'super';
     });
 
     for (const match of targetMatches) {
         for (const set of safeArr(match.result?.history)) {
-            // Count POGs (now cleanly separated from play-ins)
+            // Count POGs (now cleanly separated)
             const pogObj = set.pogPlayer;
             const pogName = typeof pogObj === 'string' ? pogObj.trim() : (pogObj?.playerName || '').trim();
             if (pogName) {
@@ -265,7 +279,7 @@ const reapplyScale = (data, matches, standingsNames, scale, forPlayoffs) => {
         }
     }
 
-    // Recalculate pure POG Leader without play-in pollution
+    // Recalculate pure POG Leader
     let maxPog = 0;
     let computedPogLeader = null;
     Object.entries(players).forEach(([name, d]) => {
@@ -332,17 +346,105 @@ export default function AwardsTab({ league, teams }) {
     const isLCK = currentLeague === 'LCK';
     const isLEC = currentLeague === 'LEC';
     const isLPL = currentLeague === 'LPL';
-    const activeTeams = isLCK ? teams : (FOREIGN_LEAGUES[currentLeague] || []);
+    const isFST = currentLeague === 'FST';
+    
+    const activeTeams = isLCK ? teams : (isFST ? (league?.fst?.teams || []) : (FOREIGN_LEAGUES[currentLeague] || []));
     
     const activeLeagueData = useMemo(() => {
         if (isLCK) return league;
+
+        // --- FST MATCH EXTRACTOR ---
+        if (isFST) {
+            const fstMatches = league?.fst?.matches || [];
+            const fstTeams = league?.fst?.teams || [];
+            
+            const findM = (round) => fstMatches.find(m => m.fstRound === round);
+            const getW = (m) => m?.result?.winner;
+            const getL = (m) => {
+                if (!m?.result?.winner) return null;
+                const wName = m.result.winner;
+                
+                // Get Winner ID
+                const wId = fstTeams.find(t => t.name === wName || t.fstId === wName)?.fstId;
+                
+                let loserId = null;
+                if (wId) {
+                    loserId = m.t1 === wId ? m.t2 : m.t1;
+                } else {
+                    const t1Name = fstTeams.find(t => t.fstId === m.t1)?.name;
+                    loserId = t1Name === wName ? m.t2 : m.t1;
+                }
+                
+                return fstTeams.find(t => t.fstId === loserId)?.name;
+            };
+
+            const getWonSets = (m, teamName) => {
+                 if (!m?.result?.score) return 0;
+                 const parts = String(m.result.score).split(/[-:]/).map(Number);
+                 if (parts.length !== 2) return 0;
+                 return getW(m) === teamName ? Math.max(parts[0], parts[1]) : Math.min(parts[0], parts[1]);
+            };
+
+            const sortTiedPairs = (m1, m2, t1Name, t2Name) => {
+                 const sets1 = getWonSets(m1, t1Name);
+                 const sets2 = getWonSets(m2, t2Name);
+                 if (sets1 !== sets2) return sets2 - sets1; 
+                 return 0; 
+            };
+
+            const gg5 = findM('GG5'); const gg6 = findM('GG6');
+            const gg7 = findM('GG7'); const gg8 = findM('GG8');
+            const gg9 = findM('GG9'); const gg10 = findM('GG10');
+            const pg1 = findM('PG1'); const pg2 = findM('PG2');
+            const finals = findM('Finals');
+
+            // 1) Group Stage Ranks (Length: 8)
+            const groupRanks = [
+                 getW(gg5), getW(gg6),   // 100: 2라운드 승자전 Winner
+                 getW(gg9), getW(gg10),  // 80:  최종전 Winner
+                 getL(gg9), getL(gg10),  // 60:  최종전 Loser
+                 getL(gg7), getL(gg8)    // 40:  2라운드 패자전 Loser
+            ].filter(Boolean);
+
+            // 2) Playoff Ranks (Length: 8)
+            const playoffRanks = [];
+            const addP = (n) => { if (n && !playoffRanks.includes(n)) playoffRanks.push(n); };
+
+            addP(getW(finals)); // 1st: Winner of finals
+            addP(getL(finals)); // 2nd: Loser of finals
+            
+            // 3rd / 4th: Loser of PG1 / PG2 
+            const l_pg1 = getL(pg1); const l_pg2 = getL(pg2);
+            const thirdFourth = [l_pg1, l_pg2].filter(Boolean).sort((a, b) => sortTiedPairs(pg1, pg2, a, b));
+            thirdFourth.forEach(addP);
+
+            // 5th / 6th: Loser of GG9 / GG10 (3rd in groups)
+            const l_gg9 = getL(gg9); const l_gg10 = getL(gg10);
+            const fifthSixth = [l_gg9, l_gg10].filter(Boolean).sort((a, b) => sortTiedPairs(gg9, gg10, a, b));
+            fifthSixth.forEach(addP);
+
+            // 7th / 8th: Loser of GG7 / GG8 (4th in groups)
+            const l_gg7 = getL(gg7); const l_gg8 = getL(gg8);
+            const seventhEighth = [l_gg7, l_gg8].filter(Boolean).sort((a, b) => sortTiedPairs(gg7, gg8, a, b));
+            seventhEighth.forEach(addP);
+
+            // Fallback sweep to catch any missing
+            groupRanks.forEach(addP);
+
+            return {
+                ...league,
+                matches: fstMatches,
+                standings: {},
+                finalStandings: playoffRanks, 
+                regularStandings: groupRanks,
+            };
+        }
 
         const foreignMatches = league.foreignMatches?.[currentLeague] || [];
         let customFinalStandingsNames = [];
         let regularStandingsNames = []; 
         let seedStandingsNames = [];
 
-        // FIX: Extract the true Regular Season Seedings!
         const playoffSeeds = league.foreignPlayoffSeeds?.[currentLeague] || [];
         if (playoffSeeds.length > 0) {
             seedStandingsNames = [...playoffSeeds]
@@ -380,7 +482,6 @@ export default function AwardsTab({ league, teams }) {
                 return Math.abs(parts[0] - parts[1]);
             };
 
-            // Calculate raw W/L purely as a fallback for incomplete schedules
             const st = {};
             currentTeams.forEach(t => st[t.name] = { w: 0, l: 0, diff: 0, h2h: {}, defeatedOpponents: [], team: t });
 
@@ -439,7 +540,6 @@ export default function AwardsTab({ league, teams }) {
                 const lplRanks = [];
                 const addRank = (tName) => { if (tName) lplRanks.push(tName); };
 
-                // 1 to 4
                 addRank(getWinner('lpl_po14'));
                 addRank(getLoser('lpl_po14'));
                 addRank(getLoser('lpl_po13'));
@@ -455,28 +555,22 @@ export default function AwardsTab({ league, teams }) {
                         const diffA = getMatchSetDiff(mIdA);
                         const diffB = getMatchSetDiff(mIdB);
                         if (diffA !== diffB) return diffA - diffB;
-                        // Tiebreaker uses official seed ranking instead of raw W/L
                         return fallbackStandings.indexOf(a) - fallbackStandings.indexOf(b);
                     });
                 };
 
-                // 5/6
                 const fifthSixth = sortTiedPairs('lpl_po9', 'lpl_po10');
                 fifthSixth.forEach(tName => addRank(tName));
 
-                // 7/8
                 const seventhEighth = sortTiedPairs('lpl_po7', 'lpl_po8');
                 seventhEighth.forEach(tName => addRank(tName));
 
-                // 9/10
                 const ninthTenth = sortTiedPairs('lpl_pi5', 'lpl_pi6');
                 ninthTenth.forEach(tName => addRank(tName));
 
-                // 11/12
                 const eleventhTwelfth = sortTiedPairs('lpl_pi3', 'lpl_pi4');
                 eleventhTwelfth.forEach(tName => addRank(tName));
 
-                // 13/14 (Pull the remaining unplaced teams from the official seeds)
                 const alreadyPlaced = new Set(lplRanks);
                 fallbackStandings.filter(x => x && !alreadyPlaced.has(x)).forEach(r => lplRanks.push(r));
                 customFinalStandingsNames = lplRanks;
@@ -572,30 +666,23 @@ export default function AwardsTab({ league, teams }) {
             }
         }
 
-        const targetScale = isLPL ? LPL_SCALE : (isLEC ? LEC_SCALE : null);
-        const finalStandings = customFinalStandingsNames.length > 0
-            ? customFinalStandingsNames
-            : (league.finalStandings || []);
-
         return {
             ...league,
             matches: foreignMatches,
             standings: league.foreignStandings?.[currentLeague] || {},
-            finalStandings,
-            // Output true seeded standings to the custom formatter
+            finalStandings: customFinalStandingsNames.length > 0 ? customFinalStandingsNames : (league.finalStandings || []),
             regularStandings: seedStandingsNames.length > 0 ? seedStandingsNames : regularStandingsNames,
-            customRankPointScale: targetScale,
-            seasonSummary: {
-                ...league.seasonSummary,
-                finalStandings: customFinalStandingsNames.length > 0
-                    ? customFinalStandingsNames
-                    : league.seasonSummary?.finalStandings
-            }
         };
-    }, [league, currentLeague, isLCK, isLEC, isLPL, activeTeams]);
+    }, [league, currentLeague, isLCK, isLEC, isLPL, isFST, activeTeams]);
 
     const isPlayoffsFinished = useMemo(() => {
         if (!activeLeagueData.matches) return false;
+        
+        if (currentLeague === 'FST') {
+            const fMatch = activeLeagueData.matches.find(m => m.fstRound === 'Finals');
+            return fMatch && fMatch.status === 'finished';
+        }
+
         const playoffs = activeLeagueData.matches.filter(m => m.type === 'playoff');
         if (playoffs.length === 0) return false;
 
@@ -617,52 +704,58 @@ export default function AwardsTab({ league, teams }) {
         return playoffs.every(m => m.status === 'finished');
     }, [activeLeagueData, currentLeague]);
 
-    const hasCustomScale = isLEC || isLPL;
-    const currentScale = isLPL ? LPL_SCALE : (isLEC ? LEC_SCALE : BASE_SCALE);
+    const hasCustomScale = isLEC || isLPL || isFST;
 
     const customRegularLeagueData = useMemo(() => {
         if (!hasCustomScale) return null;
+        const currentScale = isLPL ? LPL_SCALE : (isLEC ? LEC_SCALE : (isFST ? FST_GROUP_SCALE : BASE_SCALE));
         return {
             ...activeLeagueData,
-            // Override finalStandings with regular season true seed order
             finalStandings: activeLeagueData.regularStandings || [],
             customRankPointScale: currentScale,
         };
-    }, [hasCustomScale, activeLeagueData, currentScale]);
+    }, [hasCustomScale, activeLeagueData, isLPL, isLEC, isFST]);
 
     const customPlayoffLeagueData = useMemo(() => {
         if (!hasCustomScale) return null;
+        const currentScale = isLPL ? LPL_SCALE : (isLEC ? LEC_SCALE : (isFST ? FST_PLAYOFF_SCALE : BASE_SCALE));
         return {
             ...activeLeagueData,
-            // Playoff rank points use the playoff bracket order
             finalStandings: activeLeagueData.finalStandings || [],
             customRankPointScale: currentScale,
         };
-    }, [hasCustomScale, activeLeagueData, currentScale]);
+    }, [hasCustomScale, activeLeagueData, isLPL, isLEC, isFST]);
 
     const regularData = useMemo(() => {
         const data = hasCustomScale ? customRegularLeagueData : activeLeagueData;
         const result = computeAwards(data, activeTeams);
-        if (hasCustomScale) return reapplyScale(result, activeLeagueData.matches, activeLeagueData.regularStandings || [], currentScale, false);
+        if (hasCustomScale) {
+            const currentScale = isLPL ? LPL_SCALE : (isLEC ? LEC_SCALE : (isFST ? FST_GROUP_SCALE : BASE_SCALE));
+            return reapplyScale(result, activeLeagueData.matches, activeLeagueData.regularStandings || [], currentScale, false);
+        }
         return result;
-    }, [hasCustomScale, customRegularLeagueData, activeLeagueData, activeTeams, currentScale]);
+    }, [hasCustomScale, customRegularLeagueData, activeLeagueData, activeTeams, isLPL, isLEC, isFST]);
 
     const playoffData = useMemo(() => {
         if (!isPlayoffsFinished) return null;
         const data = hasCustomScale ? customPlayoffLeagueData : activeLeagueData;
         const result = computePlayoffAwards(data, activeTeams);
-        if (hasCustomScale) return reapplyScale(result, activeLeagueData.matches, activeLeagueData.finalStandings || [], currentScale, true);
+        if (hasCustomScale) {
+            const currentScale = isLPL ? LPL_SCALE : (isLEC ? LEC_SCALE : (isFST ? FST_PLAYOFF_SCALE : BASE_SCALE));
+            return reapplyScale(result, activeLeagueData.matches, activeLeagueData.finalStandings || [], currentScale, true);
+        }
         return result;
-    }, [hasCustomScale, customPlayoffLeagueData, activeLeagueData, activeTeams, isPlayoffsFinished, currentScale]);
+    }, [hasCustomScale, customPlayoffLeagueData, activeLeagueData, activeTeams, isPlayoffsFinished, isLPL, isLEC, isFST]);
 
     const activeData = (viewMode === 'playoff' && playoffData) ? playoffData : regularData;
     const titlePrefix = currentLeague === 'LCK' ? 'LCK' : currentLeague;
+    const isFstTab = currentLeague === 'FST';
 
     return (
         <div className="p-2 lg:p-6 max-w-7xl mx-auto space-y-8">
             
             <div className="flex gap-2 p-3 border-b bg-gray-100 overflow-x-auto shrink-0 rounded-lg mb-4">
-                {['LCK', 'LPL', 'LEC', 'LCS', 'LCP', 'CBLOL'].map(lg => (
+                {['LCK', 'LPL', 'LEC', 'LCS', 'LCP', 'CBLOL', ...(league?.fst ? ['FST'] : [])].map(lg => (
                     <button
                         key={lg}
                         onClick={() => {
@@ -671,11 +764,13 @@ export default function AwardsTab({ league, teams }) {
                         }}
                         className={`px-5 py-2 rounded-full font-bold text-xs lg:text-sm transition-all whitespace-nowrap shadow-sm active:scale-95 ${
                             currentLeague === lg
-                            ? 'bg-blue-600 text-white ring-2 ring-blue-300 transform scale-105'
+                            ? lg === 'FST' 
+                                ? 'bg-gradient-to-r from-blue-700 to-purple-700 text-white ring-2 ring-blue-300 transform scale-105'
+                                : 'bg-blue-600 text-white ring-2 ring-blue-300 transform scale-105'
                             : 'bg-white text-gray-600 hover:bg-gray-200 border border-gray-300'
                         }`}
                     >
-                        {lg}
+                        {lg === 'FST' ? '🌍 FST' : lg}
                     </button>
                 ))}
             </div>
@@ -683,17 +778,21 @@ export default function AwardsTab({ league, teams }) {
             <div className="flex flex-col items-center justify-center gap-4">
                 <div className="text-center space-y-1">
                     <h2 className="text-3xl lg:text-4xl font-black text-gray-900 uppercase tracking-tighter">
-                        <span className="text-blue-600">2026</span> {titlePrefix} Awards
+                        <span className="text-blue-600">2026</span> {isFstTab ? 'FST World Tournament' : `${titlePrefix} Awards`}
                     </h2>
                     <p className="text-gray-500 text-sm font-medium">
-                        {viewMode === 'playoff' ? 'Playoffs & Finals Performance' : 'Regular Season Performance'}
+                        {viewMode === 'playoff' ? (isFstTab ? '플레이오프 성적' : 'Playoffs & Finals Performance') : (isFstTab ? '그룹 스테이지 성적' : 'Regular Season Performance')}
                     </p>
                 </div>
 
                 {isPlayoffsFinished && (
                     <div className="bg-gray-100 p-1 rounded-lg flex gap-1">
-                        <button onClick={() => setViewMode('regular')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition ${viewMode === 'regular' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>정규 시즌</button>
-                        <button onClick={() => setViewMode('playoff')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition ${viewMode === 'playoff' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>플레이오프</button>
+                        <button onClick={() => setViewMode('regular')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition ${viewMode === 'regular' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
+                            {isFstTab ? '그룹 스테이지' : '정규 시즌'}
+                        </button>
+                        <button onClick={() => setViewMode('playoff')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition ${viewMode === 'playoff' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
+                            플레이오프
+                        </button>
                     </div>
                 )}
             </div>
@@ -710,9 +809,10 @@ export default function AwardsTab({ league, teams }) {
                         {viewMode === 'regular' ? (
                             <MvpShowcaseCard 
                                 player={activeData.seasonMvp} 
-                                title="SEASON MVP" 
+                                title={isFstTab ? "GROUP STAGE MVP" : "SEASON MVP"} 
                                 badgeColor="bg-yellow-500 text-black" 
                                 lckTeams={teams} 
+                                fstTeams={league?.fst?.teams || []}
                                 size="large"
                             />
                         ) : (
@@ -722,6 +822,7 @@ export default function AwardsTab({ league, teams }) {
                                     title="PLAYOFF MVP" 
                                     badgeColor="bg-green-400 text-black" 
                                     lckTeams={teams} 
+                                    fstTeams={league?.fst?.teams || []}
                                     size="medium"
                                 />
                                  <MvpShowcaseCard 
@@ -729,6 +830,7 @@ export default function AwardsTab({ league, teams }) {
                                     title="FINALS MVP" 
                                     badgeColor="bg-blue-400 text-black" 
                                     lckTeams={teams} 
+                                    fstTeams={league?.fst?.teams || []}
                                     size="medium"
                                 />
                             </div>
@@ -736,9 +838,9 @@ export default function AwardsTab({ league, teams }) {
                     </div>
 
                     <div>
-                        <TeamSection title={viewMode === 'playoff' ? `All-${titlePrefix} Playoff 1st Team` : `All-${titlePrefix} 1st Team`} rank={1} players={activeData.allProTeams?.[1]} lckTeams={teams} />
-                        <TeamSection title={viewMode === 'playoff' ? `All-${titlePrefix} Playoff 2nd Team` : `All-${titlePrefix} 2nd Team`} rank={2} players={activeData.allProTeams?.[2]} lckTeams={teams} />
-                        <TeamSection title={viewMode === 'playoff' ? `All-${titlePrefix} Playoff 3rd Team` : `All-${titlePrefix} 3rd Team`} rank={3} players={activeData.allProTeams?.[3]} lckTeams={teams} />
+                        <TeamSection title={viewMode === 'playoff' ? `All-${titlePrefix} Playoff 1st Team` : `All-${titlePrefix} 1st Team`} rank={1} players={activeData.allProTeams?.[1]} lckTeams={teams} fstTeams={league?.fst?.teams || []} />
+                        <TeamSection title={viewMode === 'playoff' ? `All-${titlePrefix} Playoff 2nd Team` : `All-${titlePrefix} 2nd Team`} rank={2} players={activeData.allProTeams?.[2]} lckTeams={teams} fstTeams={league?.fst?.teams || []} />
+                        <TeamSection title={viewMode === 'playoff' ? `All-${titlePrefix} Playoff 3rd Team` : `All-${titlePrefix} 3rd Team`} rank={3} players={activeData.allProTeams?.[3]} lckTeams={teams} fstTeams={league?.fst?.teams || []} />
                     </div>
                 </>
             )}
