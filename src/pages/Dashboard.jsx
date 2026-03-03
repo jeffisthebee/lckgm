@@ -106,8 +106,12 @@ const getOvrBadgeStyle = (ovr) => {
     const isSeasonOver = grandFinalMatch && grandFinalMatch.status === 'finished';
 
     // FST: ready to create when season over + not yet created
+    // FST: ready to create when season over + not yet created
     const hasFST = !!league?.fst;
     const isFSTReady = isSeasonOver && !hasFST;
+    
+    // Check if FST data is corrupted/incomplete
+    const hasFSTError = hasFST && (!league.fst.teams || league.fst.teams.length === 0 || !league.fst.matches || league.fst.matches.length === 0);
 
     // FST: next pending FST match (isMyNextFSTMatch computed after myTeam is defined, below)
     const nextFSTMatch = hasFST
@@ -1637,13 +1641,13 @@ setMyMatchResult({
               </button>
             )}
 
-            {hasFST && (
+{hasFSTError && (
               <button
                 onClick={handleFSTReset}
-                className="px-3 py-1.5 rounded-full font-bold text-xs bg-gray-800 hover:bg-red-900 text-gray-400 hover:text-red-300 shadow-sm flex items-center gap-1 transition border border-gray-700 whitespace-nowrap"
-                title="FST 초기화 (데이터 리셋)"
+                className="px-3 py-1.5 rounded-full font-bold text-xs bg-red-900 hover:bg-red-800 text-white shadow-sm flex items-center gap-1 transition border border-red-700 whitespace-nowrap animate-pulse"
+                title="FST 생성 오류 복구"
               >
-                <span>🔄</span> <span className="hidden sm:inline">FST 초기화</span>
+                <span>⚠️</span> <span className="hidden sm:inline">FST 오류 초기화</span>
               </button>
             )}
 
@@ -2018,7 +2022,7 @@ setMyMatchResult({
         fst={league?.fst}
         onSimulate={handleFSTSimulate}
         onMatchClick={handleMatchClick}
-        onReset={handleFSTReset}
+        onReset={hasFSTError ? handleFSTReset : null}
         myTeamName={myTeam?.name}
     />
 )}
