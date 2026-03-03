@@ -1257,9 +1257,9 @@ const handleMatchClick = (match) => {
       finalizeDraft({ baron, elder });
     };
   
-    const finalizeDraft = async (groups) => {
+    const finalizeDraft = (groups) => {
       const matches = generateSchedule(groups.baron, groups.elder);
-      const updated = await updateLeague(league.id, { groups, matches });
+      const updated = updateLeague(league.id, { groups, matches });
       if (updated) {
         setLeague(prev => ({...prev, ...updated}));
         setTimeout(() => { setIsDrafting(false); setActiveTab('standings'); alert("팀 구성 및 일정이 완료되었습니다!"); }, 500);

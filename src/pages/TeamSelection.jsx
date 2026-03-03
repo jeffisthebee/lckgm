@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { teams } from '../data/teams';
 import { difficulties, championList } from '../data/constants';
 import { FOREIGN_LEAGUES } from '../data/foreignLeagues';
+import { saveLeague } from '../engine/storage';
 function getTextColor(hex) { const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16); return (r*299+g*587+b*114)/1000>128?'#000000':'#FFFFFF'; }
 
 export default function TeamSelection() {
@@ -11,7 +12,7 @@ export default function TeamSelection() {
     const navigate = useNavigate();
     const current = teams[idx];
   
-    const handleStart = () => {
+    const handleStart = async () => {
       const newId = Date.now().toString();
       const newLeague = {
         id: newId,
@@ -43,8 +44,7 @@ export default function TeamSelection() {
           LPL: [], LEC: [], LCS: [], LCP: [], CBLOL: []
         }
       };
-      const existing = (() => { try { return JSON.parse(localStorage.getItem('lckgm_leagues') || '[]'); } catch { return []; } })();
-      localStorage.setItem('lckgm_leagues', JSON.stringify([...existing, newLeague]));
+      await saveLeague(newLeague);
       navigate(`/league/${newId}`);
     };
   
