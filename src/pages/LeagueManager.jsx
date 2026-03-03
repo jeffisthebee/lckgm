@@ -8,13 +8,24 @@ import db from '../engine/db';
 export default function LeagueManager() {
     const [leagues, setLeagues] = useState([]);
     const [showTutorial, setShowTutorial] = useState(false);
+    const [loadError, setLoadError] = useState(false);
     const navigate = useNavigate();
 
     useEffect(() => {
         const loadData = async () => {
-            // Load leagues from IndexedDB
-            const data = await getLeagues();
-            setLeagues(data);
+            try {
+                const data = await getLeagues();
+                // Detect corrupted entries (missing required fields)
+                const hasCorrupted = data.some(l => !l.team || !l.id);
+                if (hasCorrupted) {
+                    setLoadError(true);
+                }
+                setLeagues(data);
+            } catch (err) {
+                console.error('Failed to load leagues:', err);
+                setLoadError(true);
+                setLeagues([]);
+            }
 
             // Check tutorial setting
             const isHidden = await getSetting('tutorial_hidden');
@@ -87,7 +98,9 @@ export default function LeagueManager() {
                     ?
                   </button>
               </div>
-              <button onClick={handleClearData} className="text-xs text-red-500 underline hover:text-red-700 whitespace-nowrap ml-2">데이터 초기화</button>
+              {loadError && (
+                  <button onClick={handleClearData} className="text-xs text-red-500 underline hover:text-red-700 whitespace-nowrap ml-2" title="데이터 오류 발생 시 초기화">⚠️ 데이터 초기화</button>
+              )}
           </div>
 
           {/* League List */}

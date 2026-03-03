@@ -105,10 +105,21 @@ const getWinnerAndRunnerUp = (finalMatch, lgTeams) => {
     }
     const winnerName = finalMatch.result.winner;
     const winner     = resolveTeamFromName(winnerName, lgTeams);
-    const loserToken = String(finalMatch.t1)?.toUpperCase() === winnerName?.toUpperCase()
-        ? finalMatch.t2
-        : finalMatch.t1;
-    const runnerUp   = resolveTeamFromName(loserToken, lgTeams);
+
+    // Resolve both team tokens to team objects first (handles both name and ID storage)
+    const t1Team = resolveTeamFromName(finalMatch.t1, lgTeams);
+    const t2Team = resolveTeamFromName(finalMatch.t2, lgTeams);
+
+    // The runner-up is whichever resolved team is NOT the winner
+    let runnerUp = null;
+    if (winner && t1Team && t2Team) {
+        runnerUp = t1Team.name === winner.name ? t2Team : t1Team;
+    } else if (winner && t1Team) {
+        runnerUp = t1Team.name !== winner.name ? t1Team : null;
+    } else if (winner && t2Team) {
+        runnerUp = t2Team.name !== winner.name ? t2Team : null;
+    }
+
     return { winner, runnerUp };
 };
 

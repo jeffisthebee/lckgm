@@ -74,6 +74,8 @@ const getOvrBadgeStyle = (ovr) => {
     // 플레이-인/플레이오프 상대 선택 모달 상태
     const [opponentChoice, setOpponentChoice] = useState(null); 
     const [showFinalStandings, setShowFinalStandings] = useState(false);
+    // FST player match — pending mode choice (manual vs auto)
+    const [fstMatchPending, setFstMatchPending] = useState(null);
 
     // Define this helper before it is used in useEffect
     const recalculateStandings = (lg) => {
@@ -107,6 +109,16 @@ const getOvrBadgeStyle = (ovr) => {
     const hasFST = !!league?.fst;
     const isFSTReady = isSeasonOver && !hasFST;
 
+    // FST: next pending FST match + whether player's team is in it
+    const nextFSTMatch = hasFST
+      ? (league.fst.matches || []).find(m => m.status === 'pending' && m.t1 && m.t2)
+      : null;
+    const nextFSTMatchT1 = nextFSTMatch ? (league.fst?.teams || []).find(t => t.fstId === nextFSTMatch.t1) : null;
+    const nextFSTMatchT2 = nextFSTMatch ? (league.fst?.teams || []).find(t => t.fstId === nextFSTMatch.t2) : null;
+    const isMyNextFSTMatch = nextFSTMatch
+      ? (nextFSTMatchT1?.name === myTeam?.name || nextFSTMatchT2?.name === myTeam?.name)
+      : false;
+    
     // Check if History is already saved
     const isSavedInHistory = league?.history?.some(
         h => h.year === (league.year || 2026) && h.seasonName === (league.seasonName || 'LCK CUP')
@@ -476,19 +488,8 @@ setMyMatchResult({
   
     const t1 = nextGlobalMatch ? teams.find(t => t.id === safeId(nextGlobalMatch.t1)) : null;
     const t2 = nextGlobalMatch ? teams.find(t => t.id === safeId(nextGlobalMatch.t2)) : null;
-
-    // FST: next pending FST match + whether player's team is in it
-    // (must be after myTeam is defined)
-    const nextFSTMatch = hasFST
-      ? (league.fst.matches || []).find(m => m.status === 'pending' && m.t1 && m.t2)
-      : null;
-    const nextFSTMatchT1 = nextFSTMatch ? (league.fst?.teams || []).find(t => t.fstId === nextFSTMatch.t1) : null;
-    const nextFSTMatchT2 = nextFSTMatch ? (league.fst?.teams || []).find(t => t.fstId === nextFSTMatch.t2) : null;
-    const isMyNextFSTMatch = nextFSTMatch
-      ? (nextFSTMatchT1?.name === myTeam?.name || nextFSTMatchT2?.name === myTeam?.name)
-      : false;
-
   
+    
   
     const applyMatchResult = (targetMatch, result) => {
       const updatedMatches = league.matches.map(m => {
@@ -1155,22 +1156,10 @@ setMyMatchResult({
       const t2Fst = fstTeams.find(t => t.fstId === match.t2);
       if (!t1Fst || !t2Fst) return;
 
-      // Player's team is in this FST match → open LiveGamePlayer
+      // Player's team is in this FST match → show mode choice modal
       const isPlayerFSTMatch = t1Fst.name === myTeam.name || t2Fst.name === myTeam.name;
       if (isPlayerFSTMatch) {
-        const t1Live = buildFSTTeamWithRoster(t1Fst);
-        const t2Live = buildFSTTeamWithRoster(t2Fst);
-        const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0)
-          ? league.currentChampionList : championList;
-        setLiveMatchData({
-          match:       { ...match, isFSTMatch: true },
-          teamA:       t1Live,
-          teamB:       t2Live,
-          safeChampionList,
-          isManualMode: false,
-          isFSTMatch:   true,
-        });
-        setIsLiveGameMode(true);
+        setFstMatchPending(match);
         return;
       }
 
@@ -1205,6 +1194,28 @@ setMyMatchResult({
       }
 
       applyFSTResult(match.id, result);
+    };
+
+    // ── FST: Launch LiveGame with chosen mode ─────────────────
+    const launchFSTLiveGame = (match, mode) => {
+      const fstTeams = league.fst.teams;
+      const t1Fst = fstTeams.find(t => t.fstId === match.t1);
+      const t2Fst = fstTeams.find(t => t.fstId === match.t2);
+      if (!t1Fst || !t2Fst) return;
+      const t1Live = buildFSTTeamWithRoster(t1Fst);
+      const t2Live = buildFSTTeamWithRoster(t2Fst);
+      const safeChampionList = (league.currentChampionList?.length > 0)
+        ? league.currentChampionList : championList;
+      setLiveMatchData({
+        match:        { ...match, isFSTMatch: true },
+        teamA:        t1Live,
+        teamB:        t2Live,
+        safeChampionList,
+        isManualMode: mode === 'manual',
+        isFSTMatch:   true,
+      });
+      setFstMatchPending(null);
+      setIsLiveGameMode(true);
     };
 
     // ── FST: LiveGame completion callback ─────────────────────
@@ -1410,6 +1421,43 @@ setMyMatchResult({
         )}
 
 {showFinalStandings && <FinalStandingsModal league={league} onClose={() => setShowFinalStandings(false)} />}
+
+{/* FST 경기 모드 선택 */}
+{fstMatchPending && (() => {
+  const fstTeams = league?.fst?.teams || [];
+  const t1Fst = fstTeams.find(t => t.fstId === fstMatchPending.t1);
+  const t2Fst = fstTeams.find(t => t.fstId === fstMatchPending.t2);
+  return (
+    <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl p-6 lg:p-10 max-w-md w-full text-center shadow-2xl">
+        <div className="text-3xl mb-3">🌍</div>
+        <h2 className="text-xl lg:text-2xl font-black mb-1">FST 경기 시작</h2>
+        <p className="text-gray-500 text-sm mb-2">{t1Fst?.name} vs {t2Fst?.name}</p>
+        <p className="text-gray-600 text-sm mb-6">경기 방식을 선택하세요</p>
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={() => launchFSTLiveGame(fstMatchPending, 'manual')}
+            className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl shadow transition flex items-center justify-center gap-2"
+          >
+            <span>🎮</span> 직접 경기하기 (MANUAL)
+          </button>
+          <button
+            onClick={() => launchFSTLiveGame(fstMatchPending, 'auto')}
+            className="w-full py-3 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl shadow transition flex items-center justify-center gap-2"
+          >
+            <span>📺</span> AI 자동 진행 (AUTO)
+          </button>
+          <button
+            onClick={() => setFstMatchPending(null)}
+            className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold rounded-xl transition text-sm"
+          >
+            취소
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+})()}
   
 {isLiveGameMode && liveMatchData && (
     <LiveGamePlayer 
@@ -1524,7 +1572,7 @@ setMyMatchResult({
    </button>
 )}
 
-            {isSeasonOver && (
+            {isSeasonOver && !hasFST && (
                <button 
                onClick={() => setShowFinalStandings(true)} 
                className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-gray-900 hover:bg-black text-yellow-400 shadow-sm flex items-center gap-2 transition border-2 border-yellow-500 animate-pulse whitespace-nowrap"
@@ -1577,7 +1625,7 @@ setMyMatchResult({
 
             {hasFST && nextFSTMatch && isMyNextFSTMatch && (
               <button
-                onClick={() => handleFSTSimulate(nextFSTMatch)}
+                onClick={() => setFstMatchPending(nextFSTMatch)}
                 className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-500 hover:to-blue-500 text-white shadow-lg flex items-center gap-2 animate-bounce transition whitespace-nowrap"
               >
                 <span>🎮</span>
@@ -1588,7 +1636,7 @@ setMyMatchResult({
               </button>
             )}
 
-            {hasDrafted && isRegularSeasonFinished && (!hasSuperWeekGenerated || league.metaVersion !== '16.02') && (
+            {hasDrafted && isRegularSeasonFinished && !hasSuperWeekGenerated && league.metaVersion !== '16.02' && !hasFST && (
                  <button 
                  onClick={handleGenerateSuperWeek} 
                  className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition whitespace-nowrap"
@@ -1640,6 +1688,33 @@ setMyMatchResult({
                   <div className="col-span-1 lg:col-span-8 bg-white rounded-lg border shadow-sm p-4 lg:p-5 relative overflow-hidden">
                      <div className="absolute top-0 right-0 p-4 opacity-10 text-9xl pointer-events-none">📅</div>
                      <h3 className="text-lg font-bold text-gray-800 mb-2">다음 경기 일정</h3>
+
+                     {/* FST match card — shown when FST is active and it's my turn */}
+                     {hasFST && nextFSTMatch && isMyNextFSTMatch ? (
+                       <div className="flex items-center justify-between bg-gradient-to-r from-blue-900 to-purple-900 rounded-xl p-3 lg:p-6 border border-blue-500">
+                         <div className="text-center w-1/3">
+                           <div className="text-base lg:text-3xl font-black text-white mb-1 truncate">{nextFSTMatchT1?.name || '?'}</div>
+                           <div className="text-[10px] text-blue-300 font-bold">{nextFSTMatchT1?.league}</div>
+                         </div>
+                         <div className="text-center w-1/3 flex flex-col items-center">
+                           <div className="text-xs font-bold text-blue-300 uppercase mb-1">🌍 FST</div>
+                           <div className="text-lg lg:text-3xl font-bold text-gray-300 my-1">VS</div>
+                           <span className="mt-1 text-[10px] lg:text-xs font-bold text-white bg-blue-600 px-3 py-1 rounded-full shadow-sm whitespace-nowrap">BO5</span>
+                           <div className="flex flex-col gap-2 mt-3 w-full">
+                             <button
+                               onClick={() => setFstMatchPending(nextFSTMatch)}
+                               className="w-full px-2 lg:px-4 py-2 bg-green-500 hover:bg-green-400 text-white font-bold text-xs lg:text-sm rounded-lg shadow-md transition flex items-center justify-center gap-2"
+                             >
+                               <span>🎮</span> 경기 시작
+                             </button>
+                           </div>
+                         </div>
+                         <div className="text-center w-1/3">
+                           <div className="text-base lg:text-3xl font-black text-white mb-1 truncate">{nextFSTMatchT2?.name || '?'}</div>
+                           <div className="text-[10px] text-blue-300 font-bold">{nextFSTMatchT2?.league}</div>
+                         </div>
+                       </div>
+                     ) : (
                      <div className="flex items-center justify-between bg-gray-50 rounded-xl p-3 lg:p-6 border">
                         <div className="text-center w-1/3"><div className="text-lg lg:text-4xl font-black text-gray-800 mb-2 truncate">{t1 ? t1.name : '?'}</div></div>
                         <div className="text-center w-1/3 flex flex-col items-center">
@@ -1680,6 +1755,7 @@ setMyMatchResult({
                             <div className="text-lg lg:text-4xl font-black text-gray-800 mb-2 truncate">{t2 ? t2.name : '?'}</div>
                         </div>
                      </div>
+                     )} {/* end FST ternary */}
                   </div>
                   
                   <div className="col-span-1 lg:col-span-4 flex flex-col h-full max-h-[400px] lg:max-h-[500px]">
