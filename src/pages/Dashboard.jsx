@@ -7,8 +7,9 @@ import { getFullTeamRoster } from '../engine/rosterLogic';
 import LiveGamePlayer from '../components/LiveGamePlayer';
 import DetailedMatchResultModal from '../components/DetailedMatchResultModal';
 import playerList from '../data/players.json';
-import { computeStandings, calculateFinalStandings, calculateGroupPoints, sortGroupByStandings, createPlayInBracket, createPlayInRound2Matches, createPlayInFinalMatch, createPlayoffRound2Matches, createPlayoffRound3Matches, createPlayoffLoserRound3Match, createPlayoffQualifierMatch, createPlayoffFinalMatch } from '../engine/BracketManager';
-import { updateChampionMeta, generateSuperWeekMatches } from '../engine/SeasonManager';
+import { computeStandings, calculateFinalStandings, calculateGroupPoints, sortGroupByStandings, createPlayInBracket, createPlayInRound2Matches, createPlayInFinalMatch, createPlayoffRound2Matches, createPlayoffRound3Matches, createPlayoffLoserRound3Match, createPlayoffQualifierMatch, createPlayoffFinalMatch, createFSTGroupWave2A, createFSTGroupWave2B, createFSTGroupWave3A, createFSTGroupWave3B, createFSTPlayoffs, createFSTFinals } from '../engine/BracketManager';
+import { updateChampionMeta, generateSuperWeekMatches, initFSTTournament } from '../engine/SeasonManager';
+import FSTTournamentTab from '../components/FSTTournamentTab';
 import FinalStandingsModal from '../components/FinalStandingsModal';
 import MatchupBox from '../components/MatchupBox';
 import RosterTab from '../components/RosterTab';
@@ -81,8 +82,8 @@ const getOvrBadgeStyle = (ovr) => {
     };
   
     useEffect(() => {
-      const loadData = async () => {
-        const found = await getLeagueById(leagueId);
+      const loadData = () => {
+        const found = getLeagueById(leagueId);
         if (found) {
           const sanitizedLeague = {
               ...found,
@@ -90,7 +91,7 @@ const getOvrBadgeStyle = (ovr) => {
               currentChampionList: found.currentChampionList || championList
           };
           setLeague(sanitizedLeague);
-          await updateLeague(leagueId, { lastPlayed: new Date().toISOString() });
+          updateLeague(leagueId, { lastPlayed: new Date().toISOString() });
           setViewingTeamId(sanitizedLeague.team.id);
           recalculateStandings(sanitizedLeague);
         }
@@ -101,6 +102,10 @@ const getOvrBadgeStyle = (ovr) => {
     // Check Season Status Helper
     const grandFinalMatch = league?.matches?.find(m => m.type === 'playoff' && m.round === 5);
     const isSeasonOver = grandFinalMatch && grandFinalMatch.status === 'finished';
+
+    // FST: ready to create when season over + not yet created
+    const hasFST = !!league?.fst;
+    const isFSTReady = isSeasonOver && !hasFST;
     
     // Check if History is already saved
     const isSavedInHistory = league?.history?.some(
@@ -218,7 +223,7 @@ const reapplyLECScale = (data, fMatches, standingsNames, forPlayoffs) => {
     return { ...data, seasonMvp: scored[0] || null, pogLeader: scored.find(p => p.isPogLeader) || null, finalsMvp: scored.find(p => p.isFinalsMvp) || null, allProTeams };
 };
 
-const handleManualArchive = async () => {
+const handleManualArchive = () => {
   if (!league) return;
 
   const currentYear = league.year || 2026;
@@ -346,7 +351,7 @@ const handleManualArchive = async () => {
   };
   
   setLeague(updatedLeague);
-  await updateLeague(league.id, updatedLeague);
+  updateLeague(league.id, updatedLeague);
   
   // Show toast notification instead of alert()
   setSaveMessage('✅ 시즌 기록 저장 완료! (LCK 및 해외 리그 데이터 통합 저장됨)');
@@ -474,7 +479,7 @@ setMyMatchResult({
   
     
   
-    const applyMatchResult = async (targetMatch, result) => {
+    const applyMatchResult = (targetMatch, result) => {
       const updatedMatches = league.matches.map(m => {
           if (m.id === targetMatch.id) {
               return { ...m, status: 'finished', result: { winner: result.winner, score: result.scoreString } };
@@ -483,7 +488,7 @@ setMyMatchResult({
       });
   
       const updatedLeague = { ...league, matches: updatedMatches };
-      await updateLeague(league.id, { matches: updatedMatches });
+      updateLeague(league.id, { matches: updatedMatches });
       setLeague(updatedLeague);
       recalculateStandings(updatedLeague); 
       
@@ -491,16 +496,16 @@ setMyMatchResult({
       checkAndGenerateNextPlayoffRound(updatedMatches);
     };
   
-    const generatePlayInRound2 = async (matches, seed1, seed2, pickedTeam, remainingTeam) => {
+    const generatePlayInRound2 = (matches, seed1, seed2, pickedTeam, remainingTeam) => {
       const newMatches = createPlayInRound2Matches(matches, seed1, seed2, pickedTeam, remainingTeam);
       
-      await updateLeague(league.id, { matches: newMatches });
+      updateLeague(league.id, { matches: newMatches });
       setLeague(prev => ({ ...prev, matches: newMatches }));
       alert("플레이-인 2라운드 대진이 완성되었습니다!");
       setOpponentChoice(null);
   };
   
-  const checkAndGenerateNextPlayInRound = async (matches) => {
+  const checkAndGenerateNextPlayInRound = (matches) => {
     // 1. Check if Round 1 is finished
     const r1Matches = matches.filter(m => m.type === 'playin' && m.round === 1);
     const r1Finished = r1Matches.length > 0 && r1Matches.every(m => m.status === 'finished');
@@ -557,13 +562,13 @@ setMyMatchResult({
   
     if (r2Finished && !finalExists) {
       const newMatches = createPlayInFinalMatch(matches, teams);
-      await updateLeague(league.id, { matches: newMatches });
+      updateLeague(league.id, { matches: newMatches });
       setLeague(prev => ({ ...prev, matches: newMatches }));
       alert("🛡️ 플레이-인 최종전(2라운드 패자 대결) 대진이 완성되었습니다!");
   }
   };
   
-  const checkAndGenerateNextPlayoffRound = async (currentMatches) => {
+  const checkAndGenerateNextPlayoffRound = (currentMatches) => {
     if (!league.playoffSeeds) return;
   
     const getWinner = m => teams.find(t => t.name === m.result.winner).id;
@@ -581,7 +586,7 @@ setMyMatchResult({
         const seed1 = league.playoffSeeds.find(s => s.seed === 1).id;
         const seed2 = league.playoffSeeds.find(s => s.seed === 2).id;
   
-        const generateR2Matches = async (pickedWinner) => {
+        const generateR2Matches = (pickedWinner) => {
           const remainingWinner = r1Winners.find(w => w.id !== pickedWinner.id).id;
           
           const newMatches = createPlayoffRound2Matches(
@@ -594,7 +599,7 @@ setMyMatchResult({
               r1Losers[1].id
           );
           
-          await updateLeague(league.id, { matches: newMatches });
+          updateLeague(league.id, { matches: newMatches });
           setLeague(prev => ({ ...prev, matches: newMatches }));
           alert("👑 플레이오프 2라운드 대진이 완성되었습니다!");
           setOpponentChoice(null);
@@ -630,7 +635,7 @@ setMyMatchResult({
 
   if (r2Finished && !r3Exists) {
       const newMatches = createPlayoffRound3Matches(currentMatches, league.playoffSeeds, teams);
-      await updateLeague(league.id, { matches: newMatches });
+      updateLeague(league.id, { matches: newMatches });
       setLeague(prev => ({ ...prev, matches: newMatches }));
       alert("👑 플레이오프 3라운드 승자조 및 2라운드 패자조 경기가 생성되었습니다!");
       return;
@@ -642,7 +647,7 @@ setMyMatchResult({
 
     if (r2_2Match?.status === 'finished' && r3wMatch?.status === 'finished' && !r3lExists) {
         const newMatches = createPlayoffLoserRound3Match(currentMatches, league.playoffSeeds, teams);
-        await updateLeague(league.id, { matches: newMatches });
+        updateLeague(league.id, { matches: newMatches });
         setLeague(prev => ({ ...prev, matches: newMatches }));
         alert("👑 플레이오프 3라운드 패자조 경기가 생성되었습니다!");
         return;
@@ -654,7 +659,7 @@ setMyMatchResult({
 
     if (r3lMatch?.status === 'finished' && r3wMatch?.status === 'finished' && !r4Exists) {
         const newMatches = createPlayoffQualifierMatch(currentMatches, teams);
-        await updateLeague(league.id, { matches: newMatches });
+        updateLeague(league.id, { matches: newMatches });
         setLeague(prev => ({ ...prev, matches: newMatches }));
         alert("👑 플레이오프 결승 진출전이 생성되었습니다!");
         return;
@@ -665,7 +670,7 @@ setMyMatchResult({
 
     if (r4Match?.status === 'finished' && r3wMatch?.status === 'finished' && !finalExists) {
         const newMatches = createPlayoffFinalMatch(currentMatches, teams);
-        await updateLeague(league.id, { matches: newMatches });
+        updateLeague(league.id, { matches: newMatches });
         setLeague(prev => ({ ...prev, matches: newMatches }));
         alert("🏆 대망의 결승전이 생성되었습니다!");
         return;
@@ -738,7 +743,7 @@ setMyMatchResult({
       }
     };
     
-  const handleProceedNextMatch = async () => {
+  const handleProceedNextMatch = () => {
     try {
       if (!nextGlobalMatch) return;
   
@@ -779,7 +784,7 @@ setMyMatchResult({
   
         const updatedLeague = { ...league, matches: updatedMatches };
         
-        await updateLeague(league.id, updatedLeague);
+        updateLeague(league.id, updatedLeague);
         setLeague(updatedLeague);
         recalculateStandings(updatedLeague); 
   
@@ -845,7 +850,7 @@ setMyMatchResult({
       }
     };
   
-    const handleLiveMatchComplete = async (match, resultData) => {
+    const handleLiveMatchComplete = (match, resultData) => {
       // 1. 매치 결과 업데이트
       const updatedMatches = league.matches.map(m => {
           if (m.id === match.id) {
@@ -865,7 +870,7 @@ setMyMatchResult({
   
       // 2. 리그 데이터 저장 및 상태 갱신
       const updatedLeague = { ...league, matches: updatedMatches };
-      await updateLeague(league.id, updatedLeague);
+      updateLeague(league.id, updatedLeague);
       setLeague(updatedLeague);
       recalculateStandings(updatedLeague);
   
@@ -945,11 +950,13 @@ setMyMatchResult({
       finalizeDraft({ baron, elder });
     };
   
-    const finalizeDraft = async (groups) => {
+    const finalizeDraft = (groups) => {
       const matches = generateSchedule(groups.baron, groups.elder);
-      await updateLeague(league.id, { groups, matches });
-      setLeague(prev => ({ ...prev, groups, matches }));
-      setTimeout(() => { setIsDrafting(false); setActiveTab('standings'); alert("팀 구성 및 일정이 완료되었습니다!"); }, 500);
+      const updated = updateLeague(league.id, { groups, matches });
+      if (updated) {
+        setLeague(prev => ({...prev, ...updated}));
+        setTimeout(() => { setIsDrafting(false); setActiveTab('standings'); alert("팀 구성 및 일정이 완료되었습니다!"); }, 500);
+      }
     };
   
     const handlePrevTeam = () => { const idx = teams.findIndex(t => t.id === viewingTeam.id); setViewingTeamId(teams[(idx - 1 + teams.length) % teams.length].id); };
@@ -966,7 +973,8 @@ setMyMatchResult({
       { id: 'team_schedule', name: '팀 일정', icon: '📆' },
       { id: 'stats', name: '리그 통계', icon: '📈' },
       { id: 'awards', name: '시즌 어워드', icon: '🎖️' },
-      { id: 'history', name: '역대 기록', icon: '📜' }, // [NEW] Added History Menu
+      { id: 'history', name: '역대 기록', icon: '📜' },
+      ...(hasFST ? [{ id: 'fst', name: 'FST 토너먼트', icon: '🌍' }] : []),
     ];
     
     const myRecord = computedStandings[myTeam.id] || { w: 0, l: 0, diff: 0 };
@@ -980,7 +988,7 @@ setMyMatchResult({
     
     // REPLACE the old "handleGenerateSuperWeek" with THIS:
 
-    const handleGenerateSuperWeek = async () => {
+    const handleGenerateSuperWeek = () => {
       const newMetaVersion = '16.02';
       
       if (league.metaVersion === newMetaVersion) {
@@ -1012,12 +1020,108 @@ setMyMatchResult({
       };
   
       setLeague(prev => ({ ...prev, ...newLeagueState }));
-      await updateLeague(league.id, newLeagueState);
+      updateLeague(league.id, newLeagueState);
   
       alert(`🔥 16.02 메타 패치 및 슈퍼위크 업데이트 완료!`);
     };
 
-    const handleGeneratePlayIn = async () => {
+    // ── FST Tournament ────────────────────────────────────────
+
+    const handleCreateFST = () => {
+      if (!isSeasonOver || hasFST) return;
+
+      // 1. Build FST bracket from all league results
+      const fstData = initFSTTournament(league);
+      if (!fstData) {
+        alert('⚠️ FST 토너먼트를 생성하려면 모든 리그가 완료되어야 합니다.\n(LCK, LPL, LEC, LCS, LCP, CBLOL)');
+        return;
+      }
+
+      // 2. Apply 16.03 meta patch (same pattern as 16.02)
+      const sourceList = (league.currentChampionList && league.currentChampionList.length > 0)
+          ? league.currentChampionList : championList;
+      const newChampionList = updateChampionMeta(sourceList);
+
+      // 3. Save everything
+      const updates = {
+        fst: fstData,
+        currentChampionList: newChampionList,
+        metaVersion: '16.03',
+      };
+      setLeague(prev => ({ ...prev, ...updates }));
+      updateLeague(league.id, updates);
+      setActiveTab('fst');
+      alert('🌍 FST 월드 토너먼트가 개막되었습니다!\n패치 16.03 메타가 적용되었습니다.');
+    };
+
+    // Checks all FST bracket conditions and generates the next wave of matches if ready
+    const checkAndAdvanceFST = (updatedFstMatches, fstTeams) => {
+      let current = [...updatedFstMatches];
+
+      // Group A wave progression
+      current = createFSTGroupWave2A(current, fstTeams);
+      current = createFSTGroupWave3A(current, fstTeams);
+
+      // Group B wave progression
+      current = createFSTGroupWave2B(current, fstTeams);
+      current = createFSTGroupWave3B(current, fstTeams);
+
+      // Playoffs + Finals (only when both group elimination matches are done)
+      current = createFSTPlayoffs(current, fstTeams);
+      current = createFSTFinals(current, fstTeams);
+
+      return current;
+    };
+
+    const handleFSTSimulate = (match) => {
+      if (!league.fst || !match || match.status === 'finished') return;
+
+      // Quick-simulate using team power scores
+      const fstTeams = league.fst.teams;
+      const t1 = fstTeams.find(t => t.fstId === match.t1);
+      const t2 = fstTeams.find(t => t.fstId === match.t2);
+      if (!t1 || !t2) return;
+
+      // Power-based sim with variance
+      const p1 = (t1.power || 80) + (Math.random() * 10 - 5);
+      const p2 = (t2.power || 80) + (Math.random() * 10 - 5);
+      const t1Wins = p1 >= p2;
+      const winner = t1Wins ? t1 : t2;
+
+      // Generate score (BO5 → 3:0, 3:1, or 3:2)
+      const lossSets = Math.random() < 0.3 ? 0 : Math.random() < 0.55 ? 1 : 2;
+      const score = `3:${lossSets}`;
+
+      const result = {
+        winner: winner.name,
+        score,
+        history: [],
+      };
+
+      // Update the match in fst.matches
+      const updatedMatches = league.fst.matches.map(m =>
+        m.id === match.id ? { ...m, status: 'finished', result } : m
+      );
+
+      // Advance bracket (generate next wave matches if conditions met)
+      const advancedMatches = checkAndAdvanceFST(updatedMatches, fstTeams);
+
+      // Check if FST is fully complete
+      const fstFinal = advancedMatches.find(m => m.fstRound === 'Finals');
+      const fstDone  = fstFinal?.status === 'finished';
+
+      const updatedFst = {
+        ...league.fst,
+        matches: advancedMatches,
+        status: fstDone ? 'complete' : league.fst.status,
+      };
+
+      const updates = { fst: updatedFst };
+      setLeague(prev => ({ ...prev, ...updates }));
+      updateLeague(league.id, updates);
+    };
+
+    const handleGeneratePlayIn = () => {
       // 1. Calculate inputs
       const bWins = calculateGroupPoints(league, 'baron');
       const eWins = calculateGroupPoints(league, 'elder');
@@ -1035,7 +1139,7 @@ setMyMatchResult({
       const updatedMatches = [...league.matches, ...newMatches];
       const updateData = { matches: updatedMatches, playInSeeds, seasonSummary };
       
-      await updateLeague(league.id, updateData); 
+      updateLeague(league.id, updateData); 
       setLeague(prev => ({ ...prev, ...updateData }));
       
       setShowPlayInBracket(true);
@@ -1092,7 +1196,7 @@ setMyMatchResult({
       const seed3Team = playoffSeeds.find(s => s.seed === 3);
       const playInTeamsForSelection = playoffSeeds.filter(s => s.seed >= 4);
   
-      const generateR1Matches = async (pickedTeam) => {
+      const generateR1Matches = (pickedTeam) => {
           const remainingTeams = playInTeamsForSelection.filter(t => t.id !== pickedTeam.id);
           const r1m1 = { id: Date.now() + 300, round: 1, match: 1, label: '1라운드', t1: seed3Team.id, t2: pickedTeam.id, date: '2.11 (수)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: seed3Team.id };
           const r1m2 = { id: Date.now() + 301, round: 1, match: 2, label: '1라운드', t1: remainingTeams[0].id, t2: remainingTeams[1].id, date: '2.12 (목)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending', blueSidePriority: 'coin' };
@@ -1102,7 +1206,7 @@ setMyMatchResult({
           }
   
           const newMatches = [...league.matches, r1m1, r1m2];
-          await updateLeague(league.id, { matches: newMatches, playoffSeeds });
+          updateLeague(league.id, { matches: newMatches, playoffSeeds });
           setLeague(prev => ({ ...prev, matches: newMatches, playoffSeeds }));
           alert("👑 플레이오프 1라운드 대진이 완성되었습니다!");
           setOpponentChoice(null);
@@ -1330,6 +1434,24 @@ setMyMatchResult({
              >
                  <span>🏆</span> <span className="hidden sm:inline">최종 순위</span>
              </button>
+            )}
+
+            {isFSTReady && (
+              <button
+                onClick={handleCreateFST}
+                className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-gradient-to-r from-blue-700 to-purple-700 hover:from-blue-600 hover:to-purple-600 text-white shadow-lg flex items-center gap-2 animate-pulse transition border border-blue-400 whitespace-nowrap"
+              >
+                <span>🌍</span> <span className="hidden sm:inline">FST 개막</span>
+              </button>
+            )}
+
+            {hasFST && (
+              <button
+                onClick={() => setActiveTab('fst')}
+                className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-gray-900 hover:bg-black text-blue-300 shadow-sm flex items-center gap-2 transition border border-blue-700 whitespace-nowrap"
+              >
+                <span>🌍</span> <span className="hidden sm:inline">FST</span>
+              </button>
             )}
 
             {hasDrafted && isRegularSeasonFinished && (!hasSuperWeekGenerated || league.metaVersion !== '16.02') && (
@@ -1640,6 +1762,15 @@ setMyMatchResult({
 {/* [NEW] History Tab Render */}
 {activeTab === 'history' && (
     <HistoryTab league={league} />
+)}
+
+{/* [NEW] FST World Tournament Tab */}
+{activeTab === 'fst' && (
+    <FSTTournamentTab
+        fst={league?.fst}
+        onSimulate={handleFSTSimulate}
+        onMatchClick={handleMatchClick}
+    />
 )}
   
             </div>

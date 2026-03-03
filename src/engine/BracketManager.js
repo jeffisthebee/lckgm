@@ -500,3 +500,357 @@ export const createPlayoffFinalMatch = (currentMatches, teams) => {
     // [FIX] Used compareDates for correct sorting
     return [...currentMatches, newMatch].sort((a, b) => compareDates(a.date, b.date));
 };
+
+
+// ============================================================
+// FST WORLD TOURNAMENT BRACKET LOGIC
+// ============================================================
+// 8 participants: Champions of LCK, LPL, LEC, LCS, LCP, CBLOL
+//                 + Runner-Ups of LCK and LPL
+// Format: Double Elimination Group Stage → Cross-Group Playoffs → Finals
+// Location: 상파울루 라이엇 게임즈 아레나 | BO5 Fearless Draft
+// ============================================================
+
+const FST_ID_BASE = 900000; // High offset to avoid ID collisions with LCK bracket matches
+const FST_VENUE = '상파울루 라이엇 게임즈 아레나';
+
+// Internal: find an FST match by its round key (e.g. 'GG1', 'PG2', 'Finals')
+const findFSTMatch = (matches, fstRound) =>
+    matches.find(m => m.fstRound === fstRound);
+
+// Internal: get the fstId string of the winning team in a finished FST match
+const getFSTWinnerId = (match, fstTeams) => {
+    if (!match || match.status !== 'finished' || !match.result) return null;
+    const winnerName = match.result.winner;
+    const team = fstTeams.find(t => t.name === winnerName);
+    return team ? team.fstId : null;
+};
+
+// Internal: get the fstId string of the losing team in a finished FST match
+const getFSTLoserId = (match, fstTeams) => {
+    if (!match || match.status !== 'finished') return null;
+    const winnerFstId = getFSTWinnerId(match, fstTeams);
+    if (!winnerFstId) return null;
+    // t1/t2 are fstId strings — the loser is whichever isn't the winner
+    return match.t1 === winnerFstId ? match.t2 : match.t1;
+};
+
+/**
+ * createFSTBracket
+ * ─────────────────────────────────────────────────────────────
+ * Builds the initial FST tournament state with Group Stage Wave 1 (GG1–GG4).
+ *
+ * @param {Array} fstTeams  8 objects shaped as:
+ *   { fstId, league, slot, name, fullName, colors, power }
+ *   fstId examples: 'LCK_C', 'LCK_RU', 'LPL_C', 'LPL_RU',
+ *                   'LEC_C', 'LCS_C', 'LCP_C', 'CBLOL_C'
+ *
+ * @returns {Object}  Initial fst state:
+ *   { status, teams, groups: { A, B }, matches }
+ */
+export const createFSTBracket = (fstTeams) => {
+    // ── 1. Separate into constraint buckets ──────────────────
+    const lckTeams  = fstTeams.filter(t => t.league === 'LCK');  // must be split across groups
+    const lplTeams  = fstTeams.filter(t => t.league === 'LPL');  // must be split across groups
+    const others    = fstTeams.filter(t => t.league !== 'LCK' && t.league !== 'LPL');
+
+    // ── 2. Randomly decide which LCK / LPL rep goes to Group A ──
+    const [lckA, lckB] = Math.random() < 0.5
+        ? [lckTeams[0].fstId, lckTeams[1].fstId]
+        : [lckTeams[1].fstId, lckTeams[0].fstId];
+
+    const [lplA, lplB] = Math.random() < 0.5
+        ? [lplTeams[0].fstId, lplTeams[1].fstId]
+        : [lplTeams[1].fstId, lplTeams[0].fstId];
+
+    // ── 3. Shuffle the remaining 4 teams and split 2/2 ──────
+    const othersShuffled = [...others]
+        .sort(() => Math.random() - 0.5)
+        .map(t => t.fstId);
+
+    const groupA = [lckA, lplA, othersShuffled[0], othersShuffled[1]];
+    const groupB = [lckB, lplB, othersShuffled[2], othersShuffled[3]];
+
+    // ── 4. Shuffle within each group for random first pairings ──
+    const sA = [...groupA].sort(() => Math.random() - 0.5);
+    const sB = [...groupB].sort(() => Math.random() - 0.5);
+
+    // ── 5. Build GG1–GG4 (only pre-generatable matches) ────────
+    const matches = [
+        // ── Group A Wave 1 ────────────────────────────────────
+        {
+            id: FST_ID_BASE + 1,
+            fstRound: 'GG1',
+            group: 'A',
+            t1: sA[0], t2: sA[1],
+            date: '3.16 (월)', time: '22:00',
+            type: 'fst', format: 'BO5', fearless: true,
+            status: 'pending',
+            label: 'FST 그룹 A – 1경기',
+            venue: FST_VENUE,
+        },
+        {
+            id: FST_ID_BASE + 3,
+            fstRound: 'GG3',
+            group: 'A',
+            t1: sA[2], t2: sA[3],
+            date: '3.17 (화)', time: '22:00',
+            type: 'fst', format: 'BO5', fearless: true,
+            status: 'pending',
+            label: 'FST 그룹 A – 2경기',
+            venue: FST_VENUE,
+        },
+        // ── Group B Wave 1 ────────────────────────────────────
+        {
+            id: FST_ID_BASE + 2,
+            fstRound: 'GG2',
+            group: 'B',
+            t1: sB[0], t2: sB[1],
+            date: '3.17 (화)', time: '3:00',
+            type: 'fst', format: 'BO5', fearless: true,
+            status: 'pending',
+            label: 'FST 그룹 B – 1경기',
+            venue: FST_VENUE,
+        },
+        {
+            id: FST_ID_BASE + 4,
+            fstRound: 'GG4',
+            group: 'B',
+            t1: sB[2], t2: sB[3],
+            date: '3.18 (수)', time: '3:00',
+            type: 'fst', format: 'BO5', fearless: true,
+            status: 'pending',
+            label: 'FST 그룹 B – 2경기',
+            venue: FST_VENUE,
+        },
+    ];
+
+    return {
+        status: 'group_stage',
+        teams: fstTeams,
+        groups: { A: groupA, B: groupB },
+        matches: matches.sort((a, b) => compareDates(a.date, b.date)),
+    };
+};
+
+/**
+ * createFSTGroupWave2A
+ * ─────────────────────────────────────────────────────────────
+ * Triggered when BOTH GG1 and GG3 are finished.
+ * Generates:  GG5 (Group A Winner Bracket)
+ *             GG8 (Group A Loser Bracket / Elimination)
+ */
+export const createFSTGroupWave2A = (fstMatches, fstTeams) => {
+    const gg1 = findFSTMatch(fstMatches, 'GG1');
+    const gg3 = findFSTMatch(fstMatches, 'GG3');
+    if (!gg1 || !gg3 || gg1.status !== 'finished' || gg3.status !== 'finished') return fstMatches;
+    if (findFSTMatch(fstMatches, 'GG5')) return fstMatches; // already generated
+
+    const newMatches = [
+        // GG5 — Group A Winner Bracket Final (winner goes to playoffs undefeated)
+        {
+            id: FST_ID_BASE + 5,
+            fstRound: 'GG5',
+            group: 'A',
+            t1: getFSTWinnerId(gg1, fstTeams),
+            t2: getFSTWinnerId(gg3, fstTeams),
+            date: '3.18 (수)', time: '22:00',
+            type: 'fst', format: 'BO5', fearless: true,
+            status: 'pending',
+            label: 'FST 그룹 A – 승자전',
+            venue: FST_VENUE,
+        },
+        // GG8 — Group A Loser Bracket (loser is eliminated)
+        {
+            id: FST_ID_BASE + 8,
+            fstRound: 'GG8',
+            group: 'A',
+            t1: getFSTLoserId(gg1, fstTeams),
+            t2: getFSTLoserId(gg3, fstTeams),
+            date: '3.20 (금)', time: '3:00',
+            type: 'fst', format: 'BO5', fearless: true,
+            status: 'pending',
+            label: 'FST 그룹 A – 패자전',
+            venue: FST_VENUE,
+        },
+    ];
+
+    return [...fstMatches, ...newMatches].sort((a, b) => compareDates(a.date, b.date));
+};
+
+/**
+ * createFSTGroupWave2B
+ * ─────────────────────────────────────────────────────────────
+ * Triggered when BOTH GG2 and GG4 are finished.
+ * Generates:  GG6 (Group B Winner Bracket)
+ *             GG7 (Group B Loser Bracket / Elimination)
+ */
+export const createFSTGroupWave2B = (fstMatches, fstTeams) => {
+    const gg2 = findFSTMatch(fstMatches, 'GG2');
+    const gg4 = findFSTMatch(fstMatches, 'GG4');
+    if (!gg2 || !gg4 || gg2.status !== 'finished' || gg4.status !== 'finished') return fstMatches;
+    if (findFSTMatch(fstMatches, 'GG6')) return fstMatches;
+
+    const newMatches = [
+        // GG6 — Group B Winner Bracket Final
+        {
+            id: FST_ID_BASE + 6,
+            fstRound: 'GG6',
+            group: 'B',
+            t1: getFSTWinnerId(gg2, fstTeams),
+            t2: getFSTWinnerId(gg4, fstTeams),
+            date: '3.19 (목)', time: '3:00',
+            type: 'fst', format: 'BO5', fearless: true,
+            status: 'pending',
+            label: 'FST 그룹 B – 승자전',
+            venue: FST_VENUE,
+        },
+        // GG7 — Group B Loser Bracket
+        {
+            id: FST_ID_BASE + 7,
+            fstRound: 'GG7',
+            group: 'B',
+            t1: getFSTLoserId(gg2, fstTeams),
+            t2: getFSTLoserId(gg4, fstTeams),
+            date: '3.19 (목)', time: '22:00',
+            type: 'fst', format: 'BO5', fearless: true,
+            status: 'pending',
+            label: 'FST 그룹 B – 패자전',
+            venue: FST_VENUE,
+        },
+    ];
+
+    return [...fstMatches, ...newMatches].sort((a, b) => compareDates(a.date, b.date));
+};
+
+/**
+ * createFSTGroupWave3A
+ * ─────────────────────────────────────────────────────────────
+ * Triggered when BOTH GG5 and GG8 are finished.
+ * Generates:  GG9 (Group A Elimination — last chance for the survivor)
+ */
+export const createFSTGroupWave3A = (fstMatches, fstTeams) => {
+    const gg5 = findFSTMatch(fstMatches, 'GG5');
+    const gg8 = findFSTMatch(fstMatches, 'GG8');
+    if (!gg5 || !gg8 || gg5.status !== 'finished' || gg8.status !== 'finished') return fstMatches;
+    if (findFSTMatch(fstMatches, 'GG9')) return fstMatches;
+
+    const newMatch = {
+        id: FST_ID_BASE + 9,
+        fstRound: 'GG9',
+        group: 'A',
+        t1: getFSTLoserId(gg5, fstTeams),   // lost one but still alive
+        t2: getFSTWinnerId(gg8, fstTeams),  // survived elimination
+        date: '3.20 (금)', time: '22:00',
+        type: 'fst', format: 'BO5', fearless: true,
+        status: 'pending',
+        label: 'FST 그룹 A – 최종전',
+        venue: FST_VENUE,
+    };
+
+    return [...fstMatches, newMatch].sort((a, b) => compareDates(a.date, b.date));
+};
+
+/**
+ * createFSTGroupWave3B
+ * ─────────────────────────────────────────────────────────────
+ * Triggered when BOTH GG6 and GG7 are finished.
+ * Generates:  GG10 (Group B Elimination)
+ */
+export const createFSTGroupWave3B = (fstMatches, fstTeams) => {
+    const gg6 = findFSTMatch(fstMatches, 'GG6');
+    const gg7 = findFSTMatch(fstMatches, 'GG7');
+    if (!gg6 || !gg7 || gg6.status !== 'finished' || gg7.status !== 'finished') return fstMatches;
+    if (findFSTMatch(fstMatches, 'GG10')) return fstMatches;
+
+    const newMatch = {
+        id: FST_ID_BASE + 10,
+        fstRound: 'GG10',
+        group: 'B',
+        t1: getFSTLoserId(gg6, fstTeams),
+        t2: getFSTWinnerId(gg7, fstTeams),
+        date: '3.21 (토)', time: '3:00',
+        type: 'fst', format: 'BO5', fearless: true,
+        status: 'pending',
+        label: 'FST 그룹 B – 최종전',
+        venue: FST_VENUE,
+    };
+
+    return [...fstMatches, newMatch].sort((a, b) => compareDates(a.date, b.date));
+};
+
+/**
+ * createFSTPlayoffs
+ * ─────────────────────────────────────────────────────────────
+ * Triggered when BOTH GG9 and GG10 are finished.
+ * Generates the two cross-group playoff semifinals (PG1, PG2).
+ *
+ *   PG1: Group A undefeated champion (GG5 winner) vs Group B survivor (GG10 winner)
+ *   PG2: Group B undefeated champion (GG6 winner) vs Group A survivor (GG9 winner)
+ */
+export const createFSTPlayoffs = (fstMatches, fstTeams) => {
+    const gg5  = findFSTMatch(fstMatches, 'GG5');
+    const gg6  = findFSTMatch(fstMatches, 'GG6');
+    const gg9  = findFSTMatch(fstMatches, 'GG9');
+    const gg10 = findFSTMatch(fstMatches, 'GG10');
+
+    if (!gg9 || !gg10 || gg9.status !== 'finished' || gg10.status !== 'finished') return fstMatches;
+    if (findFSTMatch(fstMatches, 'PG1')) return fstMatches;
+
+    const newMatches = [
+        {
+            id: FST_ID_BASE + 11,
+            fstRound: 'PG1',
+            t1: getFSTWinnerId(gg5, fstTeams),   // Group A undefeated
+            t2: getFSTWinnerId(gg10, fstTeams),  // Group B survivor
+            date: '3.21 (토)', time: '22:00',
+            type: 'fst', format: 'BO5', fearless: true,
+            status: 'pending',
+            label: 'FST 준결승 1',
+            venue: FST_VENUE,
+            blueSidePriority: 'coin',
+        },
+        {
+            id: FST_ID_BASE + 12,
+            fstRound: 'PG2',
+            t1: getFSTWinnerId(gg6, fstTeams),   // Group B undefeated
+            t2: getFSTWinnerId(gg9, fstTeams),   // Group A survivor
+            date: '3.22 (일)', time: '3:00',
+            type: 'fst', format: 'BO5', fearless: true,
+            status: 'pending',
+            label: 'FST 준결승 2',
+            venue: FST_VENUE,
+            blueSidePriority: 'coin',
+        },
+    ];
+
+    return [...fstMatches, ...newMatches].sort((a, b) => compareDates(a.date, b.date));
+};
+
+/**
+ * createFSTFinals
+ * ─────────────────────────────────────────────────────────────
+ * Triggered when BOTH PG1 and PG2 are finished.
+ * Generates the FST Grand Final.
+ */
+export const createFSTFinals = (fstMatches, fstTeams) => {
+    const pg1 = findFSTMatch(fstMatches, 'PG1');
+    const pg2 = findFSTMatch(fstMatches, 'PG2');
+    if (!pg1 || !pg2 || pg1.status !== 'finished' || pg2.status !== 'finished') return fstMatches;
+    if (findFSTMatch(fstMatches, 'Finals')) return fstMatches;
+
+    const finalMatch = {
+        id: FST_ID_BASE + 13,
+        fstRound: 'Finals',
+        t1: getFSTWinnerId(pg1, fstTeams),
+        t2: getFSTWinnerId(pg2, fstTeams),
+        date: '3.22 (일)', time: '22:00',
+        type: 'fst', format: 'BO5', fearless: true,
+        status: 'pending',
+        label: '🏆 FST 결승전',
+        venue: FST_VENUE,
+        blueSidePriority: 'coin',
+    };
+
+    return [...fstMatches, finalMatch].sort((a, b) => compareDates(a.date, b.date));
+};
