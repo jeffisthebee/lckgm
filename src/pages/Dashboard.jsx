@@ -82,8 +82,8 @@ const getOvrBadgeStyle = (ovr) => {
     };
   
     useEffect(() => {
-      const loadData = () => {
-        const found = getLeagueById(leagueId);
+      const loadData = async () => {
+        const found = await getLeagueById(leagueId);
         if (found) {
           const sanitizedLeague = {
               ...found,
@@ -146,11 +146,11 @@ const getOvrBadgeStyle = (ovr) => {
     // [NEW] Manual Archive Function
     // In src/pages/Dashboard.jsx
 
-// [FIX] Manual Archive Function - Now saves Playoff Awards too!
-// [FIXED] Manual Archive Function
-// [FIXED] Manual Archive Function - Now saves LCK AND Foreign Leagues!
-// ── Helper: compute LEC regular-season standing order from raw matches ──────
-const computeLECRegularStandings = (fMatches, fTeams) => {
+    // [FIX] Manual Archive Function - Now saves Playoff Awards too!
+    // [FIXED] Manual Archive Function
+    // [FIXED] Manual Archive Function - Now saves LCK AND Foreign Leagues!
+    // ── Helper: compute LEC regular-season standing order from raw matches ──────
+    const computeLECRegularStandings = (fMatches, fTeams) => {
     const st = {};
     fTeams.forEach(t => st[t.name] = { w: 0, l: 0, diff: 0, h2h: {}, defeatedOpponents: [], team: t });
 
@@ -184,8 +184,8 @@ const computeLECRegularStandings = (fMatches, fTeams) => {
 };
 
 // ── Helper: reapply LEC 12-team scale to already-computed awards ────────────
-const LEC_ARCHIVE_SCALE = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 5, 0];
-const reapplyLECScale = (data, fMatches, standingsNames, forPlayoffs) => {
+    const LEC_ARCHIVE_SCALE = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 5, 0];
+    const reapplyLECScale = (data, fMatches, standingsNames, forPlayoffs) => {
     if (!data) return data;
     const rankPtsMap = {};
     (standingsNames || []).forEach((name, idx) => { if (name) rankPtsMap[name] = idx < LEC_ARCHIVE_SCALE.length ? LEC_ARCHIVE_SCALE[idx] : 0; });
@@ -223,7 +223,7 @@ const reapplyLECScale = (data, fMatches, standingsNames, forPlayoffs) => {
     return { ...data, seasonMvp: scored[0] || null, pogLeader: scored.find(p => p.isPogLeader) || null, finalsMvp: scored.find(p => p.isFinalsMvp) || null, allProTeams };
 };
 
-const handleManualArchive = () => {
+    const handleManualArchive = () => {
   if (!league) return;
 
   const currentYear = league.year || 2026;
