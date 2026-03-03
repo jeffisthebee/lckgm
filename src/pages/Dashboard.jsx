@@ -474,7 +474,18 @@ setMyMatchResult({
     const isCaptain = myTeam.id === 1 || myTeam.id === 2; 
     const hasDrafted = league.groups && league.groups.baron && league.groups.baron.length > 0;
     
-    const nextGlobalMatch = league.matches ? league.matches.find(m => m.status === 'pending') : null;
+    const nextGlobalMatch = league.matches
+      ? [...league.matches]
+          .filter(m => m.status === 'pending')
+          .sort((a, b) => {
+            const parseDateTime = (m) => {
+              const [month, day] = (m.date || '').split(' ')[0].split('.').map(Number);
+              const [h, min] = (m.time || '0:00').split(':').map(Number);
+              return (month || 0) * 100000 + (day || 0) * 1000 + (h || 0) * 60 + (min || 0);
+            };
+            return parseDateTime(a) - parseDateTime(b);
+          })[0] || null
+      : null;
   
     // ID Normalization Helper to safely compare IDs
     const safeId = (id) => (typeof id === 'object' ? id.id : Number(id));
