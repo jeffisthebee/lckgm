@@ -397,8 +397,18 @@ const getOvrBadgeStyle = (ovr) => {
   const searchStr = String(teamIdentifier).trim().toUpperCase();
   let found = null;
 
-  // 1. Search LCK
-  found = teams.find(t => String(t.id).toUpperCase() === searchStr || t.name.toUpperCase() === searchStr);
+  // 1. Search FST (NEW FIX)
+  if (league?.fst?.teams) {
+      found = league.fst.teams.find(t => 
+          String(t.fstId).toUpperCase() === searchStr || 
+          String(t.name).toUpperCase() === searchStr
+      );
+  }
+
+  // 2. Search LCK
+  if (!found) {
+      found = teams.find(t => String(t.id).toUpperCase() === searchStr || t.name.toUpperCase() === searchStr);
+  }
   
   // 2. Search Foreign Leagues
   if (!found) {
@@ -1386,8 +1396,14 @@ setMyMatchResult({
       return seedData?.find(s => s.id === teamId)?.seed;
     };
     const formatTeamName = (teamId, matchType) => {
+      // 1. Check FST Teams (NEW FIX)
+      if ((matchType === 'fst' || league?.fst) && league?.fst?.teams) {
+          const fstTeam = league.fst.teams.find(t => t.fstId === teamId || t.name === teamId);
+          if (fstTeam) return fstTeam.name;
+      }
+
       const t = teams.find(x => x.id === teamId);
-      if (!t) return 'TBD';
+      if (!t) return teamId; // Fallback to raw ID instead of 'TBD' for foreign teams
       
       let name = t.name;
       if ((matchType === 'playin' || matchType === 'playoff') && (league.playInSeeds || league.playoffSeeds)) {

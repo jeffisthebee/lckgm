@@ -2,28 +2,17 @@
 import React, { useState, useMemo } from 'react';
 
 // --- HELPER: Calculate POS (Player of the Series) ---
-const calculatePOS = (history, winningTeamName) => {
-    if (!history || !Array.isArray(history) || history.length === 0) return null;
+const calculatePOS = (history, isTeamAWinner) => {
+  if (!history || !Array.isArray(history) || history.length === 0) return null;
 
-    const playerScores = {};
+  const playerScores = {};
 
-    history.forEach(game => {
-        const picksA = game.picks?.A || [];
-        const picksB = game.picks?.B || [];
-        
-        // Determine which picks belong to the winning team for this specific game
-        // (We accumulate stats for the Series Winner's players across all games)
-        const winName = winningTeamName?.trim();
-        
-        // Heuristic: Identify if picksA is the Series Winner
-        // We look at the first player's team name in picksA
-        const teamAName = picksA[0]?.playerData?.팀?.trim();
-        
-        // Check if Team A is the Series Winner
-        const isTeamASeriesWinner = teamAName === winName;
-        
-        // We only care about the Series Winner's performance for POS
-        const targetPicks = isTeamASeriesWinner ? picksA : picksB;
+  history.forEach(game => {
+      const picksA = game.picks?.A || [];
+      const picksB = game.picks?.B || [];
+      
+      // Directly select the correct team based on the match score boolean
+      const targetPicks = isTeamAWinner ? picksA : picksB;
 
         (targetPicks || []).forEach(p => {
             if (!p) return;
@@ -101,13 +90,13 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
         if (result.posPlayer) return result.posPlayer;
 
         // 2. If not passed, but it is a BO5, calculate it on the fly
+        // 2. If not passed, but it is a BO5, calculate it on the fly
         if (isBo5) {
-            const winnerName = matchScoreA > matchScoreB ? teamA.name : teamB.name;
-            return calculatePOS(result.history, winnerName);
-        }
+          return calculatePOS(result.history, matchScoreA > matchScoreB);
+      }
 
-        return null;
-    }, [result, isBo5, matchScoreA, matchScoreB, teamA.name, teamB.name]);
+      return null;
+  }, [result, isBo5, matchScoreA, matchScoreB]);
 
 
     const currentSetData = result.history[activeSet];

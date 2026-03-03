@@ -86,7 +86,7 @@ const TeamBadge = ({ fstId, teams, isWinner = false, isEliminated = false, size 
 };
 
 // ─── FST Match Card ───────────────────────────────────────────
-const FSTMatchCard = ({ match, teams, onSimulate, onMatchClick, pending = false, myTeamName }) => {
+const FSTMatchCard = ({ match, teams, onSimulate, onMatchClick, pending = false, myTeamName, isNextMatch }) => {
   if (!match) {
     return (
       <div className="w-44 h-20 rounded-xl border-2 border-dashed border-gray-700 flex items-center justify-center text-gray-600 text-xs font-bold">
@@ -155,7 +155,7 @@ const FSTMatchCard = ({ match, teams, onSimulate, onMatchClick, pending = false,
       </div>
 
       {/* Simulate button */}
-      {!isDone && match.t1 && match.t2 && onSimulate && (() => {
+      {!isDone && match.t1 && match.t2 && onSimulate && isNextMatch && (() => {
         const t1Team = teams?.find(t => t.fstId === match.t1);
         const t2Team = teams?.find(t => t.fstId === match.t2);
         const isPlayerMatch = myTeamName && (t1Team?.name === myTeamName || t2Team?.name === myTeamName);
@@ -174,6 +174,15 @@ const FSTMatchCard = ({ match, teams, onSimulate, onMatchClick, pending = false,
           </div>
         );
       })()}
+
+      {/* Waiting for turn (NEW FIX) */}
+      {!isDone && match.t1 && match.t2 && !isNextMatch && (
+        <div className="px-3 pb-2 pt-1">
+          <div className="w-full text-[10px] font-bold text-center text-gray-500 bg-gray-800 rounded-lg py-1.5 border border-gray-700">
+            일정 대기 중
+          </div>
+        </div>
+      )}
 
       {/* Waiting label */}
       {!isDone && (!match.t1 || !match.t2) && (
@@ -196,7 +205,7 @@ const Arrow = ({ label, color = 'text-gray-600' }) => (
 );
 
 // ─── Group section ────────────────────────────────────────────
-const GroupSection = ({ group, groupLabel, fst, onSimulate, onMatchClick, myTeamName }) => {
+const GroupSection = ({ group, groupLabel, fst, onSimulate, onMatchClick, myTeamName, nextMatchId }) => {
   const { matches, teams } = fst;
   const isA = groupLabel === 'A';
 
@@ -238,8 +247,8 @@ const GroupSection = ({ group, groupLabel, fst, onSimulate, onMatchClick, myTeam
         {/* ── Wave 1: First matches ── */}
         <div className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1">1라운드</div>
         <div className="flex items-start gap-3 flex-wrap">
-          <FSTMatchCard match={gg1} teams={teams} onSimulate={onSimulate} onMatchClick={onMatchClick} myTeamName={myTeamName} />
-          <FSTMatchCard match={gg2} teams={teams} onSimulate={onSimulate} onMatchClick={onMatchClick} myTeamName={myTeamName} />
+        <FSTMatchCard match={gg1} teams={teams} onSimulate={onSimulate} onMatchClick={onMatchClick} myTeamName={myTeamName} isNextMatch={gg1?.id === nextMatchId} />
+        <FSTMatchCard match={gg2} teams={teams} onSimulate={onSimulate} onMatchClick={onMatchClick} myTeamName={myTeamName} isNextMatch={gg2?.id === nextMatchId} />
         </div>
 
         {/* ── Wave 2: Winner + Loser bracket ── */}
@@ -249,11 +258,11 @@ const GroupSection = ({ group, groupLabel, fst, onSimulate, onMatchClick, myTeam
             <div className="flex items-start gap-3 flex-wrap">
               <div>
                 <div className="text-[9px] text-green-500 font-black uppercase mb-1.5">🏆 승자전</div>
-                <FSTMatchCard match={ggW} teams={teams} onSimulate={onSimulate} onMatchClick={onMatchClick} myTeamName={myTeamName} pending={!ggW} />
+                <FSTMatchCard match={ggW} teams={teams} onSimulate={onSimulate} onMatchClick={onMatchClick} myTeamName={myTeamName} pending={!ggW} isNextMatch={ggW?.id === nextMatchId} />
               </div>
               <div>
                 <div className="text-[9px] text-orange-500 font-black uppercase mb-1.5">⚡ 패자전</div>
-                <FSTMatchCard match={ggL} teams={teams} onSimulate={onSimulate} onMatchClick={onMatchClick} myTeamName={myTeamName} pending={!ggL} />
+                <FSTMatchCard match={ggL} teams={teams} onSimulate={onSimulate} onMatchClick={onMatchClick} myTeamName={myTeamName} pending={!ggL} isNextMatch={ggL?.id === nextMatchId} />
               </div>
             </div>
           </>
@@ -263,7 +272,7 @@ const GroupSection = ({ group, groupLabel, fst, onSimulate, onMatchClick, myTeam
         {(ggW?.status === 'finished' || ggL?.status === 'finished' || ggE) && (
           <>
             <div className="text-[10px] font-black uppercase tracking-widest text-gray-500 pt-2">최종전 (탈락 위기)</div>
-            <FSTMatchCard match={ggE} teams={teams} onSimulate={onSimulate} onMatchClick={onMatchClick} myTeamName={myTeamName} pending={!ggE} />
+            <FSTMatchCard match={ggE} teams={teams} onSimulate={onSimulate} onMatchClick={onMatchClick} myTeamName={myTeamName} pending={!ggE} isNextMatch={ggE?.id === nextMatchId} />
           </>
         )}
 
@@ -306,6 +315,19 @@ const GroupSection = ({ group, groupLabel, fst, onSimulate, onMatchClick, myTeam
 // ─── Main Component ───────────────────────────────────────────
 const FSTTournamentTab = ({ fst, onSimulate, onMatchClick, onReset, myTeamName }) => {
   const [view, setView] = useState('groups'); // 'groups' | 'playoffs'
+
+  // Chronological strict simulation lock (NEW FIX)
+  const nextFSTMatch = fst?.matches
+    ?.filter(m => m.status === 'pending' && m.t1 && m.t2)
+    .sort((a, b) => {
+      const parseDateTime = (m) => {
+        const [month, day] = (m.date || '').split(' ')[0].split('.').map(Number);
+        const [h, min] = (m.time || '0:00').split(':').map(Number);
+        return (month || 0) * 100000 + (day || 0) * 1000 + (h || 0) * 60 + (min || 0);
+      };
+      return parseDateTime(a) - parseDateTime(b);
+    })[0];
+  const nextMatchId = nextFSTMatch?.id;
 
   if (!fst) {
     return (
@@ -450,7 +472,7 @@ const FSTTournamentTab = ({ fst, onSimulate, onMatchClick, onReset, myTeamName }
       {view === 'groups' && (
         <div className="px-6 py-4">
           <div className="flex flex-col xl:flex-row gap-6">
-            {groups?.A && (
+          {groups?.A && (
               <GroupSection
                 group={groups.A}
                 groupLabel="A"
@@ -458,6 +480,7 @@ const FSTTournamentTab = ({ fst, onSimulate, onMatchClick, onReset, myTeamName }
                 onSimulate={onSimulate}
                 onMatchClick={onMatchClick}
                 myTeamName={myTeamName}
+                nextMatchId={nextMatchId}
               />
             )}
             {groups?.B && (
@@ -468,6 +491,7 @@ const FSTTournamentTab = ({ fst, onSimulate, onMatchClick, onReset, myTeamName }
                 onSimulate={onSimulate}
                 onMatchClick={onMatchClick}
                 myTeamName={myTeamName}
+                nextMatchId={nextMatchId}
               />
             )}
           </div>
@@ -521,7 +545,7 @@ const FSTTournamentTab = ({ fst, onSimulate, onMatchClick, onReset, myTeamName }
                     <div className="text-[10px] text-gray-600 mb-3">
                       그룹 A 전승팀 vs 그룹 B 생존팀
                     </div>
-                    <FSTMatchCard match={pg1} teams={teams} onSimulate={onSimulate} onMatchClick={onMatchClick} myTeamName={myTeamName} pending={!pg1} />
+                    <FSTMatchCard match={pg1} teams={teams} onSimulate={onSimulate} onMatchClick={onMatchClick} myTeamName={myTeamName} pending={!pg1} isNextMatch={pg1?.id === nextMatchId} />
                     {pg1 && <div className="text-[10px] text-gray-600 mt-2">{pg1.date} {pg1.time}</div>}
                   </div>
 
@@ -530,7 +554,7 @@ const FSTTournamentTab = ({ fst, onSimulate, onMatchClick, onReset, myTeamName }
                     <div className="text-[10px] text-gray-600 mb-3">
                       그룹 B 전승팀 vs 그룹 A 생존팀
                     </div>
-                    <FSTMatchCard match={pg2} teams={teams} onSimulate={onSimulate} onMatchClick={onMatchClick} myTeamName={myTeamName} pending={!pg2} />
+                    <FSTMatchCard match={pg2} teams={teams} onSimulate={onSimulate} onMatchClick={onMatchClick} myTeamName={myTeamName} pending={!pg2?.id === nextMatchId} />
                     {pg2 && <div className="text-[10px] text-gray-600 mt-2">{pg2.date} {pg2.time}</div>}
                   </div>
                 </div>
@@ -552,7 +576,7 @@ const FSTTournamentTab = ({ fst, onSimulate, onMatchClick, onReset, myTeamName }
                     {!finals && !(pg1Done && pg2Done) ? (
                       <div className="text-gray-600 font-bold text-sm py-8">준결승 완료 후 대진 생성</div>
                     ) : (
-                      <FSTMatchCard match={finals} teams={teams} onSimulate={onSimulate} onMatchClick={onMatchClick} myTeamName={myTeamName} pending={!finals} />
+                      <FSTMatchCard match={finals} teams={teams} onSimulate={onSimulate} onMatchClick={onMatchClick} myTeamName={myTeamName} pending={!finals} isNextMatch={finals?.id === nextMatchId} />
                     )}
 
                     {fstChamp && (
