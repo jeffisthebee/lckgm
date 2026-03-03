@@ -117,7 +117,7 @@ const getOvrBadgeStyle = (ovr) => {
             const parseDateTime = (m) => {
               const [month, day] = (m.date || '').split(' ')[0].split('.').map(Number);
               const [h, min] = (m.time || '0:00').split(':').map(Number);
-              return (month || 0) * 100000 + (day || 0) * 1000 + (h || 0) * 60 + (min || 0);
+              return (month || 0) * 10000000 + (day || 0) * 100000 + (h || 0) * 100 + (min || 0);
             };
             return parseDateTime(a) - parseDateTime(b);
           })[0] || null
@@ -500,7 +500,7 @@ setMyMatchResult({
             const parseDateTime = (m) => {
               const [month, day] = (m.date || '').split(' ')[0].split('.').map(Number);
               const [h, min] = (m.time || '0:00').split(':').map(Number);
-              return (month || 0) * 100000 + (day || 0) * 1000 + (h || 0) * 60 + (min || 0);
+              return (month || 0) * 10000000 + (day || 0) * 100000 + (h || 0) * 100 + (min || 0);
             };
             return parseDateTime(a) - parseDateTime(b);
           })[0] || null
