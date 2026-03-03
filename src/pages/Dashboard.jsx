@@ -1302,8 +1302,9 @@ const handleMatchClick = (match) => {
     const handleGenerateSuperWeek = () => {
       const newMetaVersion = '16.02';
       
-      if (league.metaVersion === newMetaVersion) {
-          alert("이미 16.02 메타 패치가 적용되어 있습니다.");
+      const alreadyHasSuper = league.matches && league.matches.some(m => m.type === 'super');
+      if (alreadyHasSuper) {
+          alert("슈퍼위크 일정이 이미 생성되어 있습니다.");
           return;
       }
 
@@ -1947,7 +1948,7 @@ const handleMatchClick = (match) => {
               </button>
             )}
 
-            {hasDrafted && isRegularSeasonFinished && !hasSuperWeekGenerated && league.metaVersion !== '16.02' && !hasFST && (
+            {hasDrafted && isRegularSeasonFinished && !hasSuperWeekGenerated && !hasFST && (
                  <button 
                  onClick={handleGenerateSuperWeek} 
                  className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition whitespace-nowrap"
