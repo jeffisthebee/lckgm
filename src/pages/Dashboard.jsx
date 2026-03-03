@@ -82,8 +82,8 @@ const getOvrBadgeStyle = (ovr) => {
     };
   
     useEffect(() => {
-      const loadData = async () => {
-        const found = await getLeagueById(leagueId);
+      const loadData = () => {
+        const found = getLeagueById(leagueId);
         if (found) {
           const sanitizedLeague = {
               ...found,
@@ -146,11 +146,11 @@ const getOvrBadgeStyle = (ovr) => {
     // [NEW] Manual Archive Function
     // In src/pages/Dashboard.jsx
 
-    // [FIX] Manual Archive Function - Now saves Playoff Awards too!
-    // [FIXED] Manual Archive Function
-    // [FIXED] Manual Archive Function - Now saves LCK AND Foreign Leagues!
-    // ── Helper: compute LEC regular-season standing order from raw matches ──────
-    const computeLECRegularStandings = (fMatches, fTeams) => {
+// [FIX] Manual Archive Function - Now saves Playoff Awards too!
+// [FIXED] Manual Archive Function
+// [FIXED] Manual Archive Function - Now saves LCK AND Foreign Leagues!
+// ── Helper: compute LEC regular-season standing order from raw matches ──────
+const computeLECRegularStandings = (fMatches, fTeams) => {
     const st = {};
     fTeams.forEach(t => st[t.name] = { w: 0, l: 0, diff: 0, h2h: {}, defeatedOpponents: [], team: t });
 
@@ -184,8 +184,8 @@ const getOvrBadgeStyle = (ovr) => {
 };
 
 // ── Helper: reapply LEC 12-team scale to already-computed awards ────────────
-    const LEC_ARCHIVE_SCALE = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 5, 0];
-    const reapplyLECScale = (data, fMatches, standingsNames, forPlayoffs) => {
+const LEC_ARCHIVE_SCALE = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 5, 0];
+const reapplyLECScale = (data, fMatches, standingsNames, forPlayoffs) => {
     if (!data) return data;
     const rankPtsMap = {};
     (standingsNames || []).forEach((name, idx) => { if (name) rankPtsMap[name] = idx < LEC_ARCHIVE_SCALE.length ? LEC_ARCHIVE_SCALE[idx] : 0; });
@@ -223,7 +223,7 @@ const getOvrBadgeStyle = (ovr) => {
     return { ...data, seasonMvp: scored[0] || null, pogLeader: scored.find(p => p.isPogLeader) || null, finalsMvp: scored.find(p => p.isFinalsMvp) || null, allProTeams };
 };
 
-    const handleManualArchive = () => {
+const handleManualArchive = () => {
   if (!league) return;
 
   const currentYear = league.year || 2026;
@@ -1076,37 +1076,87 @@ setMyMatchResult({
     const handleFSTSimulate = (match) => {
       if (!league.fst || !match || match.status === 'finished') return;
 
-      // Quick-simulate using team power scores
       const fstTeams = league.fst.teams;
-      const t1 = fstTeams.find(t => t.fstId === match.t1);
-      const t2 = fstTeams.find(t => t.fstId === match.t2);
-      if (!t1 || !t2) return;
+      const t1Fst = fstTeams.find(t => t.fstId === match.t1);
+      const t2Fst = fstTeams.find(t => t.fstId === match.t2);
+      if (!t1Fst || !t2Fst) return;
 
-      // Power-based sim with variance
-      const p1 = (t1.power || 80) + (Math.random() * 10 - 5);
-      const p2 = (t2.power || 80) + (Math.random() * 10 - 5);
-      const t1Wins = p1 >= p2;
-      const winner = t1Wins ? t1 : t2;
+      // Build proper roster from LCK or foreign player data
+      const buildFSTRoster = (fstTeam) => {
+        const lgName = fstTeam.league;
+        const teamName = fstTeam.name;
 
-      // Generate score (BO5 → 3:0, 3:1, or 3:2)
-      const lossSets = Math.random() < 0.3 ? 0 : Math.random() < 0.55 ? 1 : 2;
-      const score = `3:${lossSets}`;
+        // LCK teams use getTeamRoster
+        if (lgName === 'LCK') {
+          const roster = getTeamRoster(teamName);
+          return { ...fstTeam, roster };
+        }
 
-      const result = {
-        winner: winner.name,
-        score,
-        history: [],
+        // Foreign teams: pull from FOREIGN_PLAYERS
+        const lgPlayers = (FOREIGN_PLAYERS && FOREIGN_PLAYERS[lgName]) ? FOREIGN_PLAYERS[lgName] : [];
+        const requiredRoles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
+        const roster = requiredRoles.map(role => {
+          const p = lgPlayers.find(p =>
+            (p.팀 === teamName || p.team === teamName) &&
+            String(p.포지션 || p.role).toUpperCase() === role
+          );
+          if (p) return {
+            ...p,
+            이름: p.이름 || p.playerName || `${teamName} ${role}`,
+            playerName: p.playerName || p.이름 || `${teamName} ${role}`,
+            종합: p.종합 || p.ovr || fstTeam.power || 80,
+            상세: p.상세 || { 라인전: 80, 한타: 80, 운영: 80, 생존: 80, 성장: 80, 무력: 80 },
+            playerData: p.playerData || { 팀: teamName, 포지션: role }
+          };
+          return {
+            이름: `${teamName} ${role}`, playerName: `${teamName} ${role}`,
+            포지션: role, 종합: fstTeam.power || 80,
+            상세: { 라인전: 80, 한타: 80, 운영: 80, 생존: 80, 성장: 80, 무력: 80 },
+            playerData: { 팀: teamName, 포지션: role }
+          };
+        });
+        return { ...fstTeam, roster };
       };
+
+      const t1 = buildFSTRoster(t1Fst);
+      const t2 = buildFSTRoster(t2Fst);
+
+      // Use the FST meta champion list (16.03)
+      const fstChampionList = (league.currentChampionList && league.currentChampionList.length > 0)
+        ? league.currentChampionList
+        : championList;
+
+      let result;
+      try {
+        const simResult = quickSimulateMatch(t1, t2, 'BO5', fstChampionList);
+        const scoreRaw = simResult.scoreString || simResult.score;
+        let scoreStr;
+        if (typeof scoreRaw === 'object') {
+          scoreStr = `${Math.max(scoreRaw.A ?? 0, scoreRaw.B ?? 0)}-${Math.min(scoreRaw.A ?? 0, scoreRaw.B ?? 0)}`;
+        } else {
+          scoreStr = scoreRaw || '3-0';
+        }
+        result = {
+          winner: simResult.winner?.name || simResult.winner,
+          score: scoreStr,
+          history: (simResult.history || []).map(set => ({ ...set, logs: [] })),
+        };
+      } catch (e) {
+        console.error('[FST] Sim error, falling back to power sim:', e);
+        const p1 = (t1Fst.power || 80) + (Math.random() * 10 - 5);
+        const p2 = (t2Fst.power || 80) + (Math.random() * 10 - 5);
+        const winner = p1 >= p2 ? t1Fst : t2Fst;
+        const lossSets = Math.random() < 0.3 ? 0 : Math.random() < 0.55 ? 1 : 2;
+        result = { winner: winner.name, score: `3-${lossSets}`, history: [] };
+      }
 
       // Update the match in fst.matches
       const updatedMatches = league.fst.matches.map(m =>
         m.id === match.id ? { ...m, status: 'finished', result } : m
       );
 
-      // Advance bracket (generate next wave matches if conditions met)
       const advancedMatches = checkAndAdvanceFST(updatedMatches, fstTeams);
 
-      // Check if FST is fully complete
       const fstFinal = advancedMatches.find(m => m.fstRound === 'Finals');
       const fstDone  = fstFinal?.status === 'finished';
 
@@ -1454,7 +1504,7 @@ setMyMatchResult({
               </button>
             )}
 
-            {hasDrafted && isRegularSeasonFinished && (!hasSuperWeekGenerated || league.metaVersion !== '16.02') && (
+            {hasDrafted && isRegularSeasonFinished && (!hasSuperWeekGenerated || league.metaVersion !== '16.02') && league.metaVersion !== '16.03' && !hasFST && (
                  <button 
                  onClick={handleGenerateSuperWeek} 
                  className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition whitespace-nowrap"
@@ -1750,7 +1800,8 @@ setMyMatchResult({
                     myTeam={myTeam}
                     hasDrafted={hasDrafted}
                     formatTeamName={formatTeamName}
-                    onMatchClick={handleMatchClick} 
+                    onMatchClick={handleMatchClick}
+                    onFSTSimulate={handleFSTSimulate}
                 />
             )}
 

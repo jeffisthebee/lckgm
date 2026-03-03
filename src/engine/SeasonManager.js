@@ -70,9 +70,8 @@ export const generateSuperWeekMatches = (league) => {
 // ─────────────────────────────────────────────────────────────
 
 // Grand-final match IDs per foreign league (from scheduleLogic.js)
-// LPL has no named id — found by round:5 + type:'playoff'
 const FOREIGN_FINAL_IDS = {
-    LPL:   null,
+    LPL:   'lpl_po14',
     LEC:   'lec_po_final',
     LCS:   'lcs_po8',
     LCP:   'lcp_po8',
@@ -83,7 +82,11 @@ const getForeignFinalMatch = (lgName, foreignMatches) => {
     const matches = foreignMatches?.[lgName] || [];
     const namedId = FOREIGN_FINAL_IDS[lgName];
     if (namedId) return matches.find(m => m.id === namedId) || null;
-    return matches.find(m => m.type === 'playoff' && m.round === 5) || null;
+    // Fallback: find by type + highest round number
+    const playoffMatches = matches.filter(m => m.type === 'playoff' && m.status === 'finished');
+    if (playoffMatches.length === 0) return null;
+    const maxRound = Math.max(...playoffMatches.map(m => m.round || 0));
+    return playoffMatches.find(m => m.round === maxRound) || null;
 };
 
 const resolveTeamFromName = (nameOrId, lgTeams) => {

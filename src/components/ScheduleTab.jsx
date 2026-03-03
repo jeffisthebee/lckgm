@@ -64,9 +64,18 @@ const getSafeRoster = (teamObj, allPlayers) => {
     });
 };
 
-const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, formatTeamName, onMatchClick }) => {
+const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, formatTeamName, onMatchClick, onFSTSimulate }) => {
     const [currentLeague, setCurrentLeague] = useState('LCK');
     const displayLeague = activeTab === 'team_schedule' ? 'LCK' : currentLeague;
+
+    // FST data
+    const fstMatches = league?.fst?.matches || [];
+    const fstTeams = league?.fst?.teams || [];
+    const hasFST = !!league?.fst;
+
+    // Check if myTeam is in FST
+    const myFSTTeam = fstTeams.find(t => t.name === myTeam?.name || t.name === myTeam?.fullName);
+    const showFSTInTeamSchedule = activeTab === 'team_schedule' && hasFST && !!myFSTTeam;
 
     const [forceRegen, setForceRegen] = useState(false);
 
@@ -734,15 +743,19 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
 
             {activeTab === 'schedule' && (
                 <div className="flex gap-2 p-3 border-b bg-gray-100 overflow-x-auto shrink-0 sticky top-0 z-40 rounded-lg mb-4 sm:mb-6">
-                    {['LCK', 'LPL', 'LEC', 'LCS', 'LCP', 'CBLOL'].map(lg => (
+                    {['LCK', 'LPL', 'LEC', 'LCS', 'LCP', 'CBLOL', ...(hasFST ? ['FST'] : [])].map(lg => (
                         <button
                             key={lg}
                             onClick={() => setCurrentLeague(lg)}
                             className={`px-5 py-2 rounded-full font-bold text-xs lg:text-sm transition-all whitespace-nowrap shadow-sm active:scale-95 ${
-                                currentLeague === lg ? 'bg-blue-600 text-white ring-2 ring-blue-300 transform scale-105' : 'bg-white text-gray-600 hover:bg-gray-200 border border-gray-300'
+                                currentLeague === lg
+                                    ? lg === 'FST'
+                                        ? 'bg-gradient-to-r from-blue-700 to-purple-700 text-white ring-2 ring-blue-300 transform scale-105'
+                                        : 'bg-blue-600 text-white ring-2 ring-blue-300 transform scale-105'
+                                    : 'bg-white text-gray-600 hover:bg-gray-200 border border-gray-300'
                             }`}
                         >
-                            {lg}
+                            {lg === 'FST' ? '🌍 FST' : lg}
                         </button>
                     ))}
                 </div>
@@ -750,7 +763,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
 
             <div className="flex items-center justify-between mb-4 lg:mb-6 shrink-0">
                 <h2 className="text-lg lg:text-2xl font-black text-gray-900 flex items-center gap-2">
-                    📅 {activeTab === 'team_schedule' ? `${myTeam.name} 경기 일정` : `2026 ${displayLeague} 전체 일정`}
+                    📅 {activeTab === 'team_schedule' ? `${myTeam.name} 경기 일정` : displayLeague === 'FST' ? '🌍 FST 월드 토너먼트 일정' : `2026 ${displayLeague} 전체 일정`}
                 </h2>
                 {targetLeague && hasErrors && (
                     <button 
@@ -761,9 +774,132 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                     </button>
                 )}
             </div>
-            
-            {['LCK', 'LPL', 'LCP', 'CBLOL', 'LCS', 'LEC'].includes(displayLeague) ? (
-                activeMatches.length > 0 ? (
+
+            {/* ── FST Schedule View ── */}
+            {displayLeague === 'FST' ? (
+                fstMatches.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 pb-4">
+                        {[...fstMatches].sort(compareDatesObj).map((m, i) => {
+                            const t1Fst = fstTeams.find(t => t.fstId === m.t1);
+                            const t2Fst = fstTeams.find(t => t.fstId === m.t2);
+                            const t1Name = t1Fst?.name || m.t1 || 'TBD';
+                            const t2Name = t2Fst?.name || m.t2 || 'TBD';
+                            const isFinished = m.status === 'finished';
+                            const isPending = !isFinished && m.t1 && m.t2;
+
+                            let badgeText = m.fstRound?.startsWith('GG') ? `🏟️ 그룹 ${m.group || ''}` : '🏆 플레이오프';
+                            if (m.fstRound === 'Finals') badgeText = '🥇 결승';
+                            else if (m.fstRound === 'PG1' || m.fstRound === 'PG2') badgeText = '🏆 플레이오프';
+
+                            return (
+                                <div key={i} className={`p-3 lg:p-4 rounded-lg border flex flex-col gap-1 lg:gap-2 ${
+                                    m.fstRound === 'Finals' ? 'bg-yellow-50 border-yellow-400 ring-1 ring-yellow-300' :
+                                    isPending ? 'bg-gray-900/5 border-gray-300' : 'bg-white border-gray-200'
+                                }`}>
+                                    <div className="flex justify-between text-[10px] lg:text-xs font-bold text-gray-500">
+                                        <span>{m.date} {m.time}</span>
+                                        <span className="font-bold text-blue-600">{badgeText}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center mt-1 lg:mt-2">
+                                        <div className="flex flex-col items-center w-1/3">
+                                            <span className="font-bold text-xs lg:text-base text-center break-keep leading-tight text-gray-800">
+                                                {t1Name === 'TBD' ? 'TBD' : t1Name}
+                                            </span>
+                                            {isFinished && m.result?.winner === t1Name && <span className="text-[10px] text-blue-500 font-bold mt-1">WIN</span>}
+                                        </div>
+                                        <div className="text-center font-bold flex flex-col items-center shrink-0 w-1/4">
+                                            {isFinished ? (
+                                                <div className="flex flex-col items-center">
+                                                    <span className="text-lg lg:text-xl text-gray-800">{m.result?.score || '3-0'}</span>
+                                                    <button
+                                                        onClick={() => onMatchClick && onMatchClick(m)}
+                                                        className="mt-1 text-[9px] lg:text-[10px] bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 px-1.5 lg:px-2 py-0.5 rounded transition flex items-center gap-1 whitespace-nowrap"
+                                                    >
+                                                        <span>📊</span> <span className="hidden sm:inline">상세보기</span><span className="sm:hidden">기록</span>
+                                                    </button>
+                                                </div>
+                                            ) : isPending ? (
+                                                <div className="flex flex-col items-center gap-1">
+                                                    <span className="text-gray-400 text-sm">VS</span>
+                                                    {onFSTSimulate && (
+                                                        <button
+                                                            onClick={() => onFSTSimulate(m)}
+                                                            className="text-[9px] bg-blue-600 hover:bg-blue-500 text-white px-2 py-0.5 rounded font-bold transition"
+                                                        >
+                                                            ⚡시뮬
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <span className="text-gray-400 text-xs">대기 중</span>
+                                            )}
+                                        </div>
+                                        <div className="flex flex-col items-center w-1/3">
+                                            <span className="font-bold text-xs lg:text-base text-center break-keep leading-tight text-gray-800">
+                                                {t2Name === 'TBD' ? 'TBD' : t2Name}
+                                            </span>
+                                            {isFinished && m.result?.winner === t2Name && <span className="text-[10px] text-blue-500 font-bold mt-1">WIN</span>}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center text-gray-400 py-10">
+                        <div className="text-4xl mb-4">🌍</div>
+                        <div className="text-xl font-bold">FST 일정이 없습니다.</div>
+                        <p className="mt-2 text-sm text-gray-500">FST 토너먼트가 개막되면 일정이 표시됩니다.</p>
+                    </div>
+                )
+            ) : ['LCK', 'LPL', 'LCP', 'CBLOL', 'LCS', 'LEC'].includes(displayLeague) ? (
+                <>
+                {/* ── Team Schedule: append FST matches if user is in FST ── */}
+                {showFSTInTeamSchedule && fstMatches.length > 0 && (
+                    <div className="mb-6">
+                        <div className="text-xs font-black uppercase tracking-widest text-blue-600 mb-3 flex items-center gap-2">
+                            <span>🌍</span> FST 월드 토너먼트
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {[...fstMatches]
+                                .filter(m => m.t1 === myFSTTeam?.fstId || m.t2 === myFSTTeam?.fstId)
+                                .sort(compareDatesObj)
+                                .map((m, i) => {
+                                    const t1Fst = fstTeams.find(t => t.fstId === m.t1);
+                                    const t2Fst = fstTeams.find(t => t.fstId === m.t2);
+                                    const t1Name = t1Fst?.name || 'TBD';
+                                    const t2Name = t2Fst?.name || 'TBD';
+                                    const isFinished = m.status === 'finished';
+                                    const isMyFSTMatch = m.t1 === myFSTTeam?.fstId || m.t2 === myFSTTeam?.fstId;
+                                    return (
+                                        <div key={i} className={`p-3 rounded-lg border flex flex-col gap-1 ${isMyFSTMatch ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-200' : 'bg-white border-gray-200'}`}>
+                                            <div className="flex justify-between text-[10px] font-bold text-gray-500">
+                                                <span>{m.date} {m.time}</span>
+                                                <span className="text-blue-600 font-bold">🌍 FST</span>
+                                            </div>
+                                            <div className="flex justify-between items-center mt-1">
+                                                <span className={`font-bold text-xs text-center w-1/3 break-keep ${m.t1 === myFSTTeam?.fstId ? 'text-blue-600' : 'text-gray-800'}`}>{t1Name}</span>
+                                                <div className="text-center w-1/4">
+                                                    {isFinished ? (
+                                                        <span className="text-base text-gray-800">{m.result?.score || '3-0'}</span>
+                                                    ) : (
+                                                        <span className="text-gray-400 text-sm">VS</span>
+                                                    )}
+                                                </div>
+                                                <span className={`font-bold text-xs text-center w-1/3 break-keep ${m.t2 === myFSTTeam?.fstId ? 'text-blue-600' : 'text-gray-800'}`}>{t2Name}</span>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                        </div>
+                    </div>
+                )}
+                {showFSTInTeamSchedule && fstMatches.length > 0 && (
+                    <div className="text-xs font-black uppercase tracking-widest text-gray-500 mb-3 flex items-center gap-2">
+                        <span>🏆</span> LCK 리그
+                    </div>
+                )}
+                {activeMatches.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 pb-4">
                         {activeMatches
                             .filter(m => activeTab === 'schedule' || displayLeague !== 'LCK' || (m.t1 === myTeam.id || m.t2 === myTeam.id))
@@ -828,7 +964,8 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                         <div className="text-lg lg:text-xl font-bold">{displayLeague} 일정이 없습니다.</div>
                         <p className="mt-2 text-sm text-gray-500">LCK 리그가 시작되면 일정이 자동으로 생성됩니다.</p>
                     </div>
-                )
+                )}
+                </>
             ) : (
                 <div className="flex-1 flex flex-col items-center justify-center text-gray-400 py-10 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
                     <div className="text-4xl lg:text-6xl mb-3 lg:mb-4 animate-bounce">🌍</div>
