@@ -106,6 +106,16 @@ const getOvrBadgeStyle = (ovr) => {
     // FST: ready to create when season over + not yet created
     const hasFST = !!league?.fst;
     const isFSTReady = isSeasonOver && !hasFST;
+
+    // FST: next pending FST match + whether player's team is in it
+    const nextFSTMatch = hasFST
+      ? (league.fst.matches || []).find(m => m.status === 'pending' && m.t1 && m.t2)
+      : null;
+    const nextFSTMatchT1 = nextFSTMatch ? (league.fst?.teams || []).find(t => t.fstId === nextFSTMatch.t1) : null;
+    const nextFSTMatchT2 = nextFSTMatch ? (league.fst?.teams || []).find(t => t.fstId === nextFSTMatch.t2) : null;
+    const isMyNextFSTMatch = nextFSTMatch
+      ? (nextFSTMatchT1?.name === myTeam?.name || nextFSTMatchT2?.name === myTeam?.name)
+      : false;
     
     // Check if History is already saved
     const isSavedInHistory = league?.history?.some(
@@ -146,7 +156,7 @@ const getOvrBadgeStyle = (ovr) => {
     // [NEW] Manual Archive Function
     // In src/pages/Dashboard.jsx
 
-// [FIX] Manual Archive Function - Now saves Playoff Awards too!
+    // [FIX] Manual Archive Function - Now saves Playoff Awards too!
     // [FIXED] Manual Archive Function
     // [FIXED] Manual Archive Function - Now saves LCK AND Foreign Leagues!
     // ── Helper: compute LEC regular-season standing order from raw matches ──────
@@ -1073,52 +1083,135 @@ setMyMatchResult({
       return current;
     };
 
-    const handleFSTSimulate = (match) => {
-      if (!league.fst || !match || match.status === 'finished') return;
+    // ── FST: Reset tournament data ────────────────────────────
+    const handleFSTReset = () => {
+      if (!window.confirm('FST 데이터를 초기화하시겠습니까?\n이전 결과가 모두 삭제되고 다시 생성할 수 있습니다.')) return;
+      const updates = { fst: null };
+      setLeague(prev => ({ ...prev, ...updates }));
+      updateLeague(league.id, updates);
+      if (activeTab === 'fst') setActiveTab('dashboard');
+    };
 
-      // Quick-simulate using team power scores
+    // ── FST: Build team with real roster for simulation ───────
+    const buildFSTTeamWithRoster = (fstTeam) => {
+      const lgName   = fstTeam.league;
+      const teamName = fstTeam.name;
+      if (lgName === 'LCK') {
+        return { ...fstTeam, roster: getFullTeamRoster(teamName) };
+      }
+      const lgPlayers = (FOREIGN_PLAYERS && FOREIGN_PLAYERS[lgName]) ? FOREIGN_PLAYERS[lgName] : [];
+      const requiredRoles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
+      const roster = requiredRoles.map(role => {
+        const p = lgPlayers.find(p =>
+          (p.팀 === teamName || p.team === teamName) &&
+          String(p.포지션 || p.role).toUpperCase() === role
+        );
+        if (p) return {
+          ...p,
+          이름: p.이름 || p.playerName || `${teamName} ${role}`,
+          playerName: p.playerName || p.이름 || `${teamName} ${role}`,
+          종합: p.종합 || p.ovr || fstTeam.power || 80,
+          상세: p.상세 || { 라인전: 80, 한타: 80, 운영: 80, 생존: 80, 성장: 80, 무력: 80 },
+          playerData: p.playerData || { 팀: teamName, 포지션: role },
+        };
+        return {
+          이름: `${teamName} ${role}`, playerName: `${teamName} ${role}`,
+          포지션: role, 종합: fstTeam.power || 80,
+          상세: { 라인전: 80, 한타: 80, 운영: 80, 생존: 80, 성장: 80, 무력: 80 },
+          playerData: { 팀: teamName, 포지션: role },
+        };
+      });
+      return { ...fstTeam, roster };
+    };
+
+    // ── FST: Apply a finished result and advance the bracket ──
+    const applyFSTResult = (matchId, result) => {
       const fstTeams = league.fst.teams;
-      const t1 = fstTeams.find(t => t.fstId === match.t1);
-      const t2 = fstTeams.find(t => t.fstId === match.t2);
-      if (!t1 || !t2) return;
-
-      // Power-based sim with variance
-      const p1 = (t1.power || 80) + (Math.random() * 10 - 5);
-      const p2 = (t2.power || 80) + (Math.random() * 10 - 5);
-      const t1Wins = p1 >= p2;
-      const winner = t1Wins ? t1 : t2;
-
-      // Generate score (BO5 → 3:0, 3:1, or 3:2)
-      const lossSets = Math.random() < 0.3 ? 0 : Math.random() < 0.55 ? 1 : 2;
-      const score = `3:${lossSets}`;
-
-      const result = {
-        winner: winner.name,
-        score,
-        history: [],
-      };
-
-      // Update the match in fst.matches
       const updatedMatches = league.fst.matches.map(m =>
-        m.id === match.id ? { ...m, status: 'finished', result } : m
+        m.id === matchId ? { ...m, status: 'finished', result } : m
       );
-
-      // Advance bracket (generate next wave matches if conditions met)
       const advancedMatches = checkAndAdvanceFST(updatedMatches, fstTeams);
-
-      // Check if FST is fully complete
       const fstFinal = advancedMatches.find(m => m.fstRound === 'Finals');
       const fstDone  = fstFinal?.status === 'finished';
-
       const updatedFst = {
         ...league.fst,
         matches: advancedMatches,
         status: fstDone ? 'complete' : league.fst.status,
       };
-
       const updates = { fst: updatedFst };
       setLeague(prev => ({ ...prev, ...updates }));
       updateLeague(league.id, updates);
+    };
+
+    const handleFSTSimulate = (match) => {
+      if (!league.fst || !match || match.status === 'finished') return;
+      const fstTeams = league.fst.teams;
+      const t1Fst = fstTeams.find(t => t.fstId === match.t1);
+      const t2Fst = fstTeams.find(t => t.fstId === match.t2);
+      if (!t1Fst || !t2Fst) return;
+
+      // Player's team is in this FST match → open LiveGamePlayer
+      const isPlayerFSTMatch = t1Fst.name === myTeam.name || t2Fst.name === myTeam.name;
+      if (isPlayerFSTMatch) {
+        const t1Live = buildFSTTeamWithRoster(t1Fst);
+        const t2Live = buildFSTTeamWithRoster(t2Fst);
+        const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0)
+          ? league.currentChampionList : championList;
+        setLiveMatchData({
+          match:       { ...match, isFSTMatch: true },
+          teamA:       t1Live,
+          teamB:       t2Live,
+          safeChampionList,
+          isManualMode: false,
+          isFSTMatch:   true,
+        });
+        setIsLiveGameMode(true);
+        return;
+      }
+
+      // CPU vs CPU → quickSimulateMatch with real rosters + 16.03 meta
+      const t1 = buildFSTTeamWithRoster(t1Fst);
+      const t2 = buildFSTTeamWithRoster(t2Fst);
+      const fstChampionList = (league.currentChampionList && league.currentChampionList.length > 0)
+        ? league.currentChampionList : championList;
+
+      let result;
+      try {
+        const sim = quickSimulateMatch(t1, t2, 'BO5', fstChampionList);
+        const raw = sim.scoreString || sim.score;
+        let scoreStr;
+        if (typeof raw === 'object') {
+          scoreStr = `${Math.max(raw.A ?? 0, raw.B ?? 0)}-${Math.min(raw.A ?? 0, raw.B ?? 0)}`;
+        } else {
+          scoreStr = raw || '3-0';
+        }
+        result = {
+          winner:  sim.winner?.name || sim.winner,
+          score:   scoreStr,
+          history: (sim.history || []).map(s => ({ ...s, logs: [] })),
+        };
+      } catch (e) {
+        console.error('[FST] quickSim error, power fallback:', e);
+        const p1 = (t1Fst.power || 80) + (Math.random() * 10 - 5);
+        const p2 = (t2Fst.power || 80) + (Math.random() * 10 - 5);
+        const winner = p1 >= p2 ? t1Fst : t2Fst;
+        const loss = Math.random() < 0.3 ? 0 : Math.random() < 0.55 ? 1 : 2;
+        result = { winner: winner.name, score: `3-${loss}`, history: [] };
+      }
+
+      applyFSTResult(match.id, result);
+    };
+
+    // ── FST: LiveGame completion callback ─────────────────────
+    const handleFSTLiveMatchComplete = (match, resultData) => {
+      applyFSTResult(match.id, {
+        winner:  resultData.winner,
+        score:   resultData.scoreString,
+        history: resultData.history,
+      });
+      setIsLiveGameMode(false);
+      setLiveMatchData(null);
+      setTimeout(() => alert(`🌍 FST 경기 종료! 승리: ${resultData.winner}`), 100);
     };
 
     const handleGeneratePlayIn = () => {
@@ -1318,16 +1411,15 @@ setMyMatchResult({
         match={liveMatchData.match}
         teamA={liveMatchData.teamA}
         teamB={liveMatchData.teamB}
-        // Pass the Manual Mode Flag
         isManualMode={liveMatchData.isManualMode} 
         simOptions={{
-            currentChampionList: league.currentChampionList,
+            currentChampionList: liveMatchData.safeChampionList || league.currentChampionList,
             difficulty: league.difficulty,
             playerTeamName: myTeam.name
         }}
         externalGlobalBans={[]} 
-        onMatchComplete={handleLiveMatchComplete}
-        onClose={() => setIsLiveGameMode(false)}
+        onMatchComplete={liveMatchData.isFSTMatch ? handleFSTLiveMatchComplete : handleLiveMatchComplete}
+        onClose={() => { setIsLiveGameMode(false); setLiveMatchData(null); }}
     />
   )}
   
@@ -1451,6 +1543,43 @@ setMyMatchResult({
                 className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-gray-900 hover:bg-black text-blue-300 shadow-sm flex items-center gap-2 transition border border-blue-700 whitespace-nowrap"
               >
                 <span>🌍</span> <span className="hidden sm:inline">FST</span>
+              </button>
+            )}
+
+            {hasFST && (
+              <button
+                onClick={handleFSTReset}
+                className="px-3 py-1.5 rounded-full font-bold text-xs bg-gray-800 hover:bg-red-900 text-gray-400 hover:text-red-300 shadow-sm flex items-center gap-1 transition border border-gray-700 whitespace-nowrap"
+                title="FST 초기화 (데이터 리셋)"
+              >
+                <span>🔄</span> <span className="hidden sm:inline">FST 초기화</span>
+              </button>
+            )}
+
+            {/* FST next match: CPU game → ⏩ auto-sim, Player game → 🎮 start */}
+            {hasFST && nextFSTMatch && !isMyNextFSTMatch && (
+              <button
+                onClick={() => handleFSTSimulate(nextFSTMatch)}
+                className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-2 animate-pulse transition whitespace-nowrap"
+              >
+                <span>⏩</span>
+                <span className="hidden sm:inline">
+                  FST: {nextFSTMatchT1?.name || '?'} vs {nextFSTMatchT2?.name || '?'}
+                </span>
+                <span className="sm:hidden">FST 진행</span>
+              </button>
+            )}
+
+            {hasFST && nextFSTMatch && isMyNextFSTMatch && (
+              <button
+                onClick={() => handleFSTSimulate(nextFSTMatch)}
+                className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-500 hover:to-blue-500 text-white shadow-lg flex items-center gap-2 animate-bounce transition whitespace-nowrap"
+              >
+                <span>🎮</span>
+                <span className="hidden sm:inline">
+                  FST 경기: {nextFSTMatchT1?.name || '?'} vs {nextFSTMatchT2?.name || '?'}
+                </span>
+                <span className="sm:hidden">FST 시작</span>
               </button>
             )}
 
@@ -1770,6 +1899,8 @@ setMyMatchResult({
         fst={league?.fst}
         onSimulate={handleFSTSimulate}
         onMatchClick={handleMatchClick}
+        onReset={handleFSTReset}
+        myTeamName={myTeam?.name}
     />
 )}
   
