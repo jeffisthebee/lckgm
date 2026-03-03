@@ -456,29 +456,30 @@ const getOvrBadgeStyle = (ovr) => {
 };
 
 const handleMatchClick = (match) => {
-if (!match || match.status !== 'finished' || !match.result) return;
-
-// Safely parse ID or String
-const getID = (id) => (typeof id === 'object' ? id.id : id);
-const t1Id = getID(match.t1);
-const t2Id = getID(match.t2);
-
-// Use the new Roster Injector!
-const teamA = findGlobalTeamForModal(t1Id);
-const teamB = findGlobalTeamForModal(t2Id);
-
-setMyMatchResult({
-    resultData: {
-        ...match.result,
-        round: match.round,
-        roundIndex: match.roundIndex,
-        roundName: match.label || match.roundName || (match.round === 5 ? 'Grand Final' : undefined),
-        matchId: match.id
-    }, 
-    teamA: teamA,
-    teamB: teamB
-});
-};
+  if (!match || match.status !== 'finished' || !match.result) return;
+  
+  // Safely parse ID or String
+  const getID = (id) => (typeof id === 'object' ? id.id : id);
+  const t1Id = getID(match.t1);
+  const t2Id = getID(match.t2);
+  
+  // Use the new Roster Injector!
+  const teamA = findGlobalTeamForModal(t1Id);
+  const teamB = findGlobalTeamForModal(t2Id);
+  
+  setMyMatchResult({
+      resultData: {
+          ...match.result,
+          round: match.round,
+          roundIndex: match.roundIndex,
+          roundName: match.label || match.roundName || match.fstRound || (match.round === 5 ? 'Grand Final' : undefined),
+          matchId: match.id,
+          fstRound: match.fstRound
+      }, 
+      teamA: teamA,
+      teamB: teamB
+  });
+  };
   
     const handleMenuClick = (tabId) => {
       setActiveTab(tabId);

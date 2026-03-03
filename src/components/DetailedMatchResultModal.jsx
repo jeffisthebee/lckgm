@@ -60,12 +60,13 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
     if (!result || !result.history || result.history.length === 0) return null;
 
     // Parse Match Score (e.g. "2:1") correctly
+    // Parse Match Score (e.g. "2:1" or "3-1") correctly
     let matchScoreA = 0;
     let matchScoreB = 0;
-    if (result.score && typeof result.score === 'string' && result.score.includes(':')) {
-        const parts = result.score.split(':');
-        matchScoreA = parseInt(parts[0], 10);
-        matchScoreB = parseInt(parts[1], 10);
+    if (result.score && typeof result.score === 'string' && (result.score.includes(':') || result.score.includes('-'))) {
+        const parts = result.score.split(/[:-]/);
+        matchScoreA = parseInt(parts[0], 10) || 0;
+        matchScoreB = parseInt(parts[1], 10) || 0;
     } else {
         matchScoreA = result.scoreA || 0;
         matchScoreB = result.scoreB || 0;
@@ -76,27 +77,26 @@ export default function DetailedMatchResultModal({ result, onClose, teamA, teamB
     const isBo5 = (matchScoreA === 3 || matchScoreB === 3) || (result.format === 'BO5');
     
     // --- FINAL MVP LOGIC (STRICT) ---
-    // 1. Check for Round 5 (The Grand Final)
-    // 2. Check for "Grand Final" in English
-    // 3. Check for "결승전" in Korean (Strictly excludes "결승 진출전")
     const isFinals = 
         result.round == 5 || 
         result.roundIndex == 5 ||
+        result.fstRound === 'Finals' ||
         (result.roundName && result.roundName.toString().toUpperCase().includes('GRAND FINAL')) ||
-        (result.roundName && result.roundName.toString().includes('결승전'));
+        (result.roundName && result.roundName.toString().includes('결승'));
 
     const posPlayer = useMemo(() => {
         // 1. If explicitly passed (e.g. from LiveGamePlayer), use it
         if (result.posPlayer) return result.posPlayer;
 
         // 2. If not passed, but it is a BO5, calculate it on the fly
-        // 2. If not passed, but it is a BO5, calculate it on the fly
         if (isBo5) {
-          return calculatePOS(result.history, matchScoreA > matchScoreB);
-      }
+            // RELY ON result.winner directly if available, fallback to score math
+            const winnerName = result.winner || (matchScoreA > matchScoreB ? teamA.name : teamB.name);
+            return calculatePOS(result.history, winnerName);
+        }
 
-      return null;
-  }, [result, isBo5, matchScoreA, matchScoreB]);
+        return null;
+    }, [result, isBo5, matchScoreA, matchScoreB, teamA.name, teamB.name]);
 
 
     const currentSetData = result.history[activeSet];

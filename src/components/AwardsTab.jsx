@@ -8,7 +8,44 @@ import { TEAM_COLORS } from '../data/constants';
 
 const globalPlayerList = Object.values(FOREIGN_PLAYERS || {}).flat().filter(Boolean);
 
+// --- HELPER: Calculate POS (Player of the Series) ---
+const calculatePOS = (history, winningTeamName) => {
+    if (!history || !Array.isArray(history) || history.length === 0) return null;
+    const playerScores = {};
+    history.forEach(game => {
+        const picksA = game.picks?.A || [];
+        const picksB = game.picks?.B || [];
+        const winName = winningTeamName?.trim();
+        const teamAName = picksA[0]?.playerData?.팀?.trim();
+        const isTeamASeriesWinner = teamAName === winName;
+        const targetPicks = isTeamASeriesWinner ? picksA : picksB;
+
+        (targetPicks || []).forEach(p => {
+            if (!p) return;
+            if (!playerScores[p.playerName]) playerScores[p.playerName] = { ...p, totalScore: 0, games: 0, playerData: p.playerData };
+            const stats = p.stats || { kills: p.k || 0, deaths: p.d || 0, assists: p.a || 0, damage: 0 };
+            const k = stats.kills ?? p.k ?? 0;
+            const d = (stats.deaths ?? p.d) || 0;
+            const safeD = d === 0 ? 1 : d;
+            const a = stats.assists ?? p.a ?? 0;
+            const gold = p.currentGold || 0;
+            const damage = stats.damage || 0;
+            let score = ((k + a) / safeD * 3) + (damage / 3000) + (gold / 1000) + (a * 0.65);
+            const role = p.playerData?.포지션 || p.role || 'MID';
+            if (['TOP', '탑'].includes(role)) score *= 1.05;
+            if (['JGL', '정글'].includes(role)) score *= 1.07;
+            if (['SUP', '서포터'].includes(role)) score *= 1.10;
+            playerScores[p.playerName].totalScore += score;
+            playerScores[p.playerName].games += 1;
+        });
+    });
+    const sorted = Object.values(playerScores).sort((a, b) => b.totalScore - a.totalScore);
+    return sorted[0]; 
+};
+
 // Returns white or black text for best contrast against a background hex color
+
+
 const getContrastText = (hexColor) => {
     if (!hexColor || hexColor === 'transparent') return '#ffffff';
     const hex = String(hexColor).replace('#', '');
@@ -280,6 +317,7 @@ const reapplyScale = (data, matches, standingsNames, scale, forPlayoffs) => {
     }
 
     // Recalculate pure POG Leader
+    // Recalculate pure POG Leader
     let maxPog = 0;
     let computedPogLeader = null;
     Object.entries(players).forEach(([name, d]) => {
@@ -294,8 +332,25 @@ const reapplyScale = (data, matches, standingsNames, scale, forPlayoffs) => {
         }
     });
 
+    // --- NEW FALLBACK FOR FINALS MVP (Dynamic Calculation for un-saved FST/LPL Finals) ---
+    let fallbackFinalsMvp = null;
+    if (forPlayoffs) {
+        const finalsMatch = targetMatches.find(m => 
+            m.fstRound === 'Finals' || 
+            m.round === 5 || String(m.round) === "5" ||
+            m.id === 'lpl_po14' || m.id === 'lec_po_final' || 
+            m.id === 'lcs_po8' || m.id === 'cblol_po10' || 
+            (m.round === 4 && m.id?.startsWith('lcp_'))
+        );
+        if (finalsMatch && finalsMatch.result?.history && finalsMatch.result?.winner) {
+            fallbackFinalsMvp = calculatePOS(finalsMatch.result.history, finalsMatch.result.winner);
+        }
+    }
+
     const pogLeaderName = computedPogLeader || data.pogLeader?.playerName || null;
-    const finalsMvpName = data.finalsMvp?.playerName || null;
+    const finalsMvpName = data.finalsMvp?.playerName || fallbackFinalsMvp?.playerName || null;
+
+    // Score every player with the correct scale
 
     // Score every player with the correct scale
     const scored = Object.entries(players)
