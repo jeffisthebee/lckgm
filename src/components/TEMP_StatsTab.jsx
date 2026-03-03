@@ -75,9 +75,11 @@ export default function StatsTab({ league }) {
     let totalGames = 0;
 
     // [NEW] Direct the logic to the correct matches array based on the selected league
-    const activeMatches = currentLeague === 'LCK' 
-        ? league?.matches 
-        : league?.foreignMatches?.[currentLeague] || [];
+    // [NEW] Direct the logic to the correct matches array based on the selected league
+    let activeMatches = [];
+    if (currentLeague === 'LCK') activeMatches = league?.matches || [];
+    else if (currentLeague === 'FST') activeMatches = league?.fst?.matches || [];
+    else activeMatches = league?.foreignMatches?.[currentLeague] || [];
 
     if (!activeMatches || !Array.isArray(activeMatches)) {
       return { players, champions, championStats, totalPicks, totalBans, totalGames };
@@ -93,34 +95,8 @@ export default function StatsTab({ league }) {
       if (!match || match.status !== 'finished') continue;
       
       // === STAGE FILTER LOGIC ===
-      if (stageFilter === 'REGULAR') {
-        if (!isRegularType(match.type)) continue;
-      } else if (stageFilter === 'PLAYIN') {
-        if (!isPlayinType(match.type)) continue;
-      } else if (stageFilter === 'PLAYOFF') {
-        if (!isPlayoffType(match.type)) continue;
-      }
-
-      const history = safeArray(match.result?.history);
-
-      // Series-level POS normalization (robust)
-      const rawSeriesPos = match.result?.posPlayer ?? match.posPlayer ?? match.result?.posPlayerName ?? match.posPlayerName;
-      let seriesPosName = null;
-      if (rawSeriesPos) {
-        if (typeof rawSeriesPos === 'string') {
-          seriesPosName = rawSeriesPos.trim();
-        } else if (typeof rawSeriesPos === 'object') {
-          seriesPosName = (rawSeriesPos.playerName || rawSeriesPos.player || rawSeriesPos.name || rawSeriesPos.이름 || '').trim() || null;
-        } else {
-          seriesPosName = String(rawSeriesPos).trim();
-        }
-      }
-
-      // Only add series POS if this match is a playoff series (explicit)
-      if (seriesPosName && isPlayoffType(match.type)) {
-        players[seriesPosName] = players[seriesPosName] || { games: 0, totalScore: 0, pog: 0, kills: 0, deaths: 0, assists: 0, champCounts: {} };
-        players[seriesPosName].pog += 1;
-      }
+      // === STAGE FILTER LOGIC ===
+      
 
       for (const set of history) {
         totalGames++;
@@ -285,24 +261,29 @@ export default function StatsTab({ league }) {
       <div className="p-4 sm:p-6 border-b border-gray-100 flex-shrink-0">
         
         {/* The League Switcher Buttons */}
+        {/* The League Switcher Buttons */}
         <div className="flex gap-2 p-2 mb-4 bg-gray-100 overflow-x-auto shrink-0 rounded-lg">
-            {['LCK', 'LPL', 'LEC', 'LCS', 'LCP', 'CBLOL'].map(lg => (
+            {['LCK', 'LPL', 'LEC', 'LCS', 'LCP', 'CBLOL', ...(league?.fst ? ['FST'] : [])].map(lg => (
                 <button
                     key={lg}
                     onClick={() => setCurrentLeague(lg)}
                     className={`px-5 py-2 rounded-full font-bold text-xs lg:text-sm transition-all whitespace-nowrap shadow-sm active:scale-95 ${
                         currentLeague === lg
-                        ? 'bg-blue-600 text-white ring-2 ring-blue-300 transform scale-105'
+                        ? lg === 'FST' 
+                            ? 'bg-gradient-to-r from-blue-700 to-purple-700 text-white ring-2 ring-blue-300 transform scale-105'
+                            : 'bg-blue-600 text-white ring-2 ring-blue-300 transform scale-105'
                         : 'bg-white text-gray-600 hover:bg-gray-200 border border-gray-300'
                     }`}
                 >
-                    {lg}
+                    {lg === 'FST' ? '🌍 FST' : lg}
                 </button>
             ))}
         </div>
 
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3 sm:gap-0">
-          <h2 className="text-xl sm:text-2xl font-black text-gray-800 whitespace-nowrap">📊 2026 {currentLeague} 통계 센터</h2>
+          <h2 className="text-xl sm:text-2xl font-black text-gray-800 whitespace-nowrap">
+              📊 2026 {currentLeague === 'FST' ? 'FST 월드 토너먼트' : currentLeague} 통계 센터
+          </h2>
           
           <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
             
@@ -314,17 +295,19 @@ export default function StatsTab({ league }) {
                 >
                   전체
                 </button>
-                <button 
-                  onClick={() => setStageFilter('PLAYIN')}
-                  className={`px-3 py-1 text-xs sm:text-sm font-bold rounded-md transition-all ${stageFilter === 'PLAYIN' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                >
-                  플레이인
-                </button>
+                {currentLeague !== 'FST' && (
+                    <button 
+                      onClick={() => setStageFilter('PLAYIN')}
+                      className={`px-3 py-1 text-xs sm:text-sm font-bold rounded-md transition-all ${stageFilter === 'PLAYIN' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                      플레이인
+                    </button>
+                )}
                 <button 
                   onClick={() => setStageFilter('REGULAR')}
                   className={`px-3 py-1 text-xs sm:text-sm font-bold rounded-md transition-all ${stageFilter === 'REGULAR' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
-                  정규시즌
+                  {currentLeague === 'FST' ? '그룹 스테이지' : '정규시즌'}
                 </button>
                 <button 
                   onClick={() => setStageFilter('PLAYOFF')}
