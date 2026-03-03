@@ -1086,10 +1086,14 @@ setMyMatchResult({
     // ── FST: Reset tournament data ────────────────────────────
     const handleFSTReset = () => {
       if (!window.confirm('FST 데이터를 초기화하시겠습니까?\n이전 결과가 모두 삭제되고 다시 생성할 수 있습니다.')) return;
-      const updates = { fst: null };
-      setLeague(prev => ({ ...prev, ...updates }));
-      updateLeague(league.id, updates);
-      if (activeTab === 'fst') setActiveTab('dashboard');
+      // Switch tab FIRST so FSTTournamentTab is unmounted before fst becomes null
+      setActiveTab('dashboard');
+      // Use setTimeout to let the tab switch render first, then clear fst
+      setTimeout(() => {
+        const updates = { fst: null };
+        setLeague(prev => ({ ...prev, ...updates }));
+        updateLeague(league.id, updates);
+      }, 50);
     };
 
     // ── FST: Build team with real roster for simulation ───────
