@@ -34,7 +34,8 @@ const LEAGUE_TITLES = {
     'LCP': '스플릿 1',
     'LEC': '버서스',
     'LCS': '락 인',
-    'CBLOL': '레전드 컵'
+    'CBLOL': '레전드 컵',
+    'FST': 'World Tournament'
 };
 
 // --- HELPER COMPONENTS ---
@@ -129,6 +130,8 @@ const SmallMvpCard = ({ title, player, colorClass }) => {
 const HistoryTab = ({ league }) => {
   const [currentLeague, setCurrentLeague] = useState('LCK');
   
+  const hasFST = !!(league?.fst || league?.foreignHistory?.FST?.length);
+
   const history = currentLeague === 'LCK' 
       ? (league?.history || []) 
       : (league?.foreignHistory?.[currentLeague] || []);
@@ -138,23 +141,26 @@ const HistoryTab = ({ league }) => {
 
   useEffect(() => {
       setCurrentIndex(history.length > 0 ? history.length - 1 : 0);
+      setViewMode('regular');
   }, [currentLeague, history.length]);
 
   return (
     <div className="flex flex-col gap-6 max-w-5xl mx-auto pb-10">
       
       <div className="flex gap-2 p-3 border-b bg-gray-100 overflow-x-auto shrink-0 rounded-lg">
-          {['LCK', 'LPL', 'LEC', 'LCS', 'LCP', 'CBLOL'].map(lg => (
+          {['LCK', 'LPL', 'LEC', 'LCS', 'LCP', 'CBLOL', ...(hasFST ? ['FST'] : [])].map(lg => (
               <button
                   key={lg}
                   onClick={() => setCurrentLeague(lg)}
                   className={`px-5 py-2 rounded-full font-bold text-xs lg:text-sm transition-all whitespace-nowrap shadow-sm active:scale-95 ${
                       currentLeague === lg
-                      ? 'bg-blue-600 text-white ring-2 ring-blue-300 transform scale-105'
+                      ? lg === 'FST'
+                          ? 'bg-gradient-to-r from-blue-700 to-purple-700 text-white ring-2 ring-blue-300 transform scale-105'
+                          : 'bg-blue-600 text-white ring-2 ring-blue-300 transform scale-105'
                       : 'bg-white text-gray-600 hover:bg-gray-200 border border-gray-300'
                   }`}
               >
-                  {lg}
+                  {lg === 'FST' ? '🌍 FST' : lg}
               </button>
           ))}
       </div>
@@ -162,8 +168,14 @@ const HistoryTab = ({ league }) => {
       {history.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-[400px] text-gray-400 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
               <div className="text-4xl mb-4">📜</div>
-              <div className="font-bold text-xl mb-2">2026 {currentLeague} {LEAGUE_TITLES[currentLeague]} 기록이 없습니다.</div>
-              <p className="text-sm text-gray-500 font-medium">시즌이 종료되면 상단의 [💾 시즌 기록 저장] 버튼을 눌러 역사에 기록하세요.</p>
+              <div className="font-bold text-xl mb-2">
+                  {currentLeague === 'FST' ? 'FST World Tournament' : `2026 ${currentLeague} ${LEAGUE_TITLES[currentLeague]}`} 기록이 없습니다.
+              </div>
+              <p className="text-sm text-gray-500 font-medium">
+                  {currentLeague === 'FST' 
+                      ? 'FST 토너먼트가 종료되면 상단의 [💾 시즌 기록 저장] 버튼을 눌러 역사에 기록하세요.'
+                      : '시즌이 종료되면 상단의 [💾 시즌 기록 저장] 버튼을 눌러 역사에 기록하세요.'}
+              </p>
           </div>
       ) : (
           (() => {
@@ -625,10 +637,27 @@ const HistoryTab = ({ league }) => {
                   if (lecRanks.length > 0) displayStandings = lecRanks;
               }
 
+              // ── FST FINAL STANDINGS ─────────────────────────────────────────────
+              if (currentLeague === 'FST') {
+                  // Use the pre-computed finalStandings saved in the snapshot.
+                  // fstTeams in the record let us resolve colors; fall back to findGlobalTeam.
+                  const fstTeams = record.fstTeams || [];
+                  if (record.finalStandings && record.finalStandings.length > 0) {
+                      displayStandings = record.finalStandings.map(item => {
+                          const teamName = item.team?.name || item.team;
+                          const resolved = fstTeams.find(t => t.name === teamName)
+                              || findGlobalTeam(teamName);
+                          return { rank: item.rank, team: resolved };
+                      });
+                  }
+              }
+
               // Safely determine Champion
               const champTeamObj = record.champion 
-                  ? findGlobalTeam(record.champion.name) 
-                  : (displayStandings.length > 0 ? findGlobalTeam(displayStandings[0].team.name) : null);
+                  ? (currentLeague === 'FST'
+                      ? ((record.fstTeams || []).find(t => t.name === record.champion.name) || findGlobalTeam(record.champion.name))
+                      : findGlobalTeam(record.champion.name))
+                  : (displayStandings.length > 0 ? findGlobalTeam(displayStandings[0].team?.name || displayStandings[0].team) : null);
                   
               const championColor = TEAM_COLORS[champTeamObj?.name] || champTeamObj?.colors?.primary || '#333';
               const championDisplayShort = champTeamObj?.name || 'TBD';
@@ -641,7 +670,9 @@ const HistoryTab = ({ league }) => {
                           <button onClick={handlePrev} className="z-10 w-10 h-10 rounded-full bg-gray-700 hover:bg-gray-600 flex items-center justify-center font-bold text-xl transition">&lt;</button>
                           <div className="z-10 text-center">
                               <h2 className="text-3xl lg:text-4xl font-black tracking-tighter text-yellow-400 drop-shadow-md">
-                                  {record.year} {currentLeague} {LEAGUE_TITLES[currentLeague]}
+                                  {currentLeague === 'FST'
+                                      ? `${record.year} FST World Tournament`
+                                      : `${record.year} ${currentLeague} ${LEAGUE_TITLES[currentLeague]}`}
                               </h2>
                               <div className="text-gray-400 font-bold text-sm mt-1 uppercase tracking-widest">Season Archive</div>
                           </div>
@@ -685,7 +716,7 @@ const HistoryTab = ({ league }) => {
                                     onClick={() => setViewMode('regular')}
                                     className={`px-3 py-1 text-xs font-bold rounded-md transition ${viewMode === 'regular' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}
                                  >
-                                     정규 시즌
+                                     {currentLeague === 'FST' ? '그룹 스테이지' : '정규 시즌'}
                                  </button>
                                  <button 
                                     onClick={() => setViewMode('playoff')}
@@ -750,6 +781,11 @@ const HistoryTab = ({ league }) => {
                                                           {item.rank <= 2 && ['LPL', 'LCP', 'CBLOL', 'LCS', 'LEC'].includes(currentLeague) && (
                                                               <span className="text-[10px] bg-purple-100 text-purple-700 border border-purple-200 px-2 py-0.5 rounded font-black whitespace-nowrap shadow-sm ml-1">
                                                                   FST 진출
+                                                              </span>
+                                                          )}
+                                                          {item.rank === 1 && currentLeague === 'FST' && (
+                                                              <span className="text-[10px] bg-yellow-100 text-yellow-700 border border-yellow-300 px-2 py-0.5 rounded font-black whitespace-nowrap shadow-sm ml-1">
+                                                                  🏆 우승
                                                               </span>
                                                           )}
                                                       </td>

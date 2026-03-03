@@ -134,6 +134,10 @@ const getOvrBadgeStyle = (ovr) => {
         h => h.year === (league.year || 2026) && h.seasonName === (league.seasonName || 'LCK CUP')
     );
 
+    // FST completion + save checks
+    const isFSTOver = hasFST && !!(league.fst?.matches || []).find(m => m.fstRound === 'Finals' && m.status === 'finished');
+    const isFSTSavedInHistory = !!(league?.foreignHistory?.FST?.length > 0);
+
     // Effect: Calculate Prize Money Safely
     useEffect(() => {
       if (!league || !league.matches) return;
@@ -365,7 +369,199 @@ const getOvrBadgeStyle = (ovr) => {
       }
   });
 
-  // --- 3. SAVE TO DB ---
+  // --- 3. FST ARCHIVE ---
+  if (isFSTOver) {
+    const fstMatches = league.fst?.matches || [];
+    const fstTeams   = league.fst?.teams   || [];
+
+    // ── helpers scoped to FST teams ──────────────────────────────────────────
+    const fstFindM = (round) => fstMatches.find(m => m.fstRound === round);
+    const fstGetW  = (m) => {
+      if (!m?.result?.winner) return null;
+      return fstTeams.find(t => t.name === m.result.winner)?.name || m.result.winner;
+    };
+    const fstGetL  = (m) => {
+      if (!m?.result?.winner) return null;
+      const wName = fstGetW(m);
+      const wId   = fstTeams.find(t => t.name === wName)?.fstId;
+      const loserId = wId ? (m.t1 === wId ? m.t2 : m.t1) : (fstTeams.find(t => t.fstId === m.t1)?.name === wName ? m.t2 : m.t1);
+      return fstTeams.find(t => t.fstId === loserId)?.name;
+    };
+    const fstGetWonSets = (m, teamName) => {
+      if (!m?.result?.score) return 0;
+      const parts = String(m.result.score).split(/[-:]/).map(Number);
+      if (parts.length !== 2) return 0;
+      return fstGetW(m) === teamName ? Math.max(parts[0], parts[1]) : Math.min(parts[0], parts[1]);
+    };
+
+    const pg1 = fstFindM('PG1'); const pg2 = fstFindM('PG2');
+    const finals = fstFindM('Finals');
+    const gg7 = fstFindM('GG7'); const gg8 = fstFindM('GG8');
+    const gg9 = fstFindM('GG9'); const gg10 = fstFindM('GG10');
+    const gg5 = fstFindM('GG5'); const gg6 = fstFindM('GG6');
+
+    // ── Playoff placement (same fixed logic as AwardsTab) ────────────────────
+    const fstPlayoffRanks = [];
+    const fstAddP = (n) => { if (n && !fstPlayoffRanks.includes(n)) fstPlayoffRanks.push(n); };
+
+    fstAddP(fstGetW(finals));
+    fstAddP(fstGetL(finals));
+
+    const l_pg1 = fstGetL(pg1); const l_pg2 = fstGetL(pg2);
+    [l_pg1 ? { name: l_pg1, s: fstGetWonSets(pg1, l_pg1) } : null,
+     l_pg2 ? { name: l_pg2, s: fstGetWonSets(pg2, l_pg2) } : null]
+      .filter(Boolean).sort((a, b) => b.s - a.s).forEach(t => fstAddP(t.name));
+
+    const l_gg9 = fstGetL(gg9); const l_gg10 = fstGetL(gg10);
+    [l_gg9  ? { name: l_gg9,  s: fstGetWonSets(gg9,  l_gg9)  } : null,
+     l_gg10 ? { name: l_gg10, s: fstGetWonSets(gg10, l_gg10) } : null]
+      .filter(Boolean).sort((a, b) => b.s - a.s).forEach(t => fstAddP(t.name));
+
+    const l_gg7 = fstGetL(gg7); const l_gg8 = fstGetL(gg8);
+    [l_gg7 ? { name: l_gg7, s: fstGetWonSets(gg7, l_gg7) } : null,
+     l_gg8 ? { name: l_gg8, s: fstGetWonSets(gg8, l_gg8) } : null]
+      .filter(Boolean).sort((a, b) => b.s - a.s).forEach(t => fstAddP(t.name));
+
+    // Fallback: group stage participants not yet placed
+    [fstGetW(gg5), fstGetW(gg6), fstGetW(gg9), fstGetW(gg10),
+     fstGetL(gg9), fstGetL(gg10), fstGetL(gg7), fstGetL(gg8)]
+      .forEach(n => fstAddP(n));
+
+    // ── Group-stage standings order ──────────────────────────────────────────
+    const fstGroupRanks = [
+      fstGetW(gg5), fstGetW(gg6),
+      fstGetW(gg9), fstGetW(gg10),
+      fstGetL(gg9), fstGetL(gg10),
+      fstGetL(gg7), fstGetL(gg8)
+    ].filter(Boolean);
+
+    // ── Award computation helper ─────────────────────────────────────────────
+    const buildFSTAwards = (scale, standingsNames, forPlayoffs) => {
+      const rankPtsMap = {};
+      standingsNames.forEach((name, idx) => { if (name) rankPtsMap[name] = idx < scale.length ? scale[idx] : 0; });
+      const safeArr = v => Array.isArray(v) ? v : [];
+      const normalizeRole = (r) => {
+        if (!r) return 'UNKNOWN'; const up = String(r).toUpperCase();
+        if (['JGL','정글','JUNGLE'].includes(up)) return 'JGL';
+        if (['SUP','서포터','SUPP','SPT'].includes(up)) return 'SUP';
+        if (['ADC','원거리','BOT','BOTTOM','AD'].includes(up)) return 'ADC';
+        if (['MID','미드'].includes(up)) return 'MID';
+        if (['TOP','탑'].includes(up)) return 'TOP';
+        return up;
+      };
+      const players = {};
+      const targetMatches = fstMatches.filter(m => {
+        if (m.status !== 'finished') return false;
+        if (forPlayoffs) return ['PG1', 'PG2', 'Finals'].includes(m.fstRound);
+        return m.fstRound?.startsWith('GG');
+      });
+      for (const match of targetMatches) {
+        for (const set of safeArr(match.result?.history)) {
+          const pogObj = set.pogPlayer;
+          const pogName = typeof pogObj === 'string' ? pogObj.trim() : (pogObj?.playerName || '').trim();
+          if (pogName) { if (!players[pogName]) players[pogName] = { games: 0, totalScore: 0, pog: 0, role: null, team: null }; players[pogName].pog++; }
+          const allPicks = [...safeArr(set.picks?.A), ...safeArr(set.picks?.B)];
+          for (const p of allPicks) {
+            if (!p?.playerName) continue;
+            const name = p.playerName;
+            if (!players[name]) players[name] = { games: 0, totalScore: 0, pog: 0, role: null, team: null };
+            const k = p.stats?.kills ?? p.k ?? 0;
+            const d = p.stats?.deaths ?? p.d ?? 0;
+            const a = p.stats?.assists ?? p.a ?? 0;
+            const dmg = p.stats?.damage ?? 0;
+            const gold = p.currentGold ?? 0;
+            const safeD = d === 0 ? 1 : d;
+            players[name].games++;
+            players[name].totalScore += ((k + a) / safeD) * 3 + (dmg / 3000) + (gold / 1000) + (a * 0.65);
+            if (!players[name].role) players[name].role = p.role || p.playerData?.포지션;
+            if (!players[name].team) players[name].team = p.playerData?.팀 || p.playerData?.team;
+          }
+        }
+      }
+      // POG leader
+      let maxPog = 0; let pogLeaderName = null;
+      Object.entries(players).forEach(([name, d]) => {
+        if (d.pog > maxPog || (d.pog === maxPog && maxPog > 0 && d.totalScore > (players[pogLeaderName]?.totalScore || 0))) {
+          maxPog = d.pog; pogLeaderName = name;
+        }
+      });
+      // Finals MVP (for playoffs)
+      let finalsMvpName = null;
+      if (forPlayoffs && finals?.result?.history && finals?.result?.winner) {
+        const winName = finals.result.winner?.trim().toLowerCase();
+        const posScores = {};
+        safeArr(finals.result.history).forEach(game => {
+          const picksA = game.picks?.A || [];
+          const picksB = game.picks?.B || [];
+          const teamAName = picksA[0]?.playerData?.팀?.trim().toLowerCase();
+          const teamBName = picksB[0]?.playerData?.팀?.trim().toLowerCase();
+          const aMatch = teamAName && winName && (teamAName === winName || teamAName.includes(winName) || winName.includes(teamAName));
+          const bMatch = teamBName && winName && (teamBName === winName || teamBName.includes(winName) || winName.includes(teamBName));
+          const targetPicks = (aMatch && !bMatch) ? picksA : (bMatch && !aMatch) ? picksB : (aMatch && bMatch) ? picksA : null;
+          if (!targetPicks) return;
+          targetPicks.forEach(p => {
+            if (!p?.playerName) return;
+            if (!posScores[p.playerName]) posScores[p.playerName] = 0;
+            const k = p.stats?.kills ?? p.k ?? 0; const d = p.stats?.deaths ?? p.d ?? 0; const a = p.stats?.assists ?? p.a ?? 0;
+            const safeD2 = d === 0 ? 1 : d;
+            posScores[p.playerName] += ((k + a) / safeD2) * 3 + (a * 0.65);
+          });
+        });
+        const posSorted = Object.entries(posScores).sort((a, b) => b[1] - a[1]);
+        if (posSorted.length > 0) finalsMvpName = posSorted[0][0];
+      }
+      const scored = Object.entries(players).filter(([, d]) => d.games > 0).map(([name, d]) => {
+        const teamName = d.team || ''; const rankPoints = rankPtsMap[teamName] ?? 0;
+        const avgScore = d.totalScore / d.games; const pogCount = d.pog;
+        const isPogLeader = name === pogLeaderName; const isFinalsMvp = name === finalsMvpName;
+        const finalScore = rankPoints + (pogCount * 10) + avgScore + (isFinalsMvp ? 20 : 0) + (isPogLeader ? 20 : 0);
+        return { playerName: name, role: normalizeRole(d.role), team: teamName, teamObj: { name: teamName }, rankPoints, avgScore, pogCount, isPogLeader, isFinalsMvp, mvpBonus: 0, finalScore };
+      }).sort((a, b) => b.finalScore - a.finalScore);
+      const ROLES = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
+      const allProTeams = { 1: {}, 2: {}, 3: {} }; const usedByRole = {};
+      ROLES.forEach(r => { usedByRole[r] = []; });
+      for (const tier of [1, 2, 3]) { for (const role of ROLES) { const eligible = scored.filter(p => p.role === role && !usedByRole[role].includes(p.playerName)); if (eligible[0]) { allProTeams[tier][role] = eligible[0]; usedByRole[role].push(eligible[0].playerName); } } }
+      return { seasonMvp: scored[0] || null, pogLeader: scored.find(p => p.isPogLeader) || null, finalsMvp: scored.find(p => p.isFinalsMvp) || null, allProTeams };
+    };
+
+    const FST_GROUP_SCALE_ARCHIVE   = [100, 100, 80, 80, 60, 60, 40, 40];
+    const FST_PLAYOFF_SCALE_ARCHIVE = [100, 80, 60, 50, 40, 30, 20, 10];
+
+    const fstGroupAwards   = buildFSTAwards(FST_GROUP_SCALE_ARCHIVE,   fstGroupRanks,   false);
+    const fstPlayoffAwards = buildFSTAwards(FST_PLAYOFF_SCALE_ARCHIVE, fstPlayoffRanks, true);
+
+    const fstSnapshot = {
+      year:        currentYear,
+      seasonName:  'FST World Tournament',
+      champion:    { name: fstGetW(finals) },
+      matches:     fstMatches,
+      fstTeams:    fstTeams,
+      finalStandings: fstPlayoffRanks.map((name, i) => ({
+        rank: i + 1,
+        team: fstTeams.find(t => t.name === name) || { name }
+      })),
+      groupStandings: fstGroupRanks.map((name, i) => ({
+        rank: i + 1,
+        team: fstTeams.find(t => t.name === name) || { name }
+      })),
+      awards: {
+        regular: {
+          mvp:       fstGroupAwards.seasonMvp,
+          allPro:    fstGroupAwards.allProTeams,
+          pogLeader: fstGroupAwards.pogLeader
+        },
+        playoff: {
+          finalsMvp:  fstPlayoffAwards.finalsMvp,
+          playoffMvp: fstPlayoffAwards.pogLeader,
+          allPro:     fstPlayoffAwards.allProTeams
+        }
+      }
+    };
+
+    newForeignHistory.FST = [fstSnapshot]; // one record per FST (single world tournament)
+  }
+
+  // --- 4. SAVE TO DB ---
   const updatedLeague = { 
       ...league, 
       history: newHistory,
@@ -376,21 +572,32 @@ const getOvrBadgeStyle = (ovr) => {
   updateLeague(league.id, updatedLeague);
   
   // Show toast notification instead of alert()
-  setSaveMessage('✅ 시즌 기록 저장 완료! (LCK 및 해외 리그 데이터 통합 저장됨)');
+  setSaveMessage('✅ 시즌 기록 저장 완료! (LCK, 해외 리그, FST 데이터 통합 저장됨)');
   setTimeout(() => setSaveMessage(''), 4000);
 };
 
     // AUTO-ARCHIVE: runs silently only when season just finished and not yet saved
     // We use a ref to prevent re-triggering after manual save updates league state
     const autoArchiveRanRef = useRef(false);
+    const autoArchiveFSTRanRef = useRef(false);
     useEffect(() => {
         if (!league || !league.matches) return;
-        if (autoArchiveRanRef.current) return; // Already ran this session
+        if (autoArchiveRanRef.current) return;
         if (isSeasonOver && !isSavedInHistory) {
             autoArchiveRanRef.current = true;
             handleManualArchive();
         }
-    }, [isSeasonOver, isSavedInHistory]); // Use semantic flags, not raw matches reference
+    }, [isSeasonOver, isSavedInHistory]);
+
+    // Auto-archive FST when the Finals match finishes and hasn't been saved yet
+    useEffect(() => {
+        if (!league) return;
+        if (autoArchiveFSTRanRef.current) return;
+        if (isFSTOver && !isFSTSavedInHistory) {
+            autoArchiveFSTRanRef.current = true;
+            handleManualArchive();
+        }
+    }, [isFSTOver, isFSTSavedInHistory]);
   
   // [CRITICAL FIX] handleMatchClick now injects round info for old saves
   // [CRITICAL FIX] Global Team Finder for the Modal!
@@ -1599,18 +1806,18 @@ const handleMatchClick = (match) => {
              {/* [NEW] Manual Archive Button for Old Saves */}
              {/* [FIX] Button is now always visible when season is over, allowing "Update" */}
              {/* [FIX] Button is now always visible. If saved, it shows as 'Update' */}
-{isSeasonOver && (
+{(isSeasonOver || isFSTOver) && (
    <button 
      onClick={handleManualArchive} 
      className={`px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm shadow-md flex items-center gap-2 transition whitespace-nowrap ${
-         isSavedInHistory 
+         (isSavedInHistory && (!isFSTOver || isFSTSavedInHistory))
          ? 'bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-500' 
          : 'bg-gray-900 text-green-400 hover:bg-black border border-green-500 animate-pulse'
      }`}
    >
        <span>💾</span> 
        <span className="hidden sm:inline">
-           {isSavedInHistory ? "시즌 기록 갱신 (Update)" : "시즌 기록 저장"}
+           {(isSavedInHistory && (!isFSTOver || isFSTSavedInHistory)) ? "시즌 기록 갱신 (Update)" : "시즌 기록 저장"}
        </span>
    </button>
 )}
