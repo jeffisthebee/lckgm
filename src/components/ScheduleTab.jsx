@@ -78,6 +78,10 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
     const showFSTInTeamSchedule = activeTab === 'team_schedule' && hasFST && !!myFSTTeam;
 
     const [forceRegen, setForceRegen] = useState(false);
+    const [syncDone, setSyncDone] = useState(false);
+
+    // Reset sync completion whenever the viewed league changes so it re-evaluates
+    useEffect(() => { setSyncDone(false); }, [targetLeague]);
 
     const targetLeague = ['LPL', 'LCP', 'CBLOL', 'LCS', 'LEC'].includes(displayLeague) ? displayLeague : null;
 
@@ -133,7 +137,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
     }, [displayLeague, league, setLeague]);
 
     useEffect(() => {
-        if (!needsSync || !targetLeague) return;
+        if (!needsSync || !targetLeague) { setSyncDone(true); return; }
 
         const lgTeams = FOREIGN_LEAGUES[targetLeague] || [];
         const lgPlayers = (FOREIGN_PLAYERS && FOREIGN_PLAYERS[targetLeague]) ? FOREIGN_PLAYERS[targetLeague] : [];
@@ -729,12 +733,15 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
             
             if (forceRegen) setForceRegen(false);
         }
-    }, [needsSync, currentPendingLCK, targetLeague, activeMatches, league, setLeague, teams, forceRegen]);
+        // Mark sync as complete regardless — avoids infinite loading when
+        // some playoff matches are still TBD and can't be simulated yet.
+        setSyncDone(true);
+    }, [needsSync, currentPendingLCK, targetLeague, activeMatches, league, setLeague, teams, forceRegen, setSyncDone]);
 
     return (
         <div className="bg-white rounded-lg border shadow-sm p-4 lg:p-8 min-h-[300px] lg:min-h-[600px] flex flex-col h-full lg:h-auto overflow-y-auto relative">
             
-            {needsSync && (
+            {needsSync && !syncDone && (
                 <div className="absolute inset-0 bg-white/80 z-50 flex flex-col items-center justify-center backdrop-blur-sm">
                     <div className="text-4xl animate-spin mb-4">⏳</div>
                     <div className="text-lg font-black text-blue-600 animate-pulse">{targetLeague} 데이터를 동기화 중입니다...</div>
@@ -780,10 +787,10 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 fstMatches.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 pb-4">
                         {[...fstMatches].sort(compareDatesObj).map((m, i) => {
-                            const t1Fst = fstTeams.find(t => t.fstId === m.t1);
-                            const t2Fst = fstTeams.find(t => t.fstId === m.t2);
-                            const t1Name = t1Fst?.name || m.t1 || 'TBD';
-                            const t2Name = t2Fst?.name || m.t2 || 'TBD';
+                            const t1Fst = fstTeams.find(t => t.fstId === m.t1 || t.name === m.t1);
+                            const t2Fst = fstTeams.find(t => t.fstId === m.t2 || t.name === m.t2);
+                            const t1Name = t1Fst?.name || 'TBD';
+                            const t2Name = t2Fst?.name || 'TBD';
                             const isFinished = m.status === 'finished';
                             const isPending = !isFinished && m.t1 && m.t2;
 
