@@ -4,6 +4,40 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
     import { SYNERGIES } from '../data/synergies'; 
     import { validateLineup, getDefaultLineup } from '../engine/rosterLogic';
     
+    // --- HELPER: Champion Image URL from Riot Data Dragon ---
+    // Normalizes champion name to match Data Dragon format (e.g. "Wukong" -> "MonkeyKing")
+    const CHAMP_NAME_OVERRIDES = {
+        'Wukong': 'MonkeyKing',
+        'Renata Glasc': 'Renata',
+        'Dr. Mundo': 'DrMundo',
+        "Cho'Gath": 'Chogath',
+        "Kha'Zix": 'Khazix',
+        "Vel'Koz": 'Velkoz',
+        "Kog'Maw": 'KogMaw',
+        "Rek'Sai": 'RekSai',
+        "Kai'Sa": 'Kaisa',
+        "Bel'Veth": 'Belveth',
+        "K'Sante": 'KSante',
+        'LeBlanc': 'Leblanc',
+        'Nunu & Willump': 'Nunu',
+        "Aurelion Sol": 'AurelionSol',
+        'Jarvan IV': 'JarvanIV',
+        'Lee Sin': 'LeeSin',
+        'Master Yi': 'MasterYi',
+        'Miss Fortune': 'MissFortune',
+        'Tahm Kench': 'TahmKench',
+        'Twisted Fate': 'TwistedFate',
+        'Xin Zhao': 'XinZhao',
+        'Corki': 'Corki',
+    };
+    const DDragon_VERSION = '14.24.1';
+    const getChampionImageUrl = (champName) => {
+        if (!champName) return null;
+        const normalized = CHAMP_NAME_OVERRIDES[champName] 
+            || champName.replace(/[\s'\.]/g, '').replace(/&.*/, '');
+        return `https://ddragon.leagueoflegends.com/cdn/${DDragon_VERSION}/img/champion/${normalized}.png`;
+    };
+
     // --- HELPER: Simple Scoring for Recommendation (Frontend Version) ---
     const getRecommendedChampion = (role, currentChamps, availableChamps) => {
         // Filter by Role
@@ -128,34 +162,6 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         return candidates[0] || null;
     };
     
-    // --- HELPER: Convert champion name to Data Dragon ID for portrait images ---
-    const getChampionDDragonId = (name) => {
-        const overrides = {
-            "Aurelion Sol": "AurelionSol",
-            "Bel'Veth": "Belveth",
-            "Cho'Gath": "Chogath",
-            "Dr. Mundo": "DrMundo",
-            "Jarvan IV": "JarvanIV",
-            "K'Sante": "KSante",
-            "Kai'Sa": "Kaisa",
-            "Kha'Zix": "Khazix",
-            "Kog'Maw": "KogMaw",
-            "LeBlanc": "Leblanc",
-            "Lee Sin": "LeeSin",
-            "Master Yi": "MasterYi",
-            "Miss Fortune": "MissFortune",
-            "Nunu & Willump": "Nunu",
-            "Rek'Sai": "RekSai",
-            "Renata Glasc": "Renata",
-            "Tahm Kench": "TahmKench",
-            "Twisted Fate": "TwistedFate",
-            "Vel'Koz": "Velkoz",
-            "Wukong": "MonkeyKing",
-            "Xin Zhao": "XinZhao",
-        };
-        return overrides[name] || name.replace(/['\s.&]/g, '');
-    };
-
     export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onClose, externalGlobalBans = [], isManualMode = false }) {
         const activeChampionList = simOptions?.currentChampionList || championList;
     
@@ -189,10 +195,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         const [filterRole, setFilterRole] = useState('TOP');
         const [searchTerm, setSearchTerm] = useState(''); 
         const [draftLogs, setDraftLogs] = useState([]);
-        const [userSelectedRole, setUserSelectedRole] = useState(false);
-        const [hoveredChamp, setHoveredChamp] = useState(null);
-        const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
-        const [ddVersion, setDdVersion] = useState('15.6.1');
+        const [userSelectedRole, setUserSelectedRole] = useState(false); 
         // New: track which side the USER is on (BLUE/RED) in manual mode to avoid name-compare errors
         const [manualUserSide, setManualUserSide] = useState(null);
         const finalizeManualDraftCalledRef = useRef(false); // guard against double-invocation
@@ -269,13 +272,6 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
     
         const safeArray = (v) => Array.isArray(v) ? v : [];
         
-        useEffect(() => {
-            fetch('https://ddragon.leagueoflegends.com/api/versions.json')
-                .then(r => r.json())
-                .then(versions => { if (versions?.[0]) setDdVersion(versions[0]); })
-                .catch(() => {});
-        }, []);
-
         // --- INITIALIZE ROSTER ON MOUNT ---
         useEffect(() => {
             const defaultLineup = getDefaultLineup(userTeam.name);
@@ -1310,15 +1306,15 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                               <div className="flex sm:hidden w-full justify-center gap-8 px-4 mb-1">
                                    <div className="flex gap-1">
                                        {draftState.bluePicks.map((p,i) => (
-                                           <div key={i} className="w-3.5 h-3.5 bg-blue-900/40 border border-blue-500 rounded overflow-hidden">
-                                               {p?.champName ? <img src={`https://wsrv.nl/?url=ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(p.champName)}.png`} alt={p.champName} className="w-full h-full object-cover" onError={e=>{const p=e.currentTarget.parentElement;if(p){p.innerHTML='<span style="font-size:8px;color:#9ca3af;word-break:break-all;padding:2px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">'+e.currentTarget.alt+'</span>'}}} /> : null}
+                                           <div key={i} className="w-3.5 h-3.5 bg-blue-900/40 border border-blue-500 rounded flex items-center justify-center overflow-hidden">
+                                               <span className="text-[4px] leading-none">{p?.champName?.slice(0,2) || ''}</span>
                                            </div>
                                        ))}
                                    </div>
                                    <div className="flex gap-1">
                                        {draftState.redPicks.map((p,i) => (
-                                           <div key={i} className="w-3.5 h-3.5 bg-red-900/40 border border-red-500 rounded overflow-hidden">
-                                               {p?.champName ? <img src={`https://wsrv.nl/?url=ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(p.champName)}.png`} alt={p.champName} className="w-full h-full object-cover" onError={e=>{const p=e.currentTarget.parentElement;if(p){p.innerHTML='<span style="font-size:8px;color:#9ca3af;word-break:break-all;padding:2px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">'+e.currentTarget.alt+'</span>'}}} /> : null}
+                                           <div key={i} className="w-3.5 h-3.5 bg-red-900/40 border border-red-500 rounded flex items-center justify-center overflow-hidden">
+                                               <span className="text-[4px] leading-none">{p?.champName?.slice(0,2) || ''}</span>
                                            </div>
                                        ))}
                                    </div>
@@ -1327,12 +1323,13 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                               <div className="flex items-center gap-2 sm:gap-3 lg:gap-4 mb-1 sm:mb-2">
                                   <div className="flex gap-1">
                                       {[0,1,2,3,4].map(i => (
-                                          <div key={i} className="w-5 h-5 sm:w-8 sm:h-8 lg:w-10 lg:h-10 bg-gray-800 border border-gray-600 rounded overflow-hidden flex items-center justify-center">
+                                          <div key={i} className="w-5 h-5 sm:w-8 sm:h-8 lg:w-10 lg:h-10 bg-gray-800 border border-gray-600 rounded flex items-center justify-center overflow-hidden relative">
                                               {draftState.blueBans[i] ? (
-                                                 <div className="relative w-full h-full">
-                                                     <img src={`https://wsrv.nl/?url=ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(draftState.blueBans[i])}.png`} alt={draftState.blueBans[i]} className="w-full h-full object-cover grayscale opacity-60" onError={e=>{const p=e.currentTarget.parentElement;if(p){p.innerHTML='<span style="font-size:8px;color:#9ca3af;word-break:break-all;padding:2px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">'+e.currentTarget.alt+'</span>'}}} />
-                                                     <div className="absolute inset-0 flex items-center justify-center text-red-400 font-black text-lg pointer-events-none">✕</div>
-                                                 </div>
+                                                 <>
+                                                   <img src={getChampionImageUrl(draftState.blueBans[i])} alt={draftState.blueBans[i]} className="w-full h-full object-cover grayscale opacity-60" onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
+                                                   <div style={{display:'none'}} className="absolute inset-0 items-center justify-center text-[6px] sm:text-[8px] lg:text-[10px] font-bold text-gray-400 text-center leading-tight break-words">{draftState.blueBans[i]}</div>
+                                                   <div className="absolute inset-0 flex items-center justify-center"><span className="text-red-500 text-lg font-black" style={{textShadow:'0 0 4px black'}}>✕</span></div>
+                                                 </>
                                               ) : <div className="w-full h-full bg-blue-900/20"></div>}
                                           </div>
                                       ))}
@@ -1340,12 +1337,13 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                   <div className="text-lg sm:text-2xl lg:text-3xl font-black text-yellow-400 w-8 sm:w-10 lg:w-16 text-center">{Math.ceil(draftTimer)}</div>
                                   <div className="flex gap-1">
                                       {[0,1,2,3,4].map(i => (
-                                          <div key={i} className="w-5 h-5 sm:w-8 sm:h-8 lg:w-10 lg:h-10 bg-gray-800 border border-gray-600 rounded overflow-hidden flex items-center justify-center">
+                                          <div key={i} className="w-5 h-5 sm:w-8 sm:h-8 lg:w-10 lg:h-10 bg-gray-800 border border-gray-600 rounded flex items-center justify-center overflow-hidden relative">
                                               {draftState.redBans[i] ? (
-                                                 <div className="relative w-full h-full">
-                                                     <img src={`https://wsrv.nl/?url=ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(draftState.redBans[i])}.png`} alt={draftState.redBans[i]} className="w-full h-full object-cover grayscale opacity-60" onError={e=>{const p=e.currentTarget.parentElement;if(p){p.innerHTML='<span style="font-size:8px;color:#9ca3af;word-break:break-all;padding:2px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">'+e.currentTarget.alt+'</span>'}}} />
-                                                     <div className="absolute inset-0 flex items-center justify-center text-red-400 font-black text-lg pointer-events-none">✕</div>
-                                                 </div>
+                                                 <>
+                                                   <img src={getChampionImageUrl(draftState.redBans[i])} alt={draftState.redBans[i]} className="w-full h-full object-cover grayscale opacity-60" onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
+                                                   <div style={{display:'none'}} className="absolute inset-0 items-center justify-center text-[6px] sm:text-[8px] lg:text-[10px] font-bold text-gray-400 text-center leading-tight break-words">{draftState.redBans[i]}</div>
+                                                   <div className="absolute inset-0 flex items-center justify-center"><span className="text-red-500 text-lg font-black" style={{textShadow:'0 0 4px black'}}>✕</span></div>
+                                                 </>
                                               ) : <div className="w-full h-full bg-red-900/20"></div>}
                                           </div>
                                       ))} 
@@ -1521,9 +1519,10 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                              <div key={i} className={`min-h-[2rem] sm:min-h-[3rem] lg:h-24 border-l-2 lg:border-l-4 ${pick ? 'border-blue-500 bg-blue-900/30' : 'border-gray-700 bg-gray-800/50'} rounded-r lg:rounded-r-lg flex items-center p-0.5 sm:p-2 lg:p-4 transition-all duration-500`}>
                                  {pick ? (
                                      <>
-                                        <div className="w-6 h-6 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded border border-blue-400 overflow-hidden shrink-0 bg-black">
-                                                <img src={`https://wsrv.nl/?url=ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(pick.champName)}.png`} alt={pick.champName} className="w-full h-full object-cover" onError={e=>{const p=e.currentTarget.parentElement;if(p){p.innerHTML='<span style="font-size:8px;color:#9ca3af;word-break:break-all;padding:2px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">'+e.currentTarget.alt+'</span>'}}} />
-                                            </div>
+                                        <div className="w-6 h-6 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded border border-blue-400 flex items-center justify-center bg-black overflow-hidden shrink-0 relative">
+                                            <img src={getChampionImageUrl(pick.champName)} alt={pick.champName} className="w-full h-full object-cover object-top" onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
+                                            <div style={{display:'none'}} className="absolute inset-0 items-center justify-center font-bold text-[6px] sm:text-[8px] lg:text-xs text-center break-words leading-tight">{pick.champName}</div>
+                                        </div>
                                         <div className="ml-1 sm:ml-4 overflow-hidden flex flex-col justify-center">
                                             {/* Flex row for Name + Tier so tier is never hidden by truncate */}
                                             <div className="flex flex-wrap items-baseline gap-[1px] sm:gap-1 min-w-0">
@@ -1575,8 +1574,9 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                     <div className="bg-blue-900/30 p-1 px-2 lg:p-2 lg:px-4 flex items-center gap-2 lg:gap-4 border-b border-blue-800 shrink-0">
                                         <span className="text-[8px] lg:text-xs font-bold text-blue-300 uppercase">Rec</span>
                                         <div className="flex items-center gap-1 lg:gap-2">
-                                            <div className="w-5 h-5 lg:w-8 lg:h-8 rounded border border-blue-500 overflow-hidden bg-black shrink-0">
-                                                <img src={`https://wsrv.nl/?url=ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(recommendedChamp.name)}.png`} alt={recommendedChamp.name} className="w-full h-full object-cover" onError={e=>{const p=e.currentTarget.parentElement;if(p){p.innerHTML='<span style="font-size:8px;color:#9ca3af;word-break:break-all;padding:2px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">'+e.currentTarget.alt+'</span>'}}} />
+                                            <div className="w-5 h-5 lg:w-8 lg:h-8 bg-black rounded border border-blue-500 overflow-hidden relative flex items-center justify-center text-[6px] lg:text-[10px] break-words leading-none">
+                                                <img src={getChampionImageUrl(recommendedChamp.name)} alt={recommendedChamp.name} className="w-full h-full object-cover object-top" onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
+                                                <div style={{display:'none'}} className="absolute inset-0 flex items-center justify-center">{recommendedChamp.name}</div>
                                             </div>
                                             <span className="font-bold text-[10px] lg:text-sm text-white truncate max-w-[60px] lg:max-w-none">{recommendedChamp.name}</span>
                                             <span className="text-[8px] lg:text-xs text-blue-200">({recommendedChamp.tier}T)</span>
@@ -1606,22 +1606,15 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                                     key={champ.id}
                                                     disabled={isLocked}
                                                     onClick={() => setSelectedChampion({ ...champ, role: filterRole })}
-                                                    onMouseEnter={(e) => {
-                                                        if (!isLocked) {
-                                                            const rect = e.currentTarget.getBoundingClientRect();
-                                                            setTooltipPos({ x: rect.right + 8, y: rect.top });
-                                                            setHoveredChamp(champ);
-                                                        }
-                                                    }}
-                                                    onMouseLeave={() => setHoveredChamp(null)}
                                                     className={`relative group flex flex-col items-center p-0.5 lg:p-2 rounded border transition ${
                                                         isLocked ? 'opacity-30 grayscale cursor-not-allowed border-transparent' : 
                                                         isSelected ? 'bg-yellow-500/20 border-yellow-500' : 
                                                         'bg-gray-700/50 border-gray-600 hover:bg-gray-600 hover:border-gray-400'
                                                     }`}
                                                 >
-                                                    <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded mb-0.5 lg:mb-2 overflow-hidden shrink-0 bg-black">
-                                                        <img src={`https://wsrv.nl/?url=ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(champ.name)}.png`} alt={champ.name} className="w-full h-full object-cover" onError={e=>{const p=e.currentTarget.parentElement;if(p){p.innerHTML='<span style="font-size:8px;color:#9ca3af;word-break:break-all;padding:2px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">'+e.currentTarget.alt+'</span>'}}} />
+                                                    <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-16 lg:h-16 bg-black rounded mb-0.5 lg:mb-2 flex items-center justify-center text-[6px] sm:text-[8px] lg:text-xs text-gray-400 font-bold overflow-hidden leading-tight break-words p-0 relative">
+                                                        <img src={getChampionImageUrl(champ.name)} alt={champ.name} className="w-full h-full object-cover object-top" onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
+                                                        <div style={{display:'none'}} className="absolute inset-0 items-center justify-center text-[6px] sm:text-[8px] lg:text-xs text-gray-400 font-bold text-center p-0.5">{champ.name}</div>
                                                     </div>
                                                     {/* Reverted to Absolute Badge Style as requested */}
                                                     <div className="text-[8px] lg:text-xs font-bold text-center w-full truncate">{champ.name}</div>
@@ -1633,21 +1626,6 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                         })}
                                  </div>
     
-                                 {/* Champion Portrait Hover Tooltip */}
-                                 {hoveredChamp && (
-                                     <div
-                                         className="fixed z-[9999] pointer-events-none"
-                                         style={{ left: tooltipPos.x, top: tooltipPos.y }}
-                                     >
-                                         <img
-                                             src={`https://wsrv.nl/?url=ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(hoveredChamp.name)}.png`}
-                                             alt={hoveredChamp.name}
-                                             className="w-24 h-24 rounded-lg border-2 border-yellow-500 shadow-2xl shadow-black/80"
-                                             onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                                         />
-                                     </div>
-                                 )}
-
                                  {/* Lock In Button */}
                                  <div className="p-1 sm:p-2 lg:p-4 bg-gray-900 border-t border-gray-700 flex justify-center shrink-0">
                                      <button 
@@ -1696,9 +1674,10 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                              <div key={i} className={`min-h-[2rem] sm:min-h-[3rem] lg:h-24 border-r-2 lg:border-r-4 ${pick ? 'border-red-500 bg-red-900/30' : 'border-gray-700 bg-gray-800/50'} rounded-l lg:rounded-l-lg flex flex-row-reverse items-center p-0.5 sm:p-2 lg:p-4 transition-all duration-500`}>
                                  {pick ? (
                                      <>
-                                        <div className="w-6 h-6 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded border border-red-400 overflow-hidden shrink-0 bg-black">
-                                                <img src={`https://wsrv.nl/?url=ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(pick.champName)}.png`} alt={pick.champName} className="w-full h-full object-cover" onError={e=>{const p=e.currentTarget.parentElement;if(p){p.innerHTML='<span style="font-size:8px;color:#9ca3af;word-break:break-all;padding:2px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">'+e.currentTarget.alt+'</span>'}}} />
-                                            </div>
+                                        <div className="w-6 h-6 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded border border-red-400 flex items-center justify-center bg-black overflow-hidden shrink-0 relative">
+                                            <img src={getChampionImageUrl(pick.champName)} alt={pick.champName} className="w-full h-full object-cover object-top" onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
+                                            <div style={{display:'none'}} className="absolute inset-0 items-center justify-center font-bold text-[6px] sm:text-[8px] lg:text-xs text-center break-words leading-tight">{pick.champName.substring(0,3)}</div>
+                                        </div>
                                         {/* [FIXED] Removed overflow-hidden, added break-words, and pr-1 to prevent cutoff */}
                                         <div className="mr-1 sm:mr-4 text-right flex flex-col justify-center items-end pr-1 w-full">
                                             {/* Flex row for Name + Tier */}
@@ -1733,8 +1712,9 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                         {liveStats.players.filter(p => p.side === 'BLUE').map((p, i) => (
                             <div key={i} className="flex-1 min-h-0 border-b border-gray-800 relative p-1 lg:p-2 flex items-center gap-2 lg:gap-3">
                                 <div className="w-8 h-8 lg:w-12 lg:h-12 bg-gray-800 rounded border border-blue-600 relative overflow-hidden shrink-0">
-                                    <div className="absolute inset-0 flex items-center justify-center font-bold text-[6px] sm:text-[8px] lg:text-xs text-blue-200 text-center leading-none break-words p-0.5">{(p.champName||'').substring(0,3)}</div>
-                                    <div className="absolute bottom-0 right-0 bg-black text-white text-[8px] lg:text-[10px] px-1 font-bold">{p.lvl}</div>
+                                    <img src={getChampionImageUrl(p.champName)} alt={p.champName} className="absolute inset-0 w-full h-full object-cover object-top" onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
+                                    <div style={{display:'none'}} className="absolute inset-0 items-center justify-center font-bold text-[6px] sm:text-[8px] lg:text-xs text-blue-200 text-center leading-none break-words p-0.5">{(p.champName||'').substring(0,3)}</div>
+                                    <div className="absolute bottom-0 right-0 bg-black/80 text-white text-[8px] lg:text-[10px] px-1 font-bold z-10">{p.lvl}</div>
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <div className="flex justify-between items-center">
@@ -1783,8 +1763,9 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                         {liveStats.players.filter(p => p.side === 'RED').map((p, i) => (
                             <div key={i} className="flex-1 min-h-0 border-b border-gray-800 relative p-1 lg:p-2 flex flex-row-reverse items-center gap-2 lg:gap-3 text-right">
                                 <div className="w-8 h-8 lg:w-12 lg:h-12 bg-gray-800 rounded border border-red-600 relative overflow-hidden shrink-0">
-                                    <div className="absolute inset-0 flex items-center justify-center font-bold text-[6px] sm:text-[8px] lg:text-xs text-red-200 text-center leading-none break-words p-0.5">{(p.champName||'').substring(0,3)}</div>
-                                    <div className="absolute bottom-0 left-0 bg-black text-white text-[8px] lg:text-[10px] px-1 font-bold">{p.lvl}</div>
+                                    <img src={getChampionImageUrl(p.champName)} alt={p.champName} className="absolute inset-0 w-full h-full object-cover object-top" onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
+                                    <div style={{display:'none'}} className="absolute inset-0 items-center justify-center font-bold text-[6px] sm:text-[8px] lg:text-xs text-red-200 text-center leading-none break-words p-0.5">{(p.champName||'').substring(0,3)}</div>
+                                    <div className="absolute bottom-0 left-0 bg-black/80 text-white text-[8px] lg:text-[10px] px-1 font-bold z-10">{p.lvl}</div>
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <div className="flex justify-between items-center flex-row-reverse">
@@ -1818,8 +1799,11 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                             <div className="absolute top-0 left-0 bg-yellow-500 text-black font-bold px-2 py-0.5 lg:px-3 lg:py-1 text-[8px] sm:text-[10px] lg:text-xs rounded-br-lg z-10">
                                 SET {currentSet} POG
                             </div>
-                            <div className="w-12 h-12 sm:w-16 sm:h-16 lg:w-24 lg:h-24 rounded-full bg-gray-700 border-2 border-yellow-400 mb-1 sm:mb-2 lg:mb-4 flex items-center justify-center overflow-hidden">
-                                <span className="text-xl sm:text-2xl lg:text-3xl">👤</span>
+                            <div className="w-12 h-12 sm:w-16 sm:h-16 lg:w-24 lg:h-24 rounded-full bg-gray-700 border-2 border-yellow-400 mb-1 sm:mb-2 lg:mb-4 overflow-hidden relative flex items-center justify-center">
+                                {pog?.champName ? (
+                                    <img src={getChampionImageUrl(pog.champName)} alt={pog.champName} className="w-full h-full object-cover object-top scale-110" onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
+                                ) : null}
+                                <span style={{display: pog?.champName ? 'none' : 'flex'}} className="text-xl sm:text-2xl lg:text-3xl">👤</span>
                             </div>
                             <div className="text-sm sm:text-base lg:text-xl font-bold text-yellow-400">{pog?.playerName || 'Unknown'}</div>
                             <div className="text-[10px] sm:text-xs lg:text-sm text-gray-400 mb-1 lg:mb-2">{pog?.champName || ''}</div>
