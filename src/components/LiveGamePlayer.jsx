@@ -266,9 +266,9 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         // crossOrigin='anonymous' is required for cross-origin CDN URLs to avoid CORS blocks.
         const mkAudio = (url) => { const a = new Audio(); a.crossOrigin = 'anonymous'; a.src = url; return a; };
         const audioRefs = useRef({
-            yourBan:  mkAudio('https://raw.communitydragon.org/16.5/plugins/rcp-fe-lol-champ-select/global/default/sounds/sfx-cs-draft-10ban-your-ban.ogg'),
-            enemyBan: mkAudio('https://raw.communitydragon.org/16.5/plugins/rcp-fe-lol-champ-select/global/default/sounds/sfx-cs-draft-10ban-enemy-ban.ogg'),
-            pick:     mkAudio('https://raw.communitydragon.org/16.5/plugins/rcp-fe-lol-champ-select/global/default/sounds/sfx-cs-draft-notif-yourpick.ogg'),
+            yourBan:  mkAudio('/sounds/sfx-cs-draft-10ban-your-ban.ogg'),
+            enemyBan: mkAudio('/sounds/sfx-cs-draft-10ban-enemy-ban.ogg'),
+            pick:     mkAudio('/sounds/sfx-cs-draft-notif-yourpick.ogg'),
         });
 
         const playSound = useCallback((type) => {
