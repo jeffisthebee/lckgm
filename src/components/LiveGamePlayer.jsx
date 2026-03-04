@@ -5,64 +5,36 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
     import { validateLineup, getDefaultLineup } from '../engine/rosterLogic';
     
     // --- HELPER: Champion Image Component ---
-    // Uses Riot Data Dragon CDN. Falls back to a styled initial-letter tile if image fails.
-    const CHAMP_NAME_OVERRIDES = {
-        // Korean names → DDragon ID
-        '가렌': 'Garen', '갈리오': 'Galio', '그라가스': 'Gragas', '그레이브즈': 'Graves',
-        '나르': 'Gnar', '나미': 'Nami', '나서스': 'Nasus', '노틸러스': 'Nautilus',
-        '녹턴': 'Nocturne', '누누와 윌럼프': 'Nunu', '니달리': 'Nidalee', '니코': 'Neeko',
-        '다리우스': 'Darius', '다이애나': 'Diana', '드레이븐': 'Draven',
-        '럭스': 'Lux', '럼블': 'Rumble', '레나타 글라스크': 'Renata', '레넥톤': 'Renekton',
-        '레오나': 'Leona', '렉사이': 'RekSai', '렝가': 'Rengar', '루시안': 'Lucian',
-        '루시안': 'Lucian', '룰루': 'Lulu', '르블랑': 'Leblanc', '리 신': 'LeeSin',
-        '리븐': 'Riven', '리산드라': 'Lissandra', '릴리아': 'Lillia',
-        '마스터 이': 'MasterYi', '마오카이': 'Maokai', '말파이트': 'Malphite',
-        '말자하': 'Malzahar', '모데카이저': 'Mordekaiser', '모르가나': 'Morgana',
-        '문도 박사': 'DrMundo', '미스 포츈': 'MissFortune',
-        '바루스': 'Varus', '바이': 'Vi', '베이가': 'Veigar', '베인': 'Vayne',
-        '벨베스': 'Belveth', '벨코즈': 'Velkoz', '보리': 'Volibear', '볼리베어': 'Volibear',
-        '브라움': 'Braum', '브랜드': 'Brand', '블라디미르': 'Vladimir', '블리츠크랭크': 'Blitzcrank',
-        '빅토르': 'Viktor', '뽀삐': 'Poppy',
-        '사미라': 'Samira', '사이온': 'Sion', '사일러스': 'Sylas', '세라핀': 'Seraphine',
-        '세주아니': 'Sejuani', '세트': 'Sett', '소나': 'Sona', '소라카': 'Soraka',
-        '쉔': 'Shen', '쉬바나': 'Shyvana', '스카너': 'Skarner', '시비르': 'Sivir',
-        '신드라': 'Syndra', '신지드': 'Singed', '신짜오': 'XinZhao',
-        '아무무': 'Amumu', '아우렐리온 솔': 'AurelionSol', '아이번': 'Ivern',
-        '아지르': 'Azir', '아칼리': 'Akali', '아크샨': 'Akshan', '아트록스': 'Aatrox',
-        '아펠리오스': 'Aphelios', '알리스타': 'Alistar', '애니': 'Annie', '애니비아': 'Anivia',
-        '애쉬': 'Ashe', '야스오': 'Yasuo', '에코': 'Ekko', '엘리스': 'Elise',
-        '오공': 'MonkeyKing', '오른': 'Ornn', '올라프': 'Olaf', '요네': 'Yone',
-        '요릭': 'Yorick', '우르곳': 'Urgot', '유미': 'Yuumi',
-        '이렐리아': 'Irelia', '이블린': 'Evelynn', '이즈리얼': 'Ezreal',
-        '자르반 4세': 'JarvanIV', '자야': 'Xayah', '자이라': 'Zyra', '자크': 'Zac',
-        '잔나': 'Janna', '잭스': 'Jax', '제드': 'Zed', '제이스': 'Jayce',
-        '조이': 'Zoe', '직스': 'Ziggs', '진': 'Jhin', '질리언': 'Zilean',
-        '짐머': 'Heimerdinger',
-        '카르마': 'Karma', '카사딘': 'Kassadin', '카서스': 'Karthus', '카시오페아': 'Cassiopeia',
-        '카이사': 'Kaisa', '카직스': 'Khazix', '카타리나': 'Katarina', '칼리스타': 'Kalista',
-        '케넨': 'Kennen', '케이틀린': 'Caitlyn', '케인': 'Kayn', '코그모': 'KogMaw',
-        '코르키': 'Corki', '크산테': 'KSante', '키아나': 'Qiyana', '킨드레드': 'Kindred',
-        '타릭': 'Taric', '탐 켄치': 'TahmKench', '트런들': 'Trundle', '트리스타나': 'Tristana',
-        '트린다미어': 'Tryndamere', '트위스티드 페이트': 'TwistedFate', '트위치': 'Twitch',
-        '티모': 'Teemo',
-        '판테온': 'Pantheon', '파이크': 'Pyke', '피들스틱': 'Fiddlesticks', '피오라': 'Fiora',
-        '피즈': 'Fizz',
-        '하이머딩거': 'Heimerdinger', '헤카림': 'Hecarim',
-        '나이트블루': 'Kayn',
-        // English names that need DDragon ID mapping
-        'Wukong': 'MonkeyKing', 'Renata Glasc': 'Renata', 'Dr. Mundo': 'DrMundo',
-        "Cho'Gath": 'Chogath', "Kha'Zix": 'Khazix', "Vel'Koz": 'Velkoz',
-        "Kog'Maw": 'KogMaw', "Rek'Sai": 'RekSai', "Kai'Sa": 'Kaisa',
-        "Bel'Veth": 'Belveth', "K'Sante": 'KSante', 'LeBlanc': 'Leblanc',
-        'Nunu & Willump': 'Nunu', 'Aurelion Sol': 'AurelionSol', 'Jarvan IV': 'JarvanIV',
-        'Lee Sin': 'LeeSin', 'Master Yi': 'MasterYi', 'Miss Fortune': 'MissFortune',
-        'Tahm Kench': 'TahmKench', 'Twisted Fate': 'TwistedFate', 'Xin Zhao': 'XinZhao',
+    // Looks up DDragon filename from champion id (e.g. "leesin_jg" -> "Leesin" -> "LeeSin_0.png")
+    // Special cases where the base id doesn't match DDragon exactly
+    const ID_TO_DDRAGON = {
+        'wukong': 'MonkeyKing', 'drmundo': 'DrMundo', 'jarvaniv': 'JarvanIV',
+        'leesin': 'LeeSin', 'masteryi': 'MasterYi', 'missfortune': 'MissFortune',
+        'tahmkench': 'TahmKench', 'twistedfate': 'TwistedFate', 'xinzhao': 'XinZhao',
+        'aurelionsol': 'AurelionSol', 'kogmaw': 'KogMaw', 'reksai': 'RekSai',
+        'leblanc': 'Leblanc', 'ksante': 'KSante', 'belveth': 'Belveth',
+        'khazix': 'Khazix', 'velkoz': 'Velkoz', 'kaisa': 'Kaisa',
     };
-    const getChampionImageUrl = (champName) => {
+
+    // Build a name→id map from championList at runtime so we can look up by Korean name
+    // This runs once and is used by getChampionImageUrl
+    const buildNameToIdMap = (champList) => {
+        const map = {};
+        (champList || []).forEach(c => {
+            if (c.name && c.id) {
+                const baseId = c.id.replace(/_[a-z]+$/, ''); // strip _top/_jg etc
+                map[c.name] = baseId;
+            }
+        });
+        return map;
+    };
+
+    const getChampionImageUrl = (champName, champList) => {
         if (!champName) return null;
-        const normalized = CHAMP_NAME_OVERRIDES[champName]
-            || champName.replace(/[\s'\.\-]/g, '').replace(/&.*/,'');
-        return `/champion/img/champion/tiles/${normalized}_0.png`;
+        const nameToId = buildNameToIdMap(champList);
+        const baseId = nameToId[champName] || champName.toLowerCase().replace(/[\s'\.\-]/g, '').replace(/&.*/,'');
+        const ddName = ID_TO_DDRAGON[baseId] || (baseId.charAt(0).toUpperCase() + baseId.slice(1));
+        return `/champion/img/champion/tiles/${ddName}_0.png`;
     };
 
     // Hue palette for fallback tiles — deterministic per champion name
@@ -73,9 +45,9 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         return h;
     };
 
-    const ChampionImage = ({ champName, className = '', style = {}, grayscale = false, objectPosition = 'top' }) => {
+    const ChampionImage = ({ champName, champList, className = '', style = {}, grayscale = false, objectPosition = 'top' }) => {
         const [failed, setFailed] = React.useState(false);
-        const url = getChampionImageUrl(champName);
+        const url = getChampionImageUrl(champName, champList);
         const hue = champHue(champName);
         const initial = (champName || '?')[0].toUpperCase();
 
@@ -1389,7 +1361,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                           <div key={i} className="w-5 h-5 sm:w-8 sm:h-8 lg:w-10 lg:h-10 bg-gray-800 border border-gray-600 rounded flex items-center justify-center overflow-hidden relative">
                                               {draftState.blueBans[i] ? (
                                                  <>
-                                                   <ChampionImage champName={draftState.blueBans[i]} className="absolute inset-0 w-full h-full" grayscale={true} />
+                                                   <ChampionImage champName={draftState.blueBans[i]} champList={activeChampionList} className="absolute inset-0 w-full h-full" grayscale={true} />
                                                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><span className="text-red-400 font-black" style={{fontSize:'clamp(8px,50%,18px)',textShadow:'0 0 4px black'}}>✕</span></div>
                                                  </>
                                               ) : <div className="w-full h-full bg-blue-900/20"></div>}
@@ -1402,7 +1374,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                           <div key={i} className="w-5 h-5 sm:w-8 sm:h-8 lg:w-10 lg:h-10 bg-gray-800 border border-gray-600 rounded flex items-center justify-center overflow-hidden relative">
                                               {draftState.redBans[i] ? (
                                                  <>
-                                                   <ChampionImage champName={draftState.redBans[i]} className="absolute inset-0 w-full h-full" grayscale={true} />
+                                                   <ChampionImage champName={draftState.redBans[i]} champList={activeChampionList} className="absolute inset-0 w-full h-full" grayscale={true} />
                                                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><span className="text-red-400 font-black" style={{fontSize:'clamp(8px,50%,18px)',textShadow:'0 0 4px black'}}>✕</span></div>
                                                  </>
                                               ) : <div className="w-full h-full bg-red-900/20"></div>}
@@ -1581,7 +1553,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                  {pick ? (
                                      <>
                                         <div className="w-6 h-6 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded border border-blue-400 overflow-hidden shrink-0">
-                                            <ChampionImage champName={pick.champName} className="w-full h-full" />
+                                            <ChampionImage champName={pick.champName} champList={activeChampionList} className="w-full h-full" />
                                         </div>
                                         <div className="ml-1 sm:ml-4 overflow-hidden flex flex-col justify-center">
                                             {/* Flex row for Name + Tier so tier is never hidden by truncate */}
@@ -1635,7 +1607,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                         <span className="text-[8px] lg:text-xs font-bold text-blue-300 uppercase">Rec</span>
                                         <div className="flex items-center gap-1 lg:gap-2">
                                             <div className="w-5 h-5 lg:w-8 lg:h-8 rounded border border-blue-500 overflow-hidden shrink-0">
-                                                <ChampionImage champName={recommendedChamp.name} className="w-full h-full" />
+                                                <ChampionImage champName={recommendedChamp.name} champList={activeChampionList} className="w-full h-full" />
                                             </div>
                                             <span className="font-bold text-[10px] lg:text-sm text-white truncate max-w-[60px] lg:max-w-none">{recommendedChamp.name}</span>
                                             <span className="text-[8px] lg:text-xs text-blue-200">({recommendedChamp.tier}T)</span>
@@ -1672,7 +1644,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                                     }`}
                                                 >
                                                     <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded mb-0.5 lg:mb-2 overflow-hidden">
-                                                        <ChampionImage champName={champ.name} className="w-full h-full" />
+                                                        <ChampionImage champName={champ.name} champList={activeChampionList} className="w-full h-full" />
                                                     </div>
                                                     {/* Reverted to Absolute Badge Style as requested */}
                                                     <div className="text-[8px] lg:text-xs font-bold text-center w-full truncate">{champ.name}</div>
@@ -1733,7 +1705,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                  {pick ? (
                                      <>
                                         <div className="w-6 h-6 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded border border-red-400 overflow-hidden shrink-0">
-                                            <ChampionImage champName={pick.champName} className="w-full h-full" />
+                                            <ChampionImage champName={pick.champName} champList={activeChampionList} className="w-full h-full" />
                                         </div>
                                         {/* [FIXED] Removed overflow-hidden, added break-words, and pr-1 to prevent cutoff */}
                                         <div className="mr-1 sm:mr-4 text-right flex flex-col justify-center items-end pr-1 w-full">
@@ -1769,7 +1741,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                         {liveStats.players.filter(p => p.side === 'BLUE').map((p, i) => (
                             <div key={i} className="flex-1 min-h-0 border-b border-gray-800 relative p-1 lg:p-2 flex items-center gap-2 lg:gap-3">
                                 <div className="w-8 h-8 lg:w-12 lg:h-12 rounded border border-blue-600 relative overflow-hidden shrink-0">
-                                    <ChampionImage champName={p.champName} className="absolute inset-0 w-full h-full" />
+                                    <ChampionImage champName={p.champName} champList={activeChampionList} className="absolute inset-0 w-full h-full" />
                                     <div className="absolute bottom-0 right-0 bg-black/80 text-white text-[8px] lg:text-[10px] px-1 font-bold z-10">{p.lvl}</div>
                                 </div>
                                 <div className="flex-1 min-w-0">
@@ -1819,7 +1791,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                         {liveStats.players.filter(p => p.side === 'RED').map((p, i) => (
                             <div key={i} className="flex-1 min-h-0 border-b border-gray-800 relative p-1 lg:p-2 flex flex-row-reverse items-center gap-2 lg:gap-3 text-right">
                                 <div className="w-8 h-8 lg:w-12 lg:h-12 rounded border border-red-600 relative overflow-hidden shrink-0">
-                                    <ChampionImage champName={p.champName} className="absolute inset-0 w-full h-full" />
+                                    <ChampionImage champName={p.champName} champList={activeChampionList} className="absolute inset-0 w-full h-full" />
                                     <div className="absolute bottom-0 left-0 bg-black/80 text-white text-[8px] lg:text-[10px] px-1 font-bold z-10">{p.lvl}</div>
                                 </div>
                                 <div className="flex-1 min-w-0">
@@ -1855,7 +1827,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                 SET {currentSet} POG
                             </div>
                             <div className="w-12 h-12 sm:w-16 sm:h-16 lg:w-24 lg:h-24 rounded-full border-2 border-yellow-400 mb-1 sm:mb-2 lg:mb-4 overflow-hidden">
-                                <ChampionImage champName={pog?.champName} className="w-full h-full" />
+                                <ChampionImage champName={pog?.champName} champList={activeChampionList} className="w-full h-full" />
                             </div>
                             <div className="text-sm sm:text-base lg:text-xl font-bold text-yellow-400">{pog?.playerName || 'Unknown'}</div>
                             <div className="text-[10px] sm:text-xs lg:text-sm text-gray-400 mb-1 lg:mb-2">{pog?.champName || ''}</div>
