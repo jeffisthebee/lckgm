@@ -128,6 +128,34 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         return candidates[0] || null;
     };
     
+    // --- HELPER: Convert champion name to Data Dragon ID for portrait images ---
+    const getChampionDDragonId = (name) => {
+        const overrides = {
+            "Aurelion Sol": "AurelionSol",
+            "Bel'Veth": "Belveth",
+            "Cho'Gath": "Chogath",
+            "Dr. Mundo": "DrMundo",
+            "Jarvan IV": "JarvanIV",
+            "K'Sante": "KSante",
+            "Kai'Sa": "Kaisa",
+            "Kha'Zix": "Khazix",
+            "Kog'Maw": "KogMaw",
+            "LeBlanc": "Leblanc",
+            "Lee Sin": "LeeSin",
+            "Master Yi": "MasterYi",
+            "Miss Fortune": "MissFortune",
+            "Nunu & Willump": "Nunu",
+            "Rek'Sai": "RekSai",
+            "Renata Glasc": "Renata",
+            "Tahm Kench": "TahmKench",
+            "Twisted Fate": "TwistedFate",
+            "Vel'Koz": "Velkoz",
+            "Wukong": "MonkeyKing",
+            "Xin Zhao": "XinZhao",
+        };
+        return overrides[name] || name.replace(/['\s.&]/g, '');
+    };
+
     export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onClose, externalGlobalBans = [], isManualMode = false }) {
         const activeChampionList = simOptions?.currentChampionList || championList;
     
@@ -161,7 +189,9 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         const [filterRole, setFilterRole] = useState('TOP');
         const [searchTerm, setSearchTerm] = useState(''); 
         const [draftLogs, setDraftLogs] = useState([]);
-        const [userSelectedRole, setUserSelectedRole] = useState(false); 
+        const [userSelectedRole, setUserSelectedRole] = useState(false);
+        const [hoveredChamp, setHoveredChamp] = useState(null);
+        const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
         // New: track which side the USER is on (BLUE/RED) in manual mode to avoid name-compare errors
         const [manualUserSide, setManualUserSide] = useState(null);
         const finalizeManualDraftCalledRef = useRef(false); // guard against double-invocation
@@ -1560,6 +1590,14 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                                     key={champ.id}
                                                     disabled={isLocked}
                                                     onClick={() => setSelectedChampion({ ...champ, role: filterRole })}
+                                                    onMouseEnter={(e) => {
+                                                        if (!isLocked) {
+                                                            const rect = e.currentTarget.getBoundingClientRect();
+                                                            setTooltipPos({ x: rect.right + 8, y: rect.top });
+                                                            setHoveredChamp(champ);
+                                                        }
+                                                    }}
+                                                    onMouseLeave={() => setHoveredChamp(null)}
                                                     className={`relative group flex flex-col items-center p-0.5 lg:p-2 rounded border transition ${
                                                         isLocked ? 'opacity-30 grayscale cursor-not-allowed border-transparent' : 
                                                         isSelected ? 'bg-yellow-500/20 border-yellow-500' : 
@@ -1579,6 +1617,21 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                         })}
                                  </div>
     
+                                 {/* Champion Portrait Hover Tooltip */}
+                                 {hoveredChamp && (
+                                     <div
+                                         className="fixed z-[9999] pointer-events-none"
+                                         style={{ left: tooltipPos.x, top: tooltipPos.y }}
+                                     >
+                                         <img
+                                             src={`https://ddragon.leagueoflegends.com/cdn/img/champion/tiles/${getChampionDDragonId(hoveredChamp.name)}_0.jpg`}
+                                             alt={hoveredChamp.name}
+                                             className="w-24 h-24 rounded-lg border-2 border-yellow-500 shadow-2xl shadow-black/80"
+                                             onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                         />
+                                     </div>
+                                 )}
+
                                  {/* Lock In Button */}
                                  <div className="p-1 sm:p-2 lg:p-4 bg-gray-900 border-t border-gray-700 flex justify-center shrink-0">
                                      <button 
