@@ -285,6 +285,30 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         // Track previous ban/pick counts to detect when a new one is committed
         const prevBanCountRef  = useRef({ blue: 0, red: 0 });
         const prevPickCountRef = useRef(0);
+
+        // Silverscapes — local MP3, plays only during Game 5 draft
+        const silverscrapesRef = useRef(null);
+        useEffect(() => {
+            if (isDecidingGame && soundEnabled && phase === 'DRAFT') {
+                if (!silverscrapesRef.current) {
+                    silverscrapesRef.current = new Audio('/sounds/silverscrapes.mp3');
+                    silverscrapesRef.current.loop = true;
+                }
+                silverscrapesRef.current.play().catch(e => console.warn('Silverscapes play failed:', e));
+            } else {
+                if (silverscrapesRef.current) {
+                    silverscrapesRef.current.pause();
+                    silverscrapesRef.current.currentTime = 0;
+                }
+            }
+            // Cleanup on unmount
+            return () => {
+                if (silverscrapesRef.current) {
+                    silverscrapesRef.current.pause();
+                    silverscrapesRef.current.currentTime = 0;
+                }
+            };
+        }, [isDecidingGame, soundEnabled, phase]);
       
         const [globalBanList, setGlobalBanList] = useState(Array.isArray(externalGlobalBans) ? externalGlobalBans.slice() : []);
         const [matchHistory, setMatchHistory] = useState([]);
@@ -1583,18 +1607,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                  <div className="flex-1 flex flex-col sm:flex-row bg-gray-900 p-1 sm:p-2 lg:p-8 gap-1 sm:gap-2 lg:gap-8 items-center justify-center relative overflow-hidden">
                      <div className="absolute inset-0 bg-gradient-to-r from-blue-900/20 to-red-900/20 pointer-events-none"></div>
 
-                     {/* Hidden Silverscapes iframe — plays during the deciding game draft only.
-                         YouTube autoplay works here because the user has already clicked several
-                         buttons to reach this phase, satisfying the browser's user-gesture policy.
-                         Video ID: 21hQsnpdNpA (LOL Esports official upload) */}
-                     {isDecidingGame && soundEnabled && (
-                         <iframe
-                             src="https://www.youtube.com/embed/21hQsnpdNpA?autoplay=1&loop=1&playlist=21hQsnpdNpA&controls=0&mute=0"
-                             allow="autoplay; encrypted-media"
-                             title="Silverscapes - Deciding Game Music"
-                             style={{ position: 'fixed', top: '-9999px', left: '-9999px', width: '1px', height: '1px', border: 'none', pointerEvents: 'none' }}
-                         />
-                     )}
+                     {/* Silverscapes — Game 5 only, played via local audio to avoid CSP issues */}
     
                      {/* [NEW] SYNERGY HEADS UP DISPLAY */}
                      <div className="absolute top-0 left-0 w-full flex justify-between px-4 py-2 pointer-events-none z-30">
