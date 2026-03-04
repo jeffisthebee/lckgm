@@ -80,10 +80,10 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
     const [forceRegen, setForceRegen] = useState(false);
     const [syncDone, setSyncDone] = useState(false);
 
+    const targetLeague = ['LPL', 'LCP', 'CBLOL', 'LCS', 'LEC'].includes(displayLeague) ? displayLeague : null;
+
     // Reset sync completion whenever the viewed league changes so it re-evaluates
     useEffect(() => { setSyncDone(false); }, [targetLeague]);
-
-    const targetLeague = ['LPL', 'LCP', 'CBLOL', 'LCS', 'LEC'].includes(displayLeague) ? displayLeague : null;
 
     const activeMatches = displayLeague === 'LCK' ? (league.matches || []) : (league.foreignMatches?.[displayLeague] || []);
     const pendingLCK = league.matches ? league.matches.filter(m => m.status === 'pending').sort(compareDatesObj) : [];
