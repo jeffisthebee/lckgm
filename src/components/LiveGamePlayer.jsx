@@ -263,10 +263,12 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         useEffect(() => { soundEnabledRef.current = soundEnabled; }, [soundEnabled]);
 
         // Audio objects stored in a ref so they persist without triggering re-renders.
+        // crossOrigin='anonymous' is required for cross-origin CDN URLs to avoid CORS blocks.
+        const mkAudio = (url) => { const a = new Audio(); a.crossOrigin = 'anonymous'; a.src = url; return a; };
         const audioRefs = useRef({
-            yourBan:  new Audio('https://raw.communitydragon.org/16.5/plugins/rcp-fe-lol-champ-select/global/default/sounds/sfx-cs-draft-10ban-your-ban.ogg'),
-            enemyBan: new Audio('https://raw.communitydragon.org/16.5/plugins/rcp-fe-lol-champ-select/global/default/sounds/sfx-cs-draft-10ban-enemy-ban.ogg'),
-            pick:     new Audio('https://raw.communitydragon.org/16.5/plugins/rcp-fe-lol-champ-select/global/default/sounds/sfx-cs-draft-notif-yourpick.ogg'),
+            yourBan:  mkAudio('https://raw.communitydragon.org/16.5/plugins/rcp-fe-lol-champ-select/global/default/sounds/sfx-cs-draft-10ban-your-ban.ogg'),
+            enemyBan: mkAudio('https://raw.communitydragon.org/16.5/plugins/rcp-fe-lol-champ-select/global/default/sounds/sfx-cs-draft-10ban-enemy-ban.ogg'),
+            pick:     mkAudio('https://raw.communitydragon.org/16.5/plugins/rcp-fe-lol-champ-select/global/default/sounds/sfx-cs-draft-notif-yourpick.ogg'),
         });
 
         const playSound = useCallback((type) => {
@@ -275,9 +277,10 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                 const audio = audioRefs.current[type];
                 if (audio) {
                     audio.currentTime = 0;
-                    audio.play().catch(() => {}); // swallow autoplay-policy errors silently
+                    const p = audio.play();
+                    if (p) p.catch((e) => console.warn('Sound play failed:', type, e));
                 }
-            } catch (e) { /* ignore */ }
+            } catch (e) { console.warn('Sound error:', type, e); }
         }, []);
 
         // Track previous ban/pick counts to detect when a new one is committed
