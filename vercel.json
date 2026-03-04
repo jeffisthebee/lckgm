@@ -1,7 +1,7 @@
 {
-  "rewrites": [
-    { "source": "/champion/(.*)", "destination": "/champion/$1" },
-    { "source": "/(.*)", "destination": "/" }
+  "routes": [
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/" }
   ],
   "headers": [
     {
