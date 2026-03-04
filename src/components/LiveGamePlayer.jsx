@@ -1589,10 +1589,10 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                          Video ID: 21hQsnpdNpA (LOL Esports official upload) */}
                      {isDecidingGame && soundEnabled && (
                          <iframe
-                             src="https://www.youtube.com/embed/21hQsnpdNpA?autoplay=1&loop=1&playlist=21hQsnpdNpA&controls=0"
-                             allow="autoplay"
+                             src="https://www.youtube.com/embed/21hQsnpdNpA?autoplay=1&loop=1&playlist=21hQsnpdNpA&controls=0&mute=0"
+                             allow="autoplay; encrypted-media"
                              title="Silverscapes - Deciding Game Music"
-                             style={{ position: 'absolute', width: 0, height: 0, border: 'none', opacity: 0, pointerEvents: 'none' }}
+                             style={{ position: 'fixed', top: '-9999px', left: '-9999px', width: '1px', height: '1px', border: 'none', pointerEvents: 'none' }}
                          />
                      )}
     
