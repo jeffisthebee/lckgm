@@ -192,7 +192,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         const [userSelectedRole, setUserSelectedRole] = useState(false);
         const [hoveredChamp, setHoveredChamp] = useState(null);
         const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
-        const [ddVersion, setDdVersion] = useState('15.1.1');
+        const [ddVersion, setDdVersion] = useState('15.6.1');
         // New: track which side the USER is on (BLUE/RED) in manual mode to avoid name-compare errors
         const [manualUserSide, setManualUserSide] = useState(null);
         const finalizeManualDraftCalledRef = useRef(false); // guard against double-invocation
