@@ -3,10 +3,9 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
     import { DRAFT_SEQUENCE, championList } from '../data/constants'; 
     import { SYNERGIES } from '../data/synergies'; 
     import { validateLineup, getDefaultLineup } from '../engine/rosterLogic';
-    import { CHAMPION_IMAGES } from '../data/championImages';
     
     // --- HELPER: Champion Image Component ---
-    // Images are pre-imported via championImages.js to bypass Vercel routing issues
+    // Uses Riot Data Dragon CDN with patch 16.5.1
 
     // Hue palette for fallback tiles — deterministic per champion name
     const champHue = (name) => {
@@ -16,9 +15,33 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         return h;
     };
 
+    const ID_TO_DDRAGON = {
+        'wukong': 'MonkeyKing', 'drmundo': 'DrMundo', 'jarvaniv': 'JarvanIV',
+        'leesin': 'LeeSin', 'masteryi': 'MasterYi', 'missfortune': 'MissFortune',
+        'tahmkench': 'TahmKench', 'twistedfate': 'TwistedFate', 'xinzhao': 'XinZhao',
+        'aurelionsol': 'AurelionSol', 'kogmaw': 'KogMaw', 'reksai': 'RekSai',
+        'leblanc': 'Leblanc', 'ksante': 'KSante', 'belveth': 'Belveth',
+        'khazix': 'Khazix', 'velkoz': 'Velkoz', 'kaisa': 'Kaisa',
+        'zahen': 'Zahen', 'unara': 'Unara',
+    };
+
+    const getChampionImageUrl = (champName, champList) => {
+        if (!champName) return null;
+        const nameToId = {};
+        (champList || []).forEach(c => {
+            if (c.name && c.id) {
+                const base = c.id.replace(/_top|_jg|_jgl|_mid|_adc|_sup|_bot|_carry|_support/g, '');
+                nameToId[c.name] = base;
+            }
+        });
+        const baseId = nameToId[champName] || champName.toLowerCase().replace(/[\s'\.\-]/g, '').replace(/&.*/,'');
+        const ddName = ID_TO_DDRAGON[baseId] || (baseId.charAt(0).toUpperCase() + baseId.slice(1));
+        return `https://ddragon.leagueoflegends.com/cdn/16.5.1/img/champion/${ddName}.png`;
+    };
+
     const ChampionImage = ({ champName, champList, className = '', style = {}, grayscale = false, objectPosition = 'top' }) => {
         const [failed, setFailed] = React.useState(false);
-        const src = CHAMPION_IMAGES[champName] || null;
+        const src = getChampionImageUrl(champName, champList);
         const hue = champHue(champName);
         const initial = (champName || '?')[0].toUpperCase();
 
