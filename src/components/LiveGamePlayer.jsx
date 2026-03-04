@@ -1311,14 +1311,14 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                    <div className="flex gap-1">
                                        {draftState.bluePicks.map((p,i) => (
                                            <div key={i} className="w-3.5 h-3.5 bg-blue-900/40 border border-blue-500 rounded overflow-hidden">
-                                               {p?.champName ? <img src={`https://ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(p.champName)}.png`} alt={p.champName} className="w-full h-full object-cover" onError={e=>{const p=e.currentTarget.parentElement;if(p){p.innerHTML='<span style="font-size:8px;color:#9ca3af;word-break:break-all;padding:2px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">'+e.currentTarget.alt+'</span>'}}} /> : null}
+                                               {p?.champName ? <img src={`https://wsrv.nl/?url=ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(p.champName)}.png`} alt={p.champName} className="w-full h-full object-cover" onError={e=>{const p=e.currentTarget.parentElement;if(p){p.innerHTML='<span style="font-size:8px;color:#9ca3af;word-break:break-all;padding:2px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">'+e.currentTarget.alt+'</span>'}}} /> : null}
                                            </div>
                                        ))}
                                    </div>
                                    <div className="flex gap-1">
                                        {draftState.redPicks.map((p,i) => (
                                            <div key={i} className="w-3.5 h-3.5 bg-red-900/40 border border-red-500 rounded overflow-hidden">
-                                               {p?.champName ? <img src={`https://ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(p.champName)}.png`} alt={p.champName} className="w-full h-full object-cover" onError={e=>{const p=e.currentTarget.parentElement;if(p){p.innerHTML='<span style="font-size:8px;color:#9ca3af;word-break:break-all;padding:2px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">'+e.currentTarget.alt+'</span>'}}} /> : null}
+                                               {p?.champName ? <img src={`https://wsrv.nl/?url=ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(p.champName)}.png`} alt={p.champName} className="w-full h-full object-cover" onError={e=>{const p=e.currentTarget.parentElement;if(p){p.innerHTML='<span style="font-size:8px;color:#9ca3af;word-break:break-all;padding:2px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">'+e.currentTarget.alt+'</span>'}}} /> : null}
                                            </div>
                                        ))}
                                    </div>
@@ -1330,7 +1330,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                           <div key={i} className="w-5 h-5 sm:w-8 sm:h-8 lg:w-10 lg:h-10 bg-gray-800 border border-gray-600 rounded overflow-hidden flex items-center justify-center">
                                               {draftState.blueBans[i] ? (
                                                  <div className="relative w-full h-full">
-                                                     <img src={`https://ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(draftState.blueBans[i])}.png`} alt={draftState.blueBans[i]} className="w-full h-full object-cover grayscale opacity-60" onError={e=>{const p=e.currentTarget.parentElement;if(p){p.innerHTML='<span style="font-size:8px;color:#9ca3af;word-break:break-all;padding:2px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">'+e.currentTarget.alt+'</span>'}}} />
+                                                     <img src={`https://wsrv.nl/?url=ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(draftState.blueBans[i])}.png`} alt={draftState.blueBans[i]} className="w-full h-full object-cover grayscale opacity-60" onError={e=>{const p=e.currentTarget.parentElement;if(p){p.innerHTML='<span style="font-size:8px;color:#9ca3af;word-break:break-all;padding:2px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">'+e.currentTarget.alt+'</span>'}}} />
                                                      <div className="absolute inset-0 flex items-center justify-center text-red-400 font-black text-lg pointer-events-none">✕</div>
                                                  </div>
                                               ) : <div className="w-full h-full bg-blue-900/20"></div>}
@@ -1343,7 +1343,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                           <div key={i} className="w-5 h-5 sm:w-8 sm:h-8 lg:w-10 lg:h-10 bg-gray-800 border border-gray-600 rounded overflow-hidden flex items-center justify-center">
                                               {draftState.redBans[i] ? (
                                                  <div className="relative w-full h-full">
-                                                     <img src={`https://ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(draftState.redBans[i])}.png`} alt={draftState.redBans[i]} className="w-full h-full object-cover grayscale opacity-60" onError={e=>{const p=e.currentTarget.parentElement;if(p){p.innerHTML='<span style="font-size:8px;color:#9ca3af;word-break:break-all;padding:2px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">'+e.currentTarget.alt+'</span>'}}} />
+                                                     <img src={`https://wsrv.nl/?url=ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(draftState.redBans[i])}.png`} alt={draftState.redBans[i]} className="w-full h-full object-cover grayscale opacity-60" onError={e=>{const p=e.currentTarget.parentElement;if(p){p.innerHTML='<span style="font-size:8px;color:#9ca3af;word-break:break-all;padding:2px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">'+e.currentTarget.alt+'</span>'}}} />
                                                      <div className="absolute inset-0 flex items-center justify-center text-red-400 font-black text-lg pointer-events-none">✕</div>
                                                  </div>
                                               ) : <div className="w-full h-full bg-red-900/20"></div>}
@@ -1522,7 +1522,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                  {pick ? (
                                      <>
                                         <div className="w-6 h-6 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded border border-blue-400 overflow-hidden shrink-0 bg-black">
-                                                <img src={`https://ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(pick.champName)}.png`} alt={pick.champName} className="w-full h-full object-cover" onError={e=>{const p=e.currentTarget.parentElement;if(p){p.innerHTML='<span style="font-size:8px;color:#9ca3af;word-break:break-all;padding:2px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">'+e.currentTarget.alt+'</span>'}}} />
+                                                <img src={`https://wsrv.nl/?url=ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(pick.champName)}.png`} alt={pick.champName} className="w-full h-full object-cover" onError={e=>{const p=e.currentTarget.parentElement;if(p){p.innerHTML='<span style="font-size:8px;color:#9ca3af;word-break:break-all;padding:2px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">'+e.currentTarget.alt+'</span>'}}} />
                                             </div>
                                         <div className="ml-1 sm:ml-4 overflow-hidden flex flex-col justify-center">
                                             {/* Flex row for Name + Tier so tier is never hidden by truncate */}
@@ -1576,7 +1576,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                         <span className="text-[8px] lg:text-xs font-bold text-blue-300 uppercase">Rec</span>
                                         <div className="flex items-center gap-1 lg:gap-2">
                                             <div className="w-5 h-5 lg:w-8 lg:h-8 rounded border border-blue-500 overflow-hidden bg-black shrink-0">
-                                                <img src={`https://ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(recommendedChamp.name)}.png`} alt={recommendedChamp.name} className="w-full h-full object-cover" onError={e=>{const p=e.currentTarget.parentElement;if(p){p.innerHTML='<span style="font-size:8px;color:#9ca3af;word-break:break-all;padding:2px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">'+e.currentTarget.alt+'</span>'}}} />
+                                                <img src={`https://wsrv.nl/?url=ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(recommendedChamp.name)}.png`} alt={recommendedChamp.name} className="w-full h-full object-cover" onError={e=>{const p=e.currentTarget.parentElement;if(p){p.innerHTML='<span style="font-size:8px;color:#9ca3af;word-break:break-all;padding:2px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">'+e.currentTarget.alt+'</span>'}}} />
                                             </div>
                                             <span className="font-bold text-[10px] lg:text-sm text-white truncate max-w-[60px] lg:max-w-none">{recommendedChamp.name}</span>
                                             <span className="text-[8px] lg:text-xs text-blue-200">({recommendedChamp.tier}T)</span>
@@ -1621,7 +1621,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                                     }`}
                                                 >
                                                     <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded mb-0.5 lg:mb-2 overflow-hidden shrink-0 bg-black">
-                                                        <img src={`https://ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(champ.name)}.png`} alt={champ.name} className="w-full h-full object-cover" onError={e=>{const p=e.currentTarget.parentElement;if(p){p.innerHTML='<span style="font-size:8px;color:#9ca3af;word-break:break-all;padding:2px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">'+e.currentTarget.alt+'</span>'}}} />
+                                                        <img src={`https://wsrv.nl/?url=ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(champ.name)}.png`} alt={champ.name} className="w-full h-full object-cover" onError={e=>{const p=e.currentTarget.parentElement;if(p){p.innerHTML='<span style="font-size:8px;color:#9ca3af;word-break:break-all;padding:2px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">'+e.currentTarget.alt+'</span>'}}} />
                                                     </div>
                                                     {/* Reverted to Absolute Badge Style as requested */}
                                                     <div className="text-[8px] lg:text-xs font-bold text-center w-full truncate">{champ.name}</div>
@@ -1640,7 +1640,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                          style={{ left: tooltipPos.x, top: tooltipPos.y }}
                                      >
                                          <img
-                                             src={`https://ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(hoveredChamp.name)}.png`}
+                                             src={`https://wsrv.nl/?url=ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(hoveredChamp.name)}.png`}
                                              alt={hoveredChamp.name}
                                              className="w-24 h-24 rounded-lg border-2 border-yellow-500 shadow-2xl shadow-black/80"
                                              onError={(e) => { e.currentTarget.style.display = 'none'; }}
@@ -1697,7 +1697,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                  {pick ? (
                                      <>
                                         <div className="w-6 h-6 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded border border-red-400 overflow-hidden shrink-0 bg-black">
-                                                <img src={`https://ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(pick.champName)}.png`} alt={pick.champName} className="w-full h-full object-cover" onError={e=>{const p=e.currentTarget.parentElement;if(p){p.innerHTML='<span style="font-size:8px;color:#9ca3af;word-break:break-all;padding:2px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">'+e.currentTarget.alt+'</span>'}}} />
+                                                <img src={`https://wsrv.nl/?url=ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${getChampionDDragonId(pick.champName)}.png`} alt={pick.champName} className="w-full h-full object-cover" onError={e=>{const p=e.currentTarget.parentElement;if(p){p.innerHTML='<span style="font-size:8px;color:#9ca3af;word-break:break-all;padding:2px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;">'+e.currentTarget.alt+'</span>'}}} />
                                             </div>
                                         {/* [FIXED] Removed overflow-hidden, added break-words, and pr-1 to prevent cutoff */}
                                         <div className="mr-1 sm:mr-4 text-right flex flex-col justify-center items-end pr-1 w-full">
