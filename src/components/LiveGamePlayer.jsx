@@ -285,30 +285,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         // Track previous ban/pick counts to detect when a new one is committed
         const prevBanCountRef  = useRef({ blue: 0, red: 0 });
         const prevPickCountRef = useRef(0);
-
-        // Silverscapes — local MP3, plays only during Game 5 draft
         const silverscrapesRef = useRef(null);
-        useEffect(() => {
-            if (isDecidingGame && soundEnabled && phase === 'DRAFT') {
-                if (!silverscrapesRef.current) {
-                    silverscrapesRef.current = new Audio('/sounds/silverscrapes.mp3');
-                    silverscrapesRef.current.loop = true;
-                }
-                silverscrapesRef.current.play().catch(e => console.warn('Silverscapes play failed:', e));
-            } else {
-                if (silverscrapesRef.current) {
-                    silverscrapesRef.current.pause();
-                    silverscrapesRef.current.currentTime = 0;
-                }
-            }
-            // Cleanup on unmount
-            return () => {
-                if (silverscrapesRef.current) {
-                    silverscrapesRef.current.pause();
-                    silverscrapesRef.current.currentTime = 0;
-                }
-            };
-        }, [isDecidingGame, soundEnabled, phase]);
       
         const [globalBanList, setGlobalBanList] = useState(Array.isArray(externalGlobalBans) ? externalGlobalBans.slice() : []);
         const [matchHistory, setMatchHistory] = useState([]);
@@ -340,6 +317,28 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         const isBo5 = bestOf === 5;
         // True only for Game 5 of a BO5 series
         const isDecidingGame = isBo5 && winsA === targetWins - 1 && winsB === targetWins - 1;
+
+        // Silverscapes — local MP3, plays only during Game 5 draft
+        useEffect(() => {
+            if (isDecidingGame && soundEnabled && phase === 'DRAFT') {
+                if (!silverscrapesRef.current) {
+                    silverscrapesRef.current = new Audio('/sounds/silverscrapes.mp3');
+                    silverscrapesRef.current.loop = true;
+                }
+                silverscrapesRef.current.play().catch(e => console.warn('Silverscapes play failed:', e));
+            } else {
+                if (silverscrapesRef.current) {
+                    silverscrapesRef.current.pause();
+                    silverscrapesRef.current.currentTime = 0;
+                }
+            }
+            return () => {
+                if (silverscrapesRef.current) {
+                    silverscrapesRef.current.pause();
+                    silverscrapesRef.current.currentTime = 0;
+                }
+            };
+        }, [isDecidingGame, soundEnabled, phase]);
     
         // [FIXED] Robust detection for Finals: also consider match.stage
         const isFinals = useMemo(() => {
