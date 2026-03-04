@@ -4,8 +4,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
     import { SYNERGIES } from '../data/synergies'; 
     import { validateLineup, getDefaultLineup } from '../engine/rosterLogic';
     
-    // --- HELPER: Champion Image URL from Riot Data Dragon ---
-    // Normalizes champion name to match Data Dragon format (e.g. "Wukong" -> "MonkeyKing")
+    // --- HELPER: Champion Image Component ---
+    // Uses Riot Data Dragon CDN. Falls back to a styled initial-letter tile if image fails.
     const CHAMP_NAME_OVERRIDES = {
         'Wukong': 'MonkeyKing',
         'Renata Glasc': 'Renata',
@@ -28,14 +28,50 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         'Tahm Kench': 'TahmKench',
         'Twisted Fate': 'TwistedFate',
         'Xin Zhao': 'XinZhao',
+        'Nunu & Willump': 'Nunu',
         'Corki': 'Corki',
     };
-    const DDragon_VERSION = '14.24.1';
     const getChampionImageUrl = (champName) => {
         if (!champName) return null;
-        const normalized = CHAMP_NAME_OVERRIDES[champName] 
-            || champName.replace(/[\s'\.]/g, '').replace(/&.*/, '');
-        return `https://ddragon.leagueoflegends.com/cdn/${DDragon_VERSION}/img/champion/${normalized}.png`;
+        const normalized = CHAMP_NAME_OVERRIDES[champName]
+            || champName.replace(/[\s'\.\-]/g, '').replace(/&.*/,'');
+        return `/champion/img/champion/tiles/${normalized}_0.png`;
+    };
+
+    // Hue palette for fallback tiles — deterministic per champion name
+    const champHue = (name) => {
+        if (!name) return 200;
+        let h = 0;
+        for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
+        return h;
+    };
+
+    const ChampionImage = ({ champName, className = '', style = {}, grayscale = false, objectPosition = 'top' }) => {
+        const [failed, setFailed] = React.useState(false);
+        const url = getChampionImageUrl(champName);
+        const hue = champHue(champName);
+        const initial = (champName || '?')[0].toUpperCase();
+
+        if (!champName || failed || !url) {
+            return (
+                <div
+                    className={`flex items-center justify-center font-black select-none ${className}`}
+                    style={{ background: `hsl(${hue},55%,28%)`, color: `hsl(${hue},80%,80%)`, ...style }}
+                >
+                    <span style={{ fontSize: 'clamp(6px, 30%, 22px)', lineHeight: 1 }}>{initial}</span>
+                </div>
+            );
+        }
+
+        return (
+            <img
+                src={url}
+                alt={champName}
+                className={`${grayscale ? 'grayscale opacity-60' : ''} ${className}`}
+                style={{ objectFit: 'cover', objectPosition, ...style }}
+                onError={() => setFailed(true)}
+            />
+        );
     };
 
     // --- HELPER: Simple Scoring for Recommendation (Frontend Version) ---
@@ -1326,9 +1362,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                           <div key={i} className="w-5 h-5 sm:w-8 sm:h-8 lg:w-10 lg:h-10 bg-gray-800 border border-gray-600 rounded flex items-center justify-center overflow-hidden relative">
                                               {draftState.blueBans[i] ? (
                                                  <>
-                                                   <img src={getChampionImageUrl(draftState.blueBans[i])} alt={draftState.blueBans[i]} className="w-full h-full object-cover grayscale opacity-60" onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
-                                                   <div style={{display:'none'}} className="absolute inset-0 items-center justify-center text-[6px] sm:text-[8px] lg:text-[10px] font-bold text-gray-400 text-center leading-tight break-words">{draftState.blueBans[i]}</div>
-                                                   <div className="absolute inset-0 flex items-center justify-center"><span className="text-red-500 text-lg font-black" style={{textShadow:'0 0 4px black'}}>✕</span></div>
+                                                   <ChampionImage champName={draftState.blueBans[i]} className="absolute inset-0 w-full h-full" grayscale={true} />
+                                                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><span className="text-red-400 font-black" style={{fontSize:'clamp(8px,50%,18px)',textShadow:'0 0 4px black'}}>✕</span></div>
                                                  </>
                                               ) : <div className="w-full h-full bg-blue-900/20"></div>}
                                           </div>
@@ -1340,9 +1375,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                           <div key={i} className="w-5 h-5 sm:w-8 sm:h-8 lg:w-10 lg:h-10 bg-gray-800 border border-gray-600 rounded flex items-center justify-center overflow-hidden relative">
                                               {draftState.redBans[i] ? (
                                                  <>
-                                                   <img src={getChampionImageUrl(draftState.redBans[i])} alt={draftState.redBans[i]} className="w-full h-full object-cover grayscale opacity-60" onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
-                                                   <div style={{display:'none'}} className="absolute inset-0 items-center justify-center text-[6px] sm:text-[8px] lg:text-[10px] font-bold text-gray-400 text-center leading-tight break-words">{draftState.redBans[i]}</div>
-                                                   <div className="absolute inset-0 flex items-center justify-center"><span className="text-red-500 text-lg font-black" style={{textShadow:'0 0 4px black'}}>✕</span></div>
+                                                   <ChampionImage champName={draftState.redBans[i]} className="absolute inset-0 w-full h-full" grayscale={true} />
+                                                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><span className="text-red-400 font-black" style={{fontSize:'clamp(8px,50%,18px)',textShadow:'0 0 4px black'}}>✕</span></div>
                                                  </>
                                               ) : <div className="w-full h-full bg-red-900/20"></div>}
                                           </div>
@@ -1519,9 +1553,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                              <div key={i} className={`min-h-[2rem] sm:min-h-[3rem] lg:h-24 border-l-2 lg:border-l-4 ${pick ? 'border-blue-500 bg-blue-900/30' : 'border-gray-700 bg-gray-800/50'} rounded-r lg:rounded-r-lg flex items-center p-0.5 sm:p-2 lg:p-4 transition-all duration-500`}>
                                  {pick ? (
                                      <>
-                                        <div className="w-6 h-6 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded border border-blue-400 flex items-center justify-center bg-black overflow-hidden shrink-0 relative">
-                                            <img src={getChampionImageUrl(pick.champName)} alt={pick.champName} className="w-full h-full object-cover object-top" onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
-                                            <div style={{display:'none'}} className="absolute inset-0 items-center justify-center font-bold text-[6px] sm:text-[8px] lg:text-xs text-center break-words leading-tight">{pick.champName}</div>
+                                        <div className="w-6 h-6 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded border border-blue-400 overflow-hidden shrink-0">
+                                            <ChampionImage champName={pick.champName} className="w-full h-full" />
                                         </div>
                                         <div className="ml-1 sm:ml-4 overflow-hidden flex flex-col justify-center">
                                             {/* Flex row for Name + Tier so tier is never hidden by truncate */}
@@ -1574,9 +1607,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                     <div className="bg-blue-900/30 p-1 px-2 lg:p-2 lg:px-4 flex items-center gap-2 lg:gap-4 border-b border-blue-800 shrink-0">
                                         <span className="text-[8px] lg:text-xs font-bold text-blue-300 uppercase">Rec</span>
                                         <div className="flex items-center gap-1 lg:gap-2">
-                                            <div className="w-5 h-5 lg:w-8 lg:h-8 bg-black rounded border border-blue-500 overflow-hidden relative flex items-center justify-center text-[6px] lg:text-[10px] break-words leading-none">
-                                                <img src={getChampionImageUrl(recommendedChamp.name)} alt={recommendedChamp.name} className="w-full h-full object-cover object-top" onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
-                                                <div style={{display:'none'}} className="absolute inset-0 flex items-center justify-center">{recommendedChamp.name}</div>
+                                            <div className="w-5 h-5 lg:w-8 lg:h-8 rounded border border-blue-500 overflow-hidden shrink-0">
+                                                <ChampionImage champName={recommendedChamp.name} className="w-full h-full" />
                                             </div>
                                             <span className="font-bold text-[10px] lg:text-sm text-white truncate max-w-[60px] lg:max-w-none">{recommendedChamp.name}</span>
                                             <span className="text-[8px] lg:text-xs text-blue-200">({recommendedChamp.tier}T)</span>
@@ -1612,9 +1644,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                                                         'bg-gray-700/50 border-gray-600 hover:bg-gray-600 hover:border-gray-400'
                                                     }`}
                                                 >
-                                                    <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-16 lg:h-16 bg-black rounded mb-0.5 lg:mb-2 flex items-center justify-center text-[6px] sm:text-[8px] lg:text-xs text-gray-400 font-bold overflow-hidden leading-tight break-words p-0 relative">
-                                                        <img src={getChampionImageUrl(champ.name)} alt={champ.name} className="w-full h-full object-cover object-top" onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
-                                                        <div style={{display:'none'}} className="absolute inset-0 items-center justify-center text-[6px] sm:text-[8px] lg:text-xs text-gray-400 font-bold text-center p-0.5">{champ.name}</div>
+                                                    <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded mb-0.5 lg:mb-2 overflow-hidden">
+                                                        <ChampionImage champName={champ.name} className="w-full h-full" />
                                                     </div>
                                                     {/* Reverted to Absolute Badge Style as requested */}
                                                     <div className="text-[8px] lg:text-xs font-bold text-center w-full truncate">{champ.name}</div>
@@ -1674,9 +1705,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                              <div key={i} className={`min-h-[2rem] sm:min-h-[3rem] lg:h-24 border-r-2 lg:border-r-4 ${pick ? 'border-red-500 bg-red-900/30' : 'border-gray-700 bg-gray-800/50'} rounded-l lg:rounded-l-lg flex flex-row-reverse items-center p-0.5 sm:p-2 lg:p-4 transition-all duration-500`}>
                                  {pick ? (
                                      <>
-                                        <div className="w-6 h-6 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded border border-red-400 flex items-center justify-center bg-black overflow-hidden shrink-0 relative">
-                                            <img src={getChampionImageUrl(pick.champName)} alt={pick.champName} className="w-full h-full object-cover object-top" onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
-                                            <div style={{display:'none'}} className="absolute inset-0 items-center justify-center font-bold text-[6px] sm:text-[8px] lg:text-xs text-center break-words leading-tight">{pick.champName.substring(0,3)}</div>
+                                        <div className="w-6 h-6 sm:w-10 sm:h-10 lg:w-16 lg:h-16 rounded border border-red-400 overflow-hidden shrink-0">
+                                            <ChampionImage champName={pick.champName} className="w-full h-full" />
                                         </div>
                                         {/* [FIXED] Removed overflow-hidden, added break-words, and pr-1 to prevent cutoff */}
                                         <div className="mr-1 sm:mr-4 text-right flex flex-col justify-center items-end pr-1 w-full">
@@ -1711,9 +1741,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                     <div className={`${mobileTab === 'BLUE' ? 'flex' : 'hidden'} sm:flex w-full sm:w-40 lg:w-80 bg-gray-900 border-r border-gray-800 flex-col pt-1 sm:pt-2 h-full`}>
                         {liveStats.players.filter(p => p.side === 'BLUE').map((p, i) => (
                             <div key={i} className="flex-1 min-h-0 border-b border-gray-800 relative p-1 lg:p-2 flex items-center gap-2 lg:gap-3">
-                                <div className="w-8 h-8 lg:w-12 lg:h-12 bg-gray-800 rounded border border-blue-600 relative overflow-hidden shrink-0">
-                                    <img src={getChampionImageUrl(p.champName)} alt={p.champName} className="absolute inset-0 w-full h-full object-cover object-top" onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
-                                    <div style={{display:'none'}} className="absolute inset-0 items-center justify-center font-bold text-[6px] sm:text-[8px] lg:text-xs text-blue-200 text-center leading-none break-words p-0.5">{(p.champName||'').substring(0,3)}</div>
+                                <div className="w-8 h-8 lg:w-12 lg:h-12 rounded border border-blue-600 relative overflow-hidden shrink-0">
+                                    <ChampionImage champName={p.champName} className="absolute inset-0 w-full h-full" />
                                     <div className="absolute bottom-0 right-0 bg-black/80 text-white text-[8px] lg:text-[10px] px-1 font-bold z-10">{p.lvl}</div>
                                 </div>
                                 <div className="flex-1 min-w-0">
@@ -1762,9 +1791,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                     <div className={`${mobileTab === 'RED' ? 'flex' : 'hidden'} sm:flex w-full sm:w-40 lg:w-80 bg-gray-900 border-l border-gray-800 flex-col pt-1 sm:pt-2 h-full`}>
                         {liveStats.players.filter(p => p.side === 'RED').map((p, i) => (
                             <div key={i} className="flex-1 min-h-0 border-b border-gray-800 relative p-1 lg:p-2 flex flex-row-reverse items-center gap-2 lg:gap-3 text-right">
-                                <div className="w-8 h-8 lg:w-12 lg:h-12 bg-gray-800 rounded border border-red-600 relative overflow-hidden shrink-0">
-                                    <img src={getChampionImageUrl(p.champName)} alt={p.champName} className="absolute inset-0 w-full h-full object-cover object-top" onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
-                                    <div style={{display:'none'}} className="absolute inset-0 items-center justify-center font-bold text-[6px] sm:text-[8px] lg:text-xs text-red-200 text-center leading-none break-words p-0.5">{(p.champName||'').substring(0,3)}</div>
+                                <div className="w-8 h-8 lg:w-12 lg:h-12 rounded border border-red-600 relative overflow-hidden shrink-0">
+                                    <ChampionImage champName={p.champName} className="absolute inset-0 w-full h-full" />
                                     <div className="absolute bottom-0 left-0 bg-black/80 text-white text-[8px] lg:text-[10px] px-1 font-bold z-10">{p.lvl}</div>
                                 </div>
                                 <div className="flex-1 min-w-0">
@@ -1799,11 +1827,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                             <div className="absolute top-0 left-0 bg-yellow-500 text-black font-bold px-2 py-0.5 lg:px-3 lg:py-1 text-[8px] sm:text-[10px] lg:text-xs rounded-br-lg z-10">
                                 SET {currentSet} POG
                             </div>
-                            <div className="w-12 h-12 sm:w-16 sm:h-16 lg:w-24 lg:h-24 rounded-full bg-gray-700 border-2 border-yellow-400 mb-1 sm:mb-2 lg:mb-4 overflow-hidden relative flex items-center justify-center">
-                                {pog?.champName ? (
-                                    <img src={getChampionImageUrl(pog.champName)} alt={pog.champName} className="w-full h-full object-cover object-top scale-110" onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
-                                ) : null}
-                                <span style={{display: pog?.champName ? 'none' : 'flex'}} className="text-xl sm:text-2xl lg:text-3xl">👤</span>
+                            <div className="w-12 h-12 sm:w-16 sm:h-16 lg:w-24 lg:h-24 rounded-full border-2 border-yellow-400 mb-1 sm:mb-2 lg:mb-4 overflow-hidden">
+                                <ChampionImage champName={pog?.champName} className="w-full h-full" />
                             </div>
                             <div className="text-sm sm:text-base lg:text-xl font-bold text-yellow-400">{pog?.playerName || 'Unknown'}</div>
                             <div className="text-[10px] sm:text-xs lg:text-sm text-gray-400 mb-1 lg:mb-2">{pog?.champName || ''}</div>
