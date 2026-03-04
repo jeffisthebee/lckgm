@@ -256,6 +256,33 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         const liveStatsRef = useRef(liveStats);
         useEffect(() => { liveStatsRef.current = liveStats; }, [liveStats]);
         const gameEndFiredRef = useRef(false); // guard: setPhase('SET_RESULT') fires exactly once per game
+
+        // --- SOUND MANAGER ---
+        const [soundEnabled, setSoundEnabled] = useState(true);
+        const soundEnabledRef = useRef(true);
+        useEffect(() => { soundEnabledRef.current = soundEnabled; }, [soundEnabled]);
+
+        // Audio objects stored in a ref so they persist without triggering re-renders.
+        const audioRefs = useRef({
+            yourBan:  new Audio('https://raw.communitydragon.org/16.5/plugins/rcp-fe-lol-champ-select/global/default/sounds/sfx-cs-draft-10ban-your-ban.ogg'),
+            enemyBan: new Audio('https://raw.communitydragon.org/16.5/plugins/rcp-fe-lol-champ-select/global/default/sounds/sfx-cs-draft-10ban-enemy-ban.ogg'),
+            pick:     new Audio('https://raw.communitydragon.org/16.5/plugins/rcp-fe-lol-champ-select/global/default/sounds/sfx-cs-draft-notif-yourpick.ogg'),
+        });
+
+        const playSound = useCallback((type) => {
+            if (!soundEnabledRef.current) return;
+            try {
+                const audio = audioRefs.current[type];
+                if (audio) {
+                    audio.currentTime = 0;
+                    audio.play().catch(() => {}); // swallow autoplay-policy errors silently
+                }
+            } catch (e) { /* ignore */ }
+        }, []);
+
+        // Track previous ban/pick counts to detect when a new one is committed
+        const prevBanCountRef  = useRef({ blue: 0, red: 0 });
+        const prevPickCountRef = useRef(0);
       
         const [globalBanList, setGlobalBanList] = useState(Array.isArray(externalGlobalBans) ? externalGlobalBans.slice() : []);
         const [matchHistory, setMatchHistory] = useState([]);
@@ -803,6 +830,37 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
             }
     
         }, [phase, draftStep, simulationData, isManualMode, manualTeams, manualPicks, filterRole, userSelectedRole, manualUserSide]);
+
+        // --- SOUND TRIGGER EFFECTS ---
+
+        // 1. Ban sound — differentiate user's ban vs enemy ban
+        useEffect(() => {
+            if (phase !== 'DRAFT') {
+                prevBanCountRef.current = { blue: 0, red: 0 };
+                prevPickCountRef.current = 0;
+                return;
+            }
+
+            const blueBans = draftState.blueBans.length;
+            const redBans  = draftState.redBans.length;
+            const totalPicks = draftState.bluePicks.filter(Boolean).length + draftState.redPicks.filter(Boolean).length;
+
+            // Determine user's side (manual mode has manualUserSide; auto mode compares team names)
+            const userSide = manualUserSide
+                ? manualUserSide
+                : (simulationData?.blueTeam?.name === userTeam?.name ? 'BLUE' : 'RED');
+
+            if (blueBans > prevBanCountRef.current.blue) {
+                playSound(userSide === 'BLUE' ? 'yourBan' : 'enemyBan');
+            } else if (redBans > prevBanCountRef.current.red) {
+                playSound(userSide === 'RED' ? 'yourBan' : 'enemyBan');
+            } else if (totalPicks > prevPickCountRef.current) {
+                playSound('pick');
+            }
+
+            prevBanCountRef.current  = { blue: blueBans, red: redBans };
+            prevPickCountRef.current = totalPicks;
+        }, [draftState, phase, manualUserSide, simulationData, userTeam, playSound]);
     
         // --- MANUAL MODE HELPER FUNCTIONS ---
         const handleCpuTurn = (stepInfo, team, side) => {
@@ -1297,6 +1355,9 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         const displayWinsA = winsA + ((phase === 'SET_RESULT' && currentWinnerIsA) ? 1 : 0);
         const displayWinsB = winsB + ((phase === 'SET_RESULT' && !currentWinnerIsA && simulationData?.winnerName) ? 1 : 0);
         const isMatchFinished = displayWinsA >= targetWins || displayWinsB >= targetWins;
+
+        // True when both teams need exactly 1 more win — i.e. this is the deciding game (Game 5 in BO5, Game 3 in BO3)
+        const isDecidingGame = winsA === targetWins - 1 && winsB === targetWins - 1;
     
         // [CRITICAL FIX] If in result phase but data is missing (during transition), show loading instead of null.
         // Returning null unmounts the component which causes a crash between sets.
@@ -1378,6 +1439,22 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                               </div>
                               <div className="text-[10px] sm:text-xs text-gray-400 font-mono animate-pulse">{draftState.currentAction}</div>
                               {!isManualMode && <button onClick={skipDraft} className="absolute -bottom-6 sm:-bottom-8 text-[10px] text-gray-500 hover:text-white underline">SKIP DRAFT ⏩</button>}
+                              
+                              {/* Sound toggle + deciding-game label */}
+                              <div className="absolute -bottom-6 sm:-bottom-8 right-0 flex items-center gap-2">
+                                  {isDecidingGame && (
+                                      <span className="text-[9px] sm:text-[10px] text-yellow-400 font-bold animate-pulse">
+                                          🎵 DECIDING GAME
+                                      </span>
+                                  )}
+                                  <button
+                                      onClick={() => setSoundEnabled(v => !v)}
+                                      title={soundEnabled ? 'Mute sounds' : 'Unmute sounds'}
+                                      className="text-[10px] sm:text-xs text-gray-500 hover:text-white transition"
+                                  >
+                                      {soundEnabled ? '🔊' : '🔇'}
+                                  </button>
+                              </div>
                           </div>
                       ) : (
                           <>
@@ -1503,6 +1580,19 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                 {phase === 'DRAFT' && (
                  <div className="flex-1 flex flex-col sm:flex-row bg-gray-900 p-1 sm:p-2 lg:p-8 gap-1 sm:gap-2 lg:gap-8 items-center justify-center relative overflow-hidden">
                      <div className="absolute inset-0 bg-gradient-to-r from-blue-900/20 to-red-900/20 pointer-events-none"></div>
+
+                     {/* Hidden Silverscapes iframe — plays during the deciding game draft only.
+                         YouTube autoplay works here because the user has already clicked several
+                         buttons to reach this phase, satisfying the browser's user-gesture policy.
+                         Video ID: 21hQsnpdNpA (LOL Esports official upload) */}
+                     {isDecidingGame && soundEnabled && (
+                         <iframe
+                             src="https://www.youtube.com/embed/21hQsnpdNpA?autoplay=1&loop=1&playlist=21hQsnpdNpA&controls=0"
+                             allow="autoplay"
+                             title="Silverscapes - Deciding Game Music"
+                             style={{ position: 'absolute', width: 0, height: 0, border: 'none', opacity: 0, pointerEvents: 'none' }}
+                         />
+                     )}
     
                      {/* [NEW] SYNERGY HEADS UP DISPLAY */}
                      <div className="absolute top-0 left-0 w-full flex justify-between px-4 py-2 pointer-events-none z-30">
