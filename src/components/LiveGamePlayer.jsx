@@ -1358,8 +1358,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         const displayWinsB = winsB + ((phase === 'SET_RESULT' && !currentWinnerIsA && simulationData?.winnerName) ? 1 : 0);
         const isMatchFinished = displayWinsA >= targetWins || displayWinsB >= targetWins;
 
-        // True when both teams need exactly 1 more win — i.e. this is the deciding game (Game 5 in BO5, Game 3 in BO3)
-        const isDecidingGame = winsA === targetWins - 1 && winsB === targetWins - 1;
+        // Only fires for Game 5 of a BO5 — not BO3 deciding games
+        const isDecidingGame = isBo5 && winsA === targetWins - 1 && winsB === targetWins - 1;
     
         // [CRITICAL FIX] If in result phase but data is missing (during transition), show loading instead of null.
         // Returning null unmounts the component which causes a crash between sets.
