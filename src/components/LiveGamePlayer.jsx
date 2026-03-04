@@ -264,22 +264,21 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 
         // Audio objects stored in a ref so they persist without triggering re-renders.
         // crossOrigin='anonymous' is required for cross-origin CDN URLs to avoid CORS blocks.
-        const mkAudio = (url) => { const a = new Audio(); a.crossOrigin = 'anonymous'; a.src = url; return a; };
-        const audioRefs = useRef({
-            yourBan:  mkAudio('/sounds/sfx-cs-draft-10ban-your-ban.ogg'),
-            enemyBan: mkAudio('/sounds/sfx-cs-draft-10ban-enemy-ban.ogg'),
-            pick:     mkAudio('/sounds/sfx-cs-draft-notif-yourpick.ogg'),
-        });
+        const SOUND_URLS = {
+            yourBan:  '/sounds/sfx-cs-draft-10ban-your-ban.ogg',
+            enemyBan: '/sounds/sfx-cs-draft-10ban-enemy-ban.ogg',
+            pick:     '/sounds/sfx-cs-draft-notif-yourpick.ogg',
+        };
 
         const playSound = useCallback((type) => {
             if (!soundEnabledRef.current) return;
             try {
-                const audio = audioRefs.current[type];
-                if (audio) {
-                    audio.currentTime = 0;
-                    const p = audio.play();
-                    if (p) p.catch((e) => console.warn('Sound play failed:', type, e));
-                }
+                const url = SOUND_URLS[type];
+                if (!url) return;
+                // Create a fresh Audio each time — avoids stale/broken state on Set 2+
+                const audio = new Audio(url);
+                const p = audio.play();
+                if (p) p.catch((e) => console.warn('Sound play failed:', type, e));
             } catch (e) { console.warn('Sound error:', type, e); }
         }, []);
 
