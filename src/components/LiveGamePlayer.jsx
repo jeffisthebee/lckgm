@@ -338,6 +338,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
     
         const targetWins = useMemo(() => Math.ceil((bestOf || 3) / 2), [bestOf]);
         const isBo5 = bestOf === 5;
+        // True only for Game 5 of a BO5 series
+        const isDecidingGame = isBo5 && winsA === targetWins - 1 && winsB === targetWins - 1;
     
         // [FIXED] Robust detection for Finals: also consider match.stage
         const isFinals = useMemo(() => {
@@ -1381,9 +1383,6 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         const displayWinsA = winsA + ((phase === 'SET_RESULT' && currentWinnerIsA) ? 1 : 0);
         const displayWinsB = winsB + ((phase === 'SET_RESULT' && !currentWinnerIsA && simulationData?.winnerName) ? 1 : 0);
         const isMatchFinished = displayWinsA >= targetWins || displayWinsB >= targetWins;
-
-        // Only fires for Game 5 of a BO5 — not BO3 deciding games
-        const isDecidingGame = isBo5 && winsA === targetWins - 1 && winsB === targetWins - 1;
     
         // [CRITICAL FIX] If in result phase but data is missing (during transition), show loading instead of null.
         // Returning null unmounts the component which causes a crash between sets.
