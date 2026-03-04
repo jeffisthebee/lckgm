@@ -22,7 +22,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         'aurelionsol': 'AurelionSol', 'kogmaw': 'KogMaw', 'reksai': 'RekSai',
         'leblanc': 'Leblanc', 'ksante': 'KSante', 'belveth': 'Belveth',
         'khazix': 'Khazix', 'velkoz': 'Velkoz', 'kaisa': 'Kaisa',
-        'zahen': 'Zahen', 'unara': 'Unara',
+        'zahen': 'Zaahen', 'unara': 'Yunara',
     };
 
     const getChampionImageUrl = (champName, champList) => {
