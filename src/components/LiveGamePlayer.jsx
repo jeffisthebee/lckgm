@@ -3,39 +3,10 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
     import { DRAFT_SEQUENCE, championList } from '../data/constants'; 
     import { SYNERGIES } from '../data/synergies'; 
     import { validateLineup, getDefaultLineup } from '../engine/rosterLogic';
+    import { CHAMPION_IMAGES } from '../data/championImages';
     
     // --- HELPER: Champion Image Component ---
-    // Looks up DDragon filename from champion id (e.g. "leesin_jg" -> "Leesin" -> "LeeSin_0.png")
-    // Special cases where the base id doesn't match DDragon exactly
-    const ID_TO_DDRAGON = {
-        'wukong': 'MonkeyKing', 'drmundo': 'DrMundo', 'jarvaniv': 'JarvanIV',
-        'leesin': 'LeeSin', 'masteryi': 'MasterYi', 'missfortune': 'MissFortune',
-        'tahmkench': 'TahmKench', 'twistedfate': 'TwistedFate', 'xinzhao': 'XinZhao',
-        'aurelionsol': 'AurelionSol', 'kogmaw': 'KogMaw', 'reksai': 'RekSai',
-        'leblanc': 'Leblanc', 'ksante': 'KSante', 'belveth': 'Belveth',
-        'khazix': 'Khazix', 'velkoz': 'Velkoz', 'kaisa': 'Kaisa',
-    };
-
-    // Build a name→id map from championList at runtime so we can look up by Korean name
-    // This runs once and is used by getChampionImageUrl
-    const buildNameToIdMap = (champList) => {
-        const map = {};
-        (champList || []).forEach(c => {
-            if (c.name && c.id) {
-                const baseId = c.id.replace(/_[a-z]+$/, ''); // strip _top/_jg etc
-                map[c.name] = baseId;
-            }
-        });
-        return map;
-    };
-
-    const getChampionImageUrl = (champName, champList) => {
-        if (!champName) return null;
-        const nameToId = buildNameToIdMap(champList);
-        const baseId = nameToId[champName] || champName.toLowerCase().replace(/[\s'\.\-]/g, '').replace(/&.*/,'');
-        const ddName = ID_TO_DDRAGON[baseId] || (baseId.charAt(0).toUpperCase() + baseId.slice(1));
-        return `/champion/img/champion/tiles/${ddName}_0.png`;
-    };
+    // Images are pre-imported via championImages.js to bypass Vercel routing issues
 
     // Hue palette for fallback tiles — deterministic per champion name
     const champHue = (name) => {
@@ -47,11 +18,11 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 
     const ChampionImage = ({ champName, champList, className = '', style = {}, grayscale = false, objectPosition = 'top' }) => {
         const [failed, setFailed] = React.useState(false);
-        const url = getChampionImageUrl(champName, champList);
+        const src = CHAMPION_IMAGES[champName] || null;
         const hue = champHue(champName);
         const initial = (champName || '?')[0].toUpperCase();
 
-        if (!champName || failed || !url) {
+        if (!champName || failed || !src) {
             return (
                 <div
                     className={`flex items-center justify-center font-black select-none ${className}`}
@@ -64,7 +35,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 
         return (
             <img
-                src={url}
+                src={src}
                 alt={champName}
                 className={`${grayscale ? 'grayscale opacity-60' : ''} ${className}`}
                 style={{ objectFit: 'cover', objectPosition, ...style }}
