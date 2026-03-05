@@ -208,8 +208,8 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
     ];
 
     return (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-2 sm:p-4 bg-black/70 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+            <div className="bg-white w-full h-full flex flex-col shadow-2xl overflow-hidden">
 
                 {/* ── Header ── */}
                 <div className="relative flex items-center gap-4 p-4 sm:p-6 shrink-0 overflow-hidden"
@@ -442,13 +442,13 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
                                         <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">팀 우승 기록</div>
                                         <div className="flex flex-wrap gap-3">
                                             {accolades.team_titles.worlds > 0 && (
-                                                <TrophyBadge icon="🌍" label="월드 챔피언십" count={accolades.team_titles.worlds} color="#f59e0b" />
+                                                <TrophyBadge icon="🌍" label="월드 챔피언십" count={accolades.team_titles.worlds} color="#f59e0b" years={accolades.team_titles.worlds_years || []} />
                                             )}
                                             {accolades.team_titles.msi > 0 && (
-                                                <TrophyBadge icon="🌐" label="MSI" count={accolades.team_titles.msi} color="#6366f1" />
+                                                <TrophyBadge icon="🌐" label="MSI" count={accolades.team_titles.msi} color="#6366f1" years={accolades.team_titles.msi_years || []} />
                                             )}
                                             {accolades.team_titles.lck > 0 && (
-                                                <TrophyBadge icon="🏆" label="LCK 우승" count={accolades.team_titles.lck} color="#3b82f6" />
+                                                <TrophyBadge icon="🏆" label="LCK 우승" count={accolades.team_titles.lck} color="#3b82f6" years={accolades.team_titles.lck_years || []} />
                                             )}
                                         </div>
                                     </div>
@@ -538,12 +538,25 @@ function ChampTable({ champs, highlight }) {
     );
 }
 
-function TrophyBadge({ icon, label, count, color }) {
+function TrophyBadge({ icon, label, count, color, years }) {
+    const [hovered, setHovered] = useState(false);
     return (
-        <div className="flex flex-col items-center gap-1 bg-gray-50 rounded-xl p-3 border min-w-[80px]">
+        <div
+            className="relative flex flex-col items-center gap-1 bg-gray-50 rounded-xl p-3 border min-w-[80px] cursor-default"
+            onMouseEnter={() => setHovered(true)}
+            onMouseLeave={() => setHovered(false)}
+        >
             <span className="text-2xl">{icon}</span>
             <span className="text-2xl font-black" style={{ color }}>×{count}</span>
             <span className="text-[10px] font-bold text-gray-500 text-center leading-tight">{label}</span>
+
+            {/* Tooltip */}
+            {hovered && years && years.length > 0 && (
+                <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[11px] font-bold rounded-lg px-3 py-2 whitespace-nowrap z-50 shadow-xl pointer-events-none">
+                    {years.join(' · ')}
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
+                </div>
+            )}
         </div>
     );
 }

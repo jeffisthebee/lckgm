@@ -1,6 +1,7 @@
 // src/components/RosterTab.jsx
 import React, { useState } from 'react';
 import PlayerProfileModal from './PlayerProfileModal';
+import allMastery from '../data/player_mastery/index';
 
 // [NEW] 1. Import all the global teams and player intel!
 import { teams as lckTeams } from '../data/teams';
@@ -211,7 +212,7 @@ const RosterTab = ({ viewingTeam, roster, onPrevTeam, onNextTeam }) => {
             <PlayerProfileModal
                 player={selectedPlayer}
                 league={null}
-                masteryData={null}
+                masteryData={allMastery}
                 onClose={() => setSelectedPlayer(null)}
             />
         )}

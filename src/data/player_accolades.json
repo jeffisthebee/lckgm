@@ -4,8 +4,11 @@
       "name": "페이커",
       "team_titles": {
         "worlds": 4,
+        "worlds_years": [2013, 2015, 2016, 2023],
         "msi": 2,
-        "lck": 10
+        "msi_years": [2016, 2017],
+        "lck": 10,
+        "lck_years": [2013, 2014, 2015, 2016, 2017, 2019, 2022, 2023, 2024, 2025]
       },
       "individual_awards": [
         { "year": 2013, "award": "Worlds MVP" },
@@ -27,8 +30,11 @@
       "name": "케리아",
       "team_titles": {
         "worlds": 1,
+        "worlds_years": [2023],
         "msi": 2,
-        "lck": 4
+        "msi_years": [2022, 2024],
+        "lck": 4,
+        "lck_years": [2022, 2023, 2024, 2025]
       },
       "individual_awards": [
         { "year": 2021, "award": "LCK Best Support" },
@@ -46,8 +52,11 @@
       "name": "구마유시",
       "team_titles": {
         "worlds": 1,
+        "worlds_years": [2023],
         "msi": 1,
-        "lck": 4
+        "msi_years": [2022],
+        "lck": 4,
+        "lck_years": [2022, 2023, 2024, 2025]
       },
       "individual_awards": [
         { "year": 2022, "award": "LCK Best ADC" },
@@ -63,8 +72,11 @@
       "name": "제우스",
       "team_titles": {
         "worlds": 1,
+        "worlds_years": [2023],
         "msi": 1,
-        "lck": 3
+        "msi_years": [2024],
+        "lck": 3,
+        "lck_years": [2023, 2024, 2025]
       },
       "individual_awards": [
         { "year": 2023, "award": "LCK Best Top" },
@@ -80,8 +92,11 @@
       "name": "오너",
       "team_titles": {
         "worlds": 1,
+        "worlds_years": [2023],
         "msi": 1,
-        "lck": 3
+        "msi_years": [2024],
+        "lck": 3,
+        "lck_years": [2022, 2023, 2024]
       },
       "individual_awards": [
         { "year": 2022, "award": "LCK Best Jungle" },
@@ -97,8 +112,11 @@
       "name": "초비",
       "team_titles": {
         "worlds": 0,
+        "worlds_years": [],
         "msi": 0,
-        "lck": 1
+        "msi_years": [],
+        "lck": 1,
+        "lck_years": [2024]
       },
       "individual_awards": [
         { "year": 2022, "award": "LCK Best Mid" },
@@ -115,8 +133,11 @@
       "name": "도란",
       "team_titles": {
         "worlds": 0,
+        "worlds_years": [],
         "msi": 0,
-        "lck": 1
+        "msi_years": [],
+        "lck": 1,
+        "lck_years": [2024]
       },
       "individual_awards": [
         { "year": 2024, "award": "LCK Best Top" }
@@ -131,8 +152,11 @@
       "name": "피넛",
       "team_titles": {
         "worlds": 0,
+        "worlds_years": [],
         "msi": 1,
-        "lck": 2
+        "msi_years": [2023],
+        "lck": 2,
+        "lck_years": [2023, 2024]
       },
       "individual_awards": [
         { "year": 2022, "award": "LCK Best Jungle" },
