@@ -39,6 +39,42 @@ const findGlobalTeam = (token, teamsList) => {
     return found || { name: String(token) };
 };
 
+
+// --- HELPER: Recalculate POG scores on stored match history using the new formula ---
+// Runs at display time so saved data is never mutated, just recalculated on the way out
+const recalcPogForMatch = (match) => {
+    if (!match?.result?.history) return match;
+    const newHistory = match.result.history.map(set => {
+        const allSidePicks = { A: set.picks?.A || [], B: set.picks?.B || [] };
+        const newPicks = {};
+        ['A', 'B'].forEach(side => {
+            newPicks[side] = allSidePicks[side].map(p => {
+                const k = p.stats?.kills ?? p.k ?? 0;
+                const d = p.stats?.deaths ?? p.d ?? 0;
+                const a = p.stats?.assists ?? p.a ?? 0;
+                const gold = p.currentGold ?? 0;
+                const kda = (k * 3 + a * 0.25) / Math.max(d, 1.5);
+                let pogScore = 65 + kda + (gold / 1500);
+                const role = p.playerData?.포지션 || p.role || 'MID';
+                if (['SUP', '서포터'].includes(role)) pogScore += Math.max(10 - (d * 1.5), 2);
+                if (['JGL', '정글'].includes(role))   pogScore += Math.max(6 - d, 0);
+                if (['TOP', '탑'].includes(role))     pogScore += Math.max(4 - d, 0);
+                return { ...p, pogScore };
+            });
+        });
+        // Re-elect POG winner from whichever side won this set
+        const winnerName = set.winner || set.winnerName;
+        const sideATeam = newPicks.A[0]?.playerData?.팀 || '';
+        const winnerSideKey = (sideATeam && winnerName && (sideATeam === winnerName || winnerName.includes(sideATeam) || sideATeam.includes(winnerName))) ? 'A' : 'B';
+        const winningPicks = newPicks[winnerSideKey];
+        const newPogPlayer = winningPicks.length > 0
+            ? [...winningPicks].sort((a, b) => (b.pogScore || 0) - (a.pogScore || 0))[0]
+            : set.pogPlayer;
+        return { ...set, picks: newPicks, pogPlayer: newPogPlayer };
+    });
+    return { ...match, result: { ...match.result, history: newHistory } };
+};
+
 const getSafeRoster = (teamObj, allPlayers) => {
     const tName = teamObj.name;
     let r = allPlayers.filter(p => p.팀 === tName || p.team === tName || p.Team === tName || (p.playerData && p.playerData.팀 === tName));
@@ -819,7 +855,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                                                 <div className="flex flex-col items-center">
                                                     <span className="text-lg lg:text-xl text-gray-800">{m.result?.score || '3-0'}</span>
                                                     <button
-                                                        onClick={() => onMatchClick && onMatchClick(m)}
+                                                        onClick={() => onMatchClick && onMatchClick(recalcPogForMatch(m))}
                                                         className="mt-1 text-[9px] lg:text-[10px] bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 px-1.5 lg:px-2 py-0.5 rounded transition flex items-center gap-1 whitespace-nowrap"
                                                     >
                                                         <span>📊</span> <span className="hidden sm:inline">상세보기</span><span className="sm:hidden">기록</span>
@@ -891,7 +927,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                                                         <div className="flex flex-col items-center">
                                                             <span className="text-base text-gray-800">{m.result?.score || '3-0'}</span>
                                                             <button
-                                                                onClick={() => onMatchClick && onMatchClick(m)}
+                                                                onClick={() => onMatchClick && onMatchClick(recalcPogForMatch(m))}
                                                                 className="mt-1 text-[9px] lg:text-[10px] bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 px-1.5 lg:px-2 py-0.5 rounded transition flex items-center gap-1 whitespace-nowrap"
                                                             >
                                                                 <span>📊</span> <span className="hidden sm:inline">상세보기</span><span className="sm:hidden">기록</span>
@@ -954,7 +990,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                                                         {m.result?.score || expectedFallbackScore}
                                                     </span>
                                                     <button 
-                                                        onClick={() => onMatchClick && onMatchClick(m)}
+                                                        onClick={() => onMatchClick && onMatchClick(recalcPogForMatch(m))}
                                                         className="mt-1 text-[9px] lg:text-[10px] bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 px-1.5 lg:px-2 py-0.5 rounded transition flex items-center gap-1 whitespace-nowrap"
                                                     >
                                                         <span>📊</span> <span className="hidden sm:inline">상세보기</span><span className="sm:hidden">기록</span>
