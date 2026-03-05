@@ -227,15 +227,25 @@ export function computeStatsForLeague(league, options = {}) {
         });
       });
 
-      const pog = extractPog(set);
-      if (pog) {
-        const pname = String(pog.playerName || pog.player || pog || '').trim();
+      // Recalculate POG from picks using new formula — ignores stale stored pogPlayer
+      const winningPicks = picks[winnerSide] || [];
+      let pogBestScore = -Infinity;
+      let pogBestPlayer = null;
+      winningPicks.forEach(p => {
+        if (!p) return;
+        const score = computePlayerScoreFromStats(p);
+        if (score > pogBestScore) {
+          pogBestScore = score;
+          pogBestPlayer = p;
+        }
+      });
+      if (pogBestPlayer) {
+        const pname = String(pogBestPlayer.playerName || '').trim();
         if (pname) {
           const prev = pogCounts.get(pname) || { count: 0, lastScore: null, teams: new Set() };
           prev.count += 1;
-          const pscore = safeNum(pog.pogScore ?? pog.score ?? pog.pogScore ?? null);
-          if (pscore) prev.lastScore = pscore;
-          const teamName = pog.playerData?.팀 || pog.team || pog.teamName || null;
+          prev.lastScore = pogBestScore;
+          const teamName = pogBestPlayer.playerData?.팀 || pogBestPlayer.team || pogBestPlayer.teamName || null;
           if (teamName) prev.teams.add(teamName);
           pogCounts.set(pname, prev);
         }
