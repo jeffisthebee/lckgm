@@ -911,7 +911,11 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                 
                 let roleCandidates = [];
                 remainingRoles.forEach(role => {
-                    const player = team?.roster?.find(p => positionMatches(p.포지션, role));
+                    const player = team?.roster?.find(p =>
+                        positionMatches(p.포지션, role) ||
+                        positionMatches(p.position, role) ||
+                        positionMatches(p.role, role)
+                    );
                     if (player) {
                         const candidateChamp = selectPickFromTop3(player, availableChamps);
                         if (candidateChamp) {
@@ -1013,8 +1017,15 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                     const c = sidePicks[pos];
                     // Fallback for incomplete drafts (prevents crash)
                     const safeChamp = c || activeChampionList.find(ch => ch.role === pos) || activeChampionList[0];
-                    // Use positionMatches to match supports regardless of roster pos naming
-                    const p = (roster || []).find(pl => positionMatches(pl.포지션, pos) || positionMatches(pl.position, pos));
+                    // Use positionMatches across all possible position fields — roster entries
+                    // may store position in .role, .lane, or nested .playerData?.포지션
+                    const p = (roster || []).find(pl =>
+                        positionMatches(pl.포지션, pos) ||
+                        positionMatches(pl.position, pos) ||
+                        positionMatches(pl.role, pos) ||
+                        positionMatches(pl.lane, pos) ||
+                        positionMatches(pl.playerData?.포지션, pos)
+                    );
                     
                     const safePlayerData = p || { 
                         이름: 'Unknown', 
@@ -1031,7 +1042,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                         classType: safeChamp.class || '전사',
                         dmgType: safeChamp.dmg_type || 'AD',
                         mastery: { games: 0, winRate: 50, kda: 3.0 },
-                        playerName: safePlayerData.이름,
+                        playerName: safePlayerData.이름 || safePlayerData.name || safePlayerData.playerName || 'Unknown',
                         playerOvr: safePlayerData.종합,
                         playerData: safePlayerData,
                         conditionModifier: 1.0,
