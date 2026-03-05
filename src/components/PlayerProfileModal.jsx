@@ -251,7 +251,7 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
                         <div className="flex items-center gap-3 mt-2 flex-wrap">
                             <span className="text-lg sm:text-2xl font-black" style={{ color: getOvrColor(player.종합) }}>{player.종합} <span className="text-xs font-bold text-gray-400">OVR</span></span>
                             {player.잠재력 && <span className="text-xs font-bold text-purple-500">POT {player.잠재력}</span>}
-                            {player.나이 && <span className="text-xs text-gray-400">만 {player.나이}세</span>}
+                            {player.나이 && <span className="text-xs text-gray-400">{player.나이}</span>}
                             {player.경력 && <span className="text-xs text-gray-400">경력 {player.경력}년</span>}
                         </div>
                     </div>
@@ -310,7 +310,7 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
                                         {[
                                             ['팀', player.팀],
                                             ['포지션', posLabel],
-                                            ['나이', player.나이 ? `만 ${player.나이}세` : '-'],
+                                            ['나이', player.나이 || '-'],
                                             ['경력', player.경력 ? `${player.경력}년` : '-'],
                                             ['소속기간', player['팀 소속기간'] || '-'],
                                             ['연봉', player.연봉 || '-'],

@@ -30,7 +30,7 @@ const getPotBadgeStyle = (pot) => {
     return 'text-gray-500 font-medium';
 };
 
-const RosterTab = ({ viewingTeam, roster, onPrevTeam, onNextTeam }) => {
+const RosterTab = ({ viewingTeam, roster, onPrevTeam, onNextTeam, league }) => {
     // [NEW] 2. The Memory Boxes (State)
     const [currentLeague, setCurrentLeague] = useState('LCK');
     const [foreignTeamIndex, setForeignTeamIndex] = useState(0);
@@ -209,7 +209,7 @@ const RosterTab = ({ viewingTeam, roster, onPrevTeam, onNextTeam }) => {
             {selectedPlayer && (
                 <PlayerProfileModal
                     player={selectedPlayer}
-                    league={null}
+                    league={league}
                     masteryData={allMastery}
                     onClose={() => setSelectedPlayer(null)}
                 />
