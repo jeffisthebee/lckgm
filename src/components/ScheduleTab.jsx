@@ -809,9 +809,15 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 {(() => {
                     let leagueTeamNames = [];
                     if (currentLeague === 'LCK') {
-                        // Use formatTeamName to get display names, same as the match cards
-                        const rawIds = [...new Set((league.matches || []).flatMap(m => [m.t1, m.t2]).filter(t => t && t !== 'TBD' && t !== 'null' && t !== 'undefined'))];
-                        leagueTeamNames = rawIds.map(id => formatTeamName ? formatTeamName(id, 'regular') : id).filter(Boolean);
+                        // Use the teams prop (full roster) so playoff-only slots aren't missed.
+                        // Fall back to scanning match slots if teams prop is empty.
+                        const teamPool = (teams || []).length > 0 ? teams : [];
+                        if (teamPool.length > 0) {
+                            leagueTeamNames = [...new Set(teamPool.map(t => formatTeamName ? formatTeamName(t.id, 'regular') : (t.name || t.id)).filter(Boolean))];
+                        } else {
+                            const rawIds = [...new Set((league.matches || []).flatMap(m => [m.t1, m.t2]).filter(t => t && t !== 'TBD' && t !== 'null' && t !== 'undefined'))];
+                            leagueTeamNames = rawIds.map(id => formatTeamName ? formatTeamName(id, 'regular') : id).filter(Boolean);
+                        }
                     } else if (currentLeague === 'FST') {
                         leagueTeamNames = fstTeams.map(t => t.name).filter(Boolean);
                     } else {
