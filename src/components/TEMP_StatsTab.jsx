@@ -72,7 +72,37 @@ export default function StatsTab({ league }) {
   const [stageFilter, setStageFilter] = useState('ALL'); // 'ALL', 'PLAYIN', 'REGULAR', 'PLAYOFF'
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSection, setActiveSection] = useState('POG'); // 'POG', 'RATING', 'META', 'KDA'
-  const [metaSort, setMetaSort] = useState({ key: 'picks', dir: 'desc' }); // key: picks|winRate|pickRate|banRate
+  const [patchFilter, setPatchFilter] = useState('ALL'); // 'ALL', '16.01', '16.02', '16.03'
+  const [metaSort, setMetaSort] = useState({ key: 'picks', dir: 'desc' });
+
+  // Derive patch boundaries from the actual schedule data.
+  // superWeekStart = earliest 'super' match date in LCK matches
+  // fstStart       = earliest FST match date
+  // These are compared against each LCK/foreign match's date string (e.g. "1.28 (수)")
+  const patchBoundaries = useMemo(() => {
+    const parseDate = (d) => {
+      if (!d) return Infinity;
+      const [month, day] = d.split(' ')[0].split('.').map(Number);
+      return (month || 99) * 100 + (day || 99);
+    };
+    const superMatches = (league?.matches || []).filter(m => m.type === 'super');
+    const fstMatches   = (league?.fst?.matches || []);
+    const superStart = superMatches.length > 0
+      ? Math.min(...superMatches.map(m => parseDate(m.date)))
+      : Infinity;
+    const fstStart = fstMatches.length > 0
+      ? Math.min(...fstMatches.map(m => parseDate(m.date)))
+      : Infinity;
+    return { superStart, fstStart, parseDate };
+  }, [league]);
+
+  const getMatchPatch = (match) => {
+    const { superStart, fstStart, parseDate } = patchBoundaries;
+    const d = parseDate(match.date);
+    if (fstStart !== Infinity && d >= fstStart) return '16.03';
+    if (superStart !== Infinity && d >= superStart) return '16.02';
+    return '16.01';
+  };
 
   const stats = useMemo(() => {
     const players = {}; // playerName -> aggregated data
@@ -115,6 +145,14 @@ export default function StatsTab({ league }) {
         if (currentLeague === 'FST') {
             if (match.fstRound?.startsWith('GG')) continue;
         } else if (!isPlayoffType(match.type)) continue;
+      }
+
+      // === PATCH FILTER LOGIC ===
+      // Patch boundaries are derived from the earliest super/FST match dates in league data.
+      // This works for all leagues since patches are a global calendar event.
+      if (patchFilter !== 'ALL') {
+        const matchPatch = currentLeague === 'FST' ? '16.03' : getMatchPatch(match);
+        if (matchPatch !== patchFilter) continue;
       }
 
       const history = safeArray(match.result?.history);
@@ -238,7 +276,7 @@ export default function StatsTab({ league }) {
     }
 
     return { players, champions, championStats, totalPicks, totalBans, totalGames };
-  }, [league, stageFilter, currentLeague]);
+  }, [league, stageFilter, patchFilter, currentLeague]);
 
   // Derived leaderboards
   const pogLeaderboard = useMemo(() => {
@@ -376,6 +414,21 @@ export default function StatsTab({ league }) {
             </div>
             
             <div className="h-4 w-px bg-gray-300 hidden sm:block"></div>
+
+            {/* PATCH FILTERS */}
+            <div className="flex bg-gray-100 p-1 rounded-lg">
+                {(['ALL', '16.01', '16.02', ...(league?.fst ? ['16.03'] : [])]).map(patch => (
+                    <button
+                        key={patch}
+                        onClick={() => setPatchFilter(patch)}
+                        className={`px-3 py-1 text-xs sm:text-sm font-bold rounded-md transition-all ${patchFilter === patch ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                        {patch === 'ALL' ? '전체' : patch}
+                    </button>
+                ))}
+            </div>
+
+            <div className="h-4 w-px bg-gray-300 hidden sm:block"></div>
             
             <select value={posFilter} onChange={(e) => setPosFilter(e.target.value)} className="px-2 py-1.5 sm:px-3 border border-gray-300 rounded-lg text-xs sm:text-sm font-bold text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none flex-1 sm:flex-none">
               <option value="ALL">전체 포지션</option>
@@ -500,17 +553,18 @@ export default function StatsTab({ league }) {
             <div className="flex flex-wrap justify-between items-center mb-3 sm:mb-4 gap-2">
                 <h3 className="font-bold text-base sm:text-lg text-gray-800 flex items-center gap-2">
                     <span>🧭</span> 메타 분석
+                    {patchFilter !== 'ALL' && (
+                        <span className="text-xs font-bold bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full">{patchFilter}</span>
+                    )}
                 </h3>
-                {/* Sort controls */}
                 <div className="flex gap-1.5 flex-wrap">
                     {[
-                        { key: 'picks',    label: '픽률', icon: '🎯' },
-                        { key: 'banRate',  label: '밴률', icon: '🚫' },
-                        { key: 'winRate',  label: '승률', icon: '🏆' },
+                        { key: 'picks',    label: '픽률',  icon: '🎯' },
+                        { key: 'banRate',  label: '밴률',  icon: '🚫' },
+                        { key: 'winRate',  label: '승률',  icon: '🏆' },
                         { key: 'pickRate', label: '선택률', icon: '📊' },
                     ].map(({ key, label, icon }) => {
                         const isActive = metaSort.key === key;
-                        const isDesc = metaSort.dir === 'desc';
                         return (
                             <button
                                 key={key}
@@ -525,15 +579,13 @@ export default function StatsTab({ league }) {
                                         : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'
                                 }`}
                             >
-                                <span>{icon}</span>
-                                <span>{label}</span>
-                                {isActive && <span className="ml-0.5">{isDesc ? '↓' : '↑'}</span>}
+                                <span>{icon}</span><span>{label}</span>
+                                {isActive && <span>{metaSort.dir === 'desc' ? '↓' : '↑'}</span>}
                             </button>
                         );
                     })}
                 </div>
             </div>
-            
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                 {championMeta.map((c, i) => (
                 <div key={c.name} className="bg-white p-3 sm:p-4 rounded-xl border hover:shadow-md transition flex items-center justify-between">
@@ -544,7 +596,7 @@ export default function StatsTab({ league }) {
                             <div className="text-[10px] sm:text-xs font-bold text-gray-500">
                                 Pick {c.picks} · Ban {c.bans}
                                 {metaSort.key === 'pickRate' && <span className="ml-1 text-purple-500">({(c.pickRate*100).toFixed(1)}%)</span>}
-                                {metaSort.key === 'banRate'  && <span className="ml-1 text-red-400">({(c.banRate*100).toFixed(1)}% ban)</span>}
+                                {metaSort.key === 'banRate'  && <span className="ml-1 text-red-400">({(c.banRate*100).toFixed(1)}%)</span>}
                             </div>
                         </div>
                     </div>
