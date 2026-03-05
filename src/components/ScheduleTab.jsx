@@ -40,8 +40,10 @@ const findGlobalTeam = (token, teamsList) => {
 };
 
 
-// --- HELPER: Recalculate POG scores on stored match history using the new formula ---
-// Runs at display time so saved data is never mutated, just recalculated on the way out
+// --- HELPER: Ensure POG scores are present on stored match history ---
+// Uses the engine's already-computed pogScore if available (new formula).
+// Only falls back to recalculating if pogScore is missing (legacy saved data).
+// Runs at display time so saved data is never mutated.
 const recalcPogForMatch = (match) => {
     if (!match?.result?.history) return match;
     const newHistory = match.result.history.map(set => {
@@ -49,6 +51,9 @@ const recalcPogForMatch = (match) => {
         const newPicks = {};
         ['A', 'B'].forEach(side => {
             newPicks[side] = allSidePicks[side].map(p => {
+                // [FIX] Use the engine's pogScore if it exists — don't overwrite with old formula
+                if (p.pogScore != null) return p;
+                // Fallback: legacy data with no pogScore saved
                 const k = p.stats?.kills ?? p.k ?? 0;
                 const d = p.stats?.deaths ?? p.d ?? 0;
                 const a = p.stats?.assists ?? p.a ?? 0;
