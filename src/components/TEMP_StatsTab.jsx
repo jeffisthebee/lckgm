@@ -153,17 +153,32 @@ export default function StatsTab({ league }) {
             championStats['ALL'][b].bans += 1;
         });
 
-        // POG at set level (robust extraction)
-        const setPogRaw = set.pogPlayer ?? set.pog ?? set.posPlayer;
-        const setPogName = typeof setPogRaw === 'string' ? setPogRaw.trim() : (setPogRaw?.playerName || setPogRaw?.player || '').trim();
-        if (setPogName) {
-          players[setPogName] = players[setPogName] || { games: 0, totalScore: 0, pog: 0, kills: 0, deaths: 0, assists: 0, champCounts: {} };
-          players[setPogName].pog += 1;
-        }
-
         const winnerName = set.winner;
         const picksA = safeArray(set.picks?.A);
         const picksB = safeArray(set.picks?.B);
+
+        // Recalculate POG by finding the highest scorer on the winning side
+        // (ignores stale stored pogPlayer so new formula is applied to old games)
+        let recalcPogName = null;
+        let recalcPogBest = -Infinity;
+        [...picksA, ...picksB].forEach(p => {
+          if (!p?.playerName) return;
+          const { score } = computeSetPlayerScore(p);
+          const playerTeam = p.playerData?.팀 || p.playerData?.team || '';
+          const isOnWinningSide = winnerName && playerTeam && (
+            String(playerTeam) === String(winnerName) ||
+            playerTeam.includes(winnerName) ||
+            winnerName.includes(playerTeam)
+          );
+          if (isOnWinningSide && score > recalcPogBest) {
+            recalcPogBest = score;
+            recalcPogName = p.playerName;
+          }
+        });
+        if (recalcPogName) {
+          players[recalcPogName] = players[recalcPogName] || { games: 0, totalScore: 0, pog: 0, kills: 0, deaths: 0, assists: 0, champCounts: {} };
+          players[recalcPogName].pog += 1;
+        }
 
         const processPick = (p, side) => {
           if (!p || !p.playerName) return;
