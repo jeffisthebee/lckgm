@@ -87,7 +87,6 @@ const RosterTab = ({ viewingTeam, roster, onPrevTeam, onNextTeam }) => {
     if (!displayTeam) return <div className="p-10 text-center font-bold text-gray-500">팀 데이터를 불러오는 중...</div>;
 
     return (
-        <>
         <div className="relative bg-white rounded-lg border shadow-sm flex flex-col h-full lg:h-auto overflow-hidden">
             
             {/* [NEW] 5. The League Switcher Buttons UI */}
