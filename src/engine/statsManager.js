@@ -228,11 +228,21 @@ export function computeStatsForLeague(league, options = {}) {
       });
 
       // Recalculate POG from picks using new formula — ignores stale stored pogPlayer
-      const winningPicks = picks[winnerSide] || [];
+      // Use set.winner (team name) directly instead of winnerSide (A/B) to avoid
+      // misidentification bugs where determineWinnerSide returns the wrong side
+      const setWinnerName = set.winner || set.winnerName || '';
+      const allSetPicks = [...(picks.A || []), ...(picks.B || [])];
       let pogBestScore = -Infinity;
       let pogBestPlayer = null;
-      winningPicks.forEach(p => {
+      allSetPicks.forEach(p => {
         if (!p) return;
+        const playerTeam = p.playerData?.팀 || p.team || p.teamName || '';
+        const isOnWinningSide = setWinnerName && playerTeam && (
+          String(playerTeam) === String(setWinnerName) ||
+          String(playerTeam).includes(String(setWinnerName)) ||
+          String(setWinnerName).includes(String(playerTeam))
+        );
+        if (!isOnWinningSide) return;
         const score = computePlayerScoreFromStats(p);
         if (score > pogBestScore) {
           pogBestScore = score;
