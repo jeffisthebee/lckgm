@@ -508,8 +508,9 @@ export function computePlayoffAwards(league, teams) {
   const sortedMatches = [...playoffMatches].sort((a, b) => (b.round || 0) - (a.round || 0));
   const finalMatch = sortedMatches[0]; // The match with the highest round number is the Final
 
-  // Normalize whichever field might contain finals MVP (could be string or object)
-  let finalsMvpName = normalizePlayerNameMaybe(finalMatch?.result?.posPlayer || finalMatch?.pogPlayer || finalMatch?.result?.posPlayerName || finalMatch?.result?.playerName || null);
+  // Only read explicitly saved posPlayer (series POS) — never read pogPlayer which is a
+  // per-game POG winner and would incorrectly count as Finals MVP
+  let finalsMvpName = normalizePlayerNameMaybe(finalMatch?.result?.posPlayer || finalMatch?.result?.posPlayerName || null);
 
   // [FALLBACK LOGIC]
   if (!finalsMvpName && finalMatch && finalMatch.result) {
