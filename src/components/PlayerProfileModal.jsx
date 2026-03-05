@@ -1,6 +1,25 @@
 // src/components/PlayerProfileModal.jsx
 import React, { useState, useMemo } from 'react';
 import accoladesData from '../data/player_accolades.json';
+import championsData from '../data/champions.json';
+
+// ─── champion name → Korean lookup ──────────────────────────
+const champKoreanMap = (() => {
+    const map = {};
+    championsData.forEach(c => {
+        const base = c.id.replace(/_[^_]+$/, ''); // strip _role suffix
+        if (!map[base]) map[base] = c.name;
+        // also store by full id
+        map[c.id] = c.name;
+    });
+    return map;
+})();
+
+const toKoreanChamp = (engName) => {
+    if (!engName || engName === '?') return engName;
+    const key = engName.toLowerCase().replace(/\s+/g, '').replace(/['.]/g, '');
+    return champKoreanMap[key] || champKoreanMap[engName] || engName;
+};
 
 // ─── helpers ────────────────────────────────────────────────
 const getOvrColor = (v) => {
@@ -366,7 +385,7 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
                                             {data2026.games.map((g, i) => (
                                                 <tr key={i} className={`transition hover:bg-gray-50 ${g.result === 'WIN' ? 'border-l-2 border-l-green-400' : 'border-l-2 border-l-red-300'}`}>
                                                     <td className="py-2 px-3 text-gray-500">{g.date}</td>
-                                                    <td className="py-2 px-3 font-bold text-gray-800">{g.champ}</td>
+                                                    <td className="py-2 px-3 font-bold text-gray-800">{toKoreanChamp(g.champ)}</td>
                                                     <td className="py-2 px-3 text-center">
                                                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${g.result === 'WIN' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
                                                             {g.result}
@@ -410,7 +429,7 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
                             {/* 2025 pool */}
                             {season2025Pool.length > 0 && (
                                 <div>
-                                    <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2">Season 2025</div>
+                                    <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2">25년 시즌</div>
                                     <ChampTable champs={season2025Pool} />
                                 </div>
                             )}
@@ -418,7 +437,7 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
                             {/* Career pool */}
                             {careerPool.length > 0 && (
                                 <div>
-                                    <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2">Career</div>
+                                    <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2">커리어</div>
                                     <ChampTable champs={careerPool} />
                                 </div>
                             )}
@@ -523,7 +542,7 @@ function ChampTable({ champs, highlight }) {
                         <tr key={c.name} className={`transition hover:bg-gray-50 ${highlight && i === 0 ? 'bg-blue-50/50' : ''}`}>
                             <td className="py-2 px-3 font-bold text-gray-800 flex items-center gap-2">
                                 {highlight && i < 3 && <span className="text-[10px] font-black text-blue-400">#{i+1}</span>}
-                                {c.name}
+                                {toKoreanChamp(c.name)}
                             </td>
                             <td className="py-2 px-3 text-center font-bold text-gray-600">{c.games}</td>
                             <td className="py-2 px-3 text-center">
