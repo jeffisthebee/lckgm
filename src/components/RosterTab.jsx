@@ -1,5 +1,6 @@
 // src/components/RosterTab.jsx
 import React, { useState } from 'react';
+import PlayerProfileModal from './PlayerProfileModal';
 
 // [NEW] 1. Import all the global teams and player intel!
 import { teams as lckTeams } from '../data/teams';
@@ -32,6 +33,7 @@ const RosterTab = ({ viewingTeam, roster, onPrevTeam, onNextTeam }) => {
     // [NEW] 2. The Memory Boxes (State)
     const [currentLeague, setCurrentLeague] = useState('LCK');
     const [foreignTeamIndex, setForeignTeamIndex] = useState(0);
+    const [selectedPlayer, setSelectedPlayer] = useState(null);
 
     // [NEW] 3. Gather the right teams and players based on the clicked button
     const isLCK = currentLeague === 'LCK';
@@ -168,7 +170,12 @@ const RosterTab = ({ viewingTeam, roster, onPrevTeam, onNextTeam }) => {
                                     <div className="flex items-center gap-3">
                                         <span className="font-bold text-gray-400 w-8 text-center shrink-0">{p.포지션}</span>
                                         <div className="flex flex-col min-w-0">
-                                            <div className="font-bold text-gray-900 text-xs lg:text-sm whitespace-nowrap">{p.이름} {p.주장 && <span className="text-yellow-500" title="주장">👑</span>}</div>
+                                            <div
+                                                className="font-bold text-blue-700 text-xs lg:text-sm whitespace-nowrap cursor-pointer hover:underline"
+                                                onClick={() => setSelectedPlayer(p)}
+                                            >
+                                                {p.이름} {p.주장 && <span className="text-yellow-500" title="주장">👑</span>}
+                                            </div>
                                             <div className="text-[10px] text-gray-400 whitespace-nowrap">{p.특성}</div>
                                         </div>
                                     </div>
@@ -197,6 +204,17 @@ const RosterTab = ({ viewingTeam, roster, onPrevTeam, onNextTeam }) => {
                 </table>
             </div>
         </div>
+
+        {/* Player Profile Modal */}
+        {selectedPlayer && (
+            <PlayerProfileModal
+                player={selectedPlayer}
+                league={null}
+                masteryData={null}
+                onClose={() => setSelectedPlayer(null)}
+            />
+        )}
+    </div>
     );
 };
 
