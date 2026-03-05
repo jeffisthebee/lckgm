@@ -306,15 +306,11 @@ const reapplyScale = (data, matches, standingsNames, scale, forPlayoffs) => {
 
     for (const match of targetMatches) {
         for (const set of safeArr(match.result?.history)) {
-            // Count POGs (now cleanly separated)
-            const pogObj = set.pogPlayer;
-            const pogName = typeof pogObj === 'string' ? pogObj.trim() : (pogObj?.playerName || '').trim();
-            if (pogName) {
-                if (!players[pogName]) players[pogName] = { games: 0, totalScore: 0, pog: 0, role: null, team: null };
-                players[pogName].pog++;
-            }
-            // Accumulate stats
+            // Recalculate scores for every player in this set using the new formula
             const allPicks = [...safeArr(set.picks?.A), ...safeArr(set.picks?.B)];
+            let bestName = null;
+            let bestScore = -Infinity;
+
             for (const p of allPicks) {
                 if (!p?.playerName) continue;
                 const name = p.playerName;
@@ -333,6 +329,23 @@ const reapplyScale = (data, matches, standingsNames, scale, forPlayoffs) => {
                 players[name].totalScore += setScore;
                 if (!players[name].role) players[name].role = p.role || p.playerData?.포지션;
                 if (!players[name].team) players[name].team = p.playerData?.팀 || p.playerData?.team;
+
+                // Track who scores highest on the winning side for POG recalc
+                const winnerName = set.winner || set.winnerName || '';
+                const playerTeam = p.playerData?.팀 || '';
+                const isOnWinningSide = winnerName && playerTeam && (
+                    playerTeam === winnerName || playerTeam.includes(winnerName) || winnerName.includes(playerTeam)
+                );
+                if (isOnWinningSide && setScore > bestScore) {
+                    bestScore = setScore;
+                    bestName = name;
+                }
+            }
+
+            // Award POG to the recalculated winner (not the stale stored value)
+            if (bestName) {
+                if (!players[bestName]) players[bestName] = { games: 0, totalScore: 0, pog: 0, role: null, team: null };
+                players[bestName].pog++;
             }
         }
     }
