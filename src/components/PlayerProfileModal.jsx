@@ -138,6 +138,15 @@ const extract2026Data = (playerName, league) => {
 
             const isPog = set.pogPlayer?.playerName === playerName;
 
+            // Player score — same formula as gameLogic.js calculatePog
+            const role = pick.playerData?.포지션 || 'MID';
+            const kda = (k * 3 + a * 0.25) / Math.max(d, 1.5);
+            let pogScore = 65 + kda + (gold / 1500);
+            if (['SUP', '서포터'].includes(role)) pogScore += Math.max(10 - (d * 1.5), 2);
+            if (['JGL', '정글'].includes(role))   pogScore += Math.max(6 - d, 0);
+            if (['TOP', '탑'].includes(role))     pogScore += Math.max(4 - d, 0);
+            pogScore = Math.round(pogScore * 10) / 10;
+
             totalK += k; totalD += d; totalA += a; totalGold += gold;
             if (isWin) wins++;
             if (isPog) pogCount++;
@@ -166,6 +175,7 @@ const extract2026Data = (playerName, league) => {
                 gold,
                 result: isWin ? 'WIN' : 'LOSS',
                 pog: isPog,
+                pogScore,
                 opponent: opponentTeam,
                 matchType: match.type || match.fstRound || 'regular',
                 round: match.round || null,
@@ -205,6 +215,7 @@ const extract2026Data = (playerName, league) => {
 // ─── main modal ─────────────────────────────────────────────
 export default function PlayerProfileModal({ player, league, masteryData, onClose }) {
     const [tab, setTab] = useState('overview');
+    const [matchSort, setMatchSort] = useState({ key: 'date', dir: 'desc' });
 
     const accolades = useMemo(() => {
         if (!player) return null;
@@ -401,37 +412,63 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
                                                 <th className="py-2.5 px-3 text-left font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell">유형</th>
                                                 <th className="py-2.5 px-3 text-left font-black text-gray-400 uppercase tracking-widest">챔피언</th>
                                                 <th className="py-2.5 px-3 text-center font-black text-gray-400 uppercase tracking-widest">결과</th>
-                                                <th className="py-2.5 px-3 text-center font-black text-gray-400 uppercase tracking-widest">K/D/A</th>
-                                                <th className="py-2.5 px-3 text-center font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell">골드</th>
+                                                {/* Sortable headers */}
+                                                {[['kda','KDA'],['gold','골드'],['pogScore','점수']].map(([key, label]) => (
+                                                    <th key={key}
+                                                        className="py-2.5 px-3 text-center font-black uppercase tracking-widest cursor-pointer select-none whitespace-nowrap hidden sm:table-cell"
+                                                        style={{ color: matchSort.key === key ? '#3b82f6' : '#9ca3af' }}
+                                                        onClick={() => setMatchSort(s => s.key === key ? { key, dir: s.dir === 'desc' ? 'asc' : 'desc' } : { key, dir: 'desc' })}
+                                                    >
+                                                        {label} {matchSort.key === key ? (matchSort.dir === 'desc' ? '↓' : '↑') : '↕'}
+                                                    </th>
+                                                ))}
                                                 <th className="py-2.5 px-3 text-left font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell">상대팀</th>
-                                                <th className="py-2.5 px-3 text-center font-black text-gray-400 uppercase tracking-widest">POG</th>
+                                                <th className="py-2.5 px-3 text-center font-black text-gray-400 uppercase tracking-widest">⭐</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-50">
-                                            {data2026.games.map((g, i) => (
+                                            {[...data2026.games].sort((a, b) => {
+                                                const dir = matchSort.dir === 'desc' ? -1 : 1;
+                                                if (matchSort.key === 'kda') {
+                                                    const kdaA = a.d > 0 ? (a.k + a.a) / a.d : (a.k + a.a);
+                                                    const kdaB = b.d > 0 ? (b.k + b.a) / b.d : (b.k + b.a);
+                                                    return (kdaA - kdaB) * dir;
+                                                }
+                                                if (matchSort.key === 'gold') return ((a.gold || 0) - (b.gold || 0)) * dir;
+                                                if (matchSort.key === 'pogScore') return ((a.pogScore || 0) - (b.pogScore || 0)) * dir;
+                                                return 0; // default: keep original (date) order
+                                            }).map((g, i) => {
+                                                const kdaVal = g.d > 0 ? ((g.k + g.a) / g.d).toFixed(2) : 'Perfect';
+                                                const scoreColor = g.pogScore >= 90 ? '#f59e0b' : g.pogScore >= 80 ? '#6366f1' : g.pogScore >= 70 ? '#3b82f6' : '#9ca3af';
+                                                return (
                                                 <tr key={i} className={`transition hover:bg-gray-50 ${g.result === 'WIN' ? 'border-l-2 border-l-green-400' : 'border-l-2 border-l-red-300'}`}>
-                                                    <td className="py-2 px-3 text-gray-500">{g.date}</td>
+                                                    <td className="py-2 px-3 text-gray-500 whitespace-nowrap">{g.date}</td>
                                                     <td className="py-2 px-3 hidden sm:table-cell">
                                                         {(() => { const { text, bg, color } = matchTypeLabel(g.matchType, g.round, g.roundName); return <span className="px-2 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap" style={{ backgroundColor: bg, color }}>{text}</span>; })()}
                                                     </td>
-                                                    <td className="py-2 px-3 font-bold text-gray-800">{toKoreanChamp(g.champ)}</td>
+                                                    <td className="py-2 px-3 font-bold text-gray-800 whitespace-nowrap">{toKoreanChamp(g.champ)}</td>
                                                     <td className="py-2 px-3 text-center">
                                                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${g.result === 'WIN' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
                                                             {g.result}
                                                         </span>
                                                     </td>
-                                                    <td className="py-2 px-3 text-center font-mono font-bold text-gray-700">
+                                                    <td className="py-2 px-3 text-center font-mono font-bold text-gray-700 hidden sm:table-cell whitespace-nowrap">
                                                         {g.k}/<span className="text-red-500">{g.d}</span>/{g.a}
+                                                        <span className="ml-1 text-[10px] text-indigo-500">({kdaVal})</span>
                                                     </td>
                                                     <td className="py-2 px-3 text-center text-gray-500 hidden sm:table-cell">
                                                         {g.gold > 0 ? `${(g.gold / 1000).toFixed(1)}k` : '-'}
                                                     </td>
-                                                    <td className="py-2 px-3 text-gray-600 hidden sm:table-cell">{g.opponent}</td>
+                                                    <td className="py-2 px-3 text-center hidden sm:table-cell">
+                                                        <span className="font-black text-xs" style={{ color: scoreColor }}>{g.pogScore}</span>
+                                                    </td>
+                                                    <td className="py-2 px-3 text-gray-600 hidden sm:table-cell whitespace-nowrap">{g.opponent}</td>
                                                     <td className="py-2 px-3 text-center">
                                                         {g.pog && <span className="text-yellow-500 text-base">⭐</span>}
                                                     </td>
                                                 </tr>
-                                            ))}
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 </div>
