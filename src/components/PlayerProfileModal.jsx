@@ -21,15 +21,27 @@ const toKoreanChamp = (engName) => {
     return champKoreanMap[key] || champKoreanMap[engName] || engName;
 };
 
-const matchTypeLabel = (type) => {
-    if (!type) return { text: '정규', color: 'bg-gray-100 text-gray-500' };
-    const t = String(type).toLowerCase();
-    if (t === 'playoff' || t.includes('playoff'))   return { text: '플레이오프', color: 'bg-purple-100 text-purple-700' };
-    if (t === 'playin'  || t.includes('playin'))    return { text: '플레이인',   color: 'bg-orange-100 text-orange-700' };
-    if (t === 'super'   || t.includes('super'))     return { text: '슈퍼위크',   color: 'bg-yellow-100 text-yellow-700' };
-    if (t === 'finals'  || t.includes('final'))     return { text: '결승',       color: 'bg-red-100 text-red-700' };
-    if (t === 'regular')                             return { text: '정규',       color: 'bg-gray-100 text-gray-500' };
-    return { text: type, color: 'bg-gray-100 text-gray-500' };
+const matchTypeLabel = (type, round, roundName) => {
+    const t = String(type || '').toLowerCase();
+
+    // Playoff round name mapping
+    if (t === 'playoff' || t.includes('playoff')) {
+        const roundMap = {
+            1: 'PO 1라운드', 2: 'PO 2라운드', 2.1: 'PO 패자전',
+            2.2: 'PO 패자전', 3: 'PO 3라운드', 3.1: 'PO 패자전',
+            4: 'PO 4강', 5: 'PO 결승'
+        };
+        const label = roundName || roundMap[round] || '플레이오프';
+        return { text: label, bg: '#f3e8ff', color: '#7e22ce' };
+    }
+    if (t === 'playin' || t.includes('playin')) {
+        const roundMap = { 1: '플레이인 1R', 2: '플레이인 2R', 3: '플레이인 결승' };
+        const label = roundName || roundMap[round] || '플레이인';
+        return { text: label, bg: '#fff7ed', color: '#c2410c' };
+    }
+    if (t === 'finals' || t.includes('final'))  return { text: '결승',     bg: '#fef2f2', color: '#b91c1c' };
+    if (t === 'super'  || t.includes('super'))  return { text: '슈퍼위크', bg: '#fefce8', color: '#a16207' };
+    return { text: '정규', bg: '#f3f4f6', color: '#6b7280' };
 };
 
 // ─── helpers ────────────────────────────────────────────────
@@ -156,6 +168,8 @@ const extract2026Data = (playerName, league) => {
                 pog: isPog,
                 opponent: opponentTeam,
                 matchType: match.type || match.fstRound || 'regular',
+                round: match.round || null,
+                roundName: match.label || match.roundName || null,
                 setNum: set.setNumber || '',
             });
         }
@@ -398,7 +412,7 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
                                                 <tr key={i} className={`transition hover:bg-gray-50 ${g.result === 'WIN' ? 'border-l-2 border-l-green-400' : 'border-l-2 border-l-red-300'}`}>
                                                     <td className="py-2 px-3 text-gray-500">{g.date}</td>
                                                     <td className="py-2 px-3 hidden sm:table-cell">
-                                                        {(() => { const { text, color } = matchTypeLabel(g.matchType); return <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${color}`}>{text}</span>; })()}
+                                                        {(() => { const { text, bg, color } = matchTypeLabel(g.matchType, g.round, g.roundName); return <span className="px-2 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap" style={{ backgroundColor: bg, color }}>{text}</span>; })()}
                                                     </td>
                                                     <td className="py-2 px-3 font-bold text-gray-800">{toKoreanChamp(g.champ)}</td>
                                                     <td className="py-2 px-3 text-center">
