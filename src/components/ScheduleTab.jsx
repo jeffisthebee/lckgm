@@ -810,18 +810,24 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                     let leagueTeamNames = [];
                     if (currentLeague === 'LCK') {
                         // Use the teams prop (full roster) so playoff-only slots aren't missed.
-                        // Fall back to scanning match slots if teams prop is empty.
+                        // Store raw ID as key so filter works directly against m.t1/m.t2.
                         const teamPool = (teams || []).length > 0 ? teams : [];
                         if (teamPool.length > 0) {
-                            leagueTeamNames = [...new Set(teamPool.map(t => formatTeamName ? formatTeamName(t.id, 'regular') : (t.name || t.id)).filter(Boolean))];
+                            leagueTeamNames = teamPool.map(t => ({
+                                id: String(t.id),
+                                label: formatTeamName ? formatTeamName(t.id, 'regular') : (t.name || t.id)
+                            })).filter(t => t.label);
                         } else {
                             const rawIds = [...new Set((league.matches || []).flatMap(m => [m.t1, m.t2]).filter(t => t && t !== 'TBD' && t !== 'null' && t !== 'undefined'))];
-                            leagueTeamNames = rawIds.map(id => formatTeamName ? formatTeamName(id, 'regular') : id).filter(Boolean);
+                            leagueTeamNames = rawIds.map(id => ({
+                                id: String(id),
+                                label: formatTeamName ? formatTeamName(id, 'regular') : id
+                            })).filter(t => t.label);
                         }
                     } else if (currentLeague === 'FST') {
-                        leagueTeamNames = fstTeams.map(t => t.name).filter(Boolean);
+                        leagueTeamNames = fstTeams.map(t => ({ id: t.name, label: t.name })).filter(t => t.label);
                     } else {
-                        leagueTeamNames = (FOREIGN_LEAGUES[currentLeague] || []).map(t => t.name || t.id).filter(Boolean);
+                        leagueTeamNames = (FOREIGN_LEAGUES[currentLeague] || []).map(t => ({ id: t.name || t.id, label: t.name || t.id })).filter(t => t.label);
                     }
                     if (leagueTeamNames.length === 0) return null;
                     return (
@@ -836,17 +842,17 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                             >
                                 전체
                             </button>
-                            {leagueTeamNames.map(tName => (
+                            {leagueTeamNames.map(t => (
                                 <button
-                                    key={tName}
-                                    onClick={() => setSelectedTeam(prev => prev === tName ? null : tName)}
+                                    key={t.id}
+                                    onClick={() => setSelectedTeam(prev => prev === t.id ? null : t.id)}
                                     className={`px-3 py-1 rounded-full font-bold text-[10px] lg:text-xs transition-all whitespace-nowrap border active:scale-95 ${
-                                        selectedTeam === tName
+                                        selectedTeam === t.id
                                             ? 'bg-blue-600 text-white border-blue-600 ring-1 ring-blue-400'
                                             : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'
                                     }`}
                                 >
-                                    {tName}
+                                    {t.label}
                                 </button>
                             ))}
                         </div>
@@ -1012,11 +1018,14 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                             .filter(m => activeTab === 'schedule' || displayLeague !== 'LCK' || (m.t1 === myTeam.id || m.t2 === myTeam.id))
                             .filter(m => {
                                 if (!selectedTeam) return true;
+                                if (displayLeague === 'LCK') {
+                                    // selectedTeam is a raw team ID for LCK
+                                    return String(m.t1) === selectedTeam || String(m.t2) === selectedTeam;
+                                }
+                                // For foreign leagues / FST, selectedTeam is a name
                                 const t1 = findGlobalTeam(m.t1, teams);
                                 const t2 = findGlobalTeam(m.t2, teams);
-                                const t1n = (displayLeague === 'LCK' && formatTeamName) ? formatTeamName(m.t1, m.type) : t1.name;
-                                const t2n = (displayLeague === 'LCK' && formatTeamName) ? formatTeamName(m.t2, m.type) : t2.name;
-                                return t1n === selectedTeam || t2n === selectedTeam;
+                                return t1.name === selectedTeam || t2.name === selectedTeam || m.t1 === selectedTeam || m.t2 === selectedTeam;
                             })
                             .sort(compareDatesObj) 
                             .map((m, i) => {
