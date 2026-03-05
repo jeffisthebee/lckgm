@@ -21,6 +21,17 @@ const toKoreanChamp = (engName) => {
     return champKoreanMap[key] || champKoreanMap[engName] || engName;
 };
 
+const matchTypeLabel = (type) => {
+    if (!type) return { text: '정규', color: 'bg-gray-100 text-gray-500' };
+    const t = String(type).toLowerCase();
+    if (t === 'playoff' || t.includes('playoff'))   return { text: '플레이오프', color: 'bg-purple-100 text-purple-700' };
+    if (t === 'playin'  || t.includes('playin'))    return { text: '플레이인',   color: 'bg-orange-100 text-orange-700' };
+    if (t === 'super'   || t.includes('super'))     return { text: '슈퍼위크',   color: 'bg-yellow-100 text-yellow-700' };
+    if (t === 'finals'  || t.includes('final'))     return { text: '결승',       color: 'bg-red-100 text-red-700' };
+    if (t === 'regular')                             return { text: '정규',       color: 'bg-gray-100 text-gray-500' };
+    return { text: type, color: 'bg-gray-100 text-gray-500' };
+};
+
 // ─── helpers ────────────────────────────────────────────────
 const getOvrColor = (v) => {
     if (v >= 95) return '#ef4444';
@@ -373,6 +384,7 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
                                         <thead className="bg-gray-50 border-b">
                                             <tr>
                                                 <th className="py-2.5 px-3 text-left font-black text-gray-400 uppercase tracking-widest">날짜</th>
+                                                <th className="py-2.5 px-3 text-left font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell">유형</th>
                                                 <th className="py-2.5 px-3 text-left font-black text-gray-400 uppercase tracking-widest">챔피언</th>
                                                 <th className="py-2.5 px-3 text-center font-black text-gray-400 uppercase tracking-widest">결과</th>
                                                 <th className="py-2.5 px-3 text-center font-black text-gray-400 uppercase tracking-widest">K/D/A</th>
@@ -385,6 +397,9 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
                                             {data2026.games.map((g, i) => (
                                                 <tr key={i} className={`transition hover:bg-gray-50 ${g.result === 'WIN' ? 'border-l-2 border-l-green-400' : 'border-l-2 border-l-red-300'}`}>
                                                     <td className="py-2 px-3 text-gray-500">{g.date}</td>
+                                                    <td className="py-2 px-3 hidden sm:table-cell">
+                                                        {(() => { const { text, color } = matchTypeLabel(g.matchType); return <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${color}`}>{text}</span>; })()}
+                                                    </td>
                                                     <td className="py-2 px-3 font-bold text-gray-800">{toKoreanChamp(g.champ)}</td>
                                                     <td className="py-2 px-3 text-center">
                                                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${g.result === 'WIN' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
