@@ -2259,6 +2259,7 @@ const handleMatchClick = (match) => {
                     onNextTeam={handleNextTeam}
                     league={league}   // ← add this
                 />
+                      )}
 
 {            activeTab === 'meta' && (
                 <MetaTab 
