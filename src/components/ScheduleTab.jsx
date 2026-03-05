@@ -116,11 +116,12 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
 
     const [forceRegen, setForceRegen] = useState(false);
     const [syncDone, setSyncDone] = useState(false);
+    const [selectedTeam, setSelectedTeam] = useState(null); // null = show all
 
     const targetLeague = ['LPL', 'LCP', 'CBLOL', 'LCS', 'LEC'].includes(displayLeague) ? displayLeague : null;
 
     // Reset sync completion whenever the viewed league changes so it re-evaluates
-    useEffect(() => { setSyncDone(false); }, [targetLeague]);
+    useEffect(() => { setSyncDone(false); setSelectedTeam(null); }, [targetLeague, displayLeague]);
 
     const activeMatches = displayLeague === 'LCK' ? (league.matches || []) : (league.foreignMatches?.[displayLeague] || []);
     const pendingLCK = league.matches ? league.matches.filter(m => m.status === 'pending').sort(compareDatesObj) : [];
@@ -786,7 +787,8 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
             )}
 
             {activeTab === 'schedule' && (
-                <div className="flex gap-2 p-3 border-b bg-gray-100 overflow-x-auto shrink-0 sticky top-0 z-40 rounded-lg mb-4 sm:mb-6">
+                <>
+                <div className="flex gap-2 p-3 border-b bg-gray-100 overflow-x-auto shrink-0 sticky top-0 z-40 rounded-lg mb-2 sm:mb-3">
                     {['LCK', 'LPL', 'LEC', 'LCS', 'LCP', 'CBLOL', ...(hasFST ? ['FST'] : [])].map(lg => (
                         <button
                             key={lg}
@@ -803,6 +805,46 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                         </button>
                     ))}
                 </div>
+                {/* ── Team filter row ── */}
+                {(() => {
+                    let leagueTeamNames = [];
+                    if (currentLeague === 'LCK') {
+                        leagueTeamNames = [...new Set((league.matches || []).flatMap(m => [m.t1, m.t2]).filter(t => t && t !== 'TBD' && t !== 'null'))];
+                    } else if (currentLeague === 'FST') {
+                        leagueTeamNames = fstTeams.map(t => t.name).filter(Boolean);
+                    } else {
+                        leagueTeamNames = (FOREIGN_LEAGUES[currentLeague] || []).map(t => t.name || t.id).filter(Boolean);
+                    }
+                    if (leagueTeamNames.length === 0) return null;
+                    return (
+                        <div className="flex gap-1.5 px-1 pb-2 overflow-x-auto shrink-0 mb-3 sm:mb-4 scrollbar-hide">
+                            <button
+                                onClick={() => setSelectedTeam(null)}
+                                className={`px-3 py-1 rounded-full font-bold text-[10px] lg:text-xs transition-all whitespace-nowrap border active:scale-95 ${
+                                    selectedTeam === null
+                                        ? 'bg-gray-800 text-white border-gray-800'
+                                        : 'bg-white text-gray-500 border-gray-300 hover:bg-gray-100'
+                                }`}
+                            >
+                                전체
+                            </button>
+                            {leagueTeamNames.map(tName => (
+                                <button
+                                    key={tName}
+                                    onClick={() => setSelectedTeam(prev => prev === tName ? null : tName)}
+                                    className={`px-3 py-1 rounded-full font-bold text-[10px] lg:text-xs transition-all whitespace-nowrap border active:scale-95 ${
+                                        selectedTeam === tName
+                                            ? 'bg-blue-600 text-white border-blue-600 ring-1 ring-blue-400'
+                                            : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'
+                                    }`}
+                                >
+                                    {tName}
+                                </button>
+                            ))}
+                        </div>
+                    );
+                })()}
+                </>
             )}
 
             <div className="flex items-center justify-between mb-4 lg:mb-6 shrink-0">
@@ -823,7 +865,12 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
             {displayLeague === 'FST' ? (
                 fstMatches.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 pb-4">
-                        {[...fstMatches].sort(compareDatesObj).map((m, i) => {
+                        {[...fstMatches].filter(m => {
+                            if (!selectedTeam) return true;
+                            const t1Fst = fstTeams.find(t => t.fstId === m.t1 || t.name === m.t1);
+                            const t2Fst = fstTeams.find(t => t.fstId === m.t2 || t.name === m.t2);
+                            return t1Fst?.name === selectedTeam || t2Fst?.name === selectedTeam;
+                        }).sort(compareDatesObj).map((m, i) => {
                             const t1Fst = fstTeams.find(t => t.fstId === m.t1 || t.name === m.t1);
                             const t2Fst = fstTeams.find(t => t.fstId === m.t2 || t.name === m.t2);
                             const t1Name = t1Fst?.name || 'TBD';
@@ -955,6 +1002,14 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 pb-4">
                         {activeMatches
                             .filter(m => activeTab === 'schedule' || displayLeague !== 'LCK' || (m.t1 === myTeam.id || m.t2 === myTeam.id))
+                            .filter(m => {
+                                if (!selectedTeam) return true;
+                                const t1 = findGlobalTeam(m.t1, teams);
+                                const t2 = findGlobalTeam(m.t2, teams);
+                                const t1n = (displayLeague === 'LCK' && formatTeamName) ? formatTeamName(m.t1, m.type) : t1.name;
+                                const t2n = (displayLeague === 'LCK' && formatTeamName) ? formatTeamName(m.t2, m.type) : t2.name;
+                                return t1n === selectedTeam || t2n === selectedTeam || m.t1 === selectedTeam || m.t2 === selectedTeam;
+                            })
                             .sort(compareDatesObj) 
                             .map((m, i) => {
                                 const t1 = findGlobalTeam(m.t1, teams);
