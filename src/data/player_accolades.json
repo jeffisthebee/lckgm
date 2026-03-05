@@ -1,0 +1,146 @@
+[
+    {
+      "id": "Faker",
+      "name": "페이커",
+      "team_titles": {
+        "worlds": 4,
+        "msi": 2,
+        "lck": 10
+      },
+      "individual_awards": [
+        { "year": 2013, "award": "Worlds MVP" },
+        { "year": 2015, "award": "Worlds MVP" },
+        { "year": 2016, "award": "LCK MVP" },
+        { "year": 2016, "award": "Worlds MVP" },
+        { "year": 2017, "award": "LCK MVP" },
+        { "year": 2022, "award": "LCK MVP" },
+        { "year": 2023, "award": "Worlds MVP" },
+        { "year": 2024, "award": "LCK MVP" }
+      ],
+      "career_stats": {
+        "pro_years": 13,
+        "total_worlds": 7
+      }
+    },
+    {
+      "id": "Keria",
+      "name": "케리아",
+      "team_titles": {
+        "worlds": 1,
+        "msi": 2,
+        "lck": 4
+      },
+      "individual_awards": [
+        { "year": 2021, "award": "LCK Best Support" },
+        { "year": 2022, "award": "MSI MVP" },
+        { "year": 2022, "award": "LCK Best Support" },
+        { "year": 2024, "award": "LCK Best Support" }
+      ],
+      "career_stats": {
+        "pro_years": 5,
+        "total_worlds": 4
+      }
+    },
+    {
+      "id": "Gumayusi",
+      "name": "구마유시",
+      "team_titles": {
+        "worlds": 1,
+        "msi": 1,
+        "lck": 4
+      },
+      "individual_awards": [
+        { "year": 2022, "award": "LCK Best ADC" },
+        { "year": 2024, "award": "LCK Best ADC" }
+      ],
+      "career_stats": {
+        "pro_years": 5,
+        "total_worlds": 4
+      }
+    },
+    {
+      "id": "Zeus",
+      "name": "제우스",
+      "team_titles": {
+        "worlds": 1,
+        "msi": 1,
+        "lck": 3
+      },
+      "individual_awards": [
+        { "year": 2023, "award": "LCK Best Top" },
+        { "year": 2024, "award": "Worlds Best Top" }
+      ],
+      "career_stats": {
+        "pro_years": 4,
+        "total_worlds": 3
+      }
+    },
+    {
+      "id": "Oner",
+      "name": "오너",
+      "team_titles": {
+        "worlds": 1,
+        "msi": 1,
+        "lck": 3
+      },
+      "individual_awards": [
+        { "year": 2022, "award": "LCK Best Jungle" },
+        { "year": 2024, "award": "LCK Best Jungle" }
+      ],
+      "career_stats": {
+        "pro_years": 4,
+        "total_worlds": 3
+      }
+    },
+    {
+      "id": "Chovy",
+      "name": "초비",
+      "team_titles": {
+        "worlds": 0,
+        "msi": 0,
+        "lck": 1
+      },
+      "individual_awards": [
+        { "year": 2022, "award": "LCK Best Mid" },
+        { "year": 2023, "award": "LCK MVP" },
+        { "year": 2023, "award": "LCK Best Mid" }
+      ],
+      "career_stats": {
+        "pro_years": 7,
+        "total_worlds": 4
+      }
+    },
+    {
+      "id": "Doran",
+      "name": "도란",
+      "team_titles": {
+        "worlds": 0,
+        "msi": 0,
+        "lck": 1
+      },
+      "individual_awards": [
+        { "year": 2024, "award": "LCK Best Top" }
+      ],
+      "career_stats": {
+        "pro_years": 6,
+        "total_worlds": 2
+      }
+    },
+    {
+      "id": "Peanut",
+      "name": "피넛",
+      "team_titles": {
+        "worlds": 0,
+        "msi": 1,
+        "lck": 2
+      },
+      "individual_awards": [
+        { "year": 2022, "award": "LCK Best Jungle" },
+        { "year": 2023, "award": "LCK Best Jungle" }
+      ],
+      "career_stats": {
+        "pro_years": 9,
+        "total_worlds": 5
+      }
+    }
+  ]

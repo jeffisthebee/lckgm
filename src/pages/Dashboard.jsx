@@ -2252,13 +2252,13 @@ const handleMatchClick = (match) => {
             )}
   
                  {activeTab === 'roster' && (
-                    <RosterTab 
-                    viewingTeam={viewingTeam} 
-                    roster={currentRoster} 
-                    onPrevTeam={handlePrevTeam} 
-                    onNextTeam={handleNextTeam} 
-                    />
-                      )}
+                    <RosterTab
+                    viewingTeam={viewingTeam}
+                    roster={currentRoster}
+                    onPrevTeam={handlePrevTeam}
+                    onNextTeam={handleNextTeam}
+                    league={league}   // ← add this
+                />
 
 {            activeTab === 'meta' && (
                 <MetaTab 
