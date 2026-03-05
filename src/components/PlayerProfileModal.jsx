@@ -208,8 +208,8 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
     ];
 
     return (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm">
-            <div className="bg-white w-full h-full flex flex-col shadow-2xl overflow-hidden">
+        <div className="absolute inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm rounded-lg">
+            <div className="bg-white w-full h-full flex flex-col shadow-2xl overflow-hidden rounded-lg">
 
                 {/* ── Header ── */}
                 <div className="relative flex items-center gap-4 p-4 sm:p-6 shrink-0 overflow-hidden"

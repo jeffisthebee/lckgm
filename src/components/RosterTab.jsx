@@ -88,7 +88,7 @@ const RosterTab = ({ viewingTeam, roster, onPrevTeam, onNextTeam }) => {
 
     return (
         <>
-        <div className="bg-white rounded-lg border shadow-sm flex flex-col h-full lg:h-auto overflow-hidden">
+        <div className="relative bg-white rounded-lg border shadow-sm flex flex-col h-full lg:h-auto overflow-hidden">
             
             {/* [NEW] 5. The League Switcher Buttons UI */}
             <div className="flex gap-2 p-3 border-b bg-gray-100 overflow-x-auto shrink-0 sticky top-0 z-50">
@@ -205,18 +205,17 @@ const RosterTab = ({ viewingTeam, roster, onPrevTeam, onNextTeam }) => {
                     </tbody>
                 </table>
             </div>
-        </div>
 
-        {/* Player Profile Modal */}
-        {selectedPlayer && (
-            <PlayerProfileModal
-                player={selectedPlayer}
-                league={null}
-                masteryData={allMastery}
-                onClose={() => setSelectedPlayer(null)}
-            />
-        )}
-        </>
+            {/* Player Profile Modal — scoped to RosterTab */}
+            {selectedPlayer && (
+                <PlayerProfileModal
+                    player={selectedPlayer}
+                    league={null}
+                    masteryData={allMastery}
+                    onClose={() => setSelectedPlayer(null)}
+                />
+            )}
+        </div>
     );
 };
 
