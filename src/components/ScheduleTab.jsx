@@ -809,7 +809,9 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 {(() => {
                     let leagueTeamNames = [];
                     if (currentLeague === 'LCK') {
-                        leagueTeamNames = [...new Set((league.matches || []).flatMap(m => [m.t1, m.t2]).filter(t => t && t !== 'TBD' && t !== 'null'))];
+                        // Use formatTeamName to get display names, same as the match cards
+                        const rawIds = [...new Set((league.matches || []).flatMap(m => [m.t1, m.t2]).filter(t => t && t !== 'TBD' && t !== 'null' && t !== 'undefined'))];
+                        leagueTeamNames = rawIds.map(id => formatTeamName ? formatTeamName(id, 'regular') : id).filter(Boolean);
                     } else if (currentLeague === 'FST') {
                         leagueTeamNames = fstTeams.map(t => t.name).filter(Boolean);
                     } else {
@@ -1008,7 +1010,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                                 const t2 = findGlobalTeam(m.t2, teams);
                                 const t1n = (displayLeague === 'LCK' && formatTeamName) ? formatTeamName(m.t1, m.type) : t1.name;
                                 const t2n = (displayLeague === 'LCK' && formatTeamName) ? formatTeamName(m.t2, m.type) : t2.name;
-                                return t1n === selectedTeam || t2n === selectedTeam || m.t1 === selectedTeam || m.t2 === selectedTeam;
+                                return t1n === selectedTeam || t2n === selectedTeam;
                             })
                             .sort(compareDatesObj) 
                             .map((m, i) => {
