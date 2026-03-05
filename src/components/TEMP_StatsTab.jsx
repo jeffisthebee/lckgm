@@ -72,6 +72,7 @@ export default function StatsTab({ league }) {
   const [stageFilter, setStageFilter] = useState('ALL'); // 'ALL', 'PLAYIN', 'REGULAR', 'PLAYOFF'
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSection, setActiveSection] = useState('POG'); // 'POG', 'RATING', 'META', 'KDA'
+  const [metaSort, setMetaSort] = useState({ key: 'picks', dir: 'desc' }); // key: picks|winRate|pickRate|banRate
 
   const stats = useMemo(() => {
     const players = {}; // playerName -> aggregated data
@@ -285,9 +286,12 @@ export default function StatsTab({ league }) {
         banRate: stats.totalGames > 0 ? (bans / stats.totalGames) : 0
       };
     });
-    champEntries.sort((a, b) => b.picks - a.picks || b.winRate - a.winRate);
+    champEntries.sort((a, b) => {
+      const mul = metaSort.dir === 'desc' ? -1 : 1;
+      return mul * (a[metaSort.key] - b[metaSort.key]) || b.picks - a.picks;
+    });
     return champEntries;
-  }, [stats, posFilter]);
+  }, [stats, posFilter, metaSort]);
 
   // Filters apply to the combined globalPlayerList
   const applyFilters = (list) => {
@@ -493,10 +497,41 @@ export default function StatsTab({ league }) {
         {/* === META SECTION === */}
         {activeSection === 'META' && (
           <div>
-            <div className="flex justify-between items-center mb-2 sm:mb-4">
+            <div className="flex flex-wrap justify-between items-center mb-3 sm:mb-4 gap-2">
                 <h3 className="font-bold text-base sm:text-lg text-gray-800 flex items-center gap-2">
                     <span>🧭</span> 메타 분석
                 </h3>
+                {/* Sort controls */}
+                <div className="flex gap-1.5 flex-wrap">
+                    {[
+                        { key: 'picks',    label: '픽률', icon: '🎯' },
+                        { key: 'banRate',  label: '밴률', icon: '🚫' },
+                        { key: 'winRate',  label: '승률', icon: '🏆' },
+                        { key: 'pickRate', label: '선택률', icon: '📊' },
+                    ].map(({ key, label, icon }) => {
+                        const isActive = metaSort.key === key;
+                        const isDesc = metaSort.dir === 'desc';
+                        return (
+                            <button
+                                key={key}
+                                onClick={() => setMetaSort(prev =>
+                                    prev.key === key
+                                        ? { key, dir: prev.dir === 'desc' ? 'asc' : 'desc' }
+                                        : { key, dir: 'desc' }
+                                )}
+                                className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold border transition-all active:scale-95 ${
+                                    isActive
+                                        ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
+                                        : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'
+                                }`}
+                            >
+                                <span>{icon}</span>
+                                <span>{label}</span>
+                                {isActive && <span className="ml-0.5">{isDesc ? '↓' : '↑'}</span>}
+                            </button>
+                        );
+                    })}
+                </div>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
@@ -506,7 +541,11 @@ export default function StatsTab({ league }) {
                         <span className={`text-lg sm:text-xl font-black w-5 sm:w-6 ${i<3 ? 'text-purple-600' : 'text-gray-300'}`}>{i+1}</span>
                         <div>
                             <div className="font-black text-gray-800 text-base sm:text-lg">{c.name}</div>
-                            <div className="text-[10px] sm:text-xs font-bold text-gray-500">Pick {c.picks} · Ban {c.bans}</div>
+                            <div className="text-[10px] sm:text-xs font-bold text-gray-500">
+                                Pick {c.picks} · Ban {c.bans}
+                                {metaSort.key === 'pickRate' && <span className="ml-1 text-purple-500">({(c.pickRate*100).toFixed(1)}%)</span>}
+                                {metaSort.key === 'banRate'  && <span className="ml-1 text-red-400">({(c.banRate*100).toFixed(1)}% ban)</span>}
+                            </div>
                         </div>
                     </div>
                     <div className="text-right">
