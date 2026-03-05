@@ -34,26 +34,24 @@ function calculatePog(winningPicks, gameMinutes) {
         const k = stats.kills || 0;
         const d = stats.deaths || 0;
         const a = stats.assists || 0;
-        const dmg = stats.damage || 0;
-        
-        const safeD = d === 0 ? 1 : d;
-        const kda = (k + a) / safeD;
-        const dpm = dmg / (Math.max(1, gameMinutes)); // Prevent divide by zero
-        
-        let pogScore = (kda * 3) + (dpm / 100) + ((p.currentGold || 0) / 1000) + (a * 0.65);
-        
-        const role = p.playerData?.포지션 || 'MID';
-        if (['JGL', '정글'].includes(role)) {
-            pogScore *= 1.07;
-        }
-        if (['TOP', '탑'].includes(role)) {
-            pogScore *= 1.05;
-        }
-        if (['SUP', '서포터'].includes(role)) {
-            pogScore *= 1.10;
-        }
 
-        return { ...p, kdaVal: kda, pogScore: pogScore, dpm: dpm };
+        // Kills weighted 3x, assists 0.25x — stops support assist inflation
+        // Deaths floored at 1.5 so 0-death games don't go infinite
+        const kda = (k * 3 + a * 0.25) / Math.max(d, 1.5);
+        const raw = kda + ((p.currentGold || 0) / 1500);
+
+        // Base 65 puts average games ~75-85, standout games 90+, league-breaking 100+
+        let pogScore = 65 + raw;
+
+        // Additive role boosts (not multiplicative) so they don't inflate low raw scores
+        // Deaths reduce the boost so feeding supports/junglers don't get free points
+        const role = p.playerData?.포지션 || 'MID';
+        if (['SUP', '서포터'].includes(role)) pogScore += Math.max(10 - (d * 1.5), 2);
+        if (['JGL', '정글'].includes(role))   pogScore += Math.max(6 - d, 0);
+        if (['TOP', '탑'].includes(role))     pogScore += Math.max(4 - d, 0);
+        // MID/ADC get no boost — formula naturally rewards their kill-heavy stats
+
+        return { ...p, kdaVal: kda, pogScore: pogScore };
     });
 
     candidates.sort((a, b) => (b.pogScore || 0) - (a.pogScore || 0));

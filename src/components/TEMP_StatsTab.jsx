@@ -35,13 +35,23 @@ const normalizePos = (p) => {
 
 const computeSetPlayerScore = (p) => {
   const kills = p.stats?.kills ?? p.k ?? 0;
-  const deaths = (p.stats?.deaths ?? p.d);
-  const safeD = (deaths === 0 ? 1 : (deaths || 1));
+  const deaths = p.stats?.deaths ?? p.d ?? 0;
   const assists = p.stats?.assists ?? p.a ?? 0;
-  const damage = p.stats?.damage ?? 0;
   const gold = p.currentGold ?? 0;
-  const score = ((kills + assists) / safeD) * 3 + (damage / 3000) + (gold / 1000) + (assists * 0.65);
-  return { score, kills, deaths, assists, damage, gold };
+
+  // Kills weighted 3x, assists 0.25x — stops support assist inflation
+  // Deaths floored at 1.5 so 0-death games don't go infinite
+  const kda = (kills * 3 + assists * 0.25) / Math.max(deaths, 1.5);
+  let score = 65 + kda + (gold / 1500);
+
+  // Additive role boosts — deaths reduce boost so feeders don't get free points
+  const role = normalizePos(p.playerData?.포지션 || p.role || p.position);
+  if (role === 'SUP') score += Math.max(10 - (deaths * 1.5), 2);
+  if (role === 'JGL') score += Math.max(6 - deaths, 0);
+  if (role === 'TOP') score += Math.max(4 - deaths, 0);
+  // MID/ADC get no boost — formula naturally rewards their kill-heavy stats
+
+  return { score, kills, deaths, assists, gold };
 };
 
 // Helper: robust type checks

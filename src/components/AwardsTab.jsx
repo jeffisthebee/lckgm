@@ -36,18 +36,22 @@ const calculatePOS = (history, winningTeamName) => {
         (targetPicks || []).forEach(p => {
             if (!p) return;
             if (!playerScores[p.playerName]) playerScores[p.playerName] = { ...p, totalScore: 0, games: 0, playerData: p.playerData };
-            const stats = p.stats || { kills: p.k || 0, deaths: p.d || 0, assists: p.a || 0, damage: 0 };
+            const stats = p.stats || { kills: p.k || 0, deaths: p.d || 0, assists: p.a || 0 };
             const k = stats.kills ?? p.k ?? 0;
             const d = (stats.deaths ?? p.d) || 0;
-            const safeD = d === 0 ? 1 : d;
             const a = stats.assists ?? p.a ?? 0;
             const gold = p.currentGold || 0;
-            const damage = stats.damage || 0;
-            let score = ((k + a) / safeD * 3) + (damage / 3000) + (gold / 1000) + (a * 0.65);
+
+            // POS Formula — kills weighted 3x, assists 0.25x, deaths floored at 1.5
+            const kda = (k * 3 + a * 0.25) / Math.max(d, 1.5);
+            let score = 65 + kda + (gold / 1500);
+
+            // Additive role boosts — deaths reduce boost so feeders don't get free points
             const role = p.playerData?.포지션 || p.role || 'MID';
-            if (['TOP', '탑'].includes(role)) score *= 1.05;
-            if (['JGL', '정글'].includes(role)) score *= 1.07;
-            if (['SUP', '서포터'].includes(role)) score *= 1.10;
+            if (['SUP', '서포터'].includes(role)) score += Math.max(10 - (d * 1.5), 2);
+            if (['JGL', '정글'].includes(role))   score += Math.max(6 - d, 0);
+            if (['TOP', '탑'].includes(role))     score += Math.max(4 - d, 0);
+            // MID/ADC get no boost — formula naturally rewards their kill-heavy stats
             playerScores[p.playerName].totalScore += score;
             playerScores[p.playerName].games += 1;
         });
@@ -318,11 +322,15 @@ const reapplyScale = (data, matches, standingsNames, scale, forPlayoffs) => {
                 const k = p.stats?.kills ?? p.k ?? 0;
                 const d = p.stats?.deaths ?? p.d ?? 0;
                 const a = p.stats?.assists ?? p.a ?? 0;
-                const dmg = p.stats?.damage ?? 0;
                 const gold = p.currentGold ?? 0;
-                const safeD = d === 0 ? 1 : d;
+                const kda = (k * 3 + a * 0.25) / Math.max(d, 1.5);
+                let setScore = 65 + kda + (gold / 1500);
+                const role = p.role || p.playerData?.포지션 || 'MID';
+                if (['SUP', '서포터'].includes(role)) setScore += Math.max(10 - (d * 1.5), 2);
+                if (['JGL', '정글'].includes(role))   setScore += Math.max(6 - d, 0);
+                if (['TOP', '탑'].includes(role))     setScore += Math.max(4 - d, 0);
                 players[name].games++;
-                players[name].totalScore += ((k + a) / safeD) * 3 + (dmg / 3000) + (gold / 1000) + (a * 0.65);
+                players[name].totalScore += setScore;
                 if (!players[name].role) players[name].role = p.role || p.playerData?.포지션;
                 if (!players[name].team) players[name].team = p.playerData?.팀 || p.playerData?.team;
             }

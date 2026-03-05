@@ -69,14 +69,20 @@ export function computeStatsForLeague(league, options = {}) {
     const k = safeNum(p.k ?? p.stats?.kills ?? p.stats?.kill ?? 0);
     const d = safeNum(p.d ?? p.stats?.deaths ?? p.stats?.death ?? 0);
     const a = safeNum(p.a ?? p.stats?.assists ?? p.stats?.assist ?? 0);
-    const damage = safeNum(p.stats?.damage ?? p.damage ?? 0);
     const gold = safeNum(p.currentGold ?? p.gold ?? 0);
-    const safeD = d === 0 ? 1 : d;
-    let score = ((k + a) / safeD) * 3 + (damage / 3000) + (gold / 1000) + (a * 0.65);
+
+    // Kills weighted 3x, assists 0.25x — stops support assist inflation
+    // Deaths floored at 1.5 so 0-death games don't go infinite
+    const kda = (k * 3 + a * 0.25) / Math.max(d, 1.5);
+    let score = 65 + kda + (gold / 1500);
+
+    // Additive role boosts — deaths reduce the boost so feeders don't get free points
     const role = normalizeRole(p.playerData?.포지션 || p.role || p.position);
-    if (['TOP', '탑'].includes(role)) score *= 1.05;
-    if (['JGL', '정글'].includes(role)) score *= 1.07;
-    if (['SUP', '서포터'].includes(role)) score *= 1.10;
+    if (['SUP', '서포터'].includes(role)) score += Math.max(10 - (d * 1.5), 2);
+    if (['JGL', '정글'].includes(role))   score += Math.max(6 - d, 0);
+    if (['TOP', '탑'].includes(role))     score += Math.max(4 - d, 0);
+    // MID/ADC get no boost — formula naturally rewards their kill-heavy stats
+
     return score;
   };
 

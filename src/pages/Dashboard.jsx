@@ -279,8 +279,13 @@ const getOvrBadgeStyle = (ovr) => {
                 if (!p?.playerName) continue;
                 const name = p.playerName;
                 if (!players[name]) players[name] = { games: 0, totalScore: 0, pog: 0, role: null, team: null };
-                const k = p.stats?.kills ?? p.k ?? 0; const d = p.stats?.deaths ?? p.d ?? 0; const a = p.stats?.assists ?? p.a ?? 0; const dmg = p.stats?.damage ?? 0; const gold = p.currentGold ?? 0; const safeD = d === 0 ? 1 : d;
-                players[name].games++; players[name].totalScore += ((k + a) / safeD) * 3 + (dmg / 3000) + (gold / 1000) + (a * 0.65);
+                const k = p.stats?.kills ?? p.k ?? 0; const d = p.stats?.deaths ?? p.d ?? 0; const a = p.stats?.assists ?? p.a ?? 0; const gold = p.currentGold ?? 0;
+                const kda = (k * 3 + a * 0.25) / Math.max(d, 1.5); let setScore = 65 + kda + (gold / 1500);
+                const role1 = p.role || p.playerData?.포지션 || 'MID';
+                if (['SUP', '서포터'].includes(role1)) setScore += Math.max(10 - (d * 1.5), 2);
+                if (['JGL', '정글'].includes(role1))   setScore += Math.max(6 - d, 0);
+                if (['TOP', '탑'].includes(role1))     setScore += Math.max(4 - d, 0);
+                players[name].games++; players[name].totalScore += setScore;
                 if (!players[name].role) players[name].role = p.role || p.playerData?.포지션;
                 if (!players[name].team) players[name].team = p.playerData?.팀 || p.playerData?.team;
             }
@@ -519,11 +524,15 @@ const getOvrBadgeStyle = (ovr) => {
             const k = p.stats?.kills ?? p.k ?? 0;
             const d = p.stats?.deaths ?? p.d ?? 0;
             const a = p.stats?.assists ?? p.a ?? 0;
-            const dmg = p.stats?.damage ?? 0;
             const gold = p.currentGold ?? 0;
-            const safeD = d === 0 ? 1 : d;
+            const kda = (k * 3 + a * 0.25) / Math.max(d, 1.5);
+            let setScore = 65 + kda + (gold / 1500);
+            const role2 = p.role || p.playerData?.포지션 || 'MID';
+            if (['SUP', '서포터'].includes(role2)) setScore += Math.max(10 - (d * 1.5), 2);
+            if (['JGL', '정글'].includes(role2))   setScore += Math.max(6 - d, 0);
+            if (['TOP', '탑'].includes(role2))     setScore += Math.max(4 - d, 0);
             players[name].games++;
-            players[name].totalScore += ((k + a) / safeD) * 3 + (dmg / 3000) + (gold / 1000) + (a * 0.65);
+            players[name].totalScore += setScore;
             if (!players[name].role) players[name].role = p.role || p.playerData?.포지션;
             if (!players[name].team) players[name].team = p.playerData?.팀 || p.playerData?.team;
           }
@@ -553,9 +562,13 @@ const getOvrBadgeStyle = (ovr) => {
           targetPicks.forEach(p => {
             if (!p?.playerName) return;
             if (!posScores[p.playerName]) posScores[p.playerName] = 0;
-            const k = p.stats?.kills ?? p.k ?? 0; const d = p.stats?.deaths ?? p.d ?? 0; const a = p.stats?.assists ?? p.a ?? 0;
-            const safeD2 = d === 0 ? 1 : d;
-            posScores[p.playerName] += ((k + a) / safeD2) * 3 + (a * 0.65);
+            const k = p.stats?.kills ?? p.k ?? 0; const d = p.stats?.deaths ?? p.d ?? 0; const a = p.stats?.assists ?? p.a ?? 0; const gold = p.currentGold ?? 0;
+            const kda3 = (k * 3 + a * 0.25) / Math.max(d, 1.5); let posScore = 65 + kda3 + (gold / 1500);
+            const role3 = p.role || p.playerData?.포지션 || 'MID';
+            if (['SUP', '서포터'].includes(role3)) posScore += Math.max(10 - (d * 1.5), 2);
+            if (['JGL', '정글'].includes(role3))   posScore += Math.max(6 - d, 0);
+            if (['TOP', '탑'].includes(role3))     posScore += Math.max(4 - d, 0);
+            posScores[p.playerName] += posScore;
           });
         });
         const posSorted = Object.entries(posScores).sort((a, b) => b[1] - a[1]);

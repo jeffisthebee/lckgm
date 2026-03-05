@@ -142,20 +142,20 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                 if (!p) return;
                 if (!playerScores[p.playerName]) playerScores[p.playerName] = { ...p, totalScore: 0, games: 0 };
                 
-                const stats = p.stats || { kills: p.k || 0, deaths: p.d || 0, assists: p.a || 0, damage: 0 };
+                const stats = p.stats || { kills: p.k || 0, deaths: p.d || 0, assists: p.a || 0 };
                 const k = stats.kills || 0;
-                const d = (stats.deaths === 0 ? 1 : (stats.deaths || 1));
+                const d = stats.deaths || 0;
                 const a = stats.assists || 0;
                 const gold = p.currentGold || 0;
-                const damage = stats.damage || 0;
-                
-                let score = ((k + a) / d * 3) + (damage / 3000) + (gold / 1000) + (a * 0.65);
-                
+
+                const kda = (k * 3 + a * 0.25) / Math.max(d, 1.5);
+                let score = 65 + kda + (gold / 1500);
+
                 const role = p.playerData?.포지션 || 'MID';
-                if (['TOP', '탑'].includes(role)) score *= 1.05;
-                if (['JGL', '정글'].includes(role)) score *= 1.07;
-                if (['SUP', '서포터'].includes(role)) score *= 1.10;
-    
+                if (['SUP', '서포터'].includes(role)) score += Math.max(10 - (d * 1.5), 2);
+                if (['JGL', '정글'].includes(role))   score += Math.max(6 - d, 0);
+                if (['TOP', '탑'].includes(role))     score += Math.max(4 - d, 0);
+
                 playerScores[p.playerName].totalScore += score;
                 playerScores[p.playerName].games += 1;
             });
@@ -170,22 +170,20 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
         const winningPicks = winnerSide === 'BLUE' ? picksBlue : picksRed;
         if (!Array.isArray(winningPicks) || winningPicks.length === 0) return null;
         const candidates = winningPicks.map(p => {
-            const k = (p.stats?.kills ?? p.k) || 0; 
-            const dRaw = (p.stats?.deaths ?? p.d);
-            const d = (dRaw === 0 ? 1 : (dRaw || 1)); 
+            const k = (p.stats?.kills ?? p.k) || 0;
+            const d = (p.stats?.deaths ?? p.d) || 0;
             const a = (p.stats?.assists ?? p.a) || 0;
-            const damage = p.stats?.damage || 0;
-            
-            const dpm = damage / (gameMinutes || 1);
-            
-            let score = ((k + a) / d * 3) + (dpm / 100) + ((p.currentGold || 0) / 1000) + (a * 0.65);
-            
+            const gold = p.currentGold || 0;
+
+            const kda = (k * 3 + a * 0.25) / Math.max(d, 1.5);
+            let score = 65 + kda + (gold / 1500);
+
             const role = p.playerData?.포지션;
-            if (['TOP', '탑'].includes(role)) score *= 1.05;
-            if (['JGL', '정글' ].includes(role)) score *= 1.07;
-            if (['SUP', '서포터'].includes(role)) score *= 1.10;
-            
-            return { ...p, pogScore: score, kdaVal: (k+a)/d, dpm };
+            if (['SUP', '서포터'].includes(role)) score += Math.max(10 - (d * 1.5), 2);
+            if (['JGL', '정글'].includes(role))   score += Math.max(6 - d, 0);
+            if (['TOP', '탑'].includes(role))     score += Math.max(4 - d, 0);
+
+            return { ...p, pogScore: score, kdaVal: kda };
         });
         candidates.sort((a, b) => (b.pogScore || 0) - (a.pogScore || 0));
         return candidates[0] || null;
