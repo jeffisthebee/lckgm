@@ -376,61 +376,39 @@ export default function StatsTab({ league }) {
             ))}
         </div>
 
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3 sm:gap-0">
+        {/* ROW 1: Title + Stage & Patch filters (right-aligned) */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-3 gap-2">
           <h2 className="text-xl sm:text-2xl font-black text-gray-800 whitespace-nowrap">
               📊 2026 {currentLeague === 'FST' ? 'FST 월드 토너먼트' : currentLeague} 통계 센터
           </h2>
-          
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
-            
+          <div className="flex flex-wrap items-center gap-2 ml-auto">
             {/* STAGE FILTERS */}
             <div className="flex bg-gray-100 p-1 rounded-lg">
-                <button 
-                  onClick={() => setStageFilter('ALL')}
-                  className={`px-3 py-1 text-xs sm:text-sm font-bold rounded-md transition-all ${stageFilter === 'ALL' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                >
-                  전체
-                </button>
+                <button onClick={() => setStageFilter('ALL')} className={`px-3 py-1 text-xs sm:text-sm font-bold rounded-md transition-all ${stageFilter === 'ALL' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>전체</button>
                 {currentLeague !== 'FST' && (
-                    <button 
-                      onClick={() => setStageFilter('PLAYIN')}
-                      className={`px-3 py-1 text-xs sm:text-sm font-bold rounded-md transition-all ${stageFilter === 'PLAYIN' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                    >
-                      플레이인
-                    </button>
+                    <button onClick={() => setStageFilter('PLAYIN')} className={`px-3 py-1 text-xs sm:text-sm font-bold rounded-md transition-all ${stageFilter === 'PLAYIN' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>플레이인</button>
                 )}
-                <button 
-                  onClick={() => setStageFilter('REGULAR')}
-                  className={`px-3 py-1 text-xs sm:text-sm font-bold rounded-md transition-all ${stageFilter === 'REGULAR' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                >
-                  {currentLeague === 'FST' ? '그룹 스테이지' : '정규시즌'}
+                <button onClick={() => setStageFilter('REGULAR')} className={`px-3 py-1 text-xs sm:text-sm font-bold rounded-md transition-all ${stageFilter === 'REGULAR' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                    {currentLeague === 'FST' ? '그룹 스테이지' : '정규시즌'}
                 </button>
-                <button 
-                  onClick={() => setStageFilter('PLAYOFF')}
-                  className={`px-3 py-1 text-xs sm:text-sm font-bold rounded-md transition-all ${stageFilter === 'PLAYOFF' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                >
-                  플레이오프
-                </button>
+                <button onClick={() => setStageFilter('PLAYOFF')} className={`px-3 py-1 text-xs sm:text-sm font-bold rounded-md transition-all ${stageFilter === 'PLAYOFF' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>플레이오프</button>
             </div>
-            
             <div className="h-4 w-px bg-gray-300 hidden sm:block"></div>
-
             {/* PATCH FILTERS */}
             <div className="flex bg-gray-100 p-1 rounded-lg">
                 {(['ALL', '16.01', '16.02', ...(league?.fst ? ['16.03'] : [])]).map(patch => (
-                    <button
-                        key={patch}
-                        onClick={() => setPatchFilter(patch)}
-                        className={`px-3 py-1 text-xs sm:text-sm font-bold rounded-md transition-all ${patchFilter === patch ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                    >
+                    <button key={patch} onClick={() => setPatchFilter(patch)}
+                        className={`px-3 py-1 text-xs sm:text-sm font-bold rounded-md transition-all ${patchFilter === patch ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                         {patch === 'ALL' ? '전체' : patch}
                     </button>
                 ))}
             </div>
+          </div>
+        </div>
 
-            <div className="h-4 w-px bg-gray-300 hidden sm:block"></div>
-            
-            <select value={posFilter} onChange={(e) => setPosFilter(e.target.value)} className="px-2 py-1.5 sm:px-3 border border-gray-300 rounded-lg text-xs sm:text-sm font-bold text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none flex-1 sm:flex-none">
+        {/* ROW 2: Position filter + Search (right-aligned) */}
+        <div className="flex justify-end items-center gap-2 mb-3">
+            <select value={posFilter} onChange={(e) => setPosFilter(e.target.value)} className="px-2 py-1.5 sm:px-3 border border-gray-300 rounded-lg text-xs sm:text-sm font-bold text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none">
               <option value="ALL">전체 포지션</option>
               <option value="TOP">TOP</option>
               <option value="JGL">JGL</option>
@@ -438,9 +416,7 @@ export default function StatsTab({ league }) {
               <option value="ADC">ADC</option>
               <option value="SUP">SUP</option>
             </select>
-            
-            <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="검색" className="px-2 py-1.5 sm:px-3 border border-gray-300 rounded-lg text-xs sm:text-sm w-full sm:w-48 focus:ring-2 focus:ring-blue-500 outline-none" />
-          </div>
+            <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="선수 검색" className="px-2 py-1.5 sm:px-3 border border-gray-300 rounded-lg text-xs sm:text-sm w-36 sm:w-48 focus:ring-2 focus:ring-blue-500 outline-none" />
         </div>
 
         {/* TABS */}
