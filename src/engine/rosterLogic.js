@@ -36,8 +36,11 @@ export const getTeamRoster = (teamName) => {
   }
 
   return positions.map(pos => {
-      const found = players.find(p => p.포지션 === pos || p.포지션 === (pos === 'SUP' ? 'SPT' : pos));
-      return found || players[0] || { 이름: 'Unknown', 포지션: pos, 종합: 70 }; 
+      const playersAtPos = players.filter(p => p.포지션 === pos || p.포지션 === (pos === 'SUP' ? 'SPT' : pos));
+      // Sort by OVR descending and pick the best — fixes the bug where .find() grabbed
+      // the first player in the array instead of the highest-rated one
+      playersAtPos.sort((a, b) => (b.종합 || 0) - (a.종합 || 0));
+      return playersAtPos[0] || players[0] || { 이름: 'Unknown', 포지션: pos, 종합: 70 };
   });
 };
 
@@ -86,16 +89,14 @@ export const getDefaultLineup = (teamName) => {
   const lineup = {};
 
   positions.forEach(pos => {
-    const playersInPosition = fullRoster.filter(p => 
+    const playersInPosition = fullRoster.filter(p =>
       p.포지션 === pos || p.포지션 === (pos === 'SUP' ? 'SPT' : pos)
     );
-    
-    // Sort by OVR (종합) and pick the best
+    // Sort by OVR descending — consistent with getTeamRoster
     playersInPosition.sort((a, b) => (b.종합 || 0) - (a.종합 || 0));
-    
-    lineup[pos] = playersInPosition[0] || { 
-      이름: 'Unknown', 
-      포지션: pos, 
+    lineup[pos] = playersInPosition[0] || {
+      이름: 'Unknown',
+      포지션: pos,
       종합: 70,
       상세: { 라인전: 70, 무력: 70, 한타: 70, 성장: 70, 안정성: 70, 운영: 70 }
     };
