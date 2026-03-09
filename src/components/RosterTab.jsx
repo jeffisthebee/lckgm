@@ -1,7 +1,9 @@
 // src/components/RosterTab.jsx
 import React, { useState } from 'react';
 import PlayerProfileModal from './PlayerProfileModal';
+import CoachProfileModal from './CoachProfileModal';
 import allMastery from '../data/player_mastery/index';
+import coachesData from '../data/coaches.json';
 
 // [NEW] 1. Import all the global teams and player intel!
 import { teams as lckTeams } from '../data/teams';
@@ -35,6 +37,7 @@ const RosterTab = ({ viewingTeam, roster, onPrevTeam, onNextTeam, league }) => {
     const [currentLeague, setCurrentLeague] = useState('LCK');
     const [foreignTeamIndex, setForeignTeamIndex] = useState(0);
     const [selectedPlayer, setSelectedPlayer] = useState(null);
+    const [selectedCoach, setSelectedCoach] = useState(null);
 
     // [NEW] 3. Gather the right teams and players based on the clicked button
     const isLCK = currentLeague === 'LCK';
@@ -60,6 +63,9 @@ const RosterTab = ({ viewingTeam, roster, onPrevTeam, onNextTeam, league }) => {
     
     // Decide which roster to show
     const displayRoster = isLCK ? roster : currentLeaguePlayers.filter(p => p.팀 === displayTeam?.name);
+
+    // Coaches for the currently displayed team
+    const displayCoaches = coachesData.filter(c => c.팀 === displayTeam?.name);
 
     // [NEW] 4. Smart Navigation Buttons
     const handlePrev = () => {
@@ -125,6 +131,30 @@ const RosterTab = ({ viewingTeam, roster, onPrevTeam, onNextTeam, league }) => {
                             <p className="text-xs lg:text-sm font-bold text-gray-500 mt-0.5 lg:mt-1">상세 로스터 및 계약 현황</p>
                         </div>
                     </div>
+
+                    {/* Coaching Staff — inline next to nav */}
+                    {displayCoaches.length > 0 && (
+                        <div className="hidden lg:flex items-center gap-2 ml-2 pl-4 border-l border-gray-200">
+                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest shrink-0">코칭</span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                                {displayCoaches.map((c, i) => {
+                                    const roleInfo = { '감독': { icon: '🎯', color: '#1d4ed8' }, '코치': { icon: '📋', color: '#15803d' }, '분석가': { icon: '📊', color: '#7e22ce' } }[c.역할] || { icon: '👤', color: '#6b7280' };
+                                    return (
+                                        <button
+                                            key={i}
+                                            onClick={() => setSelectedCoach(c)}
+                                            className="flex items-center gap-1 px-2.5 py-1 rounded-full border bg-white hover:shadow-md transition text-xs font-bold whitespace-nowrap active:scale-95"
+                                            style={{ borderColor: roleInfo.color + '40', color: roleInfo.color }}
+                                        >
+                                            <span>{roleInfo.icon}</span>
+                                            <span>{c.이름}</span>
+                                            <span className="text-[9px] font-medium opacity-60">{c.역할}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
                     
                     <button 
                         onClick={handleNext} 
@@ -212,6 +242,14 @@ const RosterTab = ({ viewingTeam, roster, onPrevTeam, onNextTeam, league }) => {
                     league={league}
                     masteryData={allMastery}
                     onClose={() => setSelectedPlayer(null)}
+                />
+            )}
+
+            {/* Coach Profile Modal */}
+            {selectedCoach && (
+                <CoachProfileModal
+                    coach={selectedCoach}
+                    onClose={() => setSelectedCoach(null)}
                 />
             )}
         </div>
