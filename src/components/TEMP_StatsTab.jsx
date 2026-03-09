@@ -306,9 +306,9 @@ export default function StatsTab({ league }) {
   }, [stats]);
 
   // Game Score section state
-  const [scoreSort, setScoreSort] = useState({ key: 'totalKills', dir: 'desc' });
+  const [scoreSort, setScoreSort] = useState({ key: 'score', dir: 'desc' });
 
-  // Flatten all individual sets into scoreable game rows
+  // One row per player per game, using computeSetPlayerScore
   const gameScores = useMemo(() => {
     let activeMatches = [];
     if (currentLeague === 'LCK') activeMatches = league?.matches || [];
@@ -337,61 +337,43 @@ export default function StatsTab({ league }) {
       }
 
       const history = safeArray(match.result?.history);
-      const teamA = match.teamA || match.team1 || 'Team A';
-      const teamB = match.teamB || match.team2 || 'Team B';
 
       history.forEach((set, setIdx) => {
-        const picksA = safeArray(set.picks?.A);
-        const picksB = safeArray(set.picks?.B);
-        const allPicks = [...picksA, ...picksB];
-
+        const allPicks = [...safeArray(set.picks?.A), ...safeArray(set.picks?.B)];
         if (allPicks.length === 0) return;
 
-        const totalKills = allPicks.reduce((s, p) => s + (p.stats?.kills ?? p.k ?? 0), 0);
-        const totalGold  = allPicks.reduce((s, p) => s + (p.currentGold ?? 0), 0);
-
-        // Per-team aggregates
-        const teamStats = (picks) => ({
-          kills:   picks.reduce((s, p) => s + (p.stats?.kills   ?? p.k ?? 0), 0),
-          deaths:  picks.reduce((s, p) => s + (p.stats?.deaths  ?? p.d ?? 0), 0),
-          assists: picks.reduce((s, p) => s + (p.stats?.assists ?? p.a ?? 0), 0),
-          gold:    picks.reduce((s, p) => s + (p.currentGold ?? 0), 0),
-        });
-
-        const statsA = teamStats(picksA);
-        const statsB = teamStats(picksB);
-        const goldDiff = Math.abs(statsA.gold - statsB.gold);
-
-        // Best performer (highest computeSetPlayerScore across all players)
-        let mvpName = null, mvpScore = -Infinity;
         allPicks.forEach(p => {
           if (!p?.playerName) return;
-          const { score } = computeSetPlayerScore(p);
-          if (score > mvpScore) { mvpScore = score; mvpName = p.playerName; }
-        });
+          const { score, kills, deaths, assists, gold } = computeSetPlayerScore(p);
+          const champ = p.champName || p.champ || p.name || '';
+          const role = normalizePos(p.role || p.playerData?.포지션);
+          const team = p.playerData?.팀 || p.playerData?.team || '';
 
-        // Intensity: high kills + close gold = exciting game
-        const goldCloseness = Math.max(0, 1 - goldDiff / Math.max(totalGold, 1));
-        const intensity = Math.round(totalKills * 10 * (0.5 + goldCloseness * 0.5));
+          const winnerName = set.winner || '';
+          const isWin = winnerName && team && (
+            String(team) === String(winnerName) ||
+            team.includes(winnerName) ||
+            winnerName.includes(team)
+          );
 
-        rows.push({
-          matchDate: match.date || '',
-          teamA,
-          teamB,
-          setNum: setIdx + 1,
-          winner: set.winner || '',
-          totalKills,
-          totalGold,
-          goldDiff,
-          statsA,
-          statsB,
-          mvpName,
-          intensity,
+          rows.push({
+            playerName: p.playerName,
+            team,
+            role,
+            champ,
+            score,
+            kills,
+            deaths,
+            assists,
+            gold,
+            isWin,
+            matchDate: match.date || '',
+            setNum: setIdx + 1,
+          });
         });
       });
     }
 
-    // Sort
     rows.sort((a, b) => {
       const mul = scoreSort.dir === 'desc' ? -1 : 1;
       return mul * (a[scoreSort.key] - b[scoreSort.key]);
@@ -736,18 +718,18 @@ export default function StatsTab({ league }) {
         {/* === GAME SCORE SECTION === */}
         {activeSection === 'SCORE' && (
           <div>
-            {/* Sort Controls */}
             <div className="flex flex-wrap justify-between items-center mb-3 sm:mb-4 gap-2">
               <h3 className="font-bold text-base sm:text-lg text-gray-800 flex items-center gap-2">
                 <span>🎮</span> 게임 스코어
-                <span className="text-xs font-bold text-gray-400 normal-case">({gameScores.length}게임)</span>
+                <span className="text-xs font-bold text-gray-400 normal-case">({gameScores.length}개 퍼포먼스)</span>
               </h3>
+              {/* Sort buttons */}
               <div className="flex gap-1.5 flex-wrap">
                 {[
-                  { key: 'totalKills',  label: '총 킬',    icon: '⚔️' },
-                  { key: 'goldDiff',    label: '골드차',   icon: '💰' },
-                  { key: 'intensity',   label: '경기 강도', icon: '🔥' },
-                  { key: 'totalGold',   label: '총 골드',  icon: '📈' },
+                  { key: 'score',   label: '스코어',  icon: '⭐' },
+                  { key: 'kills',   label: '킬',      icon: '⚔️' },
+                  { key: 'assists', label: '어시스트', icon: '🤝' },
+                  { key: 'gold',    label: '골드',    icon: '💰' },
                 ].map(({ key, label, icon }) => {
                   const isActive = scoreSort.key === key;
                   return (
@@ -772,89 +754,58 @@ export default function StatsTab({ league }) {
               </div>
             </div>
 
-            {gameScores.length === 0 && (
-              <div className="text-center py-12 text-gray-400 font-bold">{currentLeague} 리그의 데이터가 부족합니다.</div>
-            )}
-
-            <div className="flex flex-col gap-3">
-              {gameScores.map((g, i) => {
-                const aWon = g.winner && (String(g.teamA).includes(g.winner) || String(g.winner).includes(g.teamA));
-                const bWon = !aWon && g.winner;
-
-                // Intensity bar colour
-                const intensityColor =
-                  g.intensity >= 800 ? 'bg-red-500' :
-                  g.intensity >= 500 ? 'bg-orange-400' :
-                  g.intensity >= 300 ? 'bg-yellow-400' : 'bg-gray-300';
-
-                return (
-                  <div key={i} className="bg-white border rounded-xl p-3 sm:p-4 hover:shadow-md transition">
-                    {/* Top row: date + match label + game number */}
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] sm:text-xs font-bold text-gray-400">{g.matchDate}</span>
-                        <span className="text-[10px] font-bold bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">게임 {g.setNum}</span>
-                        {/* Intensity badge */}
-                        <span className={`text-[10px] font-black text-white px-2 py-0.5 rounded-full ${intensityColor}`}>
-                          {g.intensity >= 800 ? '🔥 EPIC' : g.intensity >= 500 ? '⚡ 치열' : g.intensity >= 300 ? '🎯 보통' : '💤 조용'}
+            <div className="overflow-x-auto bg-white rounded-lg border shadow-sm">
+              <table className="w-full min-w-[560px] sm:min-w-full">
+                <thead className="bg-gray-100 text-gray-500 text-[10px] sm:text-xs font-bold uppercase">
+                  <tr>
+                    <th className="py-2 px-2 sm:py-3 sm:px-4 text-center w-10 sm:w-14">순위</th>
+                    <th className="py-2 px-2 sm:py-3 sm:px-4 text-left">선수</th>
+                    <th className="py-2 px-2 sm:py-3 sm:px-4 text-center">스코어</th>
+                    <th className="py-2 px-2 sm:py-3 sm:px-4 text-center">K/D/A</th>
+                    <th className="py-2 px-2 sm:py-3 sm:px-4 text-center">골드</th>
+                    <th className="py-2 px-2 sm:py-3 sm:px-4 text-center">챔피언</th>
+                    <th className="py-2 px-2 sm:py-3 sm:px-4 text-center">결과</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {gameScores
+                    .filter(g => {
+                      const query = (searchQuery || '').trim().toLowerCase();
+                      if (query && !g.playerName.toLowerCase().includes(query)) return false;
+                      if (posFilter !== 'ALL' && g.role !== posFilter) return false;
+                      return true;
+                    })
+                    .map((g, i) => (
+                    <tr key={i} className={`hover:bg-green-50/40 transition text-xs sm:text-sm ${g.isWin ? '' : 'opacity-75'}`}>
+                      <td className="py-2 px-2 sm:py-3 sm:px-4 text-center font-black text-gray-400">{i + 1}</td>
+                      <td className="py-2 px-2 sm:py-3 sm:px-4">
+                        <div className="font-bold text-gray-800">{g.playerName}</div>
+                        <div className="text-[10px] sm:text-xs text-gray-400 font-medium">{g.team} · {g.role} · {g.matchDate} G{g.setNum}</div>
+                      </td>
+                      <td className="py-2 px-2 sm:py-3 sm:px-4 text-center">
+                        <span className="inline-block px-2 sm:px-3 py-0.5 sm:py-1 rounded-full bg-green-100 text-green-700 font-black text-xs sm:text-sm">
+                          {g.score.toFixed(1)}
                         </span>
-                      </div>
-                      <span className="text-[10px] sm:text-xs font-bold text-green-600">
-                        강도 {g.intensity}
-                      </span>
-                    </div>
-
-                    {/* Teams */}
-                    <div className="flex items-center gap-2 sm:gap-4">
-                      {/* Team A */}
-                      <div className={`flex-1 p-2 sm:p-3 rounded-lg ${aWon ? 'bg-green-50 border border-green-200' : 'bg-gray-50 border border-gray-100'}`}>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className={`font-black text-sm sm:text-base truncate ${aWon ? 'text-green-700' : 'text-gray-600'}`}>
-                            {aWon && '🏆 '}{g.teamA}
-                          </span>
-                          <span className="font-black text-base sm:text-lg text-gray-800">{g.statsA.kills}</span>
-                        </div>
-                        <div className="text-[10px] text-gray-400 font-medium">
-                          {g.statsA.kills}/{g.statsA.deaths}/{g.statsA.assists}
-                          <span className="ml-1.5">{(g.statsA.gold / 1000).toFixed(1)}k G</span>
-                        </div>
-                      </div>
-
-                      {/* VS divider */}
-                      <div className="text-xs font-black text-gray-300 flex-shrink-0">VS</div>
-
-                      {/* Team B */}
-                      <div className={`flex-1 p-2 sm:p-3 rounded-lg ${bWon ? 'bg-green-50 border border-green-200' : 'bg-gray-50 border border-gray-100'}`}>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className={`font-black text-sm sm:text-base truncate ${bWon ? 'text-green-700' : 'text-gray-600'}`}>
-                            {bWon && '🏆 '}{g.teamB}
-                          </span>
-                          <span className="font-black text-base sm:text-lg text-gray-800">{g.statsB.kills}</span>
-                        </div>
-                        <div className="text-[10px] text-gray-400 font-medium">
-                          {g.statsB.kills}/{g.statsB.deaths}/{g.statsB.assists}
-                          <span className="ml-1.5">{(g.statsB.gold / 1000).toFixed(1)}k G</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Bottom row: total kills, gold diff, MVP */}
-                    <div className="flex items-center gap-3 mt-2 pt-2 border-t border-gray-100 flex-wrap">
-                      <span className="text-[10px] sm:text-xs font-bold text-gray-500">
-                        ⚔️ 총 킬 <span className="text-gray-800">{g.totalKills}</span>
-                      </span>
-                      <span className="text-[10px] sm:text-xs font-bold text-gray-500">
-                        💰 골드차 <span className="text-gray-800">{(g.goldDiff / 1000).toFixed(1)}k</span>
-                      </span>
-                      {g.mvpName && (
-                        <span className="text-[10px] sm:text-xs font-bold text-purple-600 ml-auto">
-                          ⭐ MVP: {g.mvpName}
+                      </td>
+                      <td className="py-2 px-2 sm:py-3 sm:px-4 text-center font-mono font-bold text-gray-700">
+                        {g.kills} <span className="text-gray-300">/</span> <span className="text-red-500">{g.deaths}</span> <span className="text-gray-300">/</span> {g.assists}
+                      </td>
+                      <td className="py-2 px-2 sm:py-3 sm:px-4 text-center text-gray-600 font-medium">
+                        {(g.gold / 1000).toFixed(1)}k
+                      </td>
+                      <td className="py-2 px-2 sm:py-3 sm:px-4 text-center font-bold text-gray-700">{g.champ}</td>
+                      <td className="py-2 px-2 sm:py-3 sm:px-4 text-center">
+                        <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${g.isWin ? 'bg-green-100 text-green-700' : 'bg-red-50 text-red-400'}`}>
+                          {g.isWin ? '승' : '패'}
                         </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {gameScores.length === 0 && (
+                <div className="text-center py-12 text-gray-400 font-bold">{currentLeague} 리그의 데이터가 부족합니다.</div>
+              )}
             </div>
           </div>
         )}
