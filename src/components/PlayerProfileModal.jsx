@@ -103,15 +103,35 @@ const HexChart = ({ stats }) => {
 };
 
 // ─── extract 2026 match history for a player from league data ─
+const COMPETITION_NAMES = {
+    LCK:   'LCK 컵',
+    LPL:   'LPL 스플릿 1',
+    LEC:   'LEC 버서스',
+    LCS:   'LCS 락 인',
+    LCP:   'LCP 스플릿 1',
+    CBLOL: 'CBLOL 레전드 컵',
+    FST:   'FST',
+};
+
+const COMPETITION_STYLE = {
+    LCK:   { bg: '#eff6ff', color: '#1d4ed8' },
+    LPL:   { bg: '#fff7ed', color: '#c2410c' },
+    LEC:   { bg: '#f0fdf4', color: '#15803d' },
+    LCS:   { bg: '#fef9c3', color: '#a16207' },
+    LCP:   { bg: '#fdf4ff', color: '#7e22ce' },
+    CBLOL: { bg: '#fff1f2', color: '#be123c' },
+    FST:   { bg: '#1e293b', color: '#e2e8f0' },
+};
+
 const extract2026Data = (playerName, league) => {
     const allMatches = [
-        ...(league?.matches || []).map(m => ({ ...m, _competition: 'LCK' })),
-        ...(league?.fst?.matches || []).map(m => ({ ...m, _competition: 'FST' })),
+        ...(league?.matches || []).map(m => ({ ...m, _competition: 'LCK', _isFST: false })),
+        ...(league?.fst?.matches || []).map(m => ({ ...m, _competition: 'FST', _isFST: true })),
     ];
     // Also include foreign matches
     if (league?.foreignMatches) {
         Object.entries(league.foreignMatches).forEach(([key, ms]) =>
-            allMatches.push(...(ms || []).map(m => ({ ...m, _competition: key })))
+            allMatches.push(...(ms || []).map(m => ({ ...m, _competition: key, _isFST: false })))
         );
     }
 
@@ -184,6 +204,7 @@ const extract2026Data = (playerName, league) => {
                 roundName: match.label || match.roundName || null,
                 setNum: set.setNumber || '',
                 competition: match._competition || 'LCK',
+                isFST: match._isFST || false,
             });
         }
     }
@@ -406,82 +427,123 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
                     {/* ═══ MATCH HISTORY ═══ */}
                     {tab === 'matches' && (
                         <div>
-                            {data2026 && data2026.totalGames > 0 ? (
-                                <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                                    <table className="w-full text-xs">
-                                        <thead className="bg-gray-50 border-b">
-                                            <tr>
-                                                <th className="py-2.5 px-3 text-left font-black text-gray-400 uppercase tracking-widest">날짜</th>
-                                                <th className="py-2.5 px-3 text-left font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell">유형</th>
-                                                <th className="py-2.5 px-3 text-left font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell">대회</th>
-                                                <th className="py-2.5 px-3 text-left font-black text-gray-400 uppercase tracking-widest">챔피언</th>
-                                                <th className="py-2.5 px-3 text-center font-black text-gray-400 uppercase tracking-widest">결과</th>
-                                                {/* Sortable headers */}
-                                                {[['kda','KDA'],['gold','골드'],['pogScore','점수']].map(([key, label]) => (
-                                                    <th key={key}
-                                                        className="py-2.5 px-3 text-center font-black uppercase tracking-widest cursor-pointer select-none whitespace-nowrap hidden sm:table-cell"
-                                                        style={{ color: matchSort.key === key ? '#3b82f6' : '#9ca3af' }}
-                                                        onClick={() => setMatchSort(s => s.key === key ? { key, dir: s.dir === 'desc' ? 'asc' : 'desc' } : { key, dir: 'desc' })}
-                                                    >
-                                                        {label} {matchSort.key === key ? (matchSort.dir === 'desc' ? '↓' : '↑') : '↕'}
-                                                    </th>
-                                                ))}
-                                                <th className="py-2.5 px-3 text-left font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell">상대팀</th>
-                                                <th className="py-2.5 px-3 text-center font-black text-gray-400 uppercase tracking-widest">⭐</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-gray-50">
-                                            {[...data2026.games].sort((a, b) => {
-                                                const dir = matchSort.dir === 'desc' ? -1 : 1;
-                                                if (matchSort.key === 'kda') {
-                                                    const kdaA = a.d > 0 ? (a.k + a.a) / a.d : (a.k + a.a);
-                                                    const kdaB = b.d > 0 ? (b.k + b.a) / b.d : (b.k + b.a);
-                                                    return (kdaA - kdaB) * dir;
-                                                }
-                                                if (matchSort.key === 'gold') return ((a.gold || 0) - (b.gold || 0)) * dir;
-                                                if (matchSort.key === 'pogScore') return ((a.pogScore || 0) - (b.pogScore || 0)) * dir;
-                                                return 0; // default: keep original (date) order
-                                            }).map((g, i) => {
-                                                const kdaVal = g.d > 0 ? ((g.k + g.a) / g.d).toFixed(2) : 'Perfect';
-                                                const scoreColor = g.pogScore >= 90 ? '#f59e0b' : g.pogScore >= 80 ? '#6366f1' : g.pogScore >= 70 ? '#3b82f6' : '#9ca3af';
-                                                return (
-                                                <tr key={i} className={`transition hover:bg-gray-50 ${g.result === 'WIN' ? 'border-l-2 border-l-green-400' : 'border-l-2 border-l-red-300'}`}>
-                                                    <td className="py-2 px-3 text-gray-500 whitespace-nowrap">{g.date}</td>
-                                                    <td className="py-2 px-3 hidden sm:table-cell">
-                                                        {(() => { const { text, bg, color } = matchTypeLabel(g.matchType, g.round, g.roundName); return <span className="px-2 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap" style={{ backgroundColor: bg, color }}>{text}</span>; })()}
-                                                    </td>
-                                                    <td className="py-2 px-3 hidden sm:table-cell">
-                                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap bg-gray-100 text-gray-600">
-                                                            {g.competition}
-                                                        </span>
-                                                    </td>
-                                                    <td className="py-2 px-3 font-bold text-gray-800 whitespace-nowrap">{toKoreanChamp(g.champ)}</td>
-                                                    <td className="py-2 px-3 text-center">
-                                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${g.result === 'WIN' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
-                                                            {g.result}
-                                                        </span>
-                                                    </td>
-                                                    <td className="py-2 px-3 text-center font-mono font-bold text-gray-700 hidden sm:table-cell whitespace-nowrap">
-                                                        {g.k}/<span className="text-red-500">{g.d}</span>/{g.a}
-                                                        <span className="ml-1 text-[10px] text-indigo-500">({kdaVal})</span>
-                                                    </td>
-                                                    <td className="py-2 px-3 text-center text-gray-500 hidden sm:table-cell">
-                                                        {g.gold > 0 ? `${(g.gold / 1000).toFixed(1)}k` : '-'}
-                                                    </td>
-                                                    <td className="py-2 px-3 text-center hidden sm:table-cell">
-                                                        <span className="font-black text-xs" style={{ color: scoreColor }}>{g.pogScore}</span>
-                                                    </td>
-                                                    <td className="py-2 px-3 text-gray-600 hidden sm:table-cell whitespace-nowrap">{g.opponent}</td>
-                                                    <td className="py-2 px-3 text-center">
-                                                        {g.pog && <span className="text-yellow-500 text-base">⭐</span>}
-                                                    </td>
-                                                </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            ) : (
+                            {data2026 && data2026.totalGames > 0 ? (() => {
+                                const sorted = [...data2026.games].sort((a, b) => {
+                                    const dir = matchSort.dir === 'desc' ? -1 : 1;
+                                    if (matchSort.key === 'kda') {
+                                        const kdaA = a.d > 0 ? (a.k + a.a) / a.d : (a.k + a.a);
+                                        const kdaB = b.d > 0 ? (b.k + b.a) / b.d : (b.k + b.a);
+                                        return (kdaA - kdaB) * dir;
+                                    }
+                                    if (matchSort.key === 'gold') return ((a.gold || 0) - (b.gold || 0)) * dir;
+                                    if (matchSort.key === 'pogScore') return ((a.pogScore || 0) - (b.pogScore || 0)) * dir;
+                                    return 0;
+                                });
+
+                                const leagueGames = sorted.filter(g => !g.isFST);
+                                const fstGames    = sorted.filter(g => g.isFST);
+
+                                const TableHead = () => (
+                                    <thead className="bg-gray-50 border-b">
+                                        <tr>
+                                            <th className="py-2.5 px-3 text-left font-black text-gray-400 uppercase tracking-widest">날짜</th>
+                                            <th className="py-2.5 px-3 text-left font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell">대회</th>
+                                            <th className="py-2.5 px-3 text-left font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell">유형</th>
+                                            <th className="py-2.5 px-3 text-left font-black text-gray-400 uppercase tracking-widest">챔피언</th>
+                                            <th className="py-2.5 px-3 text-center font-black text-gray-400 uppercase tracking-widest">결과</th>
+                                            {[['kda','KDA'],['gold','골드'],['pogScore','점수']].map(([key, label]) => (
+                                                <th key={key}
+                                                    className="py-2.5 px-3 text-center font-black uppercase tracking-widest cursor-pointer select-none whitespace-nowrap hidden sm:table-cell"
+                                                    style={{ color: matchSort.key === key ? '#3b82f6' : '#9ca3af' }}
+                                                    onClick={() => setMatchSort(s => s.key === key ? { key, dir: s.dir === 'desc' ? 'asc' : 'desc' } : { key, dir: 'desc' })}
+                                                >
+                                                    {label} {matchSort.key === key ? (matchSort.dir === 'desc' ? '↓' : '↑') : '↕'}
+                                                </th>
+                                            ))}
+                                            <th className="py-2.5 px-3 text-left font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell">상대팀</th>
+                                            <th className="py-2.5 px-3 text-center font-black text-gray-400 uppercase tracking-widest">⭐</th>
+                                        </tr>
+                                    </thead>
+                                );
+
+                                const TableRows = ({ games }) => games.map((g, i) => {
+                                    const kdaVal = g.d > 0 ? ((g.k + g.a) / g.d).toFixed(2) : 'Perfect';
+                                    const scoreColor = g.pogScore >= 90 ? '#f59e0b' : g.pogScore >= 80 ? '#6366f1' : g.pogScore >= 70 ? '#3b82f6' : '#9ca3af';
+                                    const compStyle = COMPETITION_STYLE[g.competition] || { bg: '#f3f4f6', color: '#6b7280' };
+                                    const compName  = COMPETITION_NAMES[g.competition] || g.competition;
+                                    const { text: typeText, bg: typeBg, color: typeColor } = matchTypeLabel(g.matchType, g.round, g.roundName);
+                                    return (
+                                        <tr key={i} className={`transition hover:bg-gray-50 ${g.result === 'WIN' ? 'border-l-2 border-l-green-400' : 'border-l-2 border-l-red-300'}`}>
+                                            <td className="py-2 px-3 text-gray-500 whitespace-nowrap">{g.date}</td>
+                                            <td className="py-2 px-3 hidden sm:table-cell">
+                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap" style={{ backgroundColor: compStyle.bg, color: compStyle.color }}>
+                                                    {compName}
+                                                </span>
+                                            </td>
+                                            <td className="py-2 px-3 hidden sm:table-cell">
+                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap" style={{ backgroundColor: typeBg, color: typeColor }}>{typeText}</span>
+                                            </td>
+                                            <td className="py-2 px-3 font-bold text-gray-800 whitespace-nowrap">{toKoreanChamp(g.champ)}</td>
+                                            <td className="py-2 px-3 text-center">
+                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${g.result === 'WIN' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                                                    {g.result}
+                                                </span>
+                                            </td>
+                                            <td className="py-2 px-3 text-center font-mono font-bold text-gray-700 hidden sm:table-cell whitespace-nowrap">
+                                                {g.k}/<span className="text-red-500">{g.d}</span>/{g.a}
+                                                <span className="ml-1 text-[10px] text-indigo-500">({kdaVal})</span>
+                                            </td>
+                                            <td className="py-2 px-3 text-center text-gray-500 hidden sm:table-cell">
+                                                {g.gold > 0 ? `${(g.gold / 1000).toFixed(1)}k` : '-'}
+                                            </td>
+                                            <td className="py-2 px-3 text-center hidden sm:table-cell">
+                                                <span className="font-black text-xs" style={{ color: scoreColor }}>{g.pogScore}</span>
+                                            </td>
+                                            <td className="py-2 px-3 text-gray-600 hidden sm:table-cell whitespace-nowrap">{g.opponent}</td>
+                                            <td className="py-2 px-3 text-center">
+                                                {g.pog && <span className="text-yellow-500 text-base">⭐</span>}
+                                            </td>
+                                        </tr>
+                                    );
+                                });
+
+                                return (
+                                    <div className="flex flex-col gap-5">
+                                        {/* League games */}
+                                        {leagueGames.length > 0 && (
+                                            <div>
+                                                <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2 px-1">리그 경기</div>
+                                                <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                                                    <table className="w-full text-xs">
+                                                        <TableHead />
+                                                        <tbody className="divide-y divide-gray-50">
+                                                            <TableRows games={leagueGames} />
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* FST games */}
+                                        {fstGames.length > 0 && (
+                                            <div>
+                                                <div className="flex items-center gap-2 mb-2 px-1">
+                                                    <div className="text-xs font-black text-gray-400 uppercase tracking-widest">🌍 FST 월드 토너먼트</div>
+                                                    <div className="flex-1 h-px bg-gradient-to-r from-blue-200 to-purple-200" />
+                                                </div>
+                                                <div className="bg-white rounded-xl border-2 border-slate-700 shadow-sm overflow-hidden">
+                                                    <table className="w-full text-xs">
+                                                        <TableHead />
+                                                        <tbody className="divide-y divide-gray-100">
+                                                            <TableRows games={fstGames} />
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })() : (
                                 <div className="bg-white rounded-xl border p-12 text-center text-gray-400 font-bold shadow-sm">
                                     <div className="text-4xl mb-3">🎮</div>
                                     2026 시즌 경기 데이터가 없습니다.
