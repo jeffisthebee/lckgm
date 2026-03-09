@@ -2,10 +2,108 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { SYNERGIES } from '../data/synergies';
 
+const getSynergyStrength = (multiplier) => {
+    if (multiplier >= 1.10) return { label: 'S', bg: 'bg-purple-100', text: 'text-purple-700', bar: 'bg-purple-500' };
+    if (multiplier >= 1.07) return { label: 'A', bg: 'bg-blue-100', text: 'text-blue-700', bar: 'bg-blue-500' };
+    if (multiplier >= 1.05) return { label: 'B', bg: 'bg-green-100', text: 'text-green-700', bar: 'bg-green-500' };
+    return { label: 'C', bg: 'bg-gray-100', text: 'text-gray-500', bar: 'bg-gray-400' };
+};
+
+// ─── Synergies View ────────────────────────────────────────────────────────────
+const SynergiesView = () => {
+    const [filter, setFilter] = useState('ALL');
+    const [search, setSearch] = useState('');
+
+    const FILTERS = ['ALL', 'S', 'A', 'B', 'C'];
+
+    const filtered = useMemo(() => {
+        return SYNERGIES
+            .filter(syn => {
+                const { label } = getSynergyStrength(syn.multiplier);
+                const matchGrade = filter === 'ALL' || label === filter;
+                const matchSearch = search === '' || syn.champions.some(c =>
+                    c.toLowerCase().includes(search.toLowerCase())
+                );
+                return matchGrade && matchSearch;
+            })
+            .sort((a, b) => b.multiplier - a.multiplier);
+    }, [filter, search]);
+
+    return (
+        <div className="flex flex-col gap-4">
+            {/* Controls */}
+            <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+                <div className="flex bg-gray-100 p-1 rounded-lg">
+                    {FILTERS.map(f => (
+                        <button
+                            key={f}
+                            onClick={() => setFilter(f)}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold whitespace-nowrap transition ${filter === f ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                        >
+                            {f === 'ALL' ? '전체' : `${f} 등급`}
+                        </button>
+                    ))}
+                </div>
+                <input
+                    type="text"
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    placeholder="챔피언 검색..."
+                    className="border rounded-lg px-3 py-1.5 text-sm w-full sm:w-48 outline-none focus:ring-2 focus:ring-purple-300"
+                />
+                <span className="text-xs text-gray-400 sm:ml-auto">{filtered.length}개 시너지</span>
+            </div>
+
+            {/* Synergy Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {filtered.map((syn, i) => {
+                    const { label, bg, text, bar } = getSynergyStrength(syn.multiplier);
+                    const pct = Math.round((syn.multiplier - 1) * 1000) / 10;
+                    const isTeamComp = syn.champions.length >= 3;
+
+                    return (
+                        <div key={i} className={`border rounded-xl p-3 hover:border-purple-200 transition bg-white ${isTeamComp ? 'ring-1 ring-purple-100' : ''}`}>
+                            <div className="flex items-start gap-2">
+                                <span className={`text-[11px] font-black px-2 py-0.5 rounded flex-shrink-0 mt-0.5 ${bg} ${text}`}>
+                                    {label}
+                                </span>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex flex-wrap gap-x-1 gap-y-0.5">
+                                        {syn.champions.map((name, ci) => (
+                                            <span key={ci} className="flex items-center gap-0.5">
+                                                {ci > 0 && <span className="text-gray-300 text-xs">+</span>}
+                                                <span className="text-xs font-semibold text-gray-800">{name}</span>
+                                            </span>
+                                        ))}
+                                    </div>
+                                    {isTeamComp && (
+                                        <span className="text-[10px] font-bold text-purple-400 uppercase tracking-wide">팀 조합</span>
+                                    )}
+                                    <div className="mt-2 flex items-center gap-2">
+                                        <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                            <div
+                                                className={`h-full rounded-full ${bar}`}
+                                                style={{ width: `${Math.min(pct * 7, 100)}%` }}
+                                            />
+                                        </div>
+                                        <span className={`text-[11px] font-bold ${text}`}>+{pct}%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+};
+
+// ─── Main MetaTab ──────────────────────────────────────────────────────────────
 const MetaTab = ({ league, championList, metaRole, setMetaRole }) => {
     const currentList = league.currentChampionList || championList;
     const currentVersion = league.metaVersion || '16.01';
 
+    const [activeView, setActiveView] = useState('meta'); // 'meta' | 'synergies'
     const [previousData, setPreviousData] = useState(null);
 
     useEffect(() => {
@@ -17,22 +115,14 @@ const MetaTab = ({ league, championList, metaRole, setMetaRole }) => {
             const parsedCurrent = storedCurrent ? JSON.parse(storedCurrent) : null;
 
             if (!parsedCurrent) {
-                localStorage.setItem(STORAGE_KEY_CURRENT, JSON.stringify({
-                    version: currentVersion,
-                    list: currentList
-                }));
+                localStorage.setItem(STORAGE_KEY_CURRENT, JSON.stringify({ version: currentVersion, list: currentList }));
             } else if (parsedCurrent.version !== currentVersion) {
                 localStorage.setItem(STORAGE_KEY_PREV, JSON.stringify(parsedCurrent));
-                localStorage.setItem(STORAGE_KEY_CURRENT, JSON.stringify({
-                    version: currentVersion,
-                    list: currentList
-                }));
+                localStorage.setItem(STORAGE_KEY_CURRENT, JSON.stringify({ version: currentVersion, list: currentList }));
                 setPreviousData(parsedCurrent.list);
             } else {
                 const storedPrev = localStorage.getItem(STORAGE_KEY_PREV);
-                if (storedPrev) {
-                    setPreviousData(JSON.parse(storedPrev).list);
-                }
+                if (storedPrev) setPreviousData(JSON.parse(storedPrev).list);
             }
         } catch (error) {
             console.error("Failed to sync meta history:", error);
@@ -41,15 +131,11 @@ const MetaTab = ({ league, championList, metaRole, setMetaRole }) => {
 
     const getRankChange = (champId, currentRankIdx) => {
         if (!previousData) return { diff: null, isNew: false };
-
         const prevRoleList = previousData
             .filter(c => c.role === metaRole)
             .sort((a, b) => a.tier - b.tier);
-
         const prevIdx = prevRoleList.findIndex(c => c.id === champId);
-
         if (prevIdx === -1) return { diff: null, isNew: true };
-
         return { diff: prevIdx - currentRankIdx, isNew: false };
     };
 
@@ -59,39 +145,34 @@ const MetaTab = ({ league, championList, metaRole, setMetaRole }) => {
             .sort((a, b) => a.tier - b.tier);
     }, [currentList, metaRole]);
 
-    // Compute relevant synergies for the current role's champion names
-    const relevantSynergies = useMemo(() => {
-        const roleChampNames = new Set(sortedCurrentList.map(c => c.name));
-
-        return SYNERGIES
-            .filter(syn => syn.champions.some(name => roleChampNames.has(name)))
-            .map(syn => {
-                const inMeta = syn.champions.filter(name => roleChampNames.has(name));
-                const external = syn.champions.filter(name => !roleChampNames.has(name));
-                return { ...syn, inMeta, external };
-            })
-            // Prioritise synergies where more role champions are involved, then by multiplier
-            .sort((a, b) => b.inMeta.length - a.inMeta.length || b.multiplier - a.multiplier)
-            .slice(0, 20);
-    }, [sortedCurrentList]);
-
-    // Multiplier → strength label + colour
-    const getSynergyStrength = (multiplier) => {
-        if (multiplier >= 1.10) return { label: 'S', bg: 'bg-purple-100', text: 'text-purple-700', bar: 'bg-purple-500' };
-        if (multiplier >= 1.07) return { label: 'A', bg: 'bg-blue-100', text: 'text-blue-700', bar: 'bg-blue-500' };
-        if (multiplier >= 1.05) return { label: 'B', bg: 'bg-green-100', text: 'text-green-700', bar: 'bg-green-500' };
-        return { label: 'C', bg: 'bg-gray-100', text: 'text-gray-500', bar: 'bg-gray-400' };
-    };
-
     return (
         <div className="bg-white rounded-lg border shadow-sm p-4 sm:p-6 lg:p-8 min-h-[50vh] flex flex-col">
-            {/* Header Section */}
+            {/* Header */}
             <div className="flex flex-col sm:flex-row justify-between items-center mb-4 sm:mb-6 gap-4">
                 <h2 className="text-xl sm:text-2xl font-black text-gray-900 flex items-center gap-2">
                     <span className="text-purple-600">📈</span> {currentVersion} 패치 메타
                 </h2>
-                {/* Role Selector */}
-                <div className="flex bg-gray-100 p-1 rounded-lg w-full sm:w-auto overflow-x-auto no-scrollbar justify-center sm:justify-start">
+
+                {/* View Toggle */}
+                <div className="flex bg-gray-100 p-1 rounded-lg">
+                    <button
+                        onClick={() => setActiveView('meta')}
+                        className={`px-4 py-1.5 rounded-md text-sm font-bold whitespace-nowrap transition ${activeView === 'meta' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                        📊 메타 랭킹
+                    </button>
+                    <button
+                        onClick={() => setActiveView('synergies')}
+                        className={`px-4 py-1.5 rounded-md text-sm font-bold whitespace-nowrap transition ${activeView === 'synergies' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                        ⚡ 시너지
+                    </button>
+                </div>
+            </div>
+
+            {/* Role Selector — meta view only */}
+            {activeView === 'meta' && (
+                <div className="flex bg-gray-100 p-1 rounded-lg w-full sm:w-auto overflow-x-auto no-scrollbar mb-4 sm:mb-6 self-start">
                     {['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(role => (
                         <button
                             key={role}
@@ -102,13 +183,13 @@ const MetaTab = ({ league, championList, metaRole, setMetaRole }) => {
                         </button>
                     ))}
                 </div>
-            </div>
+            )}
 
-            {/* Main Content: Champion List + Synergies Sidebar */}
-            <div className="flex flex-col lg:flex-row gap-6">
-
-                {/* Champion List */}
-                <div className="flex-1 grid grid-cols-1 gap-3 sm:gap-4 content-start">
+            {/* Views */}
+            {activeView === 'synergies' ? (
+                <SynergiesView />
+            ) : (
+                <div className="grid grid-cols-1 gap-3 sm:gap-4">
                     {sortedCurrentList.map((champ, idx) => {
                         const { diff, isNew } = getRankChange(champ.id, idx);
 
@@ -133,7 +214,6 @@ const MetaTab = ({ league, championList, metaRole, setMetaRole }) => {
                                             )}
                                         </div>
                                     </div>
-
                                     <div>
                                         <div className="font-bold text-base sm:text-lg text-gray-800">{champ.name}</div>
                                         <span className={`text-[10px] sm:text-xs font-bold px-1.5 py-0.5 rounded ${champ.tier === 1 ? 'bg-purple-100 text-purple-600' : champ.tier === 2 ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
@@ -165,62 +245,7 @@ const MetaTab = ({ league, championList, metaRole, setMetaRole }) => {
                         );
                     })}
                 </div>
-
-                {/* Synergies Sidebar */}
-                <div className="lg:w-72 xl:w-80 flex-shrink-0">
-                    <div className="sticky top-4 border rounded-xl p-4 bg-gray-50">
-                        <h3 className="text-sm font-black text-gray-700 uppercase tracking-wide mb-3 flex items-center gap-1.5">
-                            <span>⚡</span> {metaRole} 시너지
-                        </h3>
-
-                        {relevantSynergies.length === 0 ? (
-                            <p className="text-xs text-gray-400 text-center py-6">시너지 데이터 없음</p>
-                        ) : (
-                            <div className="flex flex-col gap-2">
-                                {relevantSynergies.map((syn, i) => {
-                                    const { label, bg, text, bar } = getSynergyStrength(syn.multiplier);
-                                    const pct = Math.round((syn.multiplier - 1) * 1000) / 10; // e.g. 1.07 → 7.0
-
-                                    return (
-                                        <div key={i} className="bg-white border rounded-lg p-2.5 hover:border-purple-200 transition">
-                                            {/* Grade + Champions */}
-                                            <div className="flex items-start gap-2">
-                                                <span className={`text-[10px] font-black px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5 ${bg} ${text}`}>
-                                                    {label}
-                                                </span>
-                                                <div className="flex-1 min-w-0">
-                                                    {/* Highlight in-meta champions, dim external */}
-                                                    <div className="text-xs font-semibold text-gray-800 leading-snug">
-                                                        {syn.champions.map((name, ci) => (
-                                                            <span key={ci}>
-                                                                {ci > 0 && <span className="text-gray-300 mx-0.5">+</span>}
-                                                                <span className={syn.inMeta.includes(name) ? 'text-purple-700' : 'text-gray-400'}>
-                                                                    {name}
-                                                                </span>
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                    {/* Strength bar */}
-                                                    <div className="mt-1.5 flex items-center gap-1.5">
-                                                        <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
-                                                            <div
-                                                                className={`h-full rounded-full ${bar}`}
-                                                                style={{ width: `${Math.min(pct * 7, 100)}%` }}
-                                                            />
-                                                        </div>
-                                                        <span className={`text-[10px] font-bold ${text}`}>+{pct}%</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-            </div>
+            )}
         </div>
     );
 };
