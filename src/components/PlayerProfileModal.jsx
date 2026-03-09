@@ -430,6 +430,10 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
                             {data2026 && data2026.totalGames > 0 ? (() => {
                                 const sorted = [...data2026.games].sort((a, b) => {
                                     const dir = matchSort.dir === 'desc' ? -1 : 1;
+                                    if (matchSort.key === 'date') {
+                                        const parseD = (d) => { if (!d) return 0; const [m, day] = d.split(' ')[0].split('.').map(Number); return (m || 0) * 100 + (day || 0); };
+                                        return (parseD(a.date) - parseD(b.date)) * dir;
+                                    }
                                     if (matchSort.key === 'kda') {
                                         const kdaA = a.d > 0 ? (a.k + a.a) / a.d : (a.k + a.a);
                                         const kdaB = b.d > 0 ? (b.k + b.a) / b.d : (b.k + b.a);
@@ -446,7 +450,12 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
                                 const TableHead = () => (
                                     <thead className="bg-gray-50 border-b">
                                         <tr>
-                                            <th className="py-2.5 px-3 text-left font-black text-gray-400 uppercase tracking-widest">날짜</th>
+                                            <th className="py-2.5 px-3 text-left font-black uppercase tracking-widest cursor-pointer select-none whitespace-nowrap"
+                                                style={{ color: matchSort.key === 'date' ? '#3b82f6' : '#9ca3af' }}
+                                                onClick={() => setMatchSort(s => s.key === 'date' ? { key: 'date', dir: s.dir === 'desc' ? 'asc' : 'desc' } : { key: 'date', dir: 'desc' })}
+                                            >
+                                                날짜 {matchSort.key === 'date' ? (matchSort.dir === 'desc' ? '↓' : '↑') : '↕'}
+                                            </th>
                                             <th className="py-2.5 px-3 text-left font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell">대회</th>
                                             <th className="py-2.5 px-3 text-left font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell">유형</th>
                                             <th className="py-2.5 px-3 text-left font-black text-gray-400 uppercase tracking-widest">챔피언</th>
