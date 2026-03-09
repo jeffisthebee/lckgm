@@ -105,12 +105,14 @@ const HexChart = ({ stats }) => {
 // ─── extract 2026 match history for a player from league data ─
 const extract2026Data = (playerName, league) => {
     const allMatches = [
-        ...(league?.matches || []),
-        ...(league?.fst?.matches || []),
+        ...(league?.matches || []).map(m => ({ ...m, _competition: 'LCK' })),
+        ...(league?.fst?.matches || []).map(m => ({ ...m, _competition: 'FST' })),
     ];
     // Also include foreign matches
     if (league?.foreignMatches) {
-        Object.values(league.foreignMatches).forEach(ms => allMatches.push(...(ms || [])));
+        Object.entries(league.foreignMatches).forEach(([key, ms]) =>
+            allMatches.push(...(ms || []).map(m => ({ ...m, _competition: key })))
+        );
     }
 
     const games = [];
@@ -181,6 +183,7 @@ const extract2026Data = (playerName, league) => {
                 round: match.round || null,
                 roundName: match.label || match.roundName || null,
                 setNum: set.setNumber || '',
+                competition: match._competition || 'LCK',
             });
         }
     }
@@ -410,6 +413,7 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
                                             <tr>
                                                 <th className="py-2.5 px-3 text-left font-black text-gray-400 uppercase tracking-widest">날짜</th>
                                                 <th className="py-2.5 px-3 text-left font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell">유형</th>
+                                                <th className="py-2.5 px-3 text-left font-black text-gray-400 uppercase tracking-widest hidden sm:table-cell">대회</th>
                                                 <th className="py-2.5 px-3 text-left font-black text-gray-400 uppercase tracking-widest">챔피언</th>
                                                 <th className="py-2.5 px-3 text-center font-black text-gray-400 uppercase tracking-widest">결과</th>
                                                 {/* Sortable headers */}
@@ -445,6 +449,11 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
                                                     <td className="py-2 px-3 text-gray-500 whitespace-nowrap">{g.date}</td>
                                                     <td className="py-2 px-3 hidden sm:table-cell">
                                                         {(() => { const { text, bg, color } = matchTypeLabel(g.matchType, g.round, g.roundName); return <span className="px-2 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap" style={{ backgroundColor: bg, color }}>{text}</span>; })()}
+                                                    </td>
+                                                    <td className="py-2 px-3 hidden sm:table-cell">
+                                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black whitespace-nowrap bg-gray-100 text-gray-600">
+                                                            {g.competition}
+                                                        </span>
                                                     </td>
                                                     <td className="py-2 px-3 font-bold text-gray-800 whitespace-nowrap">{toKoreanChamp(g.champ)}</td>
                                                     <td className="py-2 px-3 text-center">
