@@ -47,26 +47,58 @@ const Empty = ({ msg = '기록이 없습니다.' }) => (
 );
 
 function HoverBadge({ icon, label, count, tooltip }) {
-    const [pos, setPos] = useState(null);
+    const [rect, setRect] = useState(null);
     const ref = React.useRef(null);
 
     const handleEnter = () => {
-        if (ref.current) {
-            const r = ref.current.getBoundingClientRect();
-            setPos({ x: r.left, y: r.top });
-        }
+        if (ref.current) setRect(ref.current.getBoundingClientRect());
     };
+
+    // Parse each tooltip line into { year, competition, role } columns
+    // Expected format from CoachTitleList: "2023 · T1 (감독)" or "2023 · T1"
+    const parsedRows = (tooltip || []).map(t => {
+        const match = t.match(/^(\d{4})\s*·\s*(.+?)(?:\s*\((.+?)\))?$/);
+        if (match) return { year: match[1], team: match[2].trim(), role: match[3] || null };
+        return { year: t, team: null, role: null };
+    });
+
+    let tooltipStyle = {};
+    if (rect) {
+        const tooltipW = 220;
+        const tooltipH = parsedRows.length * 26 + 16;
+        const gap = 8;
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceAbove = rect.top;
+
+        const top = spaceBelow >= tooltipH + gap
+            ? rect.bottom + gap
+            : spaceAbove >= tooltipH + gap
+                ? rect.top - tooltipH - gap
+                : rect.bottom + gap;
+
+        const rawLeft = rect.left + rect.width / 2 - tooltipW / 2;
+        const left = Math.max(8, Math.min(rawLeft, window.innerWidth - tooltipW - 8));
+
+        tooltipStyle = { position: 'fixed', top, left, width: tooltipW };
+    }
 
     return (
         <div ref={ref} className="relative flex flex-col items-center gap-1 bg-gray-50 rounded-xl p-3 border min-w-[80px] cursor-default"
-            onMouseEnter={handleEnter} onMouseLeave={() => setPos(null)}>
+            onMouseEnter={handleEnter} onMouseLeave={() => setRect(null)}>
             <span className="text-2xl">{icon}</span>
             {count > 1 && <span className="text-2xl font-black text-blue-600">{'×'}{count}</span>}
             <span className="text-[10px] font-bold text-gray-500 text-center leading-tight">{label}</span>
-            {pos && tooltip?.length > 0 && (
+            {rect && tooltip?.length > 0 && (
                 <div className="pointer-events-none z-[9999] bg-gray-900 text-white rounded-lg px-3 py-2 shadow-xl"
-                    style={{ position: 'fixed', left: Math.min(pos.x, window.innerWidth - 200), top: pos.y + 90, fontSize: '10px', lineHeight: '1.6' }}>
-                    {tooltip.map((t, i) => <div key={i} className="border-b border-white/10 last:border-0 whitespace-nowrap font-bold">{t}</div>)}
+                    style={{ ...tooltipStyle, fontSize: '11px', lineHeight: '1.5' }}>
+                    {parsedRows.map((row, i) => (
+                        <div key={i} className="flex items-center gap-2 border-b border-white/10 last:border-0 py-0.5">
+                            <span className="font-black text-yellow-300 w-9 shrink-0">{row.year}</span>
+                            {row.team && <span className="font-bold text-white flex-1 truncate">{row.team}</span>}
+                            {row.role && <span className="text-white/50 text-[10px] shrink-0">({row.role})</span>}
+                            {!row.team && <span className="font-bold text-white flex-1">{row.year}</span>}
+                        </div>
+                    ))}
                 </div>
             )}
         </div>
