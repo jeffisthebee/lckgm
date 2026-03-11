@@ -47,17 +47,26 @@ const Empty = ({ msg = '기록이 없습니다.' }) => (
 );
 
 function HoverBadge({ icon, label, count, tooltip }) {
-    const [hovered, setHovered] = useState(false);
+    const [pos, setPos] = useState(null);
+    const ref = React.useRef(null);
+
+    const handleEnter = () => {
+        if (ref.current) {
+            const r = ref.current.getBoundingClientRect();
+            setPos({ x: r.left, y: r.top });
+        }
+    };
+
     return (
-        <div className="relative flex flex-col items-center gap-1 bg-gray-50 rounded-xl p-3 border min-w-[80px] cursor-default"
-            onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
+        <div ref={ref} className="relative flex flex-col items-center gap-1 bg-gray-50 rounded-xl p-3 border min-w-[80px] cursor-default"
+            onMouseEnter={handleEnter} onMouseLeave={() => setPos(null)}>
             <span className="text-2xl">{icon}</span>
             {count > 1 && <span className="text-2xl font-black text-blue-600">{'×'}{count}</span>}
             <span className="text-[10px] font-bold text-gray-500 text-center leading-tight">{label}</span>
-            {hovered && tooltip?.length > 0 && (
-                <div className="absolute bottom-full mb-2 left-0 bg-gray-900 text-white text-[11px] font-bold rounded-lg px-3 py-2 z-50 shadow-xl pointer-events-none" style={{ width: "max-content" }}>
-                    {tooltip.map((t, i) => <div key={i} className="py-0.5 border-b border-white/10 last:border-0">{t}</div>)}
-                    <div className="absolute top-full left-4 border-4 border-transparent border-t-gray-900" />
+            {pos && tooltip?.length > 0 && (
+                <div className="pointer-events-none z-[9999] bg-gray-900 text-white text-[11px] font-bold rounded-lg px-3 py-2 shadow-xl"
+                    style={{ position: 'fixed', left: Math.min(pos.x, window.innerWidth - 220), top: pos.y - 8, transform: 'translateY(-100%)' }}>
+                    {tooltip.map((t, i) => <div key={i} className="py-0.5 border-b border-white/10 last:border-0 whitespace-nowrap">{t}</div>)}
                 </div>
             )}
         </div>
