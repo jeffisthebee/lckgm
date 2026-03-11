@@ -64,9 +64,9 @@ function HoverBadge({ icon, label, count, tooltip }) {
             {count > 1 && <span className="text-2xl font-black text-blue-600">{'×'}{count}</span>}
             <span className="text-[10px] font-bold text-gray-500 text-center leading-tight">{label}</span>
             {pos && tooltip?.length > 0 && (
-                <div className="pointer-events-none z-[9999] bg-gray-900 text-white text-[11px] font-bold rounded-lg px-3 py-2 shadow-xl"
-                    style={{ position: 'fixed', left: Math.min(pos.x, window.innerWidth - 220), top: pos.y - 8, transform: 'translateY(-100%)' }}>
-                    {tooltip.map((t, i) => <div key={i} className="py-0.5 border-b border-white/10 last:border-0 whitespace-nowrap">{t}</div>)}
+                <div className="pointer-events-none z-[9999] bg-gray-900 text-white rounded-lg px-3 py-2 shadow-xl"
+                    style={{ position: 'fixed', left: Math.min(pos.x, window.innerWidth - 200), top: pos.y + 90, fontSize: '10px', lineHeight: '1.6' }}>
+                    {tooltip.map((t, i) => <div key={i} className="border-b border-white/10 last:border-0 whitespace-nowrap font-bold">{t}</div>)}
                 </div>
             )}
         </div>
