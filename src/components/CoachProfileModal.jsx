@@ -10,6 +10,17 @@ const ROLE_LABELS = {
     '트레이너': { icon: '💪', color: '#c2410c' },
 };
 
+const getTitleIcon = (title = '') => {
+    const t = title.toLowerCase();
+    if (t.includes('worlds') || t.includes('월챔') || t.includes('world')) return '🌍';
+    if (t.includes('msi')) return '🌐';
+    if (t.includes('ewc')) return '⚡';
+    if (t.includes('asi')) return '🌏';
+    if (t.includes('lck')) return '🏆';
+    if (t.includes('rift') || t.includes('라이벌')) return '🤝';
+    return '🥇';
+};
+
 function TrophyBadge({ icon, label, count, color, years }) {
     const [hovered, setHovered] = useState(false);
     return (
@@ -31,6 +42,20 @@ function TrophyBadge({ icon, label, count, color, years }) {
     );
 }
 
+// Row for individual tournament titles (new-format coaches)
+function TitleRow({ icon, title, year, team }) {
+    return (
+        <div className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
+            <span className="text-xs font-black text-gray-400 w-10 shrink-0">{year}</span>
+            <span className="text-base">{icon}</span>
+            <span className="flex-1 text-sm font-bold text-gray-800">{title}</span>
+            {team && (
+                <span className="text-[11px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{team}</span>
+            )}
+        </div>
+    );
+}
+
 // ─── main modal ─────────────────────────────────────────────
 export default function CoachProfileModal({ coach, onClose }) {
     const [tab, setTab] = useState('overview');
@@ -42,6 +67,14 @@ export default function CoachProfileModal({ coach, onClose }) {
     const titles = coach.수상?.팀_타이틀 || {};
     const awards = coach.수상?.개인_수상 || [];
     const career = coach.코칭_경력 || [];
+
+    // New-format fields
+    const coachTitles = coach.수상?.코치_우승 || [];
+    const playerTitles = coach.수상?.선수_우승 || [];
+    const playerAwards = coach.수상?.선수_어워드 || [];
+
+    // Determine if this coach uses old-style summary counts or new-style individual lists
+    const useOldTitleFormat = coachTitles.length === 0 && (titles.worlds > 0 || titles.lck > 0 || titles.msi > 0);
 
     const TABS = [
         { id: 'overview',  label: '개요' },
@@ -73,6 +106,9 @@ export default function CoachProfileModal({ coach, onClose }) {
                     <div className="z-10 flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                             <h2 className="text-xl sm:text-3xl font-black text-gray-900 leading-tight">{coach.이름}</h2>
+                            {coach.풀네임 && (
+                                <span className="text-sm sm:text-base font-bold text-gray-400">({coach.풀네임})</span>
+                            )}
                             <span
                                 className="text-[10px] sm:text-xs font-black px-2 py-0.5 rounded-full text-white"
                                 style={{ backgroundColor: roleInfo.color }}
@@ -84,21 +120,25 @@ export default function CoachProfileModal({ coach, onClose }) {
                             {coach.팀}{coach.특성 ? ` · ${coach.특성}` : ''}
                         </div>
                         <div className="flex items-center gap-3 mt-2 flex-wrap text-xs text-gray-400">
-                            {coach.나이 && <span>{coach.나이}</span>}
+                            {coach.나이 && <span>{coach.나이}세{coach.생년월일 ? ` (${coach.생년월일})` : ''}</span>}
                             {coach.경력 && <span>경력 {coach.경력}</span>}
                         </div>
                     </div>
 
                     {/* Quick title count */}
                     <div className="z-10 hidden sm:flex flex-col items-end gap-1 shrink-0">
-                        {titles.worlds > 0 && (
-                            <div className="text-[10px] font-bold text-amber-600">🌍 월즈 ×{titles.worlds}</div>
-                        )}
-                        {titles.lck > 0 && (
-                            <div className="text-[10px] font-bold text-blue-600">🏆 LCK ×{titles.lck}</div>
-                        )}
-                        {titles.msi > 0 && (
-                            <div className="text-[10px] font-bold text-indigo-600">🌐 MSI ×{titles.msi}</div>
+                        {useOldTitleFormat ? (
+                            <>
+                                {titles.worlds > 0 && <div className="text-[10px] font-bold text-amber-600">🌍 월즈 ×{titles.worlds}</div>}
+                                {titles.lck > 0 && <div className="text-[10px] font-bold text-blue-600">🏆 LCK ×{titles.lck}</div>}
+                                {titles.msi > 0 && <div className="text-[10px] font-bold text-indigo-600">🌐 MSI ×{titles.msi}</div>}
+                            </>
+                        ) : (
+                            coachTitles.length > 0 && coachTitles.map((ct, i) => (
+                                <div key={i} className="text-[10px] font-bold text-blue-600">
+                                    {getTitleIcon(ct.title)} {ct.title} {ct.year}
+                                </div>
+                            ))
                         )}
                         <div className="text-[10px] text-gray-400 mt-1">계약 {coach.계약}</div>
                     </div>
@@ -142,7 +182,7 @@ export default function CoachProfileModal({ coach, onClose }) {
                                     {[
                                         ['팀', coach.팀],
                                         ['역할', `${roleInfo.icon} ${coach.역할}`],
-                                        ['나이', coach.나이 || '-'],
+                                        ['나이', coach.나이 ? `${coach.나이}세${coach.생년월일 ? ` (${coach.생년월일})` : ''}` : '-'],
                                         ['경력', coach.경력 || '-'],
                                         ['소속기간', coach['팀 소속기간'] || '-'],
                                         ['계약', coach.계약 || '-'],
@@ -181,21 +221,23 @@ export default function CoachProfileModal({ coach, onClose }) {
                                 )}
                             </div>
 
-                            {/* Title summary */}
-                            {(titles.worlds > 0 || titles.lck > 0 || titles.msi > 0) && (
+                            {/* Title summary — old-format coaches use TrophyBadge, new-format use TitleRow list */}
+                            {(useOldTitleFormat || coachTitles.length > 0) && (
                                 <div className="bg-white rounded-xl p-4 border shadow-sm sm:col-span-2">
                                     <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">주요 우승 기록</div>
-                                    <div className="flex gap-3 flex-wrap">
-                                        {titles.worlds > 0 && (
-                                            <TrophyBadge icon="🌍" label="월드 챔피언십" count={titles.worlds} color="#f59e0b" years={titles.worlds_years || []} />
-                                        )}
-                                        {titles.msi > 0 && (
-                                            <TrophyBadge icon="🌐" label="MSI" count={titles.msi} color="#6366f1" years={titles.msi_years || []} />
-                                        )}
-                                        {titles.lck > 0 && (
-                                            <TrophyBadge icon="🏆" label="LCK 우승" count={titles.lck} color="#3b82f6" years={titles.lck_years || []} />
-                                        )}
-                                    </div>
+                                    {useOldTitleFormat ? (
+                                        <div className="flex gap-3 flex-wrap">
+                                            {titles.worlds > 0 && <TrophyBadge icon="🌍" label="월드 챔피언십" count={titles.worlds} color="#f59e0b" years={titles.worlds_years || []} />}
+                                            {titles.msi > 0 && <TrophyBadge icon="🌐" label="MSI" count={titles.msi} color="#6366f1" years={titles.msi_years || []} />}
+                                            {titles.lck > 0 && <TrophyBadge icon="🏆" label="LCK 우승" count={titles.lck} color="#3b82f6" years={titles.lck_years || []} />}
+                                        </div>
+                                    ) : (
+                                        <div>
+                                            {coachTitles.map((ct, i) => (
+                                                <TitleRow key={i} icon={getTitleIcon(ct.title)} title={ct.title} year={ct.year} team={ct.team} />
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -205,34 +247,69 @@ export default function CoachProfileModal({ coach, onClose }) {
                     {tab === 'accolades' && (
                         <div className="space-y-4">
 
-                            {/* Team titles */}
+                            {/* Coaching / manager titles */}
                             <div className="bg-white rounded-xl p-4 border shadow-sm">
-                                <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">팀 우승 기록</div>
-                                {titles.worlds > 0 || titles.lck > 0 || titles.msi > 0 ? (
-                                    <div className="flex flex-wrap gap-3">
-                                        {titles.worlds > 0 && (
-                                            <TrophyBadge icon="🌍" label="월드 챔피언십" count={titles.worlds} color="#f59e0b" years={titles.worlds_years || []} />
-                                        )}
-                                        {titles.msi > 0 && (
-                                            <TrophyBadge icon="🌐" label="MSI" count={titles.msi} color="#6366f1" years={titles.msi_years || []} />
-                                        )}
-                                        {titles.lck > 0 && (
-                                            <TrophyBadge icon="🏆" label="LCK 우승" count={titles.lck} color="#3b82f6" years={titles.lck_years || []} />
-                                        )}
-                                    </div>
+                                <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">
+                                    {coach.역할 === '감독' ? '감독' : '코치'} 우승 기록
+                                </div>
+                                {useOldTitleFormat ? (
+                                    titles.worlds > 0 || titles.lck > 0 || titles.msi > 0 ? (
+                                        <div className="flex flex-wrap gap-3">
+                                            {titles.worlds > 0 && <TrophyBadge icon="🌍" label="월드 챔피언십" count={titles.worlds} color="#f59e0b" years={titles.worlds_years || []} />}
+                                            {titles.msi > 0 && <TrophyBadge icon="🌐" label="MSI" count={titles.msi} color="#6366f1" years={titles.msi_years || []} />}
+                                            {titles.lck > 0 && <TrophyBadge icon="🏆" label="LCK 우승" count={titles.lck} color="#3b82f6" years={titles.lck_years || []} />}
+                                        </div>
+                                    ) : (
+                                        <div className="text-sm text-gray-400 text-center py-4">우승 기록이 없습니다.</div>
+                                    )
                                 ) : (
-                                    <div className="text-sm text-gray-400 text-center py-4">우승 기록이 없습니다.</div>
+                                    coachTitles.length > 0 ? (
+                                        <div>
+                                            {coachTitles.map((ct, i) => (
+                                                <TitleRow key={i} icon={getTitleIcon(ct.title)} title={ct.title} year={ct.year} team={ct.team} />
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="text-sm text-gray-400 text-center py-4">우승 기록이 없습니다.</div>
+                                    )
                                 )}
                             </div>
 
-                            {/* Individual awards */}
+                            {/* Player career titles (new-format coaches only) */}
+                            {(playerTitles.length > 0 || playerAwards.length > 0) && (
+                                <>
+                                    {playerTitles.length > 0 && (
+                                        <div className="bg-white rounded-xl p-4 border shadow-sm">
+                                            <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">선수 시절 우승</div>
+                                            {playerTitles.map((pt, i) => (
+                                                <TitleRow key={i} icon={getTitleIcon(pt.title)} title={pt.title} year={pt.year} team={pt.team} />
+                                            ))}
+                                        </div>
+                                    )}
+                                    {playerAwards.length > 0 && (
+                                        <div className="bg-white rounded-xl p-4 border shadow-sm">
+                                            <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">선수 어워드</div>
+                                            {playerAwards.map((pa, i) => (
+                                                <div key={i} className="flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0">
+                                                    <span className="text-xs font-black text-gray-400 w-10 shrink-0">{pa.year}</span>
+                                                    <span className="text-yellow-500">🎖️</span>
+                                                    <span className="flex-1 text-sm font-bold text-gray-700">{pa.award}</span>
+                                                    {pa.team && <span className="text-[11px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{pa.team}</span>}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </>
+                            )}
+
+                            {/* Individual coaching awards */}
                             <div className="bg-white rounded-xl p-4 border shadow-sm">
                                 <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">개인 수상</div>
                                 {awards.length > 0 ? (
                                     <div className="space-y-2">
                                         {[...awards].reverse().map((aw, i) => (
                                             <div key={i} className="flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0">
-                                                <span className="text-xs font-black text-gray-400 w-12 shrink-0">{aw.year}</span>
+                                                <span className="text-xs font-black text-gray-400 w-10 shrink-0">{aw.year}</span>
                                                 <span className="text-yellow-500">🎖️</span>
                                                 <span className="text-sm font-bold text-gray-700">{aw.award}</span>
                                             </div>
