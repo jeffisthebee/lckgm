@@ -2,7 +2,6 @@
 import React, { useState } from 'react';
 import { TEAM_COLORS } from '../data/constants';
 
-// ─── helpers ────────────────────────────────────────────────
 const ROLE_LABELS = {
     '감독':   { icon: '🎯', color: '#1d4ed8' },
     '코치':   { icon: '📋', color: '#15803d' },
@@ -12,12 +11,16 @@ const ROLE_LABELS = {
 
 const getTitleIcon = (title = '') => {
     const t = title.toLowerCase();
-    if (t.includes('worlds') || t.includes('월챔') || t.includes('world')) return '🌍';
+    if (t.includes('worlds') || t.includes('월챔') || t.includes('월드 챔피언십') || t.includes('world')) return '🌍';
     if (t.includes('msi')) return '🌐';
     if (t.includes('ewc')) return '⚡';
     if (t.includes('asi')) return '🌏';
+    if (t.includes('fst')) return '🌍';
     if (t.includes('lck')) return '🏆';
     if (t.includes('rift') || t.includes('라이벌')) return '🤝';
+    if (t.includes('iem')) return '🥇';
+    if (t.includes('mlg') || t.includes('nlb') || t.includes('클럽')) return '🥇';
+    if (t.includes('아시안')) return '🎖️';
     return '🥇';
 };
 
@@ -42,7 +45,6 @@ function TrophyBadge({ icon, label, count, color, years }) {
     );
 }
 
-// Row for individual tournament titles (new-format coaches)
 function TitleRow({ icon, title, year, team }) {
     return (
         <div className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
@@ -56,7 +58,6 @@ function TitleRow({ icon, title, year, team }) {
     );
 }
 
-// ─── main modal ─────────────────────────────────────────────
 export default function CoachProfileModal({ coach, onClose }) {
     const [tab, setTab] = useState('overview');
 
@@ -64,22 +65,32 @@ export default function CoachProfileModal({ coach, onClose }) {
 
     const teamColor = TEAM_COLORS[coach.팀] || '#3b82f6';
     const roleInfo = ROLE_LABELS[coach.역할] || { icon: '👤', color: '#6b7280' };
+
+    // Support both old-format (팀_타이틀 object) and new-format (individual arrays)
     const titles = coach.수상?.팀_타이틀 || {};
-    const awards = coach.수상?.개인_수상 || [];
+    const coachTitles  = coach.수상?.코치_우승   || [];
+    const coachAwards  = coach.수상?.코치_어워드  || [];
+    const playerTitles = coach.수상?.선수_우승   || [];
+    const playerAwards = coach.수상?.선수_어워드  || [];
+    const legacyAwards = coach.수상?.개인_수상   || [];
+
+    const useOldFormat = coachTitles.length === 0 && (titles.worlds > 0 || titles.lck > 0 || titles.msi > 0);
+
     const career = coach.코칭_경력 || [];
-
-    // New-format fields
-    const coachTitles = coach.수상?.코치_우승 || [];
-    const playerTitles = coach.수상?.선수_우승 || [];
-    const playerAwards = coach.수상?.선수_어워드 || [];
-
-    // Determine if this coach uses old-style summary counts or new-style individual lists
-    const useOldTitleFormat = coachTitles.length === 0 && (titles.worlds > 0 || titles.lck > 0 || titles.msi > 0);
 
     const TABS = [
         { id: 'overview',  label: '개요' },
         { id: 'accolades', label: '수상경력' },
     ];
+
+    // Header quick-titles
+    const headerTitles = useOldFormat
+        ? [
+            titles.worlds > 0 && { icon: '🌍', label: `월즈 ×${titles.worlds}`, color: '#d97706' },
+            titles.lck    > 0 && { icon: '🏆', label: `LCK ×${titles.lck}`,    color: '#2563eb' },
+            titles.msi    > 0 && { icon: '🌐', label: `MSI ×${titles.msi}`,    color: '#7c3aed' },
+          ].filter(Boolean)
+        : coachTitles.slice(0, 3).map(ct => ({ icon: getTitleIcon(ct.title), label: `${ct.title} ${ct.year}`, color: '#2563eb' }));
 
     return (
         <div className="absolute inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm rounded-lg">
@@ -93,7 +104,8 @@ export default function CoachProfileModal({ coach, onClose }) {
                         borderBottom: `2px solid ${teamColor}30`
                     }}
                 >
-                    <div className="absolute inset-0 opacity-5" style={{ backgroundImage: `radial-gradient(circle at 80% 50%, ${teamColor}, transparent 60%)` }} />
+                    <div className="absolute inset-0 opacity-5"
+                        style={{ backgroundImage: `radial-gradient(circle at 80% 50%, ${teamColor}, transparent 60%)` }} />
 
                     {/* Avatar */}
                     <div
@@ -120,26 +132,20 @@ export default function CoachProfileModal({ coach, onClose }) {
                             {coach.팀}{coach.특성 ? ` · ${coach.특성}` : ''}
                         </div>
                         <div className="flex items-center gap-3 mt-2 flex-wrap text-xs text-gray-400">
-                            {coach.나이 && <span>{coach.나이}세{coach.생년월일 ? ` (${coach.생년월일})` : ''}</span>}
+                            {coach.나이 && (
+                                <span>{coach.나이}세{coach.생년월일 ? ` (${coach.생년월일})` : ''}</span>
+                            )}
                             {coach.경력 && <span>경력 {coach.경력}</span>}
                         </div>
                     </div>
 
-                    {/* Quick title count */}
+                    {/* Quick titles */}
                     <div className="z-10 hidden sm:flex flex-col items-end gap-1 shrink-0">
-                        {useOldTitleFormat ? (
-                            <>
-                                {titles.worlds > 0 && <div className="text-[10px] font-bold text-amber-600">🌍 월즈 ×{titles.worlds}</div>}
-                                {titles.lck > 0 && <div className="text-[10px] font-bold text-blue-600">🏆 LCK ×{titles.lck}</div>}
-                                {titles.msi > 0 && <div className="text-[10px] font-bold text-indigo-600">🌐 MSI ×{titles.msi}</div>}
-                            </>
-                        ) : (
-                            coachTitles.length > 0 && coachTitles.map((ct, i) => (
-                                <div key={i} className="text-[10px] font-bold text-blue-600">
-                                    {getTitleIcon(ct.title)} {ct.title} {ct.year}
-                                </div>
-                            ))
-                        )}
+                        {headerTitles.map((t, i) => (
+                            <div key={i} className="text-[10px] font-bold" style={{ color: t.color }}>
+                                {t.icon} {t.label}
+                            </div>
+                        ))}
                         <div className="text-[10px] text-gray-400 mt-1">계약 {coach.계약}</div>
                     </div>
 
@@ -180,12 +186,12 @@ export default function CoachProfileModal({ coach, onClose }) {
                                 <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">코치 정보</div>
                                 <div className="space-y-2 text-sm">
                                     {[
-                                        ['팀', coach.팀],
-                                        ['역할', `${roleInfo.icon} ${coach.역할}`],
-                                        ['나이', coach.나이 ? `${coach.나이}세${coach.생년월일 ? ` (${coach.생년월일})` : ''}` : '-'],
-                                        ['경력', coach.경력 || '-'],
+                                        ['팀',      coach.팀],
+                                        ['역할',    `${roleInfo.icon} ${coach.역할}`],
+                                        ['나이',    coach.나이 ? `${coach.나이}세${coach.생년월일 ? ` (${coach.생년월일})` : ''}` : '-'],
+                                        ['경력',    coach.경력 || '-'],
                                         ['소속기간', coach['팀 소속기간'] || '-'],
-                                        ['계약', coach.계약 || '-'],
+                                        ['계약',    coach.계약 || '-'],
                                     ].map(([label, val]) => (
                                         <div key={label} className="flex justify-between border-b border-gray-50 pb-1.5 last:border-0 last:pb-0">
                                             <span className="text-gray-400 font-medium">{label}</span>
@@ -195,41 +201,55 @@ export default function CoachProfileModal({ coach, onClose }) {
                                 </div>
                             </div>
 
-                            {/* Coaching career timeline */}
+                            {/* Career timeline */}
                             <div className="bg-white rounded-xl p-4 border shadow-sm">
                                 <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">코칭 경력</div>
                                 {career.length > 0 ? (
-                                    <div className="space-y-2">
-                                        {career.map((c, i) => (
-                                            <div key={i} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
-                                                <div
-                                                    className="w-2 h-2 rounded-full shrink-0"
-                                                    style={{ backgroundColor: i === career.length - 1 ? teamColor : '#d1d5db' }}
-                                                />
-                                                <div className="flex-1">
-                                                    <div className="font-bold text-gray-800 text-sm">{c.팀}</div>
-                                                    <div className="text-[10px] text-gray-400">{c.기간} · {c.리그}</div>
+                                    <div className="space-y-1">
+                                        {career.map((c, i) => {
+                                            const isCurrent = i === career.length - 1;
+                                            const entryRoleInfo = ROLE_LABELS[c.역할] || ROLE_LABELS['코치'];
+                                            return (
+                                                <div key={i} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
+                                                    <div
+                                                        className="w-2 h-2 rounded-full shrink-0"
+                                                        style={{ backgroundColor: isCurrent ? teamColor : '#d1d5db' }}
+                                                    />
+                                                    <div className="flex-1">
+                                                        <div className="font-bold text-gray-800 text-sm">{c.팀}</div>
+                                                        <div className="text-[10px] text-gray-400">{c.기간} · {c.리그}</div>
+                                                    </div>
+                                                    <div className="flex items-center gap-1">
+                                                        {c.역할 && (
+                                                            <span
+                                                                className="text-[9px] font-black px-1.5 py-0.5 rounded-full text-white"
+                                                                style={{ backgroundColor: entryRoleInfo.color }}
+                                                            >
+                                                                {entryRoleInfo.icon} {c.역할}
+                                                            </span>
+                                                        )}
+                                                        {isCurrent && (
+                                                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: teamColor }}>현재</span>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                                {i === career.length - 1 && (
-                                                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: teamColor }}>현재</span>
-                                                )}
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 ) : (
                                     <div className="text-sm text-gray-400 text-center py-6">경력 데이터가 없습니다.</div>
                                 )}
                             </div>
 
-                            {/* Title summary — old-format coaches use TrophyBadge, new-format use TitleRow list */}
-                            {(useOldTitleFormat || coachTitles.length > 0) && (
+                            {/* Title summary */}
+                            {(useOldFormat || coachTitles.length > 0) && (
                                 <div className="bg-white rounded-xl p-4 border shadow-sm sm:col-span-2">
                                     <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">주요 우승 기록</div>
-                                    {useOldTitleFormat ? (
+                                    {useOldFormat ? (
                                         <div className="flex gap-3 flex-wrap">
                                             {titles.worlds > 0 && <TrophyBadge icon="🌍" label="월드 챔피언십" count={titles.worlds} color="#f59e0b" years={titles.worlds_years || []} />}
-                                            {titles.msi > 0 && <TrophyBadge icon="🌐" label="MSI" count={titles.msi} color="#6366f1" years={titles.msi_years || []} />}
-                                            {titles.lck > 0 && <TrophyBadge icon="🏆" label="LCK 우승" count={titles.lck} color="#3b82f6" years={titles.lck_years || []} />}
+                                            {titles.msi    > 0 && <TrophyBadge icon="🌐" label="MSI"          count={titles.msi}    color="#6366f1" years={titles.msi_years    || []} />}
+                                            {titles.lck    > 0 && <TrophyBadge icon="🏆" label="LCK 우승"     count={titles.lck}    color="#3b82f6" years={titles.lck_years    || []} />}
                                         </div>
                                     ) : (
                                         <div>
@@ -247,17 +267,17 @@ export default function CoachProfileModal({ coach, onClose }) {
                     {tab === 'accolades' && (
                         <div className="space-y-4">
 
-                            {/* Coaching / manager titles */}
+                            {/* Coaching titles */}
                             <div className="bg-white rounded-xl p-4 border shadow-sm">
                                 <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">
                                     {coach.역할 === '감독' ? '감독' : '코치'} 우승 기록
                                 </div>
-                                {useOldTitleFormat ? (
+                                {useOldFormat ? (
                                     titles.worlds > 0 || titles.lck > 0 || titles.msi > 0 ? (
                                         <div className="flex flex-wrap gap-3">
                                             {titles.worlds > 0 && <TrophyBadge icon="🌍" label="월드 챔피언십" count={titles.worlds} color="#f59e0b" years={titles.worlds_years || []} />}
-                                            {titles.msi > 0 && <TrophyBadge icon="🌐" label="MSI" count={titles.msi} color="#6366f1" years={titles.msi_years || []} />}
-                                            {titles.lck > 0 && <TrophyBadge icon="🏆" label="LCK 우승" count={titles.lck} color="#3b82f6" years={titles.lck_years || []} />}
+                                            {titles.msi    > 0 && <TrophyBadge icon="🌐" label="MSI"          count={titles.msi}    color="#6366f1" years={titles.msi_years    || []} />}
+                                            {titles.lck    > 0 && <TrophyBadge icon="🏆" label="LCK 우승"     count={titles.lck}    color="#3b82f6" years={titles.lck_years    || []} />}
                                         </div>
                                     ) : (
                                         <div className="text-sm text-gray-400 text-center py-4">우승 기록이 없습니다.</div>
@@ -275,50 +295,50 @@ export default function CoachProfileModal({ coach, onClose }) {
                                 )}
                             </div>
 
-                            {/* Player career titles (new-format coaches only) */}
-                            {(playerTitles.length > 0 || playerAwards.length > 0) && (
-                                <>
-                                    {playerTitles.length > 0 && (
-                                        <div className="bg-white rounded-xl p-4 border shadow-sm">
-                                            <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">선수 시절 우승</div>
-                                            {playerTitles.map((pt, i) => (
-                                                <TitleRow key={i} icon={getTitleIcon(pt.title)} title={pt.title} year={pt.year} team={pt.team} />
-                                            ))}
-                                        </div>
-                                    )}
-                                    {playerAwards.length > 0 && (
-                                        <div className="bg-white rounded-xl p-4 border shadow-sm">
-                                            <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">선수 어워드</div>
-                                            {playerAwards.map((pa, i) => (
-                                                <div key={i} className="flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0">
-                                                    <span className="text-xs font-black text-gray-400 w-10 shrink-0">{pa.year}</span>
-                                                    <span className="text-yellow-500">🎖️</span>
-                                                    <span className="flex-1 text-sm font-bold text-gray-700">{pa.award}</span>
-                                                    {pa.team && <span className="text-[11px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{pa.team}</span>}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </>
-                            )}
-
-                            {/* Individual coaching awards */}
-                            <div className="bg-white rounded-xl p-4 border shadow-sm">
-                                <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">개인 수상</div>
-                                {awards.length > 0 ? (
-                                    <div className="space-y-2">
-                                        {[...awards].reverse().map((aw, i) => (
+                            {/* Coaching awards */}
+                            {(coachAwards.length > 0 || legacyAwards.length > 0) && (
+                                <div className="bg-white rounded-xl p-4 border shadow-sm">
+                                    <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">
+                                        {coach.역할 === '감독' ? '감독' : '코치'} 개인 수상
+                                    </div>
+                                    <div className="space-y-1">
+                                        {[...coachAwards, ...legacyAwards].map((aw, i) => (
                                             <div key={i} className="flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0">
                                                 <span className="text-xs font-black text-gray-400 w-10 shrink-0">{aw.year}</span>
                                                 <span className="text-yellow-500">🎖️</span>
-                                                <span className="text-sm font-bold text-gray-700">{aw.award}</span>
+                                                <span className="flex-1 text-sm font-bold text-gray-700">{aw.award}</span>
+                                                {aw.team && <span className="text-[11px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{aw.team}</span>}
                                             </div>
                                         ))}
                                     </div>
-                                ) : (
-                                    <div className="text-sm text-gray-400 text-center py-4">개인 수상 기록이 없습니다.</div>
-                                )}
-                            </div>
+                                </div>
+                            )}
+
+                            {/* Player titles */}
+                            {playerTitles.length > 0 && (
+                                <div className="bg-white rounded-xl p-4 border shadow-sm">
+                                    <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">선수 시절 우승</div>
+                                    {playerTitles.map((pt, i) => (
+                                        <TitleRow key={i} icon={getTitleIcon(pt.title)} title={pt.title} year={pt.year} team={pt.team} />
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Player awards */}
+                            {playerAwards.length > 0 && (
+                                <div className="bg-white rounded-xl p-4 border shadow-sm">
+                                    <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">선수 어워드</div>
+                                    {playerAwards.map((pa, i) => (
+                                        <div key={i} className="flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0">
+                                            <span className="text-xs font-black text-gray-400 w-10 shrink-0">{pa.year}</span>
+                                            <span className="text-yellow-500">🎖️</span>
+                                            <span className="flex-1 text-sm font-bold text-gray-700">{pa.award}</span>
+                                            {pa.team && <span className="text-[11px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{pa.team}</span>}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
                         </div>
                     )}
                 </div>
