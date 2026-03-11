@@ -145,13 +145,29 @@ export default function CoachProfileModal({ coach, onClose }) {
                 {groups.map((g, i) => {
                     const tooltipLines = g.entries.map(e => `${e.year}${e.team ? ' · ' + e.team : ''}${e.역할 ? ' (' + e.역할 + ')' : ''}`);
                     return (
-                        <HoverBadge
-                            key={i}
-                            icon={getTitleIcon(g.title)}
-                            label={g.title}
-                            count={g.entries.length}
-                            tooltip={tooltipLines}
-                        />
+                        <HoverBadge key={i} icon={getTitleIcon(g.title)} label={g.title} count={g.entries.length} tooltip={tooltipLines} />
+                    );
+                })}
+            </div>
+        );
+    };
+
+    const groupedPlayerTitles = playerTitles.reduce((acc, pt) => {
+        const key = pt.title;
+        if (!acc[key]) acc[key] = { title: pt.title, entries: [] };
+        acc[key].entries.push(pt);
+        return acc;
+    }, {});
+
+    const PlayerTitleList = () => {
+        if (playerTitles.length === 0) return <Empty />;
+        const groups = Object.values(groupedPlayerTitles);
+        return (
+            <div className="flex flex-wrap gap-3">
+                {groups.map((g, i) => {
+                    const tooltipLines = g.entries.map(e => `${e.year}${e.team ? ' · ' + e.team : ''}`);
+                    return (
+                        <HoverBadge key={i} icon={getTitleIcon(g.title)} label={g.title} count={g.entries.length} tooltip={tooltipLines} />
                     );
                 })}
             </div>
@@ -254,7 +270,7 @@ export default function CoachProfileModal({ coach, onClose }) {
                             )}
                             {playerTitles.length > 0 && (
                                 <Section title="선수 시절 우승">
-                                    {playerTitles.map((pt, i) => <AwardRow key={i} year={pt.year} icon={getTitleIcon(pt.title)} label={pt.title} team={pt.team} />)}
+                                    <PlayerTitleList />
                                 </Section>
                             )}
                             {playerAwards.length > 0 && (
