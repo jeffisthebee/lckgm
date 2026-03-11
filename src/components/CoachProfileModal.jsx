@@ -46,6 +46,24 @@ const Empty = ({ msg = '기록이 없습니다.' }) => (
     <div className="text-sm text-gray-400 text-center py-4">{msg}</div>
 );
 
+function HoverBadge({ icon, label, count, tooltip }) {
+    const [hovered, setHovered] = useState(false);
+    return (
+        <div className="relative flex flex-col items-center gap-1 bg-gray-50 rounded-xl p-3 border min-w-[80px] cursor-default"
+            onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
+            <span className="text-2xl">{icon}</span>
+            {count > 1 && <span className="text-2xl font-black text-blue-600">{'×'}{count}</span>}
+            <span className="text-[10px] font-bold text-gray-500 text-center leading-tight">{label}</span>
+            {hovered && tooltip?.length > 0 && (
+                <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[11px] font-bold rounded-lg px-3 py-2 z-50 shadow-xl pointer-events-none min-w-max">
+                    {tooltip.map((t, i) => <div key={i}>{t}</div>)}
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
+                </div>
+            )}
+        </div>
+    );
+}
+
 function TrophyBadge({ icon, label, count, color, years }) {
     const [hovered, setHovered] = useState(false);
     return (
@@ -86,9 +104,39 @@ export default function CoachProfileModal({ coach, onClose }) {
         </div>
     );
 
-    const CoachTitleList = () => coachTitles.length > 0
-        ? coachTitles.map((ct, i) => <AwardRow key={i} year={ct.year} icon={getTitleIcon(ct.title)} label={ct.title} team={ct.team} role={ct.역할} roleColor={ROLE_LABELS[ct.역할]?.color} />)
-        : <Empty />;
+    // Group coach titles by name for hoverable badge display (like PlayerProfileModal)
+    const groupedCoachTitles = coachTitles.reduce((acc, ct) => {
+        const key = ct.title;
+        if (!acc[key]) acc[key] = { title: ct.title, entries: [] };
+        acc[key].entries.push(ct);
+        return acc;
+    }, {});
+
+    const CoachTitleList = () => {
+        if (coachTitles.length === 0) return <Empty />;
+        const groups = Object.values(groupedCoachTitles);
+        // If all titles are unique, use row layout; if any are grouped, use badge layout
+        const hasGroups = groups.some(g => g.entries.length > 1);
+        if (hasGroups) {
+            return (
+                <div className="flex flex-wrap gap-3">
+                    {groups.map((g, i) => {
+                        const tooltipLines = g.entries.map(e => `${e.year}${e.team ? ' · ' + e.team : ''}${e.역할 ? ' (' + e.역할 + ')' : ''}`);
+                        return (
+                            <HoverBadge
+                                key={i}
+                                icon={getTitleIcon(g.title)}
+                                label={g.title}
+                                count={g.entries.length}
+                                tooltip={tooltipLines}
+                            />
+                        );
+                    })}
+                </div>
+            );
+        }
+        return <>{coachTitles.map((ct, i) => <AwardRow key={i} year={ct.year} icon={getTitleIcon(ct.title)} label={ct.title} team={ct.team} role={ct.역할} roleColor={ROLE_LABELS[ct.역할]?.color} />)}</>;
+    };
 
     return (
         <div className="absolute inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm rounded-lg">
