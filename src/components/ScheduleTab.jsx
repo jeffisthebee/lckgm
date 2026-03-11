@@ -125,7 +125,19 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
 
     const activeMatches = displayLeague === 'LCK' ? (league.matches || []) : (league.foreignMatches?.[displayLeague] || []);
     const pendingLCK = league.matches ? league.matches.filter(m => m.status === 'pending').sort(compareDatesObj) : [];
-    const currentPendingLCK = pendingLCK.length > 0 ? pendingLCK[0] : { date: '99.99 (완료)', time: '23:59' };
+    // LCK is only "truly done" once the playoff bracket has been generated AND every
+    // playoff match is finished (i.e. the Cup Finals is over).
+    // Without this guard, the moment LCK Play-in ends (no more pending matches) but
+    // before the playoff bracket is generated, pendingLCK is empty and the code
+    // mistakenly treats LCK as complete — mass-simming all foreign league games
+    // regardless of date.
+    const lckPlayoffMatches = league.matches?.filter(m => m.type === 'playoff') || [];
+    const lckTrulyDone = lckPlayoffMatches.length > 0 && lckPlayoffMatches.every(m => m.status === 'finished');
+    const currentPendingLCK = pendingLCK.length > 0
+        ? pendingLCK[0]
+        : lckTrulyDone
+            ? { date: '99.99 (완료)', time: '23:59' }
+            : { date: '12.31', time: '23:59' }; // Blocking sentinel: LCK between phases, not truly done yet
     
     const checkBadData = (matches, lg) => matches.some(m => {
         if (lg === 'CBLOL' && (m.type === 'regular' || m.type === 'super') && m.format !== 'BO1') return true;
