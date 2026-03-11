@@ -54,8 +54,7 @@ function HoverBadge({ icon, label, count, tooltip }) {
         if (ref.current) setRect(ref.current.getBoundingClientRect());
     };
 
-    // Parse each tooltip line into { year, competition, role } columns
-    // Expected format from CoachTitleList: "2023 · T1 (감독)" or "2023 · T1"
+    // Parse each tooltip line: "2023 · T1 (감독)" or "2023 · T1"
     const parsedRows = (tooltip || []).map(t => {
         const match = t.match(/^(\d{4})\s*·\s*(.+?)(?:\s*\((.+?)\))?$/);
         if (match) return { year: match[1], team: match[2].trim(), role: match[3] || null };
@@ -64,22 +63,45 @@ function HoverBadge({ icon, label, count, tooltip }) {
 
     let tooltipStyle = {};
     if (rect) {
-        const tooltipW = 220;
-        const tooltipH = parsedRows.length * 26 + 16;
-        const gap = 8;
-        const spaceBelow = window.innerHeight - rect.bottom;
-        const spaceAbove = rect.top;
+        const tooltipW = 230;
+        const rowH = 26;
+        const padding = 16;
+        const gap = 6;
+        const maxH = window.innerHeight - 24; // never taller than viewport
 
-        const top = spaceBelow >= tooltipH + gap
-            ? rect.bottom + gap
-            : spaceAbove >= tooltipH + gap
-                ? rect.top - tooltipH - gap
-                : rect.bottom + gap;
+        const naturalH = parsedRows.length * rowH + padding;
+        const tooltipH = Math.min(naturalH, maxH);
 
-        const rawLeft = rect.left + rect.width / 2 - tooltipW / 2;
+        const spaceBelow = window.innerHeight - rect.bottom - gap;
+        const spaceAbove = rect.top - gap;
+
+        let top, maxHeight;
+        if (spaceBelow >= tooltipH) {
+            // fits below
+            top = rect.bottom + gap;
+            maxHeight = spaceBelow;
+        } else if (spaceAbove >= tooltipH) {
+            // fits above
+            top = rect.top - tooltipH - gap;
+            maxHeight = spaceAbove;
+        } else {
+            // neither — open below and scroll
+            top = rect.bottom + gap;
+            maxHeight = spaceBelow;
+        }
+
+        // Anchor to badge left, clamp so it never overflows right or left
+        const rawLeft = rect.left;
         const left = Math.max(8, Math.min(rawLeft, window.innerWidth - tooltipW - 8));
 
-        tooltipStyle = { position: 'fixed', top, left, width: tooltipW };
+        tooltipStyle = {
+            position: 'fixed',
+            top,
+            left,
+            width: tooltipW,
+            maxHeight: Math.floor(maxHeight),
+            overflowY: naturalH > maxHeight ? 'auto' : 'visible',
+        };
     }
 
     return (
@@ -92,11 +114,12 @@ function HoverBadge({ icon, label, count, tooltip }) {
                 <div className="pointer-events-none z-[9999] bg-gray-900 text-white rounded-lg px-3 py-2 shadow-xl"
                     style={{ ...tooltipStyle, fontSize: '11px', lineHeight: '1.5' }}>
                     {parsedRows.map((row, i) => (
-                        <div key={i} className="flex items-center gap-2 border-b border-white/10 last:border-0 py-0.5">
-                            <span className="font-black text-yellow-300 w-9 shrink-0">{row.year}</span>
-                            {row.team && <span className="font-bold text-white flex-1 truncate">{row.team}</span>}
-                            {row.role && <span className="text-white/50 text-[10px] shrink-0">({row.role})</span>}
-                            {!row.team && <span className="font-bold text-white flex-1">{row.year}</span>}
+                        <div key={i} className="flex items-center gap-2 border-b border-white/10 last:border-0 py-0.5" style={{ minHeight: 24 }}>
+                            <span className="font-black text-yellow-300 shrink-0" style={{ width: 34 }}>{row.year}</span>
+                            <span className="font-bold text-white flex-1" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {row.team || row.year}
+                            </span>
+                            {row.role && <span className="shrink-0" style={{ color: 'rgba(255,255,255,0.45)', fontSize: 10 }}>({row.role})</span>}
                         </div>
                     ))}
                 </div>
