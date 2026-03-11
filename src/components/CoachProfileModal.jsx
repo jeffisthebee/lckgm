@@ -46,82 +46,43 @@ const Empty = ({ msg = '기록이 없습니다.' }) => (
     <div className="text-sm text-gray-400 text-center py-4">{msg}</div>
 );
 
+// Parse tooltip line: "2023 · T1 (감독)" → { year, team, role }
+function parseTooltipRow(t) {
+    const match = t.match(/^(\d{4})\s*·\s*(.+?)(?:\s*\((.+?)\))?$/);
+    if (match) return { year: match[1], team: match[2].trim(), role: match[3] || null };
+    return { year: t, team: null, role: null };
+}
+
 function HoverBadge({ icon, label, count, tooltip }) {
-    const [rect, setRect] = useState(null);
-    const ref = React.useRef(null);
-
-    const handleEnter = () => {
-        if (ref.current) setRect(ref.current.getBoundingClientRect());
-    };
-
-    // Parse each tooltip line: "2023 · T1 (감독)" or "2023 · T1"
-    const parsedRows = (tooltip || []).map(t => {
-        const match = t.match(/^(\d{4})\s*·\s*(.+?)(?:\s*\((.+?)\))?$/);
-        if (match) return { year: match[1], team: match[2].trim(), role: match[3] || null };
-        return { year: t, team: null, role: null };
-    });
-
-    let tooltipStyle = {};
-    if (rect) {
-        const tooltipW = 230;
-        const rowH = 26;
-        const padding = 16;
-        const gap = 6;
-        const maxH = window.innerHeight - 24; // never taller than viewport
-
-        const naturalH = parsedRows.length * rowH + padding;
-        const tooltipH = Math.min(naturalH, maxH);
-
-        const spaceBelow = window.innerHeight - rect.bottom - gap;
-        const spaceAbove = rect.top - gap;
-
-        let top, maxHeight;
-        if (spaceBelow >= tooltipH) {
-            // fits below
-            top = rect.bottom + gap;
-            maxHeight = spaceBelow;
-        } else if (spaceAbove >= tooltipH) {
-            // fits above
-            top = rect.top - tooltipH - gap;
-            maxHeight = spaceAbove;
-        } else {
-            // neither — open below and scroll
-            top = rect.bottom + gap;
-            maxHeight = spaceBelow;
-        }
-
-        // Anchor to badge left, clamp so it never overflows right or left
-        const rawLeft = rect.left;
-        const left = Math.max(8, Math.min(rawLeft, window.innerWidth - tooltipW - 8));
-
-        tooltipStyle = {
-            position: 'fixed',
-            top,
-            left,
-            width: tooltipW,
-            maxHeight: Math.floor(maxHeight),
-            overflowY: naturalH > maxHeight ? 'auto' : 'visible',
-        };
-    }
+    const [open, setOpen] = useState(false);
+    const parsedRows = (tooltip || []).map(parseTooltipRow);
 
     return (
-        <div ref={ref} className="relative flex flex-col items-center gap-1 bg-gray-50 rounded-xl p-3 border min-w-[80px] cursor-default"
-            onMouseEnter={handleEnter} onMouseLeave={() => setRect(null)}>
-            <span className="text-2xl">{icon}</span>
-            {count > 1 && <span className="text-2xl font-black text-blue-600">{'×'}{count}</span>}
-            <span className="text-[10px] font-bold text-gray-500 text-center leading-tight">{label}</span>
-            {rect && tooltip?.length > 0 && (
-                <div className="pointer-events-none z-[9999] bg-gray-900 text-white rounded-lg px-3 py-2 shadow-xl"
-                    style={{ ...tooltipStyle, fontSize: '11px', lineHeight: '1.5' }}>
-                    {parsedRows.map((row, i) => (
-                        <div key={i} className="flex items-center gap-2 border-b border-white/10 last:border-0 py-0.5" style={{ minHeight: 24 }}>
-                            <span className="font-black text-yellow-300 shrink-0" style={{ width: 34 }}>{row.year}</span>
-                            <span className="font-bold text-white flex-1" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {row.team || row.year}
-                            </span>
-                            {row.role && <span className="shrink-0" style={{ color: 'rgba(255,255,255,0.45)', fontSize: 10 }}>({row.role})</span>}
-                        </div>
-                    ))}
+        <div className="flex flex-col" style={{ minWidth: 80 }}>
+            <div
+                className={`flex flex-col items-center gap-1 rounded-xl p-3 border cursor-pointer select-none transition-all ${open ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'}`}
+                onClick={() => setOpen(v => !v)}
+            >
+                <span className="text-2xl">{icon}</span>
+                {count > 1 && (
+                    <span className="text-2xl font-black" style={{ color: open ? '#93c5fd' : '#2563eb' }}>{'×'}{count}</span>
+                )}
+                <span className={`text-[10px] font-bold text-center leading-tight ${open ? 'text-gray-300' : 'text-gray-500'}`}>{label}</span>
+                {tooltip?.length > 0 && (
+                    <span className="text-[9px] mt-0.5" style={{ color: open ? '#6ee7b7' : '#9ca3af' }}>{open ? '▲' : '▼'}</span>
+                )}
+            </div>
+            {open && parsedRows.length > 0 && (
+                <div className="mt-1 rounded-lg border border-gray-200 bg-white shadow-lg overflow-hidden" style={{ minWidth: 180 }}>
+                    <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+                        {parsedRows.map((row, i) => (
+                            <div key={i} className="flex items-center gap-2 px-3 py-1.5 border-b border-gray-50 last:border-0 hover:bg-gray-50">
+                                <span className="font-black text-[11px] shrink-0" style={{ color: '#d97706', width: 34 }}>{row.year}</span>
+                                <span className="font-bold text-gray-800 text-[11px] flex-1" style={{ whiteSpace: 'nowrap' }}>{row.team || '—'}</span>
+                                {row.role && <span className="text-[10px] text-gray-400 shrink-0">({row.role})</span>}
+                            </div>
+                        ))}
+                    </div>
                 </div>
             )}
         </div>
