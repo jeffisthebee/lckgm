@@ -397,7 +397,33 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                 const posB = normalizePosition(b.포지션 || b.position || 'MID');
                 return roleOrder.indexOf(posA) - roleOrder.indexOf(posB);
             });
-    
+
+            // [FIX] Deduplicate roles: when a team has >5 players with duplicate roles
+            // (e.g. two ADCs), slice(0,5) would cut off the SUP. Keep the highest-rated
+            // player per canonical role so every slot 0–4 maps to the correct position.
+            if (arr.length > 5) {
+                const roleMap = {};
+                arr.forEach(p => {
+                    const pos = normalizePosition(p.포지션 || p.position || '');
+                    if (!roleMap[pos]) {
+                        roleMap[pos] = p;
+                    } else {
+                        // keep higher overall rating
+                        const existing = roleMap[pos];
+                        if ((p.종합 || p.ovr || 0) > (existing.종합 || existing.ovr || 0)) {
+                            roleMap[pos] = p;
+                        }
+                    }
+                });
+                // Rebuild arr in canonical order; unknown/extra roles go at the end
+                const canonical = roleOrder.map(r => roleMap[r]).filter(Boolean);
+                const extra = arr.filter(p => {
+                    const pos = normalizePosition(p.포지션 || p.position || '');
+                    return !roleOrder.includes(pos) && !canonical.includes(p);
+                });
+                arr = [...canonical, ...extra];
+            }
+
             if (arr.length < 5) {
                 const fallback = getDefaultLineup(fallbackTeamName || '');
                 const fallbackArr = Object.values(fallback || {}).filter(Boolean);
@@ -685,13 +711,23 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                   // --- IMPORTANT PATCH:
                   // Build UI-friendly pick objects that always include playerName (fix opponent SUPPORT 'Unknown' issue)
                   const buildUIPickList = (picksList = [], teamRoster = []) => {
-                      // Sort roster into canonical role order before index-based lookup
+                      // Sort roster into canonical role order before index-based lookup.
+                      // [FIX] Also deduplicate by role so that teams with >5 players (e.g. two ADCs)
+                      // don't push SUP to index 5 where it falls outside the 5-pick window.
                       const roleOrder = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
-                      const sortedRoster = [...(teamRoster || [])].sort((a, b) => {
-                          const posA = normalizePosition(a.포지션 || a.position || 'MID');
-                          const posB = normalizePosition(b.포지션 || b.position || 'MID');
-                          return roleOrder.indexOf(posA) - roleOrder.indexOf(posB);
+                      const roleMap = {};
+                      (teamRoster || []).forEach(r => {
+                          const pos = normalizePosition(r.포지션 || r.position || '');
+                          if (!roleMap[pos]) {
+                              roleMap[pos] = r;
+                          } else {
+                              // keep higher overall rating
+                              if ((r.종합 || r.ovr || 0) > (roleMap[pos].종합 || roleMap[pos].ovr || 0)) {
+                                  roleMap[pos] = r;
+                              }
+                          }
                       });
+                      const sortedRoster = roleOrder.map(r => roleMap[r]).filter(Boolean);
                       return safeArray(picksList).map((p, idx) => {
                           const champName = p.champName || p.champion || p.name || '';
                           const champTier = p.tier || activeChampionList.find(c => c.name === champName)?.tier || p.tier || '-';
