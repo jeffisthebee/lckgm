@@ -615,6 +615,12 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
                                             {accolades.team_titles.lck > 0 && (
                                                 <TrophyBadge icon="🏆" label="LCK 우승" count={accolades.team_titles.lck} color="#3b82f6" years={accolades.team_titles.lck_years || []} />
                                             )}
+                                            {(accolades.team_titles.other || []).map((title, i) => (
+                                                <div key={i} className="flex flex-col items-center gap-1 bg-gray-50 rounded-xl p-3 border min-w-[80px]">
+                                                    <span className="text-2xl">🥇</span>
+                                                    <span className="text-[10px] font-bold text-gray-500 text-center leading-tight">{title}</span>
+                                                </div>
+                                            ))}
                                         </div>
                                     </div>
 
@@ -622,35 +628,21 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
                                     {accolades.individual_awards?.length > 0 && (
                                         <div className="bg-white rounded-xl p-4 border shadow-sm">
                                             <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">개인 수상</div>
-                                            <div className="space-y-2">
-                                                {[...accolades.individual_awards].reverse().map((aw, i) => (
-                                                    <div key={i} className="flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0">
-                                                        <span className="text-xs font-black text-gray-400 w-12 shrink-0">{aw.year}</span>
-                                                        <span className="text-yellow-500">🎖️</span>
-                                                        <span className="text-sm font-bold text-gray-700">{aw.award}</span>
-                                                    </div>
-                                                ))}
-                                            </div>
+                                            {[...accolades.individual_awards].reverse().map((aw, i) => (
+                                                <AwardRow key={i} year={aw.year} award={aw.award} />
+                                            ))}
                                         </div>
                                     )}
 
-                                    {/* Career stats */}
-                                    {accolades.career_stats && (
+                                    {/* Career stats — pro years only */}
+                                    {accolades.career_stats?.pro_years && (
                                         <div className="bg-white rounded-xl p-4 border shadow-sm">
                                             <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">커리어 통계</div>
                                             <div className="flex gap-4">
-                                                {accolades.career_stats.pro_years && (
-                                                    <div className="text-center">
-                                                        <div className="text-2xl font-black text-blue-600">{accolades.career_stats.pro_years}</div>
-                                                        <div className="text-[10px] text-gray-400 font-bold">프로 경력</div>
-                                                    </div>
-                                                )}
-                                                {accolades.career_stats.total_worlds && (
-                                                    <div className="text-center">
-                                                        <div className="text-2xl font-black text-purple-600">{accolades.career_stats.total_worlds}</div>
-                                                        <div className="text-[10px] text-gray-400 font-bold">월즈 출전</div>
-                                                    </div>
-                                                )}
+                                                <div className="text-center">
+                                                    <div className="text-2xl font-black text-blue-600">{accolades.career_stats.pro_years}</div>
+                                                    <div className="text-[10px] text-gray-400 font-bold">프로 경력</div>
+                                                </div>
                                             </div>
                                         </div>
                                     )}
@@ -671,6 +663,29 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
 }
 
 // ─── sub-components ──────────────────────────────────────────
+const getAwardIcon = (award = '') => {
+    const a = award.toLowerCase();
+    if (a.includes('fmvp')) return '🏅';
+    if (a.includes('mvp')) return '🏅';
+    if (a.includes('신인왕')) return '🌟';
+    if (a.includes('올해의')) return '👑';
+    if (a.includes('퍼스트') || a.includes('first')) return '🥇';
+    if (a.includes('세컨') || a.includes('second')) return '🥈';
+    if (a.includes('서드') || a.includes('third')) return '🥉';
+    if (a.includes('pos') || a.includes('pog')) return '⭐';
+    return '🎖️';
+};
+
+function AwardRow({ year, award }) {
+    return (
+        <div className="flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0">
+            <span className="text-xs font-black text-gray-400 w-10 shrink-0">{year}</span>
+            <span>{getAwardIcon(award)}</span>
+            <span className="flex-1 text-sm font-bold text-gray-800">{award}</span>
+        </div>
+    );
+}
+
 function ChampTable({ champs, highlight }) {
     return (
         <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
