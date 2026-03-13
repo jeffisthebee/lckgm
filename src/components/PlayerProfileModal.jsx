@@ -607,20 +607,20 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
                                         <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">팀 우승 기록</div>
                                         <div className="flex flex-wrap gap-3">
                                             {accolades.team_titles.worlds > 0 && (
-                                                <TrophyBadge icon="🌍" label="월드 챔피언십" count={accolades.team_titles.worlds} color="#f59e0b" years={accolades.team_titles.worlds_years || []} />
+                                                <HoverBadge icon="🌍" label="월드 챔피언십" count={accolades.team_titles.worlds} tooltip={(accolades.team_titles.worlds_years || []).map(String)} />
                                             )}
                                             {accolades.team_titles.msi > 0 && (
-                                                <TrophyBadge icon="🌐" label="MSI" count={accolades.team_titles.msi} color="#6366f1" years={accolades.team_titles.msi_years || []} />
+                                                <HoverBadge icon="🌐" label="MSI" count={accolades.team_titles.msi} tooltip={(accolades.team_titles.msi_years || []).map(String)} />
                                             )}
                                             {accolades.team_titles.lck > 0 && (
-                                                <TrophyBadge icon="🏆" label="LCK 우승" count={accolades.team_titles.lck} color="#3b82f6" years={accolades.team_titles.lck_years || []} />
+                                                <HoverBadge icon="🏆" label="LCK 우승" count={accolades.team_titles.lck} tooltip={(accolades.team_titles.lck_years || []).map(String)} />
                                             )}
-                                            {(accolades.team_titles.other || []).map((title, i) => (
-                                                <div key={i} className="flex flex-col items-center gap-1 bg-gray-50 rounded-xl p-3 border min-w-[80px]">
-                                                    <span className="text-2xl">🥇</span>
-                                                    <span className="text-[10px] font-bold text-gray-500 text-center leading-tight">{title}</span>
-                                                </div>
-                                            ))}
+                                            {(accolades.team_titles.other || []).map((title, i) => {
+                                                // parse "올스타 (2014, SKT)" → label="올스타", tooltip=["2014 · SKT"]
+                                                const m = title.match(/^(.+?)\s*\((\d{4}),\s*(.+?)\)$/);
+                                                if (m) return <HoverBadge key={i} icon="🥇" label={m[1].trim()} count={1} tooltip={[`${m[2]} · ${m[3].trim()}`]} />;
+                                                return <HoverBadge key={i} icon="🥇" label={title} count={1} tooltip={[]} />;
+                                            })}
                                         </div>
                                     </div>
 
@@ -709,8 +709,9 @@ function HoverBadge({ icon, label, count, tooltip }) {
                 <div className="mt-1 rounded-lg border border-gray-200 bg-white shadow-lg overflow-hidden" style={{ minWidth: 180 }}>
                     <div style={{ maxHeight: 240, overflowY: 'auto' }}>
                         {tooltip.map((line, i) => {
-                            const [year, ...rest] = line.split(' · ');
-                            const team = rest.join(' · ');
+                            const idx = line.indexOf(' · ');
+                            const year = idx !== -1 ? line.slice(0, idx) : line;
+                            const team = idx !== -1 ? line.slice(idx + 3) : null;
                             return (
                                 <div key={i} className="flex items-center gap-2 px-3 py-1.5 border-b border-gray-50 last:border-0 hover:bg-gray-50">
                                     <span className="font-black text-[11px] shrink-0" style={{ color: '#d97706', width: 34 }}>{year}</span>

@@ -5,30 +5,30 @@
     "team_titles": {
       "worlds": 6,
       "worlds_years": [
-        2013,
-        2015,
-        2016,
-        2023,
-        2024,
-        2025
+        "2013 · SKT",
+        "2015 · SKT",
+        "2016 · SKT",
+        "2023 · T1",
+        "2024 · T1",
+        "2025 · T1"
       ],
       "msi": 2,
       "msi_years": [
-        2016,
-        2017
+        "2016 · SKT",
+        "2017 · SKT"
       ],
       "lck": 10,
       "lck_years": [
-        2013,
-        2014,
-        2015,
-        2016,
-        2017,
-        2019,
-        2020,
-        2022,
-        2023,
-        2024
+        "2013 서머 · SKT",
+        "2014 윈터 · SKT",
+        "2015 스프링 · SKT",
+        "2016 스프링 · SKT",
+        "2016 서머 · SKT",
+        "2017 스프링 · SKT",
+        "2019 스프링 · SKT",
+        "2019 서머 · SKT",
+        "2020 스프링 · T1",
+        "2022 스프링 · T1"
       ],
       "other": [
         "올스타 (2014, SKT)",
@@ -50,11 +50,6 @@
         "team": "SKT"
       },
       {
-        "year": 2013,
-        "award": "Worlds MVP",
-        "team": "SKT"
-      },
-      {
         "year": 2014,
         "award": "LCK 윈터 시즌 MVP",
         "team": "SKT"
@@ -65,38 +60,18 @@
         "team": "SKT"
       },
       {
-        "year": 2015,
-        "award": "Worlds MVP",
-        "team": "SKT"
-      },
-      {
         "year": 2016,
         "award": "MSI FMVP",
         "team": "SKT"
       },
       {
         "year": 2016,
-        "award": "LCK MVP",
-        "team": "SKT"
-      },
-      {
-        "year": 2016,
-        "award": "Worlds FMVP",
-        "team": "SKT"
-      },
-      {
-        "year": 2017,
-        "award": "LCK MVP",
+        "award": "월즈 FMVP",
         "team": "SKT"
       },
       {
         "year": 2020,
         "award": "LCK 스프링 서드 팀",
-        "team": "T1"
-      },
-      {
-        "year": 2022,
-        "award": "LCK MVP",
         "team": "T1"
       },
       {
@@ -111,17 +86,12 @@
       },
       {
         "year": 2023,
-        "award": "Worlds MVP",
+        "award": "LCK 올해의 선수",
         "team": "T1"
       },
       {
         "year": 2023,
-        "award": "LCK MVP",
-        "team": "T1"
-      },
-      {
-        "year": 2023,
-        "award": "LCK Best Mid",
+        "award": "LCK 올해의 미드",
         "team": "T1"
       },
       {
@@ -131,12 +101,12 @@
       },
       {
         "year": 2024,
-        "award": "LCK MVP",
+        "award": "LCK 올해의 선수",
         "team": "T1"
       },
       {
         "year": 2024,
-        "award": "LCK Best Mid",
+        "award": "LCK 올해의 미드",
         "team": "T1"
       },
       {
@@ -146,7 +116,7 @@
       },
       {
         "year": 2024,
-        "award": "Worlds FMVP",
+        "award": "월즈 FMVP",
         "team": "T1"
       },
       {
@@ -161,8 +131,7 @@
       }
     ],
     "career_stats": {
-      "pro_years": 13,
-      "total_worlds": 8
+      "pro_years": 13
     }
   },
   {
@@ -171,21 +140,15 @@
     "team_titles": {
       "worlds": 3,
       "worlds_years": [
-        2023,
-        2024,
-        2025
+        "2023 · T1",
+        "2024 · T1",
+        "2025 · T1"
       ],
-      "msi": 2,
-      "msi_years": [
-        2022,
-        2024
-      ],
-      "lck": 4,
+      "msi": 0,
+      "msi_years": [],
+      "lck": 1,
       "lck_years": [
-        2022,
-        2023,
-        2024,
-        2025
+        "2022 스프링 · T1"
       ],
       "other": [
         "EWC (2024, T1)",
@@ -211,7 +174,7 @@
       },
       {
         "year": 2021,
-        "award": "LCK Best Support",
+        "award": "LCK 올해의 서폿",
         "team": "T1"
       },
       {
@@ -221,12 +184,7 @@
       },
       {
         "year": 2022,
-        "award": "MSI MVP",
-        "team": "T1"
-      },
-      {
-        "year": 2022,
-        "award": "LCK Best Support",
+        "award": "LCK 올해의 서폿",
         "team": "T1"
       },
       {
@@ -246,7 +204,7 @@
       },
       {
         "year": 2023,
-        "award": "LCK Best Support",
+        "award": "LCK 올해의 서폿",
         "team": "T1"
       },
       {
@@ -266,7 +224,7 @@
       },
       {
         "year": 2024,
-        "award": "LCK Best Support",
+        "award": "LCK 올해의 서폿",
         "team": "T1"
       },
       {
@@ -281,7 +239,7 @@
       },
       {
         "year": 2025,
-        "award": "LCK Best Support",
+        "award": "LCK 올해의 서폿",
         "team": "T1"
       },
       {
@@ -291,28 +249,29 @@
       }
     ],
     "career_stats": {
-      "pro_years": 7,
-      "total_worlds": 4
+      "pro_years": 7
     }
   },
   {
     "id": "Gumayusi",
     "name": "구마유시",
     "team_titles": {
-      "worlds": 1,
+      "worlds": 3,
       "worlds_years": [
-        2023
+        "2023 · T1",
+        "2024 · T1",
+        "2025 · T1"
       ],
       "msi": 1,
       "msi_years": [
-        2022
+        "2022 · T1"
       ],
       "lck": 4,
       "lck_years": [
-        2022,
-        2023,
-        2024,
-        2025
+        "2022 · T1",
+        "2023 · T1",
+        "2024 · T1",
+        "2025 · T1"
       ]
     },
     "individual_awards": [
@@ -336,19 +295,21 @@
     "id": "Zeus",
     "name": "제우스",
     "team_titles": {
-      "worlds": 1,
+      "worlds": 3,
       "worlds_years": [
-        2023
+        "2023 · T1",
+        "2024 · T1",
+        "2025 · T1"
       ],
       "msi": 1,
       "msi_years": [
-        2024
+        "2024 · T1"
       ],
       "lck": 3,
       "lck_years": [
-        2023,
-        2024,
-        2025
+        "2023 · T1",
+        "2024 · T1",
+        "2025 · T1"
       ]
     },
     "individual_awards": [
@@ -374,18 +335,15 @@
     "team_titles": {
       "worlds": 3,
       "worlds_years": [
-        2023,
-        2024,
-        2025
+        "2023 · T1",
+        "2024 · T1",
+        "2025 · T1"
       ],
       "msi": 0,
       "msi_years": [],
-      "lck": 4,
+      "lck": 1,
       "lck_years": [
-        2022,
-        2023,
-        2024,
-        2025
+        "2022 스프링 · T1"
       ],
       "other": [
         "EWC (2024, T1)",
@@ -395,7 +353,7 @@
     "individual_awards": [
       {
         "year": 2022,
-        "award": "LCK Best Jungle",
+        "award": "LCK 올해의 정글",
         "team": "T1"
       },
       {
@@ -415,7 +373,7 @@
       },
       {
         "year": 2023,
-        "award": "LCK Best Jungle",
+        "award": "LCK 올해의 정글",
         "team": "T1"
       },
       {
@@ -425,7 +383,7 @@
       },
       {
         "year": 2024,
-        "award": "LCK Best Jungle",
+        "award": "LCK 올해의 정글",
         "team": "T1"
       },
       {
@@ -440,7 +398,7 @@
       },
       {
         "year": 2025,
-        "award": "LCK Best Jungle",
+        "award": "LCK 올해의 정글",
         "team": "T1"
       },
       {
@@ -450,8 +408,7 @@
       }
     ],
     "career_stats": {
-      "pro_years": 5,
-      "total_worlds": 3
+      "pro_years": 5
     }
   },
   {
@@ -464,7 +421,7 @@
       "msi_years": [],
       "lck": 1,
       "lck_years": [
-        2024
+        "2024 · Gen.G"
       ]
     },
     "individual_awards": [
@@ -495,16 +452,16 @@
     "team_titles": {
       "worlds": 1,
       "worlds_years": [
-        2025
+        "2025 · T1"
       ],
       "msi": 0,
       "msi_years": [],
       "lck": 4,
       "lck_years": [
-        2022,
-        2023,
-        2024,
-        2025
+        "2022 서머 · Gen.G",
+        "2023 스프링 · Gen.G",
+        "2023 서머 · Gen.G",
+        "2024 서머 · HLE"
       ],
       "other": [
         "리프트 라이벌즈 (2019, LCK)",
@@ -534,11 +491,6 @@
       },
       {
         "year": 2024,
-        "award": "LCK Best Top",
-        "team": "HLE"
-      },
-      {
-        "year": 2024,
         "award": "LCK 스프링 서드 팀",
         "team": "HLE"
       },
@@ -554,8 +506,7 @@
       }
     ],
     "career_stats": {
-      "pro_years": 7,
-      "total_worlds": 1
+      "pro_years": 7
     }
   },
   {
@@ -566,12 +517,12 @@
       "worlds_years": [],
       "msi": 1,
       "msi_years": [
-        2023
+        "2023 · Gen.G"
       ],
       "lck": 2,
       "lck_years": [
-        2023,
-        2024
+        "2023 · Gen.G",
+        "2024 · Gen.G"
       ]
     },
     "individual_awards": [
@@ -599,13 +550,13 @@
       "worlds_years": [],
       "msi": 1,
       "msi_years": [
-        2024
+        "2024 · Gen.G"
       ],
       "lck": 3,
       "lck_years": [
-        2023,
-        2024,
-        2025
+        "2023 스프링 · Gen.G",
+        "2023 서머 · Gen.G",
+        "2024 스프링 · Gen.G"
       ],
       "other": [
         "케스파 컵 (2025, T1)"
@@ -669,8 +620,7 @@
       }
     ],
     "career_stats": {
-      "pro_years": 3,
-      "total_worlds": 1
+      "pro_years": 3
     }
   }
 ]
