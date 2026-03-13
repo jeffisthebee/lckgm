@@ -653,6 +653,26 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
                                         );
                                     })()}
 
+                                    {/* 선수 경력 */}
+                                    {accolades.선수_경력?.length > 0 && (
+                                        <div className="bg-white rounded-xl p-4 border shadow-sm">
+                                            <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">선수 경력</div>
+                                            {accolades.선수_경력.map((c, i) => {
+                                                const isCurrent = c.기간?.includes('현재');
+                                                return (
+                                                    <div key={i} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
+                                                        <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: isCurrent ? teamColor : '#d1d5db' }} />
+                                                        <div className="flex-1">
+                                                            <div className="font-bold text-gray-800 text-sm">{c.팀}</div>
+                                                            <div className="text-[10px] text-gray-400">{c.기간}</div>
+                                                        </div>
+                                                        {isCurrent && <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: teamColor }}>현재</span>}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+
                                     {/* Career stats — pro years only */}
                                     {accolades.career_stats?.pro_years && (
                                         <div className="bg-white rounded-xl p-4 border shadow-sm">
