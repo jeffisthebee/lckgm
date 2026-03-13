@@ -615,12 +615,19 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
                                             {accolades.team_titles.lck > 0 && (
                                                 <HoverBadge icon="🏆" label="LCK 우승" count={accolades.team_titles.lck} tooltip={(accolades.team_titles.lck_years || []).map(String)} />
                                             )}
-                                            {(accolades.team_titles.other || []).map((title, i) => {
-                                                // parse "올스타 (2014, SKT)" → label="올스타", tooltip=["2014 · SKT"]
-                                                const m = title.match(/^(.+?)\s*\((\d{4}),\s*(.+?)\)$/);
-                                                if (m) return <HoverBadge key={i} icon="🥇" label={m[1].trim()} count={1} tooltip={[`${m[2]} · ${m[3].trim()}`]} />;
-                                                return <HoverBadge key={i} icon="🥇" label={title} count={1} tooltip={[]} />;
-                                            })}
+                                            {(() => {
+                                                // Group "other" entries by base title name
+                                                const otherGrouped = {};
+                                                (accolades.team_titles.other || []).forEach(title => {
+                                                    const m = title.match(/^(.+?)\s*\((\d{4}),\s*(.+?)\)$/);
+                                                    const key = m ? m[1].trim() : title;
+                                                    if (!otherGrouped[key]) otherGrouped[key] = [];
+                                                    if (m) otherGrouped[key].push(`${m[2]} · ${m[3].trim()}`);
+                                                });
+                                                return Object.entries(otherGrouped).map(([label, rows], i) => (
+                                                    <HoverBadge key={i} icon="🥇" label={label} count={rows.length} tooltip={rows} />
+                                                ));
+                                            })()}
                                         </div>
                                     </div>
 
