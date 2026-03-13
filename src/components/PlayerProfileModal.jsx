@@ -283,7 +283,8 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
         { id: 'overview',  label: '개요' },
         { id: 'matches',   label: '2026 경기기록' },
         { id: 'champions', label: '챔피언 풀' },
-        { id: 'accolades', label: '수상경력' },
+        { id: 'career',    label: '선수 경력' },
+        { id: 'accolades', label: '수상 경력' },
     ];
 
     return (
@@ -592,6 +593,41 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
                                 <div className="bg-white rounded-xl border p-12 text-center text-gray-400 font-bold shadow-sm">
                                     <div className="text-4xl mb-3">📊</div>
                                     챔피언 풀 데이터가 없습니다.
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* ═══ CAREER ═══ */}
+                    {tab === 'career' && (
+                        <div className="space-y-4">
+                            {accolades?.선수_경력?.length > 0 ? (
+                                <div className="bg-white rounded-xl p-4 border shadow-sm">
+                                    <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">선수 경력</div>
+                                    {accolades.선수_경력.map((c, i) => {
+                                        const isCurrent = c.기간?.includes('현재');
+                                        const isFirst = i === 0;
+                                        return (
+                                            <div key={i} className="flex items-center gap-3 py-2.5 border-b border-gray-50 last:border-0">
+                                                <div className="flex flex-col items-center self-stretch gap-0.5">
+                                                    <div className="w-2.5 h-2.5 rounded-full shrink-0 mt-1" style={{ backgroundColor: isCurrent ? teamColor : isFirst ? '#9ca3af' : '#d1d5db' }} />
+                                                    {i < accolades.선수_경력.length - 1 && <div className="w-0.5 flex-1 bg-gray-200 mt-0.5" />}
+                                                </div>
+                                                <div className="flex-1 pb-1">
+                                                    <div className="font-bold text-gray-800 text-sm">{c.팀}</div>
+                                                    <div className="text-[10px] text-gray-400 mt-0.5">{c.기간}</div>
+                                                </div>
+                                                {isCurrent && (
+                                                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full text-white shrink-0" style={{ backgroundColor: teamColor }}>현재</span>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <div className="bg-white rounded-xl border p-12 text-center text-gray-400 font-bold shadow-sm">
+                                    <div className="text-4xl mb-3">📋</div>
+                                    경력 데이터가 없습니다.
                                 </div>
                             )}
                         </div>
