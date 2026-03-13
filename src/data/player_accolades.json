@@ -46,95 +46,118 @@
     "individual_awards": [
       {
         "year": 2013,
-        "award": "LCK 서머 시즌 MVP"
+        "award": "LCK 서머 시즌 MVP",
+        "team": "SKT"
       },
       {
         "year": 2013,
-        "award": "Worlds MVP"
+        "award": "Worlds MVP",
+        "team": "SKT"
       },
       {
         "year": 2014,
-        "award": "LCK 윈터 시즌 MVP"
+        "award": "LCK 윈터 시즌 MVP",
+        "team": "SKT"
       },
       {
         "year": 2015,
-        "award": "LCK 서머 포스트시즌 MVP"
+        "award": "LCK 서머 포스트시즌 MVP",
+        "team": "SKT"
       },
       {
         "year": 2015,
-        "award": "Worlds MVP"
+        "award": "Worlds MVP",
+        "team": "SKT"
       },
       {
         "year": 2016,
-        "award": "MSI FMVP"
+        "award": "MSI FMVP",
+        "team": "SKT"
       },
       {
         "year": 2016,
-        "award": "LCK MVP"
+        "award": "LCK MVP",
+        "team": "SKT"
       },
       {
         "year": 2016,
-        "award": "Worlds FMVP"
+        "award": "Worlds FMVP",
+        "team": "SKT"
       },
       {
         "year": 2017,
-        "award": "LCK MVP"
+        "award": "LCK MVP",
+        "team": "SKT"
       },
       {
         "year": 2020,
-        "award": "LCK 스프링 서드 팀"
+        "award": "LCK 스프링 서드 팀",
+        "team": "T1"
       },
       {
         "year": 2022,
-        "award": "LCK MVP"
+        "award": "LCK MVP",
+        "team": "T1"
       },
       {
         "year": 2022,
-        "award": "LCK 스프링 퍼스트 팀"
+        "award": "LCK 스프링 퍼스트 팀",
+        "team": "T1"
       },
       {
         "year": 2022,
-        "award": "LCK 서머 세컨 팀"
+        "award": "LCK 서머 세컨 팀",
+        "team": "T1"
       },
       {
         "year": 2023,
-        "award": "Worlds MVP"
+        "award": "Worlds MVP",
+        "team": "T1"
       },
       {
         "year": 2023,
-        "award": "LCK MVP"
+        "award": "LCK MVP",
+        "team": "T1"
       },
       {
         "year": 2023,
-        "award": "LCK Best Mid"
+        "award": "LCK Best Mid",
+        "team": "T1"
       },
       {
         "year": 2023,
-        "award": "LCK 스프링 퍼스트 팀"
+        "award": "LCK 스프링 퍼스트 팀",
+        "team": "T1"
       },
       {
         "year": 2024,
-        "award": "LCK MVP"
+        "award": "LCK MVP",
+        "team": "T1"
       },
       {
         "year": 2024,
-        "award": "LCK Best Mid"
+        "award": "LCK Best Mid",
+        "team": "T1"
       },
       {
         "year": 2024,
-        "award": "EWC MVP"
+        "award": "EWC MVP",
+        "team": "T1"
       },
       {
         "year": 2024,
-        "award": "Worlds FMVP"
+        "award": "Worlds FMVP",
+        "team": "T1"
       },
       {
         "year": 2024,
-        "award": "LCK 스프링 세컨 팀"
+        "award": "LCK 스프링 세컨 팀",
+        "team": "T1"
       },
       {
         "year": 2025,
-        "award": "LCK 서드 팀"
+        "award": "LCK 서드 팀",
+        "team": "T1"
       }
     ],
     "career_stats": {
@@ -173,79 +196,98 @@
     "individual_awards": [
       {
         "year": 2020,
-        "award": "LCK 스프링 신인왕"
+        "award": "LCK 스프링 신인왕",
+        "team": "DRX"
       },
       {
         "year": 2020,
-        "award": "LCK 스프링 퍼스트 팀"
+        "award": "LCK 스프링 퍼스트 팀",
+        "team": "DRX"
       },
       {
         "year": 2020,
-        "award": "LCK 서머 세컨 팀"
+        "award": "LCK 서머 세컨 팀",
+        "team": "DRX"
       },
       {
         "year": 2021,
-        "award": "LCK Best Support"
+        "award": "LCK Best Support",
+        "team": "T1"
       },
       {
         "year": 2021,
-        "award": "LCK 서머 퍼스트 팀"
+        "award": "LCK 서머 퍼스트 팀",
+        "team": "T1"
       },
       {
         "year": 2022,
-        "award": "MSI MVP"
+        "award": "MSI MVP",
+        "team": "T1"
       },
       {
         "year": 2022,
-        "award": "LCK Best Support"
+        "award": "LCK Best Support",
+        "team": "T1"
       },
       {
         "year": 2022,
-        "award": "LCK 스프링 정규시즌 MVP"
+        "award": "LCK 스프링 정규시즌 MVP",
+        "team": "T1"
       },
       {
         "year": 2022,
-        "award": "LCK 스프링 퍼스트 팀"
+        "award": "LCK 스프링 퍼스트 팀",
+        "team": "T1"
       },
       {
         "year": 2022,
-        "award": "LCK 서머 세컨 팀"
+        "award": "LCK 서머 세컨 팀",
+        "team": "T1"
       },
       {
         "year": 2023,
-        "award": "LCK Best Support"
+        "award": "LCK Best Support",
+        "team": "T1"
       },
       {
         "year": 2023,
-        "award": "LCK 스프링 정규시즌 MVP"
+        "award": "LCK 스프링 정규시즌 MVP",
+        "team": "T1"
       },
       {
         "year": 2023,
-        "award": "LCK 스프링 POS"
+        "award": "LCK 스프링 POS",
+        "team": "T1"
       },
       {
         "year": 2023,
-        "award": "LCK 스프링 퍼스트 팀"
+        "award": "LCK 스프링 퍼스트 팀",
+        "team": "T1"
       },
       {
         "year": 2024,
-        "award": "LCK Best Support"
+        "award": "LCK Best Support",
+        "team": "T1"
       },
       {
         "year": 2024,
-        "award": "LCK 스프링 퍼스트 팀"
+        "award": "LCK 스프링 퍼스트 팀",
+        "team": "T1"
       },
       {
         "year": 2024,
-        "award": "LCK 서머 서드 팀"
+        "award": "LCK 서머 서드 팀",
+        "team": "T1"
       },
       {
         "year": 2025,
-        "award": "LCK Best Support"
+        "award": "LCK Best Support",
+        "team": "T1"
       },
       {
         "year": 2025,
-        "award": "LCK 세컨 팀"
+        "award": "LCK 세컨 팀",
+        "team": "T1"
       }
     ],
     "career_stats": {
@@ -276,11 +318,13 @@
     "individual_awards": [
       {
         "year": 2022,
-        "award": "LCK Best ADC"
+        "award": "LCK Best ADC",
+        "team": "T1"
       },
       {
         "year": 2024,
-        "award": "LCK Best ADC"
+        "award": "LCK Best ADC",
+        "team": "T1"
       }
     ],
     "career_stats": {
@@ -310,11 +354,13 @@
     "individual_awards": [
       {
         "year": 2023,
-        "award": "LCK Best Top"
+        "award": "LCK Best Top",
+        "team": "T1"
       },
       {
         "year": 2024,
-        "award": "Worlds Best Top"
+        "award": "Worlds Best Top",
+        "team": "T1"
       }
     ],
     "career_stats": {
@@ -349,47 +395,58 @@
     "individual_awards": [
       {
         "year": 2022,
-        "award": "LCK Best Jungle"
+        "award": "LCK Best Jungle",
+        "team": "T1"
       },
       {
         "year": 2022,
-        "award": "LCK 스프링 FMVP"
+        "award": "LCK 스프링 FMVP",
+        "team": "T1"
       },
       {
         "year": 2022,
-        "award": "LCK 스프링 세컨 팀"
+        "award": "LCK 스프링 세컨 팀",
+        "team": "T1"
       },
       {
         "year": 2022,
-        "award": "LCK 서머 세컨 팀"
+        "award": "LCK 서머 세컨 팀",
+        "team": "T1"
       },
       {
         "year": 2023,
-        "award": "LCK Best Jungle"
+        "award": "LCK Best Jungle",
+        "team": "T1"
       },
       {
         "year": 2023,
-        "award": "LCK 스프링 퍼스트 팀"
+        "award": "LCK 스프링 퍼스트 팀",
+        "team": "T1"
       },
       {
         "year": 2024,
-        "award": "LCK Best Jungle"
+        "award": "LCK Best Jungle",
+        "team": "T1"
       },
       {
         "year": 2024,
-        "award": "LCK 스프링 세컨 팀"
+        "award": "LCK 스프링 세컨 팀",
+        "team": "T1"
       },
       {
         "year": 2024,
-        "award": "LCK 서머 서드 팀"
+        "award": "LCK 서머 서드 팀",
+        "team": "T1"
       },
       {
         "year": 2025,
-        "award": "LCK Best Jungle"
+        "award": "LCK Best Jungle",
+        "team": "T1"
       },
       {
         "year": 2025,
-        "award": "LCK 세컨 팀"
+        "award": "LCK 세컨 팀",
+        "team": "T1"
       }
     ],
     "career_stats": {
@@ -413,15 +470,18 @@
     "individual_awards": [
       {
         "year": 2022,
-        "award": "LCK Best Mid"
+        "award": "LCK Best Mid",
+        "team": "Gen.G"
       },
       {
         "year": 2023,
-        "award": "LCK MVP"
+        "award": "LCK MVP",
+        "team": "Gen.G"
       },
       {
         "year": 2023,
-        "award": "LCK Best Mid"
+        "award": "LCK Best Mid",
+        "team": "Gen.G"
       }
     ],
     "career_stats": {
@@ -454,35 +514,43 @@
     "individual_awards": [
       {
         "year": 2020,
-        "award": "LCK 스프링 서드 팀"
+        "award": "LCK 스프링 서드 팀",
+        "team": "DRX"
       },
       {
         "year": 2022,
-        "award": "LCK 서머 세컨 팀"
+        "award": "LCK 서머 세컨 팀",
+        "team": "Gen.G"
       },
       {
         "year": 2023,
-        "award": "LCK 스프링 서드 팀"
+        "award": "LCK 스프링 서드 팀",
+        "team": "Gen.G"
       },
       {
         "year": 2023,
-        "award": "LCK 서머 세컨 팀"
+        "award": "LCK 서머 세컨 팀",
+        "team": "Gen.G"
       },
       {
         "year": 2024,
-        "award": "LCK Best Top"
+        "award": "LCK Best Top",
+        "team": "HLE"
       },
       {
         "year": 2024,
-        "award": "LCK 스프링 서드 팀"
+        "award": "LCK 스프링 서드 팀",
+        "team": "HLE"
       },
       {
         "year": 2024,
-        "award": "LCK 서머 세컨 팀"
+        "award": "LCK 서머 세컨 팀",
+        "team": "HLE"
       },
       {
         "year": 2025,
-        "award": "LCK 세컨 팀"
+        "award": "LCK 세컨 팀",
+        "team": "T1"
       }
     ],
     "career_stats": {
@@ -509,11 +577,13 @@
     "individual_awards": [
       {
         "year": 2022,
-        "award": "LCK Best Jungle"
+        "award": "LCK Best Jungle",
+        "team": "Gen.G"
       },
       {
         "year": 2023,
-        "award": "LCK Best Jungle"
+        "award": "LCK Best Jungle",
+        "team": "Gen.G"
       }
     ],
     "career_stats": {
@@ -544,47 +614,58 @@
     "individual_awards": [
       {
         "year": 2022,
-        "award": "LCK CL 서머 팀"
+        "award": "LCK CL 서머 팀",
+        "team": "Gen.G 아카데미"
       },
       {
         "year": 2023,
-        "award": "LCK 신인왕"
+        "award": "LCK 신인왕",
+        "team": "Gen.G"
       },
       {
         "year": 2023,
-        "award": "LCK 스프링 FMVP"
+        "award": "LCK 스프링 FMVP",
+        "team": "Gen.G"
       },
       {
         "year": 2023,
-        "award": "LCK 스프링 서드 팀"
+        "award": "LCK 스프링 서드 팀",
+        "team": "Gen.G"
       },
       {
         "year": 2023,
-        "award": "LCK 서머 세컨 팀"
+        "award": "LCK 서머 세컨 팀",
+        "team": "Gen.G"
       },
       {
         "year": 2024,
-        "award": "LCK 서머 POS"
+        "award": "LCK 서머 POS",
+        "team": "Gen.G"
       },
       {
         "year": 2024,
-        "award": "LCK 스프링 퍼스트 팀"
+        "award": "LCK 스프링 퍼스트 팀",
+        "team": "Gen.G"
       },
       {
         "year": 2024,
-        "award": "LCK 서머 퍼스트 팀"
+        "award": "LCK 서머 퍼스트 팀",
+        "team": "Gen.G"
       },
       {
         "year": 2025,
-        "award": "케스파 컵 MVP"
+        "award": "케스파 컵 MVP",
+        "team": "T1"
       },
       {
         "year": 2025,
-        "award": "LPL 스플릿1 서드 팀"
+        "award": "LPL 스플릿1 서드 팀",
+        "team": "JDG"
       },
       {
         "year": 2025,
-        "award": "LPL 스플릿2 세컨 팀"
+        "award": "LPL 스플릿2 세컨 팀",
+        "team": "JDG"
       }
     ],
     "career_stats": {

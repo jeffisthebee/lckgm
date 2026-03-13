@@ -624,15 +624,27 @@ export default function PlayerProfileModal({ player, league, masteryData, onClos
                                         </div>
                                     </div>
 
-                                    {/* Individual awards */}
-                                    {accolades.individual_awards?.length > 0 && (
-                                        <div className="bg-white rounded-xl p-4 border shadow-sm">
-                                            <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">개인 수상</div>
-                                            {[...accolades.individual_awards].reverse().map((aw, i) => (
-                                                <AwardRow key={i} year={aw.year} award={aw.award} />
-                                            ))}
-                                        </div>
-                                    )}
+                                    {/* Individual awards — grouped by award name, click to expand year + team */}
+                                    {accolades.individual_awards?.length > 0 && (() => {
+                                        const grouped = accolades.individual_awards.reduce((acc, aw) => {
+                                            if (!acc[aw.award]) acc[aw.award] = [];
+                                            acc[aw.award].push(aw);
+                                            return acc;
+                                        }, {});
+                                        return (
+                                            <div className="bg-white rounded-xl p-4 border shadow-sm">
+                                                <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">개인 수상</div>
+                                                <div className="flex flex-wrap gap-3">
+                                                    {Object.entries(grouped).map(([awardName, entries], i) => {
+                                                        const tooltip = entries.map(e => `${e.year}${e.team ? ' · ' + e.team : ''}`);
+                                                        return (
+                                                            <HoverBadge key={i} icon={getAwardIcon(awardName)} label={awardName} count={entries.length} tooltip={tooltip} />
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
 
                                     {/* Career stats — pro years only */}
                                     {accolades.career_stats?.pro_years && (
@@ -676,12 +688,39 @@ const getAwardIcon = (award = '') => {
     return '🎖️';
 };
 
-function AwardRow({ year, award }) {
+function HoverBadge({ icon, label, count, tooltip }) {
+    const [open, setOpen] = React.useState(false);
     return (
-        <div className="flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0">
-            <span className="text-xs font-black text-gray-400 w-10 shrink-0">{year}</span>
-            <span>{getAwardIcon(award)}</span>
-            <span className="flex-1 text-sm font-bold text-gray-800">{award}</span>
+        <div className="flex flex-col" style={{ minWidth: 80 }}>
+            <div
+                className={`flex flex-col items-center gap-1 rounded-xl p-3 border cursor-pointer select-none transition-all ${open ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'}`}
+                onClick={() => setOpen(v => !v)}
+            >
+                <span className="text-2xl">{icon}</span>
+                {count > 1 && (
+                    <span className="text-2xl font-black" style={{ color: open ? '#93c5fd' : '#2563eb' }}>×{count}</span>
+                )}
+                <span className={`text-[10px] font-bold text-center leading-tight ${open ? 'text-gray-300' : 'text-gray-500'}`}>{label}</span>
+                {tooltip?.length > 0 && (
+                    <span className="text-[9px] mt-0.5" style={{ color: open ? '#6ee7b7' : '#9ca3af' }}>{open ? '▲' : '▼'}</span>
+                )}
+            </div>
+            {open && tooltip?.length > 0 && (
+                <div className="mt-1 rounded-lg border border-gray-200 bg-white shadow-lg overflow-hidden" style={{ minWidth: 180 }}>
+                    <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+                        {tooltip.map((line, i) => {
+                            const [year, ...rest] = line.split(' · ');
+                            const team = rest.join(' · ');
+                            return (
+                                <div key={i} className="flex items-center gap-2 px-3 py-1.5 border-b border-gray-50 last:border-0 hover:bg-gray-50">
+                                    <span className="font-black text-[11px] shrink-0" style={{ color: '#d97706', width: 34 }}>{year}</span>
+                                    <span className="font-bold text-gray-800 text-[11px] flex-1" style={{ whiteSpace: 'nowrap' }}>{team || '—'}</span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
