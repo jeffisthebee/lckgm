@@ -684,5 +684,376 @@
         "기간": "2025.11~현재"
       }
     ]
+  },
+  {
+    "id": "Perfect",
+    "name": "퍼펙트",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 0,
+      "lck_years": [],
+      "other": []
+    },
+    "individual_awards": [],
+    "career_stats": {
+      "pro_years": 3
+    },
+    "선수_경력": [
+      {
+        "팀": "KT",
+        "기간": "2023.2~현재"
+      }
+    ]
+  },
+  {
+    "id": "Cuzz",
+    "name": "커즈",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 4,
+      "lck_years": [
+        "2017 서머 · King Zone Dragon X",
+        "2018 스프링 · King Zone Dragon X",
+        "2020 스프링 · T1",
+        "2023 서머 · T1"
+      ],
+      "other": [
+        "리프트 라이벌즈 (2019, LCK)"
+      ]
+    },
+    "individual_awards": [
+      {
+        "year": 2020,
+        "award": "LCK 스프링 FMVP",
+        "team": "T1"
+      },
+      {
+        "year": 2020,
+        "award": "LCK 스프링 세컨 팀",
+        "team": "T1"
+      },
+      {
+        "year": 2020,
+        "award": "LCK 서머 서드 팀",
+        "team": "T1"
+      },
+      {
+        "year": 2023,
+        "award": "LCK 서머 퍼스트 팀",
+        "team": "T1"
+      }
+    ],
+    "career_stats": {
+      "pro_years": 9
+    },
+    "선수_경력": [
+      {
+        "팀": "King Zone Dragon X",
+        "기간": "2016.11~2019.11"
+      },
+      {
+        "팀": "T1",
+        "기간": "2019.11~2021.11"
+      },
+      {
+        "팀": "KT",
+        "기간": "2021.11~2023.11"
+      },
+      {
+        "팀": "KDF",
+        "기간": "2023.11~2024.11"
+      },
+      {
+        "팀": "KT",
+        "기간": "2024.11~현재"
+      }
+    ]
+  },
+  {
+    "id": "Bdd",
+    "name": "비디디",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 2,
+      "lck_years": [
+        "2017 서머 · King Zone Dragon X",
+        "2018 스프링 · King Zone Dragon X"
+      ],
+      "other": []
+    },
+    "individual_awards": [
+      {
+        "year": 2017,
+        "award": "LCK 서머 정규시즌 MVP",
+        "team": "King Zone Dragon X"
+      },
+      {
+        "year": 2018,
+        "award": "LCK 스프링 정규시즌 MVP",
+        "team": "King Zone Dragon X"
+      },
+      {
+        "year": 2020,
+        "award": "LCK 스프링 정규시즌 MVP",
+        "team": "Gen.G"
+      },
+      {
+        "year": 2020,
+        "award": "LCK 스프링 POS",
+        "team": "Gen.G"
+      },
+      {
+        "year": 2020,
+        "award": "LCK 스프링 퍼스트 팀",
+        "team": "Gen.G"
+      },
+      {
+        "year": 2020,
+        "award": "LCK 서머 POS",
+        "team": "Gen.G"
+      },
+      {
+        "year": 2020,
+        "award": "LCK 서머 서드 팀",
+        "team": "Gen.G"
+      },
+      {
+        "year": 2021,
+        "award": "LCK 스프링 서드 팀",
+        "team": "Gen.G"
+      },
+      {
+        "year": 2021,
+        "award": "LCK 서머 세컨 팀",
+        "team": "Gen.G"
+      },
+      {
+        "year": 2023,
+        "award": "LCK 스프링 서드 팀",
+        "team": "KT"
+      },
+      {
+        "year": 2023,
+        "award": "LCK 서머 퍼스트 팀",
+        "team": "KT"
+      },
+      {
+        "year": 2024,
+        "award": "LCK 서머 서드 팀",
+        "team": "KT"
+      },
+      {
+        "year": 2025,
+        "award": "LCK 올해의 선수",
+        "team": "KT"
+      },
+      {
+        "year": 2025,
+        "award": "LCK 세컨 팀",
+        "team": "KT"
+      }
+    ],
+    "career_stats": {
+      "pro_years": 10
+    },
+    "선수_경력": [
+      {
+        "팀": "CJ Entus",
+        "기간": "2015.4~2016.11"
+      },
+      {
+        "팀": "King Zone Dragon X",
+        "기간": "2016.11~2018.11"
+      },
+      {
+        "팀": "KT",
+        "기간": "2018.11~2019.11"
+      },
+      {
+        "팀": "Gen.G",
+        "기간": "2019.11~2021.11"
+      },
+      {
+        "팀": "NS",
+        "기간": "2021.11~2022.11"
+      },
+      {
+        "팀": "KT",
+        "기간": "2022.11~현재"
+      }
+    ]
+  },
+  {
+    "id": "Aiming",
+    "name": "에이밍",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 0,
+      "lck_years": [],
+      "other": []
+    },
+    "individual_awards": [
+      {
+        "year": 2020,
+        "award": "LCK 스프링 세컨 팀",
+        "team": "KT"
+      },
+      {
+        "year": 2022,
+        "award": "LCK 서머 서드 팀",
+        "team": "KT"
+      },
+      {
+        "year": 2023,
+        "award": "LCK 서머 퍼스트 팀",
+        "team": "KT"
+      },
+      {
+        "year": 2024,
+        "award": "LCK 서머 서드 팀",
+        "team": "DK"
+      }
+    ],
+    "career_stats": {
+      "pro_years": 8
+    },
+    "선수_경력": [
+      {
+        "팀": "Afreeca Freecs",
+        "기간": "2017.11~2019.11"
+      },
+      {
+        "팀": "KT",
+        "기간": "2019.11~2020.11"
+      },
+      {
+        "팀": "BLG",
+        "기간": "2020.11~2021.11"
+      },
+      {
+        "팀": "KT",
+        "기간": "2021.11~2023.11"
+      },
+      {
+        "팀": "DK",
+        "기간": "2023.11~2025.11"
+      },
+      {
+        "팀": "KT",
+        "기간": "2025.11~현재"
+      }
+    ]
+  },
+  {
+    "id": "Ghost",
+    "name": "고스트",
+    "team_titles": {
+      "worlds": 1,
+      "worlds_years": [
+        "2020 · DWG"
+      ],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 4,
+      "lck_years": [
+        "2020 서머 · DWG",
+        "2021 서머 · DWG",
+        "2020 케스파컵 · DWG",
+        "2021 스프링 · DWG"
+      ],
+      "other": [
+        "케스파컵 (2020, DWG)"
+      ]
+    },
+    "individual_awards": [
+      {
+        "year": 2020,
+        "award": "LCK 서머 세컨 팀",
+        "team": "DWG"
+      },
+      {
+        "year": 2021,
+        "award": "LCK 스프링 서드 팀",
+        "team": "DWG"
+      }
+    ],
+    "career_stats": {
+      "pro_years": 10
+    },
+    "선수_경력": [
+      {
+        "팀": "CJ Entus",
+        "기간": "2015.4~2016.11"
+      },
+      {
+        "팀": "bbq Olivers",
+        "기간": "2016.12~2018.11"
+      },
+      {
+        "팀": "SANDBOX Gaming",
+        "기간": "2018.11~2019.11"
+      },
+      {
+        "팀": "DWG",
+        "기간": "2020.2~2021.11"
+      },
+      {
+        "팀": "NS",
+        "기간": "2021.11~2022.11"
+      },
+      {
+        "팀": "Estral Esports",
+        "기간": "2025.7~2025.11"
+      },
+      {
+        "팀": "KT",
+        "기간": "2025.11~현재"
+      }
+    ]
+  },
+  {
+    "id": "Pollu",
+    "name": "폴루",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 0,
+      "lck_years": [],
+      "other": [
+        "케스파 컵 (2024, KT)"
+      ]
+    },
+    "individual_awards": [],
+    "career_stats": {
+      "pro_years": 3
+    },
+    "선수_경력": [
+      {
+        "팀": "BRO 챌린저스",
+        "기간": "2022.7~2024.2"
+      },
+      {
+        "팀": "BRO",
+        "기간": "2024.2~2025.11"
+      },
+      {
+        "팀": "KT",
+        "기간": "2025.11~현재"
+      }
+    ]
   }
 ]
