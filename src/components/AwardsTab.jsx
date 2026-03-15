@@ -429,8 +429,9 @@ const reapplyScale = (data, matches, standingsNames, scale, forPlayoffs) => {
 };
 
 // --- Main Component ---
-export default function AwardsTab({ league, teams }) {
-    const [currentLeague, setCurrentLeague] = useState('LCK');
+export default function AwardsTab({ league, teams, myLeague: myLeagueProp }) {
+    const myLeague = myLeagueProp || 'LCK';
+    const [currentLeague, setCurrentLeague] = useState(myLeague);
     const [viewMode, setViewMode] = useState('regular'); // 'regular' | 'playoff'
 
     const isLCK = currentLeague === 'LCK';

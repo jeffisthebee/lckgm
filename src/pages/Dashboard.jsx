@@ -2511,7 +2511,7 @@ const handleMatchClick = (match) => {
             )}
 
 {activeTab === 'awards' && (
-    <AwardsTab league={league} teams={teams} playerList={playerList} myLeague={myLeague} />
+    <AwardsTab key={myLeague} league={league} teams={teams} playerList={playerList} myLeague={myLeague} />
 )}
 
 
