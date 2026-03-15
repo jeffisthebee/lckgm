@@ -2433,6 +2433,7 @@ const handleMatchClick = (match) => {
   
              {activeTab === 'standings' && (
                 <StandingsTab 
+                    key={myLeague}
                     league={league}
                     teams={teams}
                     myTeam={myTeam}
