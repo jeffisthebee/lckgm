@@ -46,6 +46,8 @@ const RosterTab = ({ viewingTeam, roster, onPrevTeam, onNextTeam, league, myLeag
 
     const [currentLeague, setCurrentLeague] = useState(myLeague);
     const [foreignTeamIndex, setForeignTeamIndex] = useState(() => getInitialTeamIndex(myLeague));
+    // Foreign players also need a local LCK index so they can browse all LCK teams
+    const [lckTeamIndex, setLckTeamIndex] = useState(0);
     const [selectedPlayer, setSelectedPlayer] = useState(null);
     const [selectedCoach, setSelectedCoach] = useState(null);
 
@@ -56,9 +58,13 @@ const RosterTab = ({ viewingTeam, roster, onPrevTeam, onNextTeam, league, myLeag
     
     // Safety check so the index doesn't crash if one league has fewer teams
     const safeIndex = foreignTeamIndex >= currentTeamsList.length ? 0 : foreignTeamIndex;
-    
-    // Decide which team to show (Dashboard's team for LCK, or our local team for foreign)
-    const displayTeam = isLCK ? viewingTeam : currentTeamsList[safeIndex];
+    const safeLckIndex = lckTeamIndex >= lckTeams.length ? 0 : lckTeamIndex;
+
+    // For foreign players viewing LCK: use local lckTeamIndex to browse freely
+    // For LCK players: use viewingTeam passed from Dashboard (controlled by onPrevTeam/onNextTeam)
+    const displayTeam = isLCK
+        ? (isMyLeagueForeign ? lckTeams[safeLckIndex] : viewingTeam)
+        : currentTeamsList[safeIndex];
 
     const playerMap = {
         LCK: playersLCK,
@@ -71,8 +77,14 @@ const RosterTab = ({ viewingTeam, roster, onPrevTeam, onNextTeam, league, myLeag
     
     const currentLeaguePlayers = playerMap[currentLeague] || [];
     
-    // Decide which roster to show
-    const displayRoster = isLCK ? roster : currentLeaguePlayers.filter(p => p.팀 === displayTeam?.name);
+    // For LCK players: use roster passed from Dashboard
+    // For foreign players on LCK tab: filter playersLCK by the locally-tracked LCK team
+    // For any foreign league tab: filter by team name
+    const displayRoster = isLCK
+        ? (isMyLeagueForeign
+            ? playersLCK.filter(p => p.팀 === displayTeam?.name)
+            : roster)
+        : currentLeaguePlayers.filter(p => p.팀 === displayTeam?.name);
 
     // Coaches for the currently displayed team
     const displayCoaches = coachesData.filter(c => c.팀 === displayTeam?.name);
@@ -80,17 +92,25 @@ const RosterTab = ({ viewingTeam, roster, onPrevTeam, onNextTeam, league, myLeag
     // [NEW] 4. Smart Navigation Buttons
     const handlePrev = () => {
         if (isLCK) {
-            onPrevTeam();
+            if (isMyLeagueForeign) {
+                setLckTeamIndex(prev => prev === 0 ? lckTeams.length - 1 : prev - 1);
+            } else {
+                onPrevTeam();
+            }
         } else {
-            setForeignTeamIndex((prev) => (prev === 0 ? currentTeamsList.length - 1 : prev - 1));
+            setForeignTeamIndex(prev => prev === 0 ? currentTeamsList.length - 1 : prev - 1);
         }
     };
 
     const handleNext = () => {
         if (isLCK) {
-            onNextTeam();
+            if (isMyLeagueForeign) {
+                setLckTeamIndex(prev => prev === lckTeams.length - 1 ? 0 : prev + 1);
+            } else {
+                onNextTeam();
+            }
         } else {
-            setForeignTeamIndex((prev) => (prev === currentTeamsList.length - 1 ? 0 : prev + 1));
+            setForeignTeamIndex(prev => prev === currentTeamsList.length - 1 ? 0 : prev + 1);
         }
     };
 
