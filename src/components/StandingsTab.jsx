@@ -1,5 +1,5 @@
 // src/components/StandingsTab.jsx
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { sortGroupByStandings } from '../engine/BracketManager';
 
 // Import global data
@@ -29,6 +29,11 @@ const StandingsTab = ({
     const myLeague = myLeagueProp || 'LCK';
     const isMyLeagueForeign = myLeague !== 'LCK';
     const [currentLeague, setCurrentLeague] = useState(myLeague);
+
+    // league loads async — sync currentLeague once myLeague is known
+    useEffect(() => {
+        setCurrentLeague(myLeague);
+    }, [myLeague]);
 
     const getScoreDiff = (scoreStr) => {
         if (!scoreStr || typeof scoreStr !== 'string') return 0;
