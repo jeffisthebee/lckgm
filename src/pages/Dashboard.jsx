@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { teams, teamFinanceData } from '../data/teams';
-import { championList, difficulties } from '../data/constants';
+import { championList, difficulties, TEAM_COLORS } from '../data/constants';
 import { simulateMatch, getTeamRoster, generateSchedule, quickSimulateMatch } from '../engine/simEngine';
 import { getFullTeamRoster } from '../engine/rosterLogic';
 import LiveGamePlayer from '../components/LiveGamePlayer';
@@ -26,6 +26,12 @@ import { computeAwards, computePlayoffAwards } from '../engine/statsManager';
 import { FOREIGN_LEAGUES, FOREIGN_PLAYERS } from '../data/foreignLeagues';
 
 // --- HELPER FUNCTIONS ---
+// Safe color resolver — foreign team JSONs don't have a colors object
+const getTeamColor = (team) => {
+    if (team?.colors?.primary) return team.colors.primary;
+    return (TEAM_COLORS && TEAM_COLORS[team?.name]) || '#607d8b';
+};
+
 const getOvrBadgeStyle = (ovr) => {
     if (ovr >= 95) return 'bg-red-100 text-red-700 border-red-300 ring-red-200';
     if (ovr >= 90) return 'bg-orange-100 text-orange-700 border-orange-300 ring-orange-200';
@@ -94,8 +100,14 @@ const getOvrBadgeStyle = (ovr) => {
           };
           setLeague(sanitizedLeague);
           updateLeague(leagueId, { lastPlayed: new Date().toISOString() });
-          setViewingTeamId(sanitizedLeague.team.id);
+          // For foreign leagues, use team name as viewingTeamId since they don't have numeric IDs
+          const lt = sanitizedLeague.leagueType || 'LCK';
+          setViewingTeamId(lt === 'LCK' ? sanitizedLeague.team.id : sanitizedLeague.team.name);
           recalculateStandings(sanitizedLeague);
+          // Auto-navigate foreign leagues to schedule tab so schedule sync fires immediately
+          if (lt !== 'LCK') {
+              setActiveTab('schedule');
+          }
         }
       };
       loadData();
@@ -767,13 +779,20 @@ const handleMatchClick = (match) => {
     const isLCKMode = leagueType === 'LCK';
     const allLeagueTeams = isLCKMode ? teams : (FOREIGN_LEAGUES[leagueType] || []);
 
-    const myTeam = allLeagueTeams.find(t =>
+    const _myTeamRaw = allLeagueTeams.find(t =>
         String(t.id) === String(league.team.id) || t.name === league.team.name
     ) || league.team;
+    // Always ensure colors exist — foreign JSON teams don't have a colors object
+    const myTeam = (_myTeamRaw.colors?.primary)
+        ? _myTeamRaw
+        : { ..._myTeamRaw, colors: league.team.colors || { primary: getTeamColor(_myTeamRaw), secondary: '#fff' } };
 
-    const viewingTeam = allLeagueTeams.find(t =>
+    const _viewingRaw = allLeagueTeams.find(t =>
         String(t.id) === String(viewingTeamId) || t.name === String(viewingTeamId)
     ) || myTeam;
+    const viewingTeam = (_viewingRaw.colors?.primary)
+        ? _viewingRaw
+        : { ..._viewingRaw, colors: myTeam.colors || { primary: getTeamColor(_viewingRaw), secondary: '#fff' } };
 
     // Roster: LCK uses players.json, foreign leagues use FOREIGN_PLAYERS
     const getForeignRoster = (teamName) => {
@@ -1816,7 +1835,7 @@ const handleMatchClick = (match) => {
                               onClick={() => opponentChoice.onConfirm(opp)}
                               className="p-3 lg:p-4 rounded-xl border-2 transition flex flex-col items-center gap-2 bg-white border-gray-200 hover:border-blue-500 hover:shadow-md cursor-pointer"
                           >
-                              <div className="w-12 h-12 lg:w-16 lg:h-16 rounded-full flex items-center justify-center text-white font-bold shadow-sm text-sm lg:text-lg" style={{backgroundColor:opp.colors.primary}}>{opp.name}</div>
+                              <div className="w-12 h-12 lg:w-16 lg:h-16 rounded-full flex items-center justify-center text-white font-bold shadow-sm text-sm lg:text-lg" style={{backgroundColor:getTeamColor(opp)}}>{opp.name}</div>
                               <div className="font-bold text-sm lg:text-lg">{opp.fullName}</div>
                               <div className="text-xs bg-gray-100 px-3 py-1 rounded-full font-bold">
                                   {getTeamSeed(opp.id, opponentChoice.type.startsWith('playoff') ? 'playoff' : 'playin')} 시드
@@ -1911,7 +1930,7 @@ const handleMatchClick = (match) => {
                           {draftPool.map(t => (
                               <button key={t.id} onClick={() => handleUserPick(t.id)} disabled={draftTurn !== 'user'}
                                   className={`p-2 lg:p-4 rounded-xl border-2 transition flex flex-col items-center gap-2 hover:shadow-md ${draftTurn === 'user' ? 'bg-white border-gray-200 hover:border-blue-500 cursor-pointer' : 'bg-gray-50 border-gray-100 opacity-50 cursor-not-allowed'}`}>
-                                  <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-full flex items-center justify-center text-white font-bold shadow-sm text-xs" style={{backgroundColor:t.colors.primary}}>{t.name}</div>
+                                  <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-full flex items-center justify-center text-white font-bold shadow-sm text-xs" style={{backgroundColor:getTeamColor(t)}}>{t.name}</div>
                                   <div className="font-bold text-xs lg:text-sm truncate w-full">{t.fullName}</div>
                                   <div className="text-[10px] lg:text-xs bg-gray-100 px-2 py-1 rounded">전력 {t.power}</div>
                               </button>
@@ -1934,7 +1953,7 @@ const handleMatchClick = (match) => {
         {/* Responsive Sidebar: Hidden on mobile unless toggled, Fixed on Desktop */}
         <aside className={`${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:relative w-64 h-full bg-gray-900 text-gray-300 flex-shrink-0 flex flex-col shadow-xl z-40 transition-transform duration-300 ease-in-out`}>
           <div className="p-5 bg-gray-800 border-b border-gray-700 flex items-center gap-3 mt-10 lg:mt-0">
-            <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white text-xs shadow-lg" style={{backgroundColor: myTeam.colors.primary}}>{myTeam.name}</div>
+            <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white text-xs shadow-lg" style={{backgroundColor: getTeamColor(myTeam)}}>{myTeam.name}</div>
             <div><div className="text-white font-bold text-sm leading-tight">{myTeam.fullName}</div><div className="text-xs text-gray-400">GM 모드</div></div>
           </div>
           <div className="flex-1 overflow-y-auto py-4 px-2 space-y-1">
@@ -2264,7 +2283,7 @@ const handleMatchClick = (match) => {
   
                   <div className="col-span-1 lg:col-span-12 bg-white rounded-lg border shadow-sm flex flex-col min-h-[300px] lg:min-h-[500px]">
                     <div className="p-3 lg:p-5 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
-                      <div className="flex items-center gap-4"><div className="w-10 h-10 lg:w-12 lg:h-12 rounded-full flex items-center justify-center font-bold text-white shadow-sm" style={{backgroundColor: viewingTeam.colors.primary}}>{viewingTeam.name}</div><div><h2 className="text-lg lg:text-2xl font-black text-gray-800">{viewingTeam.fullName}</h2><p className="text-[10px] lg:text-xs font-bold text-gray-500 uppercase tracking-wide">로스터 요약</p></div></div>
+                      <div className="flex items-center gap-4"><div className="w-10 h-10 lg:w-12 lg:h-12 rounded-full flex items-center justify-center font-bold text-white shadow-sm" style={{backgroundColor: getTeamColor(viewingTeam)}}>{viewingTeam.name}</div><div><h2 className="text-lg lg:text-2xl font-black text-gray-800">{viewingTeam.fullName}</h2><p className="text-[10px] lg:text-xs font-bold text-gray-500 uppercase tracking-wide">로스터 요약</p></div></div>
                       <button onClick={()=>setActiveTab('roster')} className="text-xs lg:text-sm font-bold text-blue-600 hover:underline">상세 정보 보기 →</button>
                     </div>
                     <div className="p-0 overflow-x-auto">
