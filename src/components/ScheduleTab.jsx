@@ -132,15 +132,24 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
     const lckPlayoffMatches = league.matches?.filter(m => m.type === 'playoff') || [];
     const lckTrulyDone = lckPlayoffMatches.length > 0 && lckPlayoffMatches.every(m => m.status === 'finished');
 
-    // For foreign league players: LCK is never generated, so treat it as "done"
-    // so foreign matches are not blocked by the LCK sentinel.
+    // The "gate" controls how far other leagues can be auto-simmed:
+    // - LCK player:     gate = LCK's next pending match
+    // - Foreign player: gate = their OWN league's next pending match
+    //   → other leagues only sim up to the date of the user's next game
     const currentPendingLCK = (() => {
-        if (isMyLeagueForeign && league.matches?.length === 0) {
-            return { date: '99.99 (완료)', time: '23:59' };
+        if (isMyLeagueForeign) {
+            const myLeagueMatches = league.foreignMatches?.[myLeague] || [];
+            const myPending = [...myLeagueMatches].filter(m => m.status === 'pending').sort(compareDatesObj);
+            const myAllDone = myLeagueMatches.length > 0 && myLeagueMatches.every(m => m.status === 'finished');
+            if (myPending.length > 0) return myPending[0];
+            if (myAllDone) return { date: '99.99 (완료)', time: '23:59' };
+            // User's league not started yet — block all other leagues
+            return { date: '12.31', time: '23:59' };
         }
+        // LCK player
         if (pendingLCK.length > 0) return pendingLCK[0];
         if (lckTrulyDone) return { date: '99.99 (완료)', time: '23:59' };
-        return { date: '12.31', time: '23:59' }; // Blocking sentinel: LCK between phases
+        return { date: '12.31', time: '23:59' };
     })();
     
     const checkBadData = (matches, lg) => matches.some(m => {

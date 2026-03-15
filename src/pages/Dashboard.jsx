@@ -20,6 +20,10 @@ import ScheduleTab from '../components/ScheduleTab';
 import PlayoffTab from '../components/PlayoffTab';
 import StatsTab from '../components/TEMP_StatsTab';
 import {updateLeague, getLeagueById } from '../engine/storage';
+import { 
+    generateLPLRegularSchedule, generateLECRegularSchedule,
+    generateLCSRegularSchedule, generateLCPRegularSchedule, generateCBLOLRegularSchedule
+} from '../engine/scheduleLogic';
 import AwardsTab from '../components/AwardsTab';
 import HistoryTab from '../components/HistoryTab'; 
 import { computeAwards, computePlayoffAwards } from '../engine/statsManager';
@@ -104,6 +108,197 @@ const getOvrBadgeStyle = (ovr) => {
     // Check Season Status Helper
     const grandFinalMatch = league?.matches?.find(m => m.type === 'playoff' && m.round === 5);
     const isSeasonOver = grandFinalMatch && grandFinalMatch.status === 'finished';
+
+    // ── [FOREIGN] Auto-generate user's own foreign league schedule on first load ──
+    const foreignScheduleInitRef = useRef(false);
+    useEffect(() => {
+        if (!league) return;
+        const myLg = league.myLeague || 'LCK';
+        if (myLg === 'LCK') return;
+        if (foreignScheduleInitRef.current) return;
+        if ((league.foreignMatches?.[myLg] || []).length > 0) return;
+        foreignScheduleInitRef.current = true;
+
+        const lgTeams = FOREIGN_LEAGUES[myLg] || [];
+        let schedule = [];
+        if (myLg === 'LPL')   schedule = generateLPLRegularSchedule(lgTeams);
+        else if (myLg === 'LEC')   schedule = generateLECRegularSchedule(lgTeams);
+        else if (myLg === 'LCS')   schedule = generateLCSRegularSchedule(lgTeams);
+        else if (myLg === 'LCP')   schedule = generateLCPRegularSchedule(lgTeams);
+        else if (myLg === 'CBLOL') schedule = generateCBLOLRegularSchedule(lgTeams);
+
+        if (schedule.length > 0) {
+            const updates = { foreignMatches: { ...league.foreignMatches, [myLg]: schedule } };
+            updateLeague(league.id, updates);
+            setLeague(prev => ({ ...prev, ...updates }));
+        }
+    }, [league?.id, league?.myLeague]);
+
+    // ── [FOREIGN] Auto-run entire LCK season for foreign players (needed for FST) ──
+    const lckAutoRunRef = useRef(false);
+    useEffect(() => {
+        if (!league) return;
+        const myLg = league.myLeague || 'LCK';
+        if (myLg === 'LCK') return;
+        if (lckAutoRunRef.current) return;
+        if ((league.matches || []).length > 0) return; // Already generated
+        lckAutoRunRef.current = true;
+
+        // Run async so it doesn't block the UI render
+        setTimeout(() => {
+            try {
+                // 1. Random draft
+                const shuffled = [...teams].sort(() => Math.random() - 0.5);
+                const baron = shuffled.slice(0, 5).map(t => t.id);
+                const elder = shuffled.slice(5, 10).map(t => t.id);
+                const groups = { baron, elder };
+
+                const simLCK = (m) => {
+                    const getId = v => typeof v === 'object' ? v?.id : Number(v);
+                    const t1 = teams.find(t => t.id === getId(m.t1));
+                    const t2 = teams.find(t => t.id === getId(m.t2));
+                    if (!t1 || !t2) return m;
+                    try {
+                        const r = quickSimulateMatch(
+                            { ...t1, roster: getFullTeamRoster(t1.name) },
+                            { ...t2, roster: getFullTeamRoster(t2.name) },
+                            m.format || 'BO3'
+                        );
+                        return { ...m, status: 'finished', result: {
+                            winner: r.winner, score: r.scoreString || '2-0',
+                            history: (r.history || []).map(s => ({ ...s, logs: [] }))
+                        }};
+                    } catch (e) {
+                        const t1w = Math.random() > 0.5;
+                        return { ...m, status: 'finished', result: { winner: t1w ? t1.name : t2.name, score: '2-0', history: [] }};
+                    }
+                };
+
+                // 2. Regular season
+                let allMatches = generateSchedule(baron, elder).map(simLCK);
+
+                // 3. Super week
+                const newChampList = updateChampionMeta(league.currentChampionList || championList);
+                const tempL1 = { ...league, groups, matches: allMatches };
+                const superMs = generateSuperWeekMatches(tempL1);
+                allMatches = [...allMatches, ...superMs.map(simLCK)];
+
+                // 4. Compute standings & group wins for seeding
+                const tempL2 = { ...league, groups, matches: allMatches };
+                const stds = computeStandings(tempL2);
+                const bWins = allMatches.filter(m => {
+                    if ((m.type !== 'regular' && m.type !== 'super') || m.status !== 'finished') return false;
+                    const wt = teams.find(t => t.name === m.result?.winner);
+                    return wt && baron.includes(wt.id);
+                }).length;
+                const eWins = allMatches.length - bWins - allMatches.filter(m => m.type !== 'regular' && m.type !== 'super').length;
+
+                // 5. Play-in bracket
+                const { newMatches: piMatches, playInSeeds, seasonSummary } = createPlayInBracket(tempL2, stds, teams, bWins, eWins);
+                allMatches = [...allMatches, ...piMatches.map(simLCK)];
+
+                // 6. Play-in R2
+                const r1Matches = allMatches.filter(m => m.type === 'playin' && m.round === 1 && m.status === 'finished');
+                if (r1Matches.length >= 2) {
+                    const seed1 = teams.find(t => t.id === playInSeeds?.[0]?.id);
+                    const seed2 = teams.find(t => t.id === playInSeeds?.[1]?.id);
+                    const r1Winners = r1Matches.map(m => teams.find(t => t.name === m.result?.winner)).filter(Boolean);
+                    if (seed1 && seed2 && r1Winners.length >= 2) {
+                        const winnersWithSeed = r1Winners.map(w => ({ ...w, seedIndex: playInSeeds.findIndex(s => s.id === w.id) })).sort((a, b) => a.seedIndex - b.seedIndex);
+                        const pickedTeam = winnersWithSeed[1] || winnersWithSeed[0];
+                        const remainingTeam = winnersWithSeed.find(w => w.id !== pickedTeam.id) || winnersWithSeed[0];
+                        const r2Ms = createPlayInRound2Matches(allMatches, seed1, seed2, pickedTeam, remainingTeam);
+                        allMatches = r2Ms.map(m => m.status === 'pending' ? simLCK(m) : m);
+                    }
+                }
+
+                // 7. Play-in final (R3)
+                const r2Matches = allMatches.filter(m => m.type === 'playin' && m.round === 2);
+                if (r2Matches.length > 0 && r2Matches.every(m => m.status === 'finished')) {
+                    const finalMs = createPlayInFinalMatch(allMatches, teams);
+                    allMatches = finalMs.map(m => m.status === 'pending' ? simLCK(m) : m);
+                }
+
+                // 8. Playoffs: determine seeds and generate R1
+                const directPO = seasonSummary?.poTeams || [];
+                const playInQualifiers = allMatches
+                    .filter(m => m.type === 'playin' && m.status === 'finished')
+                    .reduce((acc, m) => {
+                        const winner = teams.find(t => t.name === m.result?.winner);
+                        if (winner && !acc.some(a => a.id === winner.id)) acc.push(winner);
+                        return acc;
+                    }, [])
+                    .filter(t => !directPO.some(d => d.id === t.id))
+                    .slice(0, 3)
+                    .map((t, i) => {
+                        const originalSeed = playInSeeds?.find(s => s.id === t.id);
+                        return { id: t.id, seed: 4 + i, originalSeed: originalSeed?.seed || 99 };
+                    })
+                    .sort((a, b) => a.originalSeed - b.originalSeed)
+                    .map((t, i) => ({ ...t, seed: 4 + i }));
+
+                const playoffSeeds = [...directPO, ...playInQualifiers].sort((a, b) => a.seed - b.seed);
+
+                if (playoffSeeds.length >= 6) {
+                    const seed3 = playoffSeeds.find(s => s.seed === 3);
+                    const playInPO = playoffSeeds.filter(s => s.seed >= 4);
+                    const pickedSeed = playInPO[playInPO.length - 1]; // pick lowest seed
+
+                    if (seed3 && pickedSeed) {
+                        const remaining = playInPO.filter(s => s.id !== pickedSeed.id);
+                        const r1m1 = { id: Date.now() + 300, round: 1, match: 1, label: '1라운드', t1: seed3.id, t2: pickedSeed.id, date: '2.11 (수)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' };
+                        const r1m2 = { id: Date.now() + 301, round: 1, match: 2, label: '1라운드', t1: remaining[0]?.id, t2: remaining[1]?.id, date: '2.12 (목)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' };
+                        allMatches = [...allMatches, r1m1, r1m2].map(m => m.status === 'pending' ? simLCK(m) : m);
+
+                        // R2
+                        const r1Fin = allMatches.filter(m => m.type === 'playoff' && m.round === 1 && m.status === 'finished');
+                        if (r1Fin.length === 2) {
+                            const getWin = m => teams.find(t => t.name === m.result?.winner)?.id;
+                            const getLos = m => { const w = getWin(m); return m.t1 === w ? m.t2 : m.t1; };
+                            const r1Winners = r1Fin.map(m => getWin(m));
+                            const r1Losers = r1Fin.map(m => getLos(m));
+                            const seed1id = playoffSeeds.find(s => s.seed === 1)?.id;
+                            const seed2id = playoffSeeds.find(s => s.seed === 2)?.id;
+                            const pickedW = r1Winners[Math.floor(Math.random() * 2)];
+                            const remainW = r1Winners.find(id => id !== pickedW);
+                            const r2Ms = createPlayoffRound2Matches(allMatches, seed1id, seed2id, pickedW, remainW, r1Losers[0], r1Losers[1]);
+                            allMatches = r2Ms.map(m => m.status === 'pending' ? simLCK(m) : m);
+
+                            // R3
+                            const r3Ms = createPlayoffRound3Matches(allMatches, playoffSeeds, teams);
+                            allMatches = r3Ms.map(m => m.status === 'pending' ? simLCK(m) : m);
+
+                            // R3 loser
+                            const r3lMs = createPlayoffLoserRound3Match(allMatches, playoffSeeds, teams);
+                            allMatches = r3lMs.map(m => m.status === 'pending' ? simLCK(m) : m);
+
+                            // Qualifier
+                            const r4Ms = createPlayoffQualifierMatch(allMatches, teams);
+                            allMatches = r4Ms.map(m => m.status === 'pending' ? simLCK(m) : m);
+
+                            // Grand Final
+                            const finalMs = createPlayoffFinalMatch(allMatches, teams);
+                            allMatches = finalMs.map(m => m.status === 'pending' ? simLCK(m) : m);
+                        }
+                    }
+                }
+
+                // 9. Save everything
+                const updates = {
+                    groups, matches: allMatches,
+                    playInSeeds, playoffSeeds, seasonSummary,
+                    currentChampionList: newChampList, metaVersion: '16.02',
+                };
+                updateLeague(league.id, updates);
+                setLeague(prev => ({ ...prev, ...updates }));
+                recalculateStandings({ ...league, ...updates });
+                console.log('[LCK Auto-Run] Complete ✓');
+            } catch (err) {
+                console.error('[LCK Auto-Run] Failed:', err);
+                lckAutoRunRef.current = false; // allow retry
+            }
+        }, 500);
+    }, [league?.id, league?.myLeague]);
 
     // FST: ready to create when season over + not yet created
     // FST: ready to create when season over + not yet created
@@ -2187,7 +2382,47 @@ const handleMatchClick = (match) => {
                   </div>
                   
                   <div className="col-span-1 lg:col-span-4 flex flex-col h-full max-h-[400px] lg:max-h-[500px]">
-                     {hasDrafted ? (
+                     {isMyLeagueForeign ? (
+                       // ── Foreign league mini standings ────────────────────
+                       <div className="bg-white rounded-lg border shadow-sm p-4 h-full overflow-y-auto flex flex-col">
+                         <div className="flex justify-between items-center mb-3">
+                           <h3 className="font-bold text-gray-800 text-sm">📊 {myLeague} 순위표</h3>
+                           <button onClick={() => setActiveTab('standings')} className="text-xs text-blue-600 hover:underline">전체 보기</button>
+                         </div>
+                         {(() => {
+                           const fMatches = (league.foreignMatches?.[myLeague] || []).filter(m => (m.type === 'regular' || m.type === 'super') && m.status === 'finished');
+                           const lgTeamsList = FOREIGN_LEAGUES[myLeague] || [];
+                           const st = {};
+                           lgTeamsList.forEach(t => { st[t.name] = { w: 0, l: 0, name: t.name, fullName: t.fullName }; });
+                           fMatches.forEach(m => {
+                             if (!m.result?.winner) return;
+                             const loser = m.result.winner === m.t1 ? m.t2 : m.t1;
+                             if (st[m.result.winner]) st[m.result.winner].w++;
+                             if (st[loser]) st[loser].l++;
+                           });
+                           const sorted = Object.values(st).sort((a, b) => b.w - a.w || a.l - b.l);
+                           return (
+                             <table className="w-full text-xs">
+                               <thead className="bg-gray-50 text-gray-400">
+                                 <tr><th className="p-1.5 text-center w-6">#</th><th className="p-1.5 text-left">팀</th><th className="p-1.5 text-center w-12">W-L</th></tr>
+                               </thead>
+                               <tbody>
+                                 {sorted.map((t, idx) => {
+                                   const isMe = t.name === myTeam.name;
+                                   return (
+                                     <tr key={t.name} className={`border-b last:border-0 ${isMe ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
+                                       <td className="p-1.5 text-center font-bold text-gray-400">{idx + 1}</td>
+                                       <td className={`p-1.5 font-bold truncate ${isMe ? 'text-blue-700' : 'text-gray-800'}`}>{t.fullName || t.name}</td>
+                                       <td className="p-1.5 text-center text-gray-600 whitespace-nowrap">{t.w} - {t.l}</td>
+                                     </tr>
+                                   );
+                                 })}
+                               </tbody>
+                             </table>
+                           );
+                         })()}
+                       </div>
+                     ) : hasDrafted ? (
                        <div className="bg-white rounded-lg border shadow-sm p-4 h-full overflow-y-auto flex flex-col">
                           
                           <div className="flex justify-between items-center mb-4">
@@ -2281,7 +2516,7 @@ const handleMatchClick = (match) => {
                        </div>
                      )}
                   </div>
-  
+
                   <div className="col-span-1 lg:col-span-12 bg-white rounded-lg border shadow-sm flex flex-col min-h-[300px] lg:min-h-[500px]">
                     <div className="p-3 lg:p-5 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
                       <div className="flex items-center gap-4"><div className="w-10 h-10 lg:w-12 lg:h-12 rounded-full flex items-center justify-center font-bold text-white shadow-sm" style={{backgroundColor: viewingTeam.colors.primary}}>{viewingTeam.name}</div><div><h2 className="text-lg lg:text-2xl font-black text-gray-800">{viewingTeam.fullName}</h2><p className="text-[10px] lg:text-xs font-bold text-gray-500 uppercase tracking-wide">로스터 요약</p></div></div>
