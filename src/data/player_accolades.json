@@ -2837,5 +2837,503 @@
         "기간": "2024.11~현재"
       }
     ]
+  },
+  {
+    "id": "Rich",
+    "name": "리치",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 0,
+      "lck_years": [],
+      "other": []
+    },
+    "individual_awards": [
+      {
+        "year": 2022,
+        "award": "LPL 스프링 퍼스트 팀",
+        "team": "NIP"
+      }
+    ],
+    "career_stats": {
+      "pro_years": 6
+    },
+    "선수_경력": [
+      {
+        "팀": "Gen.G",
+        "기간": "2019.5~2019.11"
+      },
+      {
+        "팀": "NS",
+        "기간": "2019.12~2021.11"
+      },
+      {
+        "팀": "NIP",
+        "기간": "2021.12~2023.3"
+      },
+      {
+        "팀": "DIG",
+        "기간": "2023.5~2024.4"
+      },
+      {
+        "팀": "DRX",
+        "기간": "2024.11~현재"
+      }
+    ]
+  },
+  {
+    "id": "Vincenzo",
+    "name": "빈센조",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 0,
+      "lck_years": [],
+      "other": [
+        "ASI CL (2025, T1 아카데미)"
+      ]
+    },
+    "individual_awards": [
+      {
+        "year": 2025,
+        "award": "LCK CL 정규시즌 MVP",
+        "team": "T1 아카데미"
+      },
+      {
+        "year": 2025,
+        "award": "LCK CL 팀",
+        "team": "T1 아카데미"
+      }
+    ],
+    "career_stats": {
+      "pro_years": 3
+    },
+    "선수_경력": [
+      {
+        "팀": "BNK 아카데미",
+        "기간": "2022.12~2023.12"
+      },
+      {
+        "팀": "BRO 아카데미",
+        "기간": "2024.2~2024.11"
+      },
+      {
+        "팀": "T1 아카데미",
+        "기간": "2024.11~2025.11"
+      },
+      {
+        "팀": "DRX",
+        "기간": "2025.11~현재"
+      }
+    ]
+  },
+  {
+    "id": "Willer",
+    "name": "월러",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 0,
+      "lck_years": [],
+      "other": [
+        "LCK CL (2025, BNK)"
+      ]
+    },
+    "individual_awards": [],
+    "career_stats": {
+      "pro_years": 5
+    },
+    "선수_경력": [
+      {
+        "팀": "HLE 아카데미",
+        "기간": "2021.5~2021.7"
+      },
+      {
+        "팀": "HLE",
+        "기간": "2021.7~2022.11"
+      },
+      {
+        "팀": "BNK",
+        "기간": "2022.12~2024.6"
+      },
+      {
+        "팀": "BNK 아카데미",
+        "기간": "2024.6~2025.11"
+      },
+      {
+        "팀": "DRX",
+        "기간": "2025.11~현재"
+      }
+    ]
+  },
+  {
+    "id": "Ucal",
+    "name": "유칼",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 1,
+      "lck_years": [
+        "2018 서머 · KT"
+      ],
+      "other": []
+    },
+    "individual_awards": [],
+    "career_stats": {
+      "pro_years": 8
+    },
+    "선수_경력": [
+      {
+        "팀": "KT",
+        "기간": "2017.5~2018.11"
+      },
+      {
+        "팀": "Afreeca Freecs",
+        "기간": "2018.11~2019.11"
+      },
+      {
+        "팀": "Griffin",
+        "기간": "2020.1~2020.5"
+      },
+      {
+        "팀": "KT",
+        "기간": "2020.5~2021.11"
+      },
+      {
+        "팀": "TT",
+        "기간": "2022.1~2024.11"
+      },
+      {
+        "팀": "DRX",
+        "기간": "2024.11~현재"
+      }
+    ]
+  },
+  {
+    "id": "Jiwoo",
+    "name": "지우",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 0,
+      "lck_years": [],
+      "other": [
+        "LCK CL (2022, NS 아카데미)"
+      ]
+    },
+    "individual_awards": [],
+    "career_stats": {
+      "pro_years": 4
+    },
+    "선수_경력": [
+      {
+        "팀": "NS 아카데미",
+        "기간": "2022.5~2023.6"
+      },
+      {
+        "팀": "NS",
+        "기간": "2023.6~2025.11"
+      },
+      {
+        "팀": "DRX",
+        "기간": "2025.11~현재"
+      }
+    ]
+  },
+  {
+    "id": "Andil",
+    "name": "안딜",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 0,
+      "lck_years": [],
+      "other": []
+    },
+    "individual_awards": [],
+    "career_stats": {
+      "pro_years": 2
+    },
+    "선수_경력": [
+      {
+        "팀": "KDF",
+        "기간": "2023.6~2024.11"
+      },
+      {
+        "팀": "DRX",
+        "기간": "2024.11~현재"
+      }
+    ]
+  },
+  {
+    "id": "Casting",
+    "name": "캐스팅",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 0,
+      "lck_years": [],
+      "other": [
+        "LCK CL 스프링 (2024, KT 챌린저스)",
+        "LCK CL 서머 (2024, KT 챌린저스)",
+        "ASI CL (2024, KT 챌린저스)"
+      ]
+    },
+    "individual_awards": [
+      {
+        "year": 2024,
+        "award": "LCK CL 스프링 FMVP",
+        "team": "KT 챌린저스"
+      },
+      {
+        "year": 2025,
+        "award": "LCK CL 팀",
+        "team": "KT 챌린저스"
+      }
+    ],
+    "career_stats": {
+      "pro_years": 3
+    },
+    "선수_경력": [
+      {
+        "팀": "Gen.G 아카데미",
+        "기간": "2022.12~2023.11"
+      },
+      {
+        "팀": "KT 챌린저스",
+        "기간": "2024.1~2025.11"
+      },
+      {
+        "팀": "BRO",
+        "기간": "2025.11~현재"
+      }
+    ]
+  },
+  {
+    "id": "Gideon",
+    "name": "기디온",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 0,
+      "lck_years": [],
+      "other": []
+    },
+    "individual_awards": [],
+    "career_stats": {
+      "pro_years": 5
+    },
+    "선수_경력": [
+      {
+        "팀": "KT 챌린저스",
+        "기간": "2020.12~2021.2"
+      },
+      {
+        "팀": "KT",
+        "기간": "2021.2~2022.11"
+      },
+      {
+        "팀": "IG",
+        "기간": "2022.12~2023.5"
+      },
+      {
+        "팀": "BRO",
+        "기간": "2023.11~2024.4"
+      },
+      {
+        "팀": "NS",
+        "기간": "2024.11~2025.11"
+      },
+      {
+        "팀": "BRO",
+        "기간": "2025.11~현재"
+      }
+    ]
+  },
+  {
+    "id": "Fisher",
+    "name": "피셔",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 0,
+      "lck_years": [],
+      "other": []
+    },
+    "individual_awards": [],
+    "career_stats": {
+      "pro_years": 1
+    },
+    "선수_경력": [
+      {
+        "팀": "BRO",
+        "기간": "2025~현재"
+      }
+    ]
+  },
+  {
+    "id": "Roamer",
+    "name": "로머",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 0,
+      "lck_years": [],
+      "other": []
+    },
+    "individual_awards": [
+      {
+        "year": 2025,
+        "award": "CBLOL 스플릿2 세컨 팀",
+        "team": "PAIN"
+      },
+      {
+        "year": 2025,
+        "award": "CBLOL 스플릿3 서드 팀",
+        "team": "PAIN"
+      }
+    ],
+    "career_stats": {
+      "pro_years": 5
+    },
+    "선수_경력": [
+      {
+        "팀": "BRO 챌린저스",
+        "기간": "2021.1~2021.11"
+      },
+      {
+        "팀": "HLE 챌린저스",
+        "기간": "2021.12~2023.11"
+      },
+      {
+        "팀": "TL 챌린저스",
+        "기간": "2023.12~2024.11"
+      },
+      {
+        "팀": "PAIN",
+        "기간": "2025.3~2025.11"
+      },
+      {
+        "팀": "BRO",
+        "기간": "2025.12~현재"
+      }
+    ]
+  },
+  {
+    "id": "Teddy",
+    "name": "테디",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 4,
+      "lck_years": [
+        "2019 스프링 · SKT",
+        "2019 서머 · SKT",
+        "2020 스프링 · T1",
+        "2021 스프링 · T1"
+      ],
+      "other": [
+        "리프트 라이벌즈 (2019, LCK)"
+      ]
+    },
+    "individual_awards": [
+      {
+        "year": 2019,
+        "award": "LCK 스프링 포스트시즌 MVP",
+        "team": "SKT"
+      },
+      {
+        "year": 2020,
+        "award": "LCK 스프링 퍼스트 팀",
+        "team": "T1"
+      },
+      {
+        "year": 2021,
+        "award": "LCK 스프링 세컨 팀",
+        "team": "T1"
+      }
+    ],
+    "career_stats": {
+      "pro_years": 9
+    },
+    "선수_경력": [
+      {
+        "팀": "Ever8 Winners",
+        "기간": "2016.5~2016.11"
+      },
+      {
+        "팀": "Jin Air Greenwings",
+        "기간": "2016.11~2018.11"
+      },
+      {
+        "팀": "T1",
+        "기간": "2018.11~2021.11"
+      },
+      {
+        "팀": "KDF",
+        "기간": "2021.11~2022.11"
+      },
+      {
+        "팀": "BNK",
+        "기간": "2023.4~2023.11"
+      },
+      {
+        "팀": "DRX",
+        "기간": "2023.12~2025.11"
+      },
+      {
+        "팀": "BRO",
+        "기간": "2025.11~현재"
+      }
+    ]
+  },
+  {
+    "id": "Namgung",
+    "name": "남궁",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 0,
+      "lck_years": [],
+      "other": []
+    },
+    "individual_awards": [],
+    "career_stats": {
+      "pro_years": 2
+    },
+    "선수_경력": [
+      {
+        "팀": "Gen.G 아카데미",
+        "기간": "2023.11~2025.11"
+      },
+      {
+        "팀": "BRO",
+        "기간": "2025.11~현재"
+      }
+    ]
   }
 ]
