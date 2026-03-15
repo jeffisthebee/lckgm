@@ -761,16 +761,40 @@ const handleMatchClick = (match) => {
     };
   
     if (!league) return <div className="flex h-screen items-center justify-center font-bold text-gray-500">데이터 로딩 중... (응답이 없으면 메인에서 초기화해주세요)</div>;
+
+    // ── League type detection ─────────────────────────────────
+    const leagueType = league.leagueType || 'LCK';
+    const isLCKMode = leagueType === 'LCK';
+    const allLeagueTeams = isLCKMode ? teams : (FOREIGN_LEAGUES[leagueType] || []);
+
+    const myTeam = allLeagueTeams.find(t =>
+        String(t.id) === String(league.team.id) || t.name === league.team.name
+    ) || league.team;
+
+    const viewingTeam = allLeagueTeams.find(t =>
+        String(t.id) === String(viewingTeamId) || t.name === String(viewingTeamId)
+    ) || myTeam;
+
+    // Roster: LCK uses players.json, foreign leagues use FOREIGN_PLAYERS
+    const getForeignRoster = (teamName) => {
+        const lgPlayers = (FOREIGN_PLAYERS && FOREIGN_PLAYERS[leagueType]) ? FOREIGN_PLAYERS[leagueType] : [];
+        return lgPlayers.filter(p => p.팀 === teamName || p.team === teamName);
+    };
+    const currentRoster = isLCKMode
+        ? (playerList || []).filter(p => p.팀 === viewingTeam.name)
+        : getForeignRoster(viewingTeam.name);
      
-    const myTeam = teams.find(t => String(t.id) === String(league.team.id)) || league.team;
-    const viewingTeam = teams.find(t => String(t.id) === String(viewingTeamId)) || myTeam;
-    const currentRoster = (playerList || []).filter(p => p.팀 === viewingTeam.name);
-     
-    const isCaptain = myTeam.id === 1 || myTeam.id === 2; 
-    const hasDrafted = league.groups && league.groups.baron && league.groups.baron.length > 0;
+    const isCaptain = isLCKMode && (myTeam.id === 1 || myTeam.id === 2); 
+    // For foreign leagues: hasDrafted = season has been kicked off (groups.baron non-empty OR foreignMatches populated)
+    const hasDrafted = isLCKMode
+        ? (league.groups && league.groups.baron && league.groups.baron.length > 0)
+        : (league.groups?.baron?.length > 0 || (league.foreignMatches?.[leagueType] || []).length > 0);
     
-    const nextGlobalMatch = league.matches
-      ? [...league.matches]
+    const activeMatchArray = isLCKMode
+        ? (league.matches || [])
+        : (league.foreignMatches?.[leagueType] || []);
+
+    const nextGlobalMatch = [...activeMatchArray]
           .filter(m => m.status === 'pending')
           .sort((a, b) => {
             const parseDateTime = (m) => {
@@ -779,18 +803,28 @@ const handleMatchClick = (match) => {
               return (month || 0) * 10000000 + (day || 0) * 100000 + (h || 0) * 100 + (min || 0);
             };
             return parseDateTime(a) - parseDateTime(b);
-          })[0] || null
-      : null;
+          })[0] || null;
   
     // ID Normalization Helper to safely compare IDs
     const safeId = (id) => (typeof id === 'object' ? id.id : Number(id));
   
     const isMyNextMatch = nextGlobalMatch 
-      ? (safeId(nextGlobalMatch.t1) === safeId(myTeam.id) || safeId(nextGlobalMatch.t2) === safeId(myTeam.id)) 
+      ? isLCKMode
+          ? (safeId(nextGlobalMatch.t1) === safeId(myTeam.id) || safeId(nextGlobalMatch.t2) === safeId(myTeam.id))
+          : (nextGlobalMatch.t1 === myTeam.name || nextGlobalMatch.t2 === myTeam.name ||
+             String(nextGlobalMatch.t1) === String(myTeam.id) || String(nextGlobalMatch.t2) === String(myTeam.id))
       : false;
   
-    const t1 = nextGlobalMatch ? teams.find(t => t.id === safeId(nextGlobalMatch.t1)) : null;
-    const t2 = nextGlobalMatch ? teams.find(t => t.id === safeId(nextGlobalMatch.t2)) : null;
+    const t1 = nextGlobalMatch
+        ? (isLCKMode
+            ? teams.find(t => t.id === safeId(nextGlobalMatch.t1))
+            : allLeagueTeams.find(t => t.name === nextGlobalMatch.t1 || String(t.id) === String(nextGlobalMatch.t1)))
+        : null;
+    const t2 = nextGlobalMatch
+        ? (isLCKMode
+            ? teams.find(t => t.id === safeId(nextGlobalMatch.t2))
+            : allLeagueTeams.find(t => t.name === nextGlobalMatch.t2 || String(t.id) === String(nextGlobalMatch.t2)))
+        : null;
 
     // isMyNextFSTMatch MUST be here — after myTeam is defined
     const isMyNextFSTMatch = nextFSTMatch
@@ -1070,90 +1104,108 @@ const handleMatchClick = (match) => {
       // Safe ID check
       const getID = (val) => (val && typeof val === 'object' && val.id) ? val.id : val;
       const myId = String(myTeam.id);
+      const myName = myTeam.name;
       
-      const isPlayerMatch =
-        String(getID(nextGlobalMatch.t1)) === myId ||
-        String(getID(nextGlobalMatch.t2)) === myId;
-  
+      const isPlayerMatch = isLCKMode
+        ? (String(getID(nextGlobalMatch.t1)) === myId || String(getID(nextGlobalMatch.t2)) === myId)
+        : (nextGlobalMatch.t1 === myName || nextGlobalMatch.t2 === myName ||
+           String(nextGlobalMatch.t1) === myId || String(nextGlobalMatch.t2) === myId);
+
       if (!isPlayerMatch) {
-        // Run the sim (this now calls the fast Quick Sim)
-        const result = runSimulationForMatch(nextGlobalMatch, false);
-  
-        if (!result) throw new Error("Simulation returned null");
-  
-        // Standardize Score String
-        let scoreStr = "2:0"; 
-        if (result.scoreString) {
-            scoreStr = result.scoreString;
-        } else if (result.score) {
-            const values = Object.values(result.score);
-            if (values.length >= 2) scoreStr = `${values[0]}:${values[1]}`;
-        }
-  
-        // Construct Final Result Object
-        const finalResult = { 
-            winner: result.winnerName, 
-            score: scoreStr,
-            history: result.history
+        // For foreign leagues: find team objects by name
+        const resolveTeam = (identifier) => isLCKMode
+            ? teams.find(t => Number(t.id) === (typeof identifier === 'object' ? identifier.id : Number(identifier)))
+            : allLeagueTeams.find(t => t.name === identifier || String(t.id) === String(identifier));
+
+        const t1Obj = resolveTeam(nextGlobalMatch.t1);
+        const t2Obj = resolveTeam(nextGlobalMatch.t2);
+        if (!t1Obj || !t2Obj) return;
+
+        const getForeignRosterForTeam = (teamObj) => {
+            const lgPlayers = (FOREIGN_PLAYERS && FOREIGN_PLAYERS[leagueType]) ? FOREIGN_PLAYERS[leagueType] : [];
+            const r = lgPlayers.filter(p => p.팀 === teamObj.name || p.team === teamObj.name);
+            if (r.length >= 5) return r;
+            return ['TOP','JGL','MID','ADC','SUP'].map(role => ({ 이름: `${teamObj.name} ${role}`, 포지션: role, 종합: teamObj.power || 80 }));
         };
-  
-        // Update League State
-        const updatedMatches = league.matches.map(m => 
-            m.id === nextGlobalMatch.id ? { ...m, status: 'finished', result: finalResult } : m
-        );
-  
-        const updatedLeague = { ...league, matches: updatedMatches };
-        
-        updateLeague(league.id, updatedLeague);
-        setLeague(updatedLeague);
-        recalculateStandings(updatedLeague); 
-  
-        // Trigger Next Round Checks
-        checkAndGenerateNextPlayInRound(updatedMatches);
-        checkAndGenerateNextPlayoffRound(updatedMatches);
-  
+        const t1Roster = isLCKMode ? getTeamRoster(t1Obj.name) : getForeignRosterForTeam(t1Obj);
+        const t2Roster = isLCKMode ? getTeamRoster(t2Obj.name) : getForeignRosterForTeam(t2Obj);
+
+        const format = nextGlobalMatch.format || 'BO3';
+        const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0) ? league.currentChampionList : championList;
+        const result = quickSimulateMatch({ ...t1Obj, roster: t1Roster }, { ...t2Obj, roster: t2Roster }, format, safeChampionList);
+
+        if (!result) throw new Error("Simulation returned null");
+
+        let scoreStr = result.scoreString || "2-0";
+        const finalResult = { winner: result.winner?.name || result.winner, score: scoreStr, history: result.history || [] };
+
+        if (isLCKMode) {
+            const updatedMatches = league.matches.map(m =>
+                m.id === nextGlobalMatch.id ? { ...m, status: 'finished', result: finalResult } : m
+            );
+            const updatedLeague = { ...league, matches: updatedMatches };
+            updateLeague(league.id, updatedLeague);
+            setLeague(updatedLeague);
+            recalculateStandings(updatedLeague);
+            checkAndGenerateNextPlayInRound(updatedMatches);
+            checkAndGenerateNextPlayoffRound(updatedMatches);
+        } else {
+            const updatedForeignMatches = (league.foreignMatches?.[leagueType] || []).map(m =>
+                m.id === nextGlobalMatch.id ? { ...m, status: 'finished', result: finalResult } : m
+            );
+            const updatedLeague = { ...league, foreignMatches: { ...league.foreignMatches, [leagueType]: updatedForeignMatches } };
+            updateLeague(league.id, updatedLeague);
+            setLeague(updatedLeague);
+        }
         return;
       }
   
-      // If player match, navigate to game
-      navigate(`/match/${nextGlobalMatch.id}`);
+      // If player match, launch live game
+      handleStartMyMatch('auto');
     } catch (err) {
       console.error("Next Match Error:", err);
       alert("경기 진행 중 오류 발생: " + err.message);
     }
   };
   
-    // [FIX] Robust Start Match Handler (Green Button) - Updated for Captain Mode
+    // [FIX] Robust Start Match Handler (Green Button) - Updated for Captain Mode + Foreign Leagues
     const handleStartMyMatch = (mode = 'auto') => {
       try {
         if (!nextGlobalMatch) {
           alert("진행할 경기가 없습니다.");
           return;
         }
-    
-        // 1. Force IDs to Numbers
-        const t1Id = typeof nextGlobalMatch.t1 === 'object' ? nextGlobalMatch.t1.id : Number(nextGlobalMatch.t1);
-        const t2Id = typeof nextGlobalMatch.t2 === 'object' ? nextGlobalMatch.t2.id : Number(nextGlobalMatch.t2);
-    
-        const t1Obj = teams.find(t => Number(t.id) === t1Id);
-        const t2Obj = teams.find(t => Number(t.id) === t2Id);
+
+        const getForeignRosterForTeam = (teamObj) => {
+            const lgPlayers = (FOREIGN_PLAYERS && FOREIGN_PLAYERS[leagueType]) ? FOREIGN_PLAYERS[leagueType] : [];
+            const r = lgPlayers.filter(p => p.팀 === teamObj.name || p.team === teamObj.name);
+            if (r.length >= 5) return r;
+            return ['TOP','JGL','MID','ADC','SUP'].map(role => ({ 이름: `${teamObj.name} ${role}`, 포지션: role, 종합: teamObj.power || 80 }));
+        };
+
+        let t1Obj, t2Obj;
+        if (isLCKMode) {
+            const t1Id = typeof nextGlobalMatch.t1 === 'object' ? nextGlobalMatch.t1.id : Number(nextGlobalMatch.t1);
+            const t2Id = typeof nextGlobalMatch.t2 === 'object' ? nextGlobalMatch.t2.id : Number(nextGlobalMatch.t2);
+            t1Obj = teams.find(t => Number(t.id) === t1Id);
+            t2Obj = teams.find(t => Number(t.id) === t2Id);
+        } else {
+            t1Obj = allLeagueTeams.find(t => t.name === nextGlobalMatch.t1 || String(t.id) === String(nextGlobalMatch.t1));
+            t2Obj = allLeagueTeams.find(t => t.name === nextGlobalMatch.t2 || String(t.id) === String(nextGlobalMatch.t2));
+        }
     
         if (!t1Obj || !t2Obj) {
-          alert(`팀 데이터 오류! T1 ID: ${t1Id}, T2 ID: ${t2Id}`);
+          alert(`팀 데이터 오류! T1: ${nextGlobalMatch.t1}, T2: ${nextGlobalMatch.t2}`);
           return;
         }
     
-        // 2. Fetch Rosters using the global function (Full Roster for Manual Mode)
-        // [MODIFIED] Now using getFullTeamRoster to support substitutes in LiveGamePlayer
-        const t1Roster = getFullTeamRoster(t1Obj.name);
-        const t2Roster = getFullTeamRoster(t2Obj.name);
+        const t1Roster = isLCKMode ? getFullTeamRoster(t1Obj.name) : getForeignRosterForTeam(t1Obj);
+        const t2Roster = isLCKMode ? getFullTeamRoster(t2Obj.name) : getForeignRosterForTeam(t2Obj);
   
-        // 3. Check for Champion List validity
         const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0) 
             ? league.currentChampionList 
             : championList;
     
-        // 4. Set Data for Live Modal (Added isManualMode flag)
         setLiveMatchData({
           match: nextGlobalMatch,
           teamA: { ...t1Obj, roster: t1Roster },
@@ -1171,43 +1223,54 @@ const handleMatchClick = (match) => {
     };
   
     const handleLiveMatchComplete = (match, resultData) => {
-      // 1. 매치 결과 업데이트
-      const updatedMatches = league.matches.map(m => {
-          if (m.id === match.id) {
-              return {
-                  ...m,
-                  status: 'finished',
-                  result: {
-                      winner: resultData.winner,
-                      score: resultData.scoreString,
-                      history: resultData.history,
-                      posPlayer: resultData.posPlayer // Save Series MVP if exists
-                  }
-              };
-          }
-          return m;
-      });
+      const matchResult = {
+          winner: resultData.winner,
+          score: resultData.scoreString,
+          history: resultData.history,
+          posPlayer: resultData.posPlayer
+      };
+
+      if (isLCKMode) {
+          const updatedMatches = league.matches.map(m => {
+              if (m.id === match.id) return { ...m, status: 'finished', result: matchResult };
+              return m;
+          });
+          const updatedLeague = { ...league, matches: updatedMatches };
+          updateLeague(league.id, updatedLeague);
+          setLeague(updatedLeague);
+          recalculateStandings(updatedLeague);
+          checkAndGenerateNextPlayInRound(updatedMatches);
+          checkAndGenerateNextPlayoffRound(updatedMatches);
+      } else {
+          const updatedForeignMatches = (league.foreignMatches?.[leagueType] || []).map(m => {
+              if (m.id === match.id) return { ...m, status: 'finished', result: matchResult };
+              return m;
+          });
+          const updatedLeague = { ...league, foreignMatches: { ...league.foreignMatches, [leagueType]: updatedForeignMatches } };
+          updateLeague(league.id, updatedLeague);
+          setLeague(updatedLeague);
+      }
   
-      // 2. 리그 데이터 저장 및 상태 갱신
-      const updatedLeague = { ...league, matches: updatedMatches };
-      updateLeague(league.id, updatedLeague);
-      setLeague(updatedLeague);
-      recalculateStandings(updatedLeague);
-  
-      // 3. 다음 라운드 생성 체크
-      checkAndGenerateNextPlayInRound(updatedMatches);
-      checkAndGenerateNextPlayoffRound(updatedMatches);
-  
-      // 4. 모달 닫기
       setIsLiveGameMode(false);
       setLiveMatchData(null);
-      
       setTimeout(() => alert(`경기 종료! 승리: ${resultData.winner}`), 100);
     };
   
     // [3] 드래프트 시작 핸들러
     const handleDraftStart = () => {
       if (hasDrafted) return;
+
+      // Foreign leagues skip the LCK draft — just mark season as started
+      // ScheduleTab's sync logic will auto-generate the schedule
+      if (!isLCKMode) {
+        const updates = { groups: { baron: ['started'], elder: [] } };
+        updateLeague(league.id, updates);
+        setLeague(prev => ({ ...prev, ...updates }));
+        setActiveTab('schedule');
+        alert(`${leagueType} 시즌이 시작되었습니다! 일정 탭에서 경기를 진행하세요.`);
+        return;
+      }
+
       setIsDrafting(true);
       const pool = teams.filter(t => t.id !== 1 && t.id !== 2);
       setDraftPool(pool);
@@ -1283,8 +1346,16 @@ const handleMatchClick = (match) => {
       }
     };
   
-    const handlePrevTeam = () => { const idx = teams.findIndex(t => t.id === viewingTeam.id); setViewingTeamId(teams[(idx - 1 + teams.length) % teams.length].id); };
-    const handleNextTeam = () => { const idx = teams.findIndex(t => t.id === viewingTeam.id); setViewingTeamId(teams[(idx + 1) % teams.length].id); };
+    const handlePrevTeam = () => {
+        const idx = allLeagueTeams.findIndex(t => t.id === viewingTeam.id || t.name === viewingTeam.name);
+        const prev = allLeagueTeams[(idx - 1 + allLeagueTeams.length) % allLeagueTeams.length];
+        setViewingTeamId(prev.id ?? prev.name);
+    };
+    const handleNextTeam = () => {
+        const idx = allLeagueTeams.findIndex(t => t.id === viewingTeam.id || t.name === viewingTeam.name);
+        const next = allLeagueTeams[(idx + 1) % allLeagueTeams.length];
+        setViewingTeamId(next.id ?? next.name);
+    };
   
     const menuItems = [
       { id: 'dashboard', name: '대시보드', icon: '📊' },
@@ -1301,7 +1372,17 @@ const handleMatchClick = (match) => {
       ...(hasFST ? [{ id: 'fst', name: 'FST 토너먼트', icon: '🌍' }] : []),
     ];
     
-    const myRecord = computedStandings[myTeam.id] || { w: 0, l: 0, diff: 0 };
+    const myRecord = isLCKMode
+        ? (computedStandings[myTeam.id] || { w: 0, l: 0, diff: 0 })
+        : (() => {
+            const fMatches = league.foreignMatches?.[leagueType] || [];
+            const myName = myTeam.name;
+            let w = 0, l = 0;
+            fMatches.filter(m => m.status === 'finished' && m.result?.winner && (m.type === 'regular' || m.type === 'super')).forEach(m => {
+                if (m.result.winner === myName) w++; else if (m.t1 === myName || m.t2 === myName) l++;
+            });
+            return { w, l, diff: w - l };
+        })();
     const finance = teamFinanceData[viewingTeam.name] || { total_expenditure: 0, cap_expenditure: 0, luxury_tax: 0 };
   
     
@@ -1567,25 +1648,25 @@ const handleMatchClick = (match) => {
       alert('🛡️ 플레이-인 대진이 생성되었습니다! (1,2시드 2라운드 직행)');
   };
     
-    const isRegularSeasonFinished = league.matches 
-      ? league.matches.filter(m => m.type === 'regular').every(m => m.status === 'finished') 
+    const isRegularSeasonFinished = isLCKMode && league.matches 
+      ? league.matches.filter(m => m.type === 'regular').length > 0 && league.matches.filter(m => m.type === 'regular').every(m => m.status === 'finished') 
       : false;
     
-    const hasSuperWeekGenerated = league.matches
+    const hasSuperWeekGenerated = isLCKMode && league.matches
       ? league.matches.some(m => m.type === 'super')
       : false;
   
-    const isSuperWeekFinished = league.matches
+    const isSuperWeekFinished = isLCKMode && league.matches
       ? league.matches.filter(m => m.type === 'super').length > 0 && league.matches.filter(m => m.type === 'super').every(m => m.status === 'finished')
       : false;
   
-    const hasPlayInGenerated = league.matches
+    const hasPlayInGenerated = isLCKMode && league.matches
       ? league.matches.some(m => m.type === 'playin')
       : false;
       
-      const isPlayInFinished = hasPlayInGenerated && league.matches.some(m => m.type === 'playin' && m.round === 3 && m.status === 'finished');
+    const isPlayInFinished = isLCKMode && hasPlayInGenerated && league.matches.some(m => m.type === 'playin' && m.round === 3 && m.status === 'finished');
       
-    const hasPlayoffsGenerated = league.matches
+    const hasPlayoffsGenerated = isLCKMode && league.matches
       ? league.matches.some(m => m.type === 'playoff')
       : false;
   
@@ -1660,19 +1741,22 @@ const handleMatchClick = (match) => {
     if (isSeasonOver) {
       effectiveDate = '시즌 종료';
     } else if (nextGlobalMatch) {
-      const lastFinished = league.matches
+      const lastFinished = activeMatchArray
         .filter(m => m.status === 'finished')
         .sort((a, b) => parseDate(b.date) - parseDate(a.date))[0];
-      // Stay on the last played date until we actually start a new day's games
       effectiveDate = (lastFinished && lastFinished.date !== nextGlobalMatch.date)
         ? lastFinished.date
         : nextGlobalMatch.date;
     } else if (hasDrafted) {
-      const lastMatch = league.matches.filter(m => m.status === 'finished').sort((a,b) => parseDate(b.date) - parseDate(a.date))[0];
-      if (isPlayInFinished) effectiveDate = "2.9 (월) 이후";
-      else if (isSuperWeekFinished) effectiveDate = "2.2 (월) 이후";
-      else if (isRegularSeasonFinished) effectiveDate = "1.26 (월) 이후";
-      else effectiveDate = lastMatch ? `${lastMatch.date} 이후` : '대진 생성 대기 중';
+      const lastMatch = activeMatchArray.filter(m => m.status === 'finished').sort((a,b) => parseDate(b.date) - parseDate(a.date))[0];
+      if (isLCKMode) {
+        if (isPlayInFinished) effectiveDate = "2.9 (월) 이후";
+        else if (isSuperWeekFinished) effectiveDate = "2.2 (월) 이후";
+        else if (isRegularSeasonFinished) effectiveDate = "1.26 (월) 이후";
+        else effectiveDate = lastMatch ? `${lastMatch.date} 이후` : '대진 생성 대기 중';
+      } else {
+        effectiveDate = lastMatch ? `${lastMatch.date} 이후` : `${leagueType} 시즌 진행 중`;
+      }
     } else {
       effectiveDate = '2026 프리시즌';
     }
