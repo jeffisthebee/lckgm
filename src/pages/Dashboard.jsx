@@ -109,31 +109,6 @@ const getOvrBadgeStyle = (ovr) => {
     const grandFinalMatch = league?.matches?.find(m => m.type === 'playoff' && m.round === 5);
     const isSeasonOver = grandFinalMatch && grandFinalMatch.status === 'finished';
 
-    // ── [FOREIGN] Auto-generate user's own foreign league schedule on first load ──
-    const foreignScheduleInitRef = useRef(false);
-    useEffect(() => {
-        if (!league) return;
-        const myLg = league.myLeague || 'LCK';
-        if (myLg === 'LCK') return;
-        if (foreignScheduleInitRef.current) return;
-        if ((league.foreignMatches?.[myLg] || []).length > 0) return;
-        foreignScheduleInitRef.current = true;
-
-        const lgTeams = FOREIGN_LEAGUES[myLg] || [];
-        let schedule = [];
-        if (myLg === 'LPL')   schedule = generateLPLRegularSchedule(lgTeams);
-        else if (myLg === 'LEC')   schedule = generateLECRegularSchedule(lgTeams);
-        else if (myLg === 'LCS')   schedule = generateLCSRegularSchedule(lgTeams);
-        else if (myLg === 'LCP')   schedule = generateLCPRegularSchedule(lgTeams);
-        else if (myLg === 'CBLOL') schedule = generateCBLOLRegularSchedule(lgTeams);
-
-        if (schedule.length > 0) {
-            const updates = { foreignMatches: { ...league.foreignMatches, [myLg]: schedule } };
-            updateLeague(league.id, updates);
-            setLeague(prev => ({ ...prev, ...updates }));
-        }
-    }, [league?.id, league?.myLeague]);
-
     // ── [FOREIGN] Auto-run entire LCK season for foreign players (needed for FST) ──
     const lckAutoRunRef = useRef(false);
     useEffect(() => {
@@ -958,7 +933,18 @@ const handleMatchClick = (match) => {
     if (!league) return <div className="flex h-screen items-center justify-center font-bold text-gray-500">데이터 로딩 중... (응답이 없으면 메인에서 초기화해주세요)</div>;
 
     // ── Foreign league mode ──────────────────────────────────────────────────
-    const myLeague = league.myLeague || 'LCK';
+    const myLeague = (() => {
+        if (league.myLeague) return league.myLeague;
+        // Fallback: detect from team name — LCK teams have numeric ids
+        const teamId = league.team?.id;
+        const teamName = league.team?.name;
+        if (typeof teamId === 'number' && teamId >= 1 && teamId <= 10) return 'LCK';
+        // Search foreign leagues
+        for (const [lgKey, lgTeams] of Object.entries(FOREIGN_LEAGUES)) {
+            if (lgTeams.some(t => t.name === teamName || t.id === teamId)) return lgKey;
+        }
+        return 'LCK';
+    })();
     const isMyLeagueForeign = myLeague !== 'LCK';
 
     // ── myTeam: LCK uses numeric ID, foreign uses name string ───────────────
@@ -1487,6 +1473,23 @@ const handleMatchClick = (match) => {
       setTimeout(() => alert(`경기 종료! 승리: ${resultData.winner}`), 100);
     };
   
+    // ── [FOREIGN] Generate the user's own league regular season schedule ────────
+    const handleStartForeignSeason = () => {
+      const lgTeams = FOREIGN_LEAGUES[myLeague] || [];
+      let schedule = [];
+      if (myLeague === 'LPL')        schedule = generateLPLRegularSchedule(lgTeams);
+      else if (myLeague === 'LEC')   schedule = generateLECRegularSchedule(lgTeams);
+      else if (myLeague === 'LCS')   schedule = generateLCSRegularSchedule(lgTeams);
+      else if (myLeague === 'LCP')   schedule = generateLCPRegularSchedule(lgTeams);
+      else if (myLeague === 'CBLOL') schedule = generateCBLOLRegularSchedule(lgTeams);
+
+      if (schedule.length === 0) { alert('일정 생성 실패: 팀 데이터를 찾을 수 없습니다.'); return; }
+
+      const updates = { foreignMatches: { ...league.foreignMatches, [myLeague]: schedule } };
+      updateLeague(league.id, updates);
+      setLeague(prev => ({ ...prev, ...updates }));
+    };
+
     // [3] 드래프트 시작 핸들러
     const handleDraftStart = () => {
       if (hasDrafted) return;
@@ -2296,6 +2299,16 @@ const handleMatchClick = (match) => {
                 </button>
             )}
 
+            {/* Foreign league: show season start button when schedule not yet generated */}
+            {isMyLeagueForeign && (league.foreignMatches?.[myLeague] || []).length === 0 && (
+                <button
+                    onClick={handleStartForeignSeason}
+                    className="px-3 lg:px-6 py-1.5 rounded-full font-bold text-xs lg:text-sm shadow-sm transition flex items-center gap-2 whitespace-nowrap bg-green-600 hover:bg-green-700 text-white animate-pulse"
+                >
+                    <span>▶</span> <span className="hidden sm:inline">{myLeague} 시즌 시작</span><span className="sm:hidden">시작</span>
+                </button>
+            )}
+            {/* LCK draft button — hidden for foreign players */}
             <button onClick={handleDraftStart} disabled={hasDrafted} className={`px-3 lg:px-6 py-1.5 rounded-full font-bold text-xs lg:text-sm shadow-sm transition flex items-center gap-2 whitespace-nowrap ${hasDrafted || isMyLeagueForeign ? 'hidden' : 'bg-green-600 hover:bg-green-700 text-white animate-pulse'}`}>
                 <span>▶</span> {hasDrafted ? "" : (isCaptain ? "팀 선정" : "조 추첨")}
             </button>
@@ -2372,7 +2385,7 @@ const handleMatchClick = (match) => {
                                   </div>
                               )}
                             </div>
-                          ) : <div className="text-xs font-bold text-blue-600">{isSeasonOver ? '시즌 종료' : '대진 생성 대기 중'}</div>}
+                          ) : <div className="text-xs font-bold text-blue-600">{isSeasonOver ? '시즌 종료' : isMyLeagueForeign ? `▶ ${myLeague} 시즌 시작 버튼을 클릭하세요` : '대진 생성 대기 중'}</div>}
                         </div>
                         <div className="text-center w-1/3">
                             <div className="text-lg lg:text-4xl font-black text-gray-800 mb-2 truncate">{t2 ? t2.name : '?'}</div>
