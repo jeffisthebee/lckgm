@@ -1,10 +1,17 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { teams } from '../data/teams';
-import { difficulties, championList } from '../data/constants';
+import { difficulties, championList, TEAM_COLORS } from '../data/constants';
 import { FOREIGN_LEAGUES } from '../data/foreignLeagues';
 import { saveLeague } from '../engine/storage';
 function getTextColor(hex) { const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16); return (r*299+g*587+b*114)/1000>128?'#000000':'#FFFFFF'; }
+
+// Safely resolve colors for any team — LCK teams have colors object, foreign teams use TEAM_COLORS from constants
+const getTeamColors = (team) => {
+  if (team?.colors?.primary) return team.colors;
+  const primary = (TEAM_COLORS && TEAM_COLORS[team?.name]) || '#607d8b';
+  return { primary, secondary: '#ffffff' };
+};
 
 const LEAGUE_SEASON_NAMES = {
     LCK:   '2026 LCK 컵',
@@ -37,11 +44,13 @@ export default function TeamSelection() {
     const handleStart = async () => {
       const newId = Date.now().toString();
       const seasonName = LEAGUE_SEASON_NAMES[selectedLeague] || `2026 ${selectedLeague}`;
+      // Ensure colors always exist (foreign teams don't have them in JSON)
+      const teamWithColors = { ...current, colors: getTeamColors(current) };
       const newLeague = {
         id: newId,
-        leagueName: `${seasonName} - ${current.name}`,
+        leagueName: `${seasonName} - ${teamWithColors.name}`,
         leagueType: selectedLeague,
-        team: current,
+        team: teamWithColors,
         difficulty: diff,
         createdAt: new Date().toISOString(),
         lastPlayed: new Date().toISOString(),
@@ -73,10 +82,10 @@ export default function TeamSelection() {
     };
   
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 transition-colors duration-500 p-4 sm:p-6" style={{backgroundColor:`${current.colors.primary}10`}}>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 transition-colors duration-500 p-4 sm:p-6" style={{backgroundColor:`${getTeamColors(current).primary}10`}}>
         <div 
           className="bg-white p-6 sm:p-8 md:p-10 rounded-3xl shadow-2xl w-full max-w-lg sm:max-w-5xl text-center border-t-8 transition-all duration-300" 
-          style={{borderColor:current.colors.primary}}
+          style={{borderColor:getTeamColors(current).primary}}
         >
           <h2 className="text-2xl sm:text-3xl font-black mb-4 text-gray-900">팀 선택</h2>
 
@@ -112,7 +121,7 @@ export default function TeamSelection() {
                 <div className="flex flex-col items-center transform transition duration-300">
                   <div 
                     className="w-28 h-28 sm:w-36 sm:h-36 md:w-40 md:h-40 rounded-full flex items-center justify-center text-3xl sm:text-4xl font-black text-white shadow-xl mb-3 sm:mb-6 ring-4 ring-white transition-all" 
-                    style={{backgroundColor:current.colors.primary}}
+                    style={{backgroundColor:getTeamColors(current).primary}}
                   >
                     {current.name}
                   </div>
@@ -162,7 +171,7 @@ export default function TeamSelection() {
               <button 
                 onClick={handleStart} 
                 className="w-full py-4 sm:py-5 rounded-2xl font-black text-lg sm:text-xl text-white shadow-lg hover:shadow-xl hover:opacity-90 transition transform hover:-translate-y-1 active:translate-y-0" 
-                style={{backgroundColor:current.colors.primary, color:getTextColor(current.colors.primary)}}
+                style={{backgroundColor:getTeamColors(current).primary, color:getTextColor(getTeamColors(current).primary)}}
               >
                 2026 시즌 시작하기
               </button>
