@@ -2206,5 +2206,227 @@
         "기간": "2025.11~현재"
       }
     ]
+  },
+  {
+    "id": "Clear",
+    "name": "클리어",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 0,
+      "lck_years": [],
+      "other": [
+        "ASI (2025, BNK)"
+      ]
+    },
+    "individual_awards": [
+      {
+        "year": 2022,
+        "award": "LCK CL 스프링 팀",
+        "team": "DRX 챌린저스"
+      },
+      {
+        "year": 2023,
+        "award": "LCK CL 스프링 팀",
+        "team": "DRX 챌린저스"
+      }
+    ],
+    "career_stats": {
+      "pro_years": 4
+    },
+    "선수_경력": [
+      {
+        "팀": "DRX 챌린저스",
+        "기간": "2021.1~2023.5"
+      },
+      {
+        "팀": "BNK",
+        "기간": "2023.6~현재"
+      }
+    ]
+  },
+  {
+    "id": "Raptor",
+    "name": "랩터",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 0,
+      "lck_years": [],
+      "other": [
+        "ASI (2025, BNK)"
+      ]
+    },
+    "individual_awards": [],
+    "career_stats": {
+      "pro_years": 4
+    },
+    "선수_경력": [
+      {
+        "팀": "BRO 챌린저스",
+        "기간": "2021.12~2023.11"
+      },
+      {
+        "팀": "BNK 챌린저스",
+        "기간": "2023.12~2024.6"
+      },
+      {
+        "팀": "BNK",
+        "기간": "2024.6~현재"
+      }
+    ]
+  },
+  {
+    "id": "Vicla",
+    "name": "빅라",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 0,
+      "lck_years": [],
+      "other": [
+        "ASI (2025, BNK)"
+      ]
+    },
+    "individual_awards": [
+      {
+        "year": 2022,
+        "award": "LCK 신인왕",
+        "team": "KT"
+      },
+      {
+        "year": 2022,
+        "award": "LCK CL 스프링 팀",
+        "team": "KT 챌린저스"
+      },
+      {
+        "year": 2023,
+        "award": "LCS 스프링 서드 팀",
+        "team": "FlyQuest"
+      }
+    ],
+    "career_stats": {
+      "pro_years": 4
+    },
+    "선수_경력": [
+      {
+        "팀": "KT 챌린저스",
+        "기간": "2021.1~2022.2"
+      },
+      {
+        "팀": "KT",
+        "기간": "2022.2~2022.12"
+      },
+      {
+        "팀": "FlyQuest",
+        "기간": "2022.12~2023.9"
+      },
+      {
+        "팀": "Rare Atom",
+        "기간": "2023.12~2024.11"
+      },
+      {
+        "팀": "BNK",
+        "기간": "2024.11~현재"
+      }
+    ]
+  },
+  {
+    "id": "Diable",
+    "name": "디아블",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 0,
+      "lck_years": [],
+      "other": [
+        "ASI (2025, BNK)"
+      ]
+    },
+    "individual_awards": [
+      {
+        "year": 2025,
+        "award": "LCK 신인왕",
+        "team": "BNK"
+      },
+      {
+        "year": 2025,
+        "award": "ASI FMVP",
+        "team": "BNK"
+      }
+    ],
+    "career_stats": {
+      "pro_years": 3
+    },
+    "선수_경력": [
+      {
+        "팀": "BNK 챌린저스",
+        "기간": "2022.12~2024.11"
+      },
+      {
+        "팀": "BNK",
+        "기간": "2024.11~현재"
+      }
+    ]
+  },
+  {
+    "id": "Kellin",
+    "name": "켈린",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 0,
+      "lck_years": [],
+      "other": [
+        "ASI (2025, BNK)"
+      ]
+    },
+    "individual_awards": [
+      {
+        "year": 2021,
+        "award": "LCK 서머 세컨 팀",
+        "team": "NS"
+      },
+      {
+        "year": 2023,
+        "award": "LCK 스프링 세컨 팀",
+        "team": "DK"
+      }
+    ],
+    "career_stats": {
+      "pro_years": 7
+    },
+    "선수_경력": [
+      {
+        "팀": "Jin Air Greenwings",
+        "기간": "2018.11~2019.10"
+      },
+      {
+        "팀": "Gen.G",
+        "기간": "2019.12~2020.11"
+      },
+      {
+        "팀": "NS",
+        "기간": "2020.11~2021.11"
+      },
+      {
+        "팀": "DK",
+        "기간": "2021.12~2024.11"
+      },
+      {
+        "팀": "BNK",
+        "기간": "2024.11~현재"
+      }
+    ]
   }
 ]
