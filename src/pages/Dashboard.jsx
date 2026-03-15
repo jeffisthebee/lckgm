@@ -2302,19 +2302,31 @@ const handleMatchClick = (match) => {
                               </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
-                              {currentRoster.length > 0 ? currentRoster.map((p, i) => (
+                              {currentRoster.length > 0 ? currentRoster.map((p, i) => {
+                                  const pName = p.이름 || p.playerName || p.name || '-';
+                                  const pRole = p.포지션 || p.role || p.position || '-';
+                                  const pOvr  = p.종합 || p.ovr || p.overall || '-';
+                                  const pAge  = p.나이 || p.age || '-';
+                                  const pExp  = p.경력 || p.career || '-';
+                                  const pTenure = p['팀 소속기간'] || '-';
+                                  const pSalary = p.연봉 || p.salary || '-';
+                                  const pPot  = p.잠재력 || p.potential || '-';
+                                  const pContract = p.계약 || p.contract || '-';
+                                  const pAlias = p.실명 || p.realName || '';
+                                  return (
                                   <tr key={i} className="hover:bg-gray-50 transition">
-                                      <td className="py-2 px-3 font-bold text-gray-400 text-center whitespace-nowrap">{p.포지션}</td>
-                                      <td className="py-2 px-3 font-bold text-gray-800 whitespace-nowrap">{p.이름} <span className="text-gray-400 font-normal text-[10px] hidden lg:inline">({p.실명})</span> {p.주장 && <span className="text-yellow-500" title="주장">👑</span>}</td>
-                                      <td className="py-2 px-3 text-center"><span className={`inline-flex items-center justify-center w-8 h-6 rounded font-black text-xs shadow-sm border ${getOvrBadgeStyle(p.종합)}`}>{p.종합}</span></td>
-                                      <td className="py-2 px-3 text-center text-gray-600 whitespace-nowrap">{p.나이 || '-'}</td>
-                                      <td className="py-2 px-3 text-center text-gray-600 whitespace-nowrap">{p.경력 || '-'}</td>
-                                      <td className="py-2 px-3 text-center text-gray-700 whitespace-nowrap">{p['팀 소속기간'] || '-'}</td>
-                                      <td className="py-2 px-3 text-center text-gray-700 font-bold whitespace-nowrap">{p.연봉 || '-'}</td>
-                                      <td className="py-2 px-3 text-center"><span className={`text-[10px] ${getPotBadgeStyle(p.잠재력)}`}>{p.잠재력}</span></td>
-                                      <td className="py-2 px-3 text-gray-500 font-medium whitespace-nowrap">{p.계약}</td>
+                                      <td className="py-2 px-3 font-bold text-gray-400 text-center whitespace-nowrap">{pRole}</td>
+                                      <td className="py-2 px-3 font-bold text-gray-800 whitespace-nowrap">{pName} {pAlias && <span className="text-gray-400 font-normal text-[10px] hidden lg:inline">({pAlias})</span>} {p.주장 && <span className="text-yellow-500" title="주장">👑</span>}</td>
+                                      <td className="py-2 px-3 text-center"><span className={`inline-flex items-center justify-center w-8 h-6 rounded font-black text-xs shadow-sm border ${getOvrBadgeStyle(pOvr)}`}>{pOvr}</span></td>
+                                      <td className="py-2 px-3 text-center text-gray-600 whitespace-nowrap">{pAge}</td>
+                                      <td className="py-2 px-3 text-center text-gray-600 whitespace-nowrap">{pExp}</td>
+                                      <td className="py-2 px-3 text-center text-gray-700 whitespace-nowrap">{pTenure}</td>
+                                      <td className="py-2 px-3 text-center text-gray-700 font-bold whitespace-nowrap">{pSalary}</td>
+                                      <td className="py-2 px-3 text-center"><span className={`text-[10px] ${getPotBadgeStyle(pPot)}`}>{pPot}</span></td>
+                                      <td className="py-2 px-3 text-gray-500 font-medium whitespace-nowrap">{pContract}</td>
                                   </tr>
-                              )) : <tr><td colSpan="9" className="py-10 text-center text-gray-300">데이터 없음</td></tr>}
+                                  );
+                              }) : <tr><td colSpan="9" className="py-10 text-center text-gray-300">데이터 없음</td></tr>}
                           </tbody>
                       </table>
                     </div>
