@@ -101,9 +101,13 @@ const getSafeRoster = (teamObj, allPlayers) => {
     });
 };
 
-const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, formatTeamName, onMatchClick, onFSTSimulate }) => {
-    const [currentLeague, setCurrentLeague] = useState('LCK');
-    const displayLeague = activeTab === 'team_schedule' ? 'LCK' : currentLeague;
+const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: myLeagueProp, hasDrafted, formatTeamName, onMatchClick, onFSTSimulate }) => {
+    const myLeague = myLeagueProp || 'LCK';
+    const isMyLeagueForeign = myLeague !== 'LCK';
+
+    const [currentLeague, setCurrentLeague] = useState(myLeague);
+    // team_schedule always shows the user's own league schedule
+    const displayLeague = activeTab === 'team_schedule' ? myLeague : currentLeague;
 
     // FST data
     const fstMatches = league?.fst?.matches || [];
@@ -125,19 +129,19 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
 
     const activeMatches = displayLeague === 'LCK' ? (league.matches || []) : (league.foreignMatches?.[displayLeague] || []);
     const pendingLCK = league.matches ? league.matches.filter(m => m.status === 'pending').sort(compareDatesObj) : [];
-    // LCK is only "truly done" once the playoff bracket has been generated AND every
-    // playoff match is finished (i.e. the Cup Finals is over).
-    // Without this guard, the moment LCK Play-in ends (no more pending matches) but
-    // before the playoff bracket is generated, pendingLCK is empty and the code
-    // mistakenly treats LCK as complete — mass-simming all foreign league games
-    // regardless of date.
     const lckPlayoffMatches = league.matches?.filter(m => m.type === 'playoff') || [];
     const lckTrulyDone = lckPlayoffMatches.length > 0 && lckPlayoffMatches.every(m => m.status === 'finished');
-    const currentPendingLCK = pendingLCK.length > 0
-        ? pendingLCK[0]
-        : lckTrulyDone
-            ? { date: '99.99 (완료)', time: '23:59' }
-            : { date: '12.31', time: '23:59' }; // Blocking sentinel: LCK between phases, not truly done yet
+
+    // For foreign league players: LCK is never generated, so treat it as "done"
+    // so foreign matches are not blocked by the LCK sentinel.
+    const currentPendingLCK = (() => {
+        if (isMyLeagueForeign && league.matches?.length === 0) {
+            return { date: '99.99 (완료)', time: '23:59' };
+        }
+        if (pendingLCK.length > 0) return pendingLCK[0];
+        if (lckTrulyDone) return { date: '99.99 (완료)', time: '23:59' };
+        return { date: '12.31', time: '23:59' }; // Blocking sentinel: LCK between phases
+    })();
     
     const checkBadData = (matches, lg) => matches.some(m => {
         if (lg === 'CBLOL' && (m.type === 'regular' || m.type === 'super') && m.format !== 'BO1') return true;
@@ -281,6 +285,17 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
 
         const simMatchIfPast = (matchObj) => {
             if (matchObj.status === 'finished') return matchObj; 
+
+            // CRITICAL: never auto-sim a match involving the user's own team in their league
+            if (isMyLeagueForeign && targetLeague === myLeague) {
+                const myName = myTeam?.name;
+                const myId   = myTeam?.id;
+                if (myName && (
+                    matchObj.t1 === myName || matchObj.t2 === myName ||
+                    matchObj.t1 === myId   || matchObj.t2 === myId
+                )) return matchObj;
+            }
+
             if (currentPendingLCK.date !== '99.99 (완료)' && compareDatesObj(matchObj, currentPendingLCK) >= 0) return matchObj;
 
             const t1Obj = findGlobalTeam(matchObj.t1, lgTeams);
@@ -1027,7 +1042,15 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                 {activeMatches.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 pb-4">
                         {activeMatches
-                            .filter(m => activeTab === 'schedule' || displayLeague !== 'LCK' || (m.t1 === myTeam.id || m.t2 === myTeam.id))
+                            .filter(m => {
+                                if (activeTab === 'schedule') return true;
+                                // team_schedule: only show user's matches
+                                if (isMyLeagueForeign) {
+                                    return m.t1 === myTeam.name || m.t2 === myTeam.name ||
+                                           m.t1 === myTeam.id   || m.t2 === myTeam.id;
+                                }
+                                return m.t1 === myTeam.id || m.t2 === myTeam.id;
+                            })
                             .filter(m => {
                                 if (!selectedTeam) return true;
                                 if (displayLeague === 'LCK') {
@@ -1043,7 +1066,9 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                             .map((m, i) => {
                                 const t1 = findGlobalTeam(m.t1, teams);
                                 const t2 = findGlobalTeam(m.t2, teams);
-                                const isMyMatch = myTeam.id === m.t1 || myTeam.id === m.t2;
+                                const isMyMatch = isMyLeagueForeign
+                                    ? (m.t1 === myTeam.name || m.t2 === myTeam.name || m.t1 === myTeam.id || m.t2 === myTeam.id)
+                                    : (myTeam.id === m.t1 || myTeam.id === m.t2);
                                 const isFinished = m.status === 'finished';
                                 
                                 const t1Name = (displayLeague === 'LCK' && formatTeamName) ? formatTeamName(m.t1, m.type) : t1.name;
@@ -1058,14 +1083,14 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                                 const expectedFallbackScore = m.format === 'BO1' ? '1-0' : (m.format === 'BO5' ? '3-0' : '2-0');
 
                                 return (
-                                    <div key={i} className={`p-3 lg:p-4 rounded-lg border flex flex-col gap-1 lg:gap-2 ${isMyMatch && displayLeague === 'LCK' ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-200' : 'bg-white border-gray-200'}`}>
+                                    <div key={i} className={`p-3 lg:p-4 rounded-lg border flex flex-col gap-1 lg:gap-2 ${isMyMatch ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-200' : 'bg-white border-gray-200'}`}>
                                         <div className="flex justify-between text-[10px] lg:text-xs font-bold text-gray-500">
                                             <span>{m.date} {m.time}</span>
                                             <span className={`font-bold ${badgeColor}`}>{badgeText}</span>
                                         </div>
                                         <div className="flex justify-between items-center mt-1 lg:mt-2">
                                             <div className="flex flex-col items-center w-1/3">
-                                                <span className={`font-bold text-xs lg:text-base text-center break-keep leading-tight ${isMyMatch && myTeam.id === m.t1 && displayLeague === 'LCK' ? 'text-blue-600' : 'text-gray-800'}`}>{t1Name === 'TBD' ? 'TBD' : t1Name}</span>
+                                                <span className={`font-bold text-xs lg:text-base text-center break-keep leading-tight ${isMyMatch && (m.t1 === myTeam.id || m.t1 === myTeam.name) ? 'text-blue-600' : 'text-gray-800'}`}>{t1Name === 'TBD' ? 'TBD' : t1Name}</span>
                                                 {isFinished && m.result?.winner === t1.name && <span className="text-[10px] lg:text-xs text-blue-500 font-bold mt-1">WIN</span>}
                                             </div>
                                             <div className="text-center font-bold flex flex-col items-center shrink-0 w-1/4">
@@ -1086,7 +1111,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                                             )}
                                             </div>
                                             <div className="flex flex-col items-center w-1/3">
-                                                <span className={`font-bold text-xs lg:text-base text-center break-keep leading-tight ${isMyMatch && myTeam.id === m.t2 && displayLeague === 'LCK' ? 'text-blue-600' : 'text-gray-800'}`}>{t2Name === 'TBD' ? 'TBD' : t2Name}</span>
+                                                <span className={`font-bold text-xs lg:text-base text-center break-keep leading-tight ${isMyMatch && (m.t2 === myTeam.id || m.t2 === myTeam.name) ? 'text-blue-600' : 'text-gray-800'}`}>{t2Name === 'TBD' ? 'TBD' : t2Name}</span>
                                                 {isFinished && m.result?.winner === t2.name && <span className="text-[10px] lg:text-xs text-blue-500 font-bold mt-1">WIN</span>}
                                             </div>
                                         </div>
@@ -1098,7 +1123,9 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, hasDrafted, 
                     <div className="flex-1 flex flex-col items-center justify-center text-gray-400 py-10">
                         <div className="text-2xl lg:text-4xl mb-2 lg:mb-4">⏳</div>
                         <div className="text-lg lg:text-xl font-bold">{displayLeague} 일정이 없습니다.</div>
-                        <p className="mt-2 text-sm text-gray-500">LCK 리그가 시작되면 일정이 자동으로 생성됩니다.</p>
+                        <p className="mt-2 text-sm text-gray-500">
+                            {displayLeague === 'LCK' ? 'LCK 리그가 시작되면 일정이 자동으로 생성됩니다.' : `${displayLeague} 탭을 클릭하면 일정이 자동으로 생성됩니다.`}
+                        </p>
                     </div>
                 )}
                 </>
