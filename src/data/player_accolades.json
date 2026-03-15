@@ -2428,5 +2428,414 @@
         "기간": "2024.11~현재"
       }
     ]
+  },
+  {
+    "id": "Kingen",
+    "name": "킹겐",
+    "team_titles": {
+      "worlds": 1,
+      "worlds_years": [
+        "2022 · DRX"
+      ],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 1,
+      "lck_years": [
+        "2018 서머 · KT"
+      ],
+      "other": []
+    },
+    "individual_awards": [
+      {
+        "year": 2021,
+        "award": "LCK 스프링 서드 팀",
+        "team": "DRX"
+      },
+      {
+        "year": 2022,
+        "award": "월즈 FMVP",
+        "team": "DRX"
+      },
+      {
+        "year": 2024,
+        "award": "LCK 서머 서드 팀",
+        "team": "DK"
+      }
+    ],
+    "career_stats": {
+      "pro_years": 7
+    },
+    "선수_경력": [
+      {
+        "팀": "KT",
+        "기간": "2018.1~2019.11"
+      },
+      {
+        "팀": "BLG",
+        "기간": "2019.12~2020.11"
+      },
+      {
+        "팀": "DRX",
+        "기간": "2020.11~2022.11"
+      },
+      {
+        "팀": "HLE",
+        "기간": "2022.11~2023.11"
+      },
+      {
+        "팀": "DK",
+        "기간": "2023.11~2024.11"
+      },
+      {
+        "팀": "NS",
+        "기간": "2024.11~현재"
+      }
+    ]
+  },
+  {
+    "id": "Sponge",
+    "name": "스폰지",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 0,
+      "lck_years": [],
+      "other": [
+        "ASI CL (2023, DRX 챌린저스)"
+      ]
+    },
+    "individual_awards": [
+      {
+        "year": 2023,
+        "award": "ASI CL FMVP",
+        "team": "DRX 챌린저스"
+      }
+    ],
+    "career_stats": {
+      "pro_years": 4
+    },
+    "선수_경력": [
+      {
+        "팀": "DRX 챌린저스",
+        "기간": "2022.5~2023.11"
+      },
+      {
+        "팀": "DRX",
+        "기간": "2023.11~2025.11"
+      },
+      {
+        "팀": "NS",
+        "기간": "2025.11~현재"
+      }
+    ]
+  },
+  {
+    "id": "Scout",
+    "name": "스카웃",
+    "team_titles": {
+      "worlds": 1,
+      "worlds_years": [
+        "2021 · EDG"
+      ],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 0,
+      "lck_years": [],
+      "other": [
+        "LPL 서머 (2016, EDG)",
+        "LPL 서머 (2017, EDG)",
+        "LPL 서머 (2021, EDG)",
+        "데마시아컵 (2016, EDG)",
+        "데마시아컵 (2017, EDG)",
+        "리프트 라이벌즈 (2017, LPL)",
+        "리프트 라이벌즈 (2018, LPL)"
+      ]
+    },
+    "individual_awards": [
+      {
+        "year": 2017,
+        "award": "LPL 서머 FMVP",
+        "team": "EDG"
+      },
+      {
+        "year": 2018,
+        "award": "LPL 서머 서드 팀",
+        "team": "EDG"
+      },
+      {
+        "year": 2021,
+        "award": "LPL 올해의 선수",
+        "team": "EDG"
+      },
+      {
+        "year": 2021,
+        "award": "LPL 올해의 미드",
+        "team": "EDG"
+      },
+      {
+        "year": 2021,
+        "award": "LPL 서머 FMVP",
+        "team": "EDG"
+      },
+      {
+        "year": 2021,
+        "award": "월즈 FMVP",
+        "team": "EDG"
+      },
+      {
+        "year": 2021,
+        "award": "LPL 스프링 퍼스트 팀",
+        "team": "EDG"
+      },
+      {
+        "year": 2022,
+        "award": "LPL 스프링 서드 팀",
+        "team": "EDG"
+      },
+      {
+        "year": 2023,
+        "award": "LPL 스프링 정규시즌 MVP",
+        "team": "LNG"
+      },
+      {
+        "year": 2023,
+        "award": "LPL 서머 정규시즌 MVP",
+        "team": "LNG"
+      },
+      {
+        "year": 2023,
+        "award": "LPL 스프링 퍼스트 팀",
+        "team": "LNG"
+      },
+      {
+        "year": 2023,
+        "award": "LPL 서머 세컨 팀",
+        "team": "LNG"
+      },
+      {
+        "year": 2024,
+        "award": "LPL 서머 세컨 팀",
+        "team": "LNG"
+      },
+      {
+        "year": 2025,
+        "award": "LPL 스플릿1 세컨 팀",
+        "team": "JDG"
+      },
+      {
+        "year": 2025,
+        "award": "LPL 스플릿2 서드 팀",
+        "team": "JDG"
+      }
+    ],
+    "career_stats": {
+      "pro_years": 10
+    },
+    "선수_경력": [
+      {
+        "팀": "SKT",
+        "기간": "2015.5~2016.3"
+      },
+      {
+        "팀": "EDG",
+        "기간": "2016.3~2022.12"
+      },
+      {
+        "팀": "LNG",
+        "기간": "2022.12~2024.12"
+      },
+      {
+        "팀": "JDG",
+        "기간": "2024.12~2025.11"
+      },
+      {
+        "팀": "NS",
+        "기간": "2025.11~현재"
+      }
+    ]
+  },
+  {
+    "id": "Calix",
+    "name": "칼릭스",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 0,
+      "lck_years": [],
+      "other": [
+        "LCK CL 서머 (2023, NS 챌린저스)"
+      ]
+    },
+    "individual_awards": [],
+    "career_stats": {
+      "pro_years": 3
+    },
+    "선수_경력": [
+      {
+        "팀": "NS 챌린저스",
+        "기간": "2023.1~2025.4"
+      },
+      {
+        "팀": "NS",
+        "기간": "2025.4~현재"
+      }
+    ]
+  },
+  {
+    "id": "Taeyoon",
+    "name": "태윤",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 0,
+      "lck_years": [],
+      "other": []
+    },
+    "individual_awards": [],
+    "career_stats": {
+      "pro_years": 5
+    },
+    "선수_경력": [
+      {
+        "팀": "DRX 챌린저스",
+        "기간": "2021.1~2021.7"
+      },
+      {
+        "팀": "DRX",
+        "기간": "2021.7~2022.11"
+      },
+      {
+        "팀": "KDF",
+        "기간": "2022.11~2024.1"
+      },
+      {
+        "팀": "KDF 챌린저스",
+        "기간": "2024.1~2024.11"
+      },
+      {
+        "팀": "WE",
+        "기간": "2024.12~2025.11"
+      },
+      {
+        "팀": "NS",
+        "기간": "2025.11~현재"
+      }
+    ]
+  },
+  {
+    "id": "Lehends",
+    "name": "리헨즈",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 1,
+      "msi_years": [
+        "2024 · Gen.G"
+      ],
+      "lck": 3,
+      "lck_years": [
+        "2022 서머 · Gen.G",
+        "2024 스프링 · Gen.G",
+        "2023 서머 · KT"
+      ],
+      "other": [
+        "케스파컵 (2018, Griffin)",
+        "리프트 라이벌즈 (2019, LCK)"
+      ]
+    },
+    "individual_awards": [
+      {
+        "year": 2018,
+        "award": "LCK CL 스프링 정규시즌 MVP",
+        "team": "Griffin"
+      },
+      {
+        "year": 2022,
+        "award": "LCK 스프링 서드 팀",
+        "team": "Gen.G"
+      },
+      {
+        "year": 2022,
+        "award": "LCK 서머 퍼스트 팀",
+        "team": "Gen.G"
+      },
+      {
+        "year": 2023,
+        "award": "LCK 스프링 서드 팀",
+        "team": "KT"
+      },
+      {
+        "year": 2023,
+        "award": "LCK 서머 정규시즌 MVP",
+        "team": "KT"
+      },
+      {
+        "year": 2023,
+        "award": "LCK 서머 퍼스트 팀",
+        "team": "KT"
+      },
+      {
+        "year": 2024,
+        "award": "MSI FMVP",
+        "team": "Gen.G"
+      },
+      {
+        "year": 2024,
+        "award": "LCK 스프링 세컨 팀",
+        "team": "Gen.G"
+      },
+      {
+        "year": 2024,
+        "award": "LCK 서머 퍼스트 팀",
+        "team": "Gen.G"
+      }
+    ],
+    "career_stats": {
+      "pro_years": 9
+    },
+    "선수_경력": [
+      {
+        "팀": "SBENU KOREA",
+        "기간": "2016.5~2016.10"
+      },
+      {
+        "팀": "BAN PLZ",
+        "기간": "2017.1~2017.5"
+      },
+      {
+        "팀": "Griffin",
+        "기간": "2017.11~2019.11"
+      },
+      {
+        "팀": "HLE",
+        "기간": "2019.12~2020.11"
+      },
+      {
+        "팀": "Afreeca Freecs",
+        "기간": "2020.11~2021.11"
+      },
+      {
+        "팀": "Gen.G",
+        "기간": "2021.11~2022.11"
+      },
+      {
+        "팀": "KT",
+        "기간": "2022.11~2023.11"
+      },
+      {
+        "팀": "Gen.G",
+        "기간": "2023.11~2024.11"
+      },
+      {
+        "팀": "NS",
+        "기간": "2024.11~현재"
+      }
+    ]
   }
 ]
