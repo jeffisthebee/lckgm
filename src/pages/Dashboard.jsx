@@ -2448,6 +2448,7 @@ const handleMatchClick = (match) => {
               
               {activeTab === 'playoffs' && (
                 <PlayoffTab 
+                    key={myLeague}
                     league={league}
                     teams={teams}
                     myLeague={myLeague}

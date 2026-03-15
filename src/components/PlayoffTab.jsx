@@ -6,10 +6,12 @@ import { FOREIGN_LEAGUES } from '../data/foreignLeagues';
 const PlayoffTab = ({ 
     league, 
     teams, 
+    myLeague: myLeagueProp,
     hasPlayoffsGenerated, 
     handleMatchClick 
 }) => {
-    const [currentLeague, setCurrentLeague] = useState('LCK');
+    const myLeague = myLeagueProp || 'LCK';
+    const [currentLeague, setCurrentLeague] = useState(myLeague);
     
     if (!league || !teams) return <div className="p-10 text-center text-gray-500">데이터 로딩 중...</div>;
 
