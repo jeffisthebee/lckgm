@@ -64,9 +64,10 @@ const isRegularType = (t) => {
 };
 const isPlayinType = (t) => normalizeType(t).includes('playin') || normalizeType(t) === 'playin';
 
-export default function StatsTab({ league }) {
-  // League Switcher Memory
-  const [currentLeague, setCurrentLeague] = useState('LCK');
+export default function StatsTab({ league, myLeague: myLeagueProp }) {
+  const myLeague = myLeagueProp || 'LCK';
+  // League Switcher Memory — starts on the user's own league
+  const [currentLeague, setCurrentLeague] = useState(myLeague);
   
   const [posFilter, setPosFilter] = useState('ALL');
   const [stageFilter, setStageFilter] = useState('ALL'); // 'ALL', 'PLAYIN', 'REGULAR', 'PLAYOFF'
