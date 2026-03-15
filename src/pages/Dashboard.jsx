@@ -111,7 +111,8 @@ const getOvrBadgeStyle = (ovr) => {
         && !!(grandFinalMatch && grandFinalMatch.status === 'finished');
 
     // ── [FOREIGN] Auto-draft LCK groups and generate LCK schedule (all pending)
-    // Results are simmed date-by-date by ScheduleTab's gate engine, same as watching any other league.
+    // Uses the same power-based draft as the real LCK mode:
+    // GEN (id:1) = Baron captain, HLE (id:2) = Elder captain, rest drafted by power.
     const lckAutoRunRef = useRef(false);
     useEffect(() => {
         if (!league) return;
@@ -121,9 +122,30 @@ const getOvrBadgeStyle = (ovr) => {
         if ((league.matches || []).length > 0) return; // Already set up
         lckAutoRunRef.current = true;
 
-        const shuffled = [...teams].sort(() => Math.random() - 0.5);
-        const baron = shuffled.slice(0, 5).map(t => t.id);
-        const elder = shuffled.slice(5, 10).map(t => t.id);
+        // Power-based pick (same as pickComputerTeam)
+        const pickByPower = (available) => {
+            const sorted = [...available].sort((a, b) => b.power - a.power);
+            const top = sorted[0];
+            let chance = 0.5;
+            if (top.power >= 84) chance = 0.90;
+            else if (top.power >= 80) chance = 0.70;
+            if (Math.random() < chance) return top;
+            const others = available.filter(t => t.id !== top.id);
+            return others.length > 0 ? others[Math.floor(Math.random() * others.length)] : top;
+        };
+
+        // GEN=1 → Baron, HLE=2 → Elder, draft the remaining 8 by power alternating
+        let pool = teams.filter(t => t.id !== 1 && t.id !== 2);
+        let baron = [1];
+        let elder = [2];
+        let turn = 0; // 0 = baron picks, 1 = elder picks
+        while (pool.length > 0) {
+            const picked = pickByPower(pool);
+            pool = pool.filter(t => t.id !== picked.id);
+            if (turn === 0) baron.push(picked.id);
+            else elder.push(picked.id);
+            turn = 1 - turn;
+        }
         const groups = { baron, elder };
 
         // Generate schedule with all matches PENDING — ScheduleTab sims them date by date
