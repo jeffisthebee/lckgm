@@ -1749,6 +1749,14 @@ const handleMatchClick = (match) => {
     const isRegularSeasonFinished = league.matches 
       ? league.matches.filter(m => m.type === 'regular').every(m => m.status === 'finished') 
       : false;
+
+    // LCK regular season done = all LCK regular matches finished (last game 1.25 19:30)
+    // For LCK players this is the same as isRegularSeasonFinished.
+    // For foreign players the LCK schedule lives in league.matches (auto-simmed).
+    const isLCKRegularSeasonOver = (() => {
+      const lckRegular = (league.matches || []).filter(m => m.type === 'regular');
+      return lckRegular.length > 0 && lckRegular.every(m => m.status === 'finished');
+    })();
     
     const hasSuperWeekGenerated = league.matches
       ? league.matches.some(m => m.type === 'super')
@@ -2144,13 +2152,32 @@ const handleMatchClick = (match) => {
               </button>
             )}
 
+            {/* LCK player: patch + superweek button */}
             {!isMyLeagueForeign && hasDrafted && isRegularSeasonFinished && league.metaVersion !== '16.02' && !hasFST && (
                  <button 
                  onClick={handleGenerateSuperWeek} 
                  className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition whitespace-nowrap"
                >
-                   <span>🔥</span> <span className="hidden sm:inline">슈퍼위크</span>
+                   <span>🔥</span> <span className="hidden sm:inline">16.02 메타 확인 / 슈퍼위크 생성 완료</span><span className="sm:hidden">슈퍼위크</span>
                </button>
+            )}
+
+            {/* Foreign league player: meta-only confirm — appears when LCK regular season ends */}
+            {isMyLeagueForeign && isLCKRegularSeasonOver && league.metaVersion !== '16.02' && (
+                <button
+                  onClick={() => {
+                    const sourceList = (league.currentChampionList && league.currentChampionList.length > 0)
+                      ? league.currentChampionList : championList;
+                    const newChampionList = updateChampionMeta(sourceList);
+                    const updates = { currentChampionList: newChampionList, metaVersion: '16.02' };
+                    setLeague(prev => ({ ...prev, ...updates }));
+                    updateLeague(league.id, updates);
+                    alert('🔥 16.02 메타 패치가 적용되었습니다!');
+                  }}
+                  className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition whitespace-nowrap"
+                >
+                  <span>🔥</span> <span className="hidden sm:inline">16.02 메타 확인</span><span className="sm:hidden">메타</span>
+                </button>
             )}
 
             {!isMyLeagueForeign && isSuperWeekFinished && !hasPlayInGenerated && (
