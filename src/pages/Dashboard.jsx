@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { teams, teamFinanceData } from '../data/teams';
-import { championList, difficulties } from '../data/constants';
+import { championList, difficulties, TEAM_COLORS } from '../data/constants';
 import { simulateMatch, getTeamRoster, generateSchedule, quickSimulateMatch } from '../engine/simEngine';
 import { getFullTeamRoster } from '../engine/rosterLogic';
 import LiveGamePlayer from '../components/LiveGamePlayer';
@@ -761,36 +761,84 @@ const handleMatchClick = (match) => {
     };
   
     if (!league) return <div className="flex h-screen items-center justify-center font-bold text-gray-500">데이터 로딩 중... (응답이 없으면 메인에서 초기화해주세요)</div>;
-     
-    const myTeam = teams.find(t => String(t.id) === String(league.team.id)) || league.team;
-    const viewingTeam = teams.find(t => String(t.id) === String(viewingTeamId)) || myTeam;
-    const currentRoster = (playerList || []).filter(p => p.팀 === viewingTeam.name);
-     
-    const isCaptain = myTeam.id === 1 || myTeam.id === 2; 
-    const hasDrafted = league.groups && league.groups.baron && league.groups.baron.length > 0;
-    
-    const nextGlobalMatch = league.matches
-      ? [...league.matches]
-          .filter(m => m.status === 'pending')
-          .sort((a, b) => {
-            const parseDateTime = (m) => {
-              const [month, day] = (m.date || '').split(' ')[0].split('.').map(Number);
-              const [h, min] = (m.time || '0:00').split(':').map(Number);
-              return (month || 0) * 10000000 + (day || 0) * 100000 + (h || 0) * 100 + (min || 0);
-            };
-            return parseDateTime(a) - parseDateTime(b);
-          })[0] || null
-      : null;
-  
-    // ID Normalization Helper to safely compare IDs
+
+    // ── Foreign league mode ──────────────────────────────────────────────────
+    const myLeague = league.myLeague || 'LCK';
+    const isMyLeagueForeign = myLeague !== 'LCK';
+
+    // ── myTeam: LCK uses numeric ID, foreign uses name string ───────────────
+    const myTeam = (() => {
+      if (!isMyLeagueForeign) {
+        return teams.find(t => String(t.id) === String(league.team.id)) || league.team;
+      }
+      const foreignTeamsList = FOREIGN_LEAGUES[myLeague] || [];
+      const found = foreignTeamsList.find(t => t.name === league.team.name || t.id === league.team.id);
+      if (found) {
+        return { ...found, colors: { primary: TEAM_COLORS[found.name] || TEAM_COLORS['DEFAULT'], secondary: '#fff' } };
+      }
+      // Fallback: use saved team object (already has colors from TeamSelection)
+      return league.team;
+    })();
+
+    // ── viewingTeam: for foreign players just use myTeam ────────────────────
+    const viewingTeam = (() => {
+      if (!isMyLeagueForeign) {
+        return teams.find(t => String(t.id) === String(viewingTeamId)) || myTeam;
+      }
+      return myTeam;
+    })();
+
+    // ── currentRoster: LCK = players.json, foreign = FOREIGN_PLAYERS ────────
+    const currentRoster = (() => {
+      if (!isMyLeagueForeign) {
+        return (playerList || []).filter(p => p.팀 === viewingTeam.name);
+      }
+      const allForeignPlayers = Object.values(FOREIGN_PLAYERS || {}).flat().filter(Boolean);
+      return allForeignPlayers.filter(p => p.팀 === viewingTeam.name || p.team === viewingTeam.name);
+    })();
+
+    // ── Draft: LCK-only concept; foreign players always skip it ─────────────
+    const isCaptain = !isMyLeagueForeign && (myTeam.id === 1 || myTeam.id === 2);
+    const hasDrafted = isMyLeagueForeign ? true : (league.groups && league.groups.baron && league.groups.baron.length > 0);
+
+    // ── nextGlobalMatch: scan the user's own league matches ─────────────────
+    const parseDateTime = (m) => {
+      const [month, day] = (m.date || '').split(' ')[0].split('.').map(Number);
+      const [h, min] = (m.time || '0:00').split(':').map(Number);
+      return (month || 0) * 10000000 + (day || 0) * 100000 + (h || 0) * 100 + (min || 0);
+    };
+
+    const nextGlobalMatch = (() => {
+      const matchPool = isMyLeagueForeign
+        ? (league.foreignMatches?.[myLeague] || [])
+        : (league.matches || []);
+      return [...matchPool]
+        .filter(m => m.status === 'pending')
+        .sort((a, b) => parseDateTime(a) - parseDateTime(b))[0] || null;
+    })();
+
+    // ID Normalization Helper to safely compare IDs (LCK)
     const safeId = (id) => (typeof id === 'object' ? id.id : Number(id));
-  
-    const isMyNextMatch = nextGlobalMatch 
-      ? (safeId(nextGlobalMatch.t1) === safeId(myTeam.id) || safeId(nextGlobalMatch.t2) === safeId(myTeam.id)) 
+
+    // ── isMyNextMatch: numeric for LCK, name-string for foreign ─────────────
+    const isMyNextMatch = nextGlobalMatch
+      ? isMyLeagueForeign
+        ? (nextGlobalMatch.t1 === myTeam.name || nextGlobalMatch.t2 === myTeam.name ||
+           nextGlobalMatch.t1 === myTeam.id   || nextGlobalMatch.t2 === myTeam.id)
+        : (safeId(nextGlobalMatch.t1) === safeId(myTeam.id) || safeId(nextGlobalMatch.t2) === safeId(myTeam.id))
       : false;
-  
-    const t1 = nextGlobalMatch ? teams.find(t => t.id === safeId(nextGlobalMatch.t1)) : null;
-    const t2 = nextGlobalMatch ? teams.find(t => t.id === safeId(nextGlobalMatch.t2)) : null;
+
+    // ── t1/t2 for next-match display in header button ────────────────────────
+    const t1 = nextGlobalMatch
+      ? isMyLeagueForeign
+        ? (FOREIGN_LEAGUES[myLeague] || []).find(t => t.name === nextGlobalMatch.t1 || t.id === nextGlobalMatch.t1)
+        : teams.find(t => t.id === safeId(nextGlobalMatch.t1))
+      : null;
+    const t2 = nextGlobalMatch
+      ? isMyLeagueForeign
+        ? (FOREIGN_LEAGUES[myLeague] || []).find(t => t.name === nextGlobalMatch.t2 || t.id === nextGlobalMatch.t2)
+        : teams.find(t => t.id === safeId(nextGlobalMatch.t2))
+      : null;
 
     // isMyNextFSTMatch MUST be here — after myTeam is defined
     const isMyNextFSTMatch = nextFSTMatch
@@ -1066,8 +1114,48 @@ const handleMatchClick = (match) => {
   const handleProceedNextMatch = () => {
     try {
       if (!nextGlobalMatch) return;
-  
-      // Safe ID check
+
+      // For foreign leagues — just auto-sim the CPU match into foreignMatches
+      if (isMyLeagueForeign) {
+        const foreignTeamsList = FOREIGN_LEAGUES[myLeague] || [];
+        const allForeignPlayers = Object.values(FOREIGN_PLAYERS || {}).flat().filter(Boolean);
+
+        const resolveTeam = (token) => {
+          const t = foreignTeamsList.find(x => x.name === token || x.id === token);
+          return t ? { ...t, colors: { primary: TEAM_COLORS[t.name] || TEAM_COLORS['DEFAULT'], secondary: '#fff' } } : null;
+        };
+        const resolveRoster = (teamName) => {
+          const r = allForeignPlayers.filter(p => p.팀 === teamName || p.team === teamName);
+          return ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(role => {
+            const p = r.find(p => String(p.포지션 || p.role).toUpperCase() === role);
+            if (p) return { ...p, 이름: p.이름 || p.playerName || `${teamName} ${role}`, 종합: p.종합 || p.ovr || 80 };
+            return { 이름: `${teamName} ${role}`, 포지션: role, 종합: 80, 팀: teamName };
+          });
+        };
+
+        const t1Obj = resolveTeam(nextGlobalMatch.t1);
+        const t2Obj = resolveTeam(nextGlobalMatch.t2);
+        if (!t1Obj || !t2Obj) { alert(`팀 데이터 오류`); return; }
+
+        const result = quickSimulateMatch(
+          { ...t1Obj, roster: resolveRoster(t1Obj.name) },
+          { ...t2Obj, roster: resolveRoster(t2Obj.name) },
+          nextGlobalMatch.format || 'BO3'
+        );
+
+        const updatedForeignMatches = (league.foreignMatches?.[myLeague] || []).map(m =>
+          m.id === nextGlobalMatch.id
+            ? { ...m, status: 'finished', result: { winner: result.winner, score: result.scoreString, history: result.history } }
+            : m
+        );
+        const updatedLeague = { ...league, foreignMatches: { ...league.foreignMatches, [myLeague]: updatedForeignMatches } };
+        updateLeague(league.id, updatedLeague);
+        setLeague(updatedLeague);
+        recalculateStandings(updatedLeague);
+        return;
+      }
+
+      // ── LCK path ─────────────────────────────────────────────────────────
       const getID = (val) => (val && typeof val === 'object' && val.id) ? val.id : val;
       const myId = String(myTeam.id);
       
@@ -1076,46 +1164,27 @@ const handleMatchClick = (match) => {
         String(getID(nextGlobalMatch.t2)) === myId;
   
       if (!isPlayerMatch) {
-        // Run the sim (this now calls the fast Quick Sim)
         const result = runSimulationForMatch(nextGlobalMatch, false);
-  
         if (!result) throw new Error("Simulation returned null");
   
-        // Standardize Score String
         let scoreStr = "2:0"; 
-        if (result.scoreString) {
-            scoreStr = result.scoreString;
-        } else if (result.score) {
-            const values = Object.values(result.score);
-            if (values.length >= 2) scoreStr = `${values[0]}:${values[1]}`;
-        }
+        if (result.scoreString) scoreStr = result.scoreString;
+        else if (result.score) { const values = Object.values(result.score); if (values.length >= 2) scoreStr = `${values[0]}:${values[1]}`; }
   
-        // Construct Final Result Object
-        const finalResult = { 
-            winner: result.winnerName, 
-            score: scoreStr,
-            history: result.history
-        };
-  
-        // Update League State
+        const finalResult = { winner: result.winnerName, score: scoreStr, history: result.history };
         const updatedMatches = league.matches.map(m => 
-            m.id === nextGlobalMatch.id ? { ...m, status: 'finished', result: finalResult } : m
+          m.id === nextGlobalMatch.id ? { ...m, status: 'finished', result: finalResult } : m
         );
   
         const updatedLeague = { ...league, matches: updatedMatches };
-        
         updateLeague(league.id, updatedLeague);
         setLeague(updatedLeague);
         recalculateStandings(updatedLeague); 
-  
-        // Trigger Next Round Checks
         checkAndGenerateNextPlayInRound(updatedMatches);
         checkAndGenerateNextPlayoffRound(updatedMatches);
-  
         return;
       }
   
-      // If player match, navigate to game
       navigate(`/match/${nextGlobalMatch.id}`);
     } catch (err) {
       console.error("Next Match Error:", err);
@@ -1123,47 +1192,63 @@ const handleMatchClick = (match) => {
     }
   };
   
-    // [FIX] Robust Start Match Handler (Green Button) - Updated for Captain Mode
+    // [FIX] Robust Start Match Handler - supports both LCK and foreign leagues
     const handleStartMyMatch = (mode = 'auto') => {
       try {
-        if (!nextGlobalMatch) {
-          alert("진행할 경기가 없습니다.");
-          return;
+        if (!nextGlobalMatch) { alert("진행할 경기가 없습니다."); return; }
+
+        let t1Obj, t2Obj, t1Roster, t2Roster;
+
+        if (isMyLeagueForeign) {
+          // ── Foreign: team tokens are name strings ──────────────────────────
+          const foreignTeamsList = FOREIGN_LEAGUES[myLeague] || [];
+          const allForeignPlayers = Object.values(FOREIGN_PLAYERS || {}).flat().filter(Boolean);
+
+          const resolveTeam = (token) => {
+            const t = foreignTeamsList.find(x => x.name === token || x.id === token);
+            return t ? { ...t, colors: { primary: TEAM_COLORS[t.name] || TEAM_COLORS['DEFAULT'], secondary: '#fff' } } : null;
+          };
+          const resolveRoster = (teamName) => {
+            const r = allForeignPlayers.filter(p => p.팀 === teamName || p.team === teamName);
+            return ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(role => {
+              const p = r.find(p => String(p.포지션 || p.role).toUpperCase() === role);
+              if (p) return { ...p, 이름: p.이름 || p.playerName || `${teamName} ${role}`, 종합: p.종합 || p.ovr || 80 };
+              return { 이름: `${teamName} ${role}`, 포지션: role, 종합: 80, 팀: teamName };
+            });
+          };
+
+          t1Obj = resolveTeam(nextGlobalMatch.t1);
+          t2Obj = resolveTeam(nextGlobalMatch.t2);
+          if (!t1Obj || !t2Obj) {
+            alert(`팀 데이터 오류! T1: ${nextGlobalMatch.t1}, T2: ${nextGlobalMatch.t2}`);
+            return;
+          }
+          t1Roster = resolveRoster(t1Obj.name);
+          t2Roster = resolveRoster(t2Obj.name);
+
+        } else {
+          // ── LCK: numeric IDs ───────────────────────────────────────────────
+          const t1Id = typeof nextGlobalMatch.t1 === 'object' ? nextGlobalMatch.t1.id : Number(nextGlobalMatch.t1);
+          const t2Id = typeof nextGlobalMatch.t2 === 'object' ? nextGlobalMatch.t2.id : Number(nextGlobalMatch.t2);
+          t1Obj = teams.find(t => Number(t.id) === t1Id);
+          t2Obj = teams.find(t => Number(t.id) === t2Id);
+          if (!t1Obj || !t2Obj) { alert(`팀 데이터 오류! T1 ID: ${t1Id}, T2 ID: ${t2Id}`); return; }
+          t1Roster = getFullTeamRoster(t1Obj.name);
+          t2Roster = getFullTeamRoster(t2Obj.name);
         }
-    
-        // 1. Force IDs to Numbers
-        const t1Id = typeof nextGlobalMatch.t1 === 'object' ? nextGlobalMatch.t1.id : Number(nextGlobalMatch.t1);
-        const t2Id = typeof nextGlobalMatch.t2 === 'object' ? nextGlobalMatch.t2.id : Number(nextGlobalMatch.t2);
-    
-        const t1Obj = teams.find(t => Number(t.id) === t1Id);
-        const t2Obj = teams.find(t => Number(t.id) === t2Id);
-    
-        if (!t1Obj || !t2Obj) {
-          alert(`팀 데이터 오류! T1 ID: ${t1Id}, T2 ID: ${t2Id}`);
-          return;
-        }
-    
-        // 2. Fetch Rosters using the global function (Full Roster for Manual Mode)
-        // [MODIFIED] Now using getFullTeamRoster to support substitutes in LiveGamePlayer
-        const t1Roster = getFullTeamRoster(t1Obj.name);
-        const t2Roster = getFullTeamRoster(t2Obj.name);
-  
-        // 3. Check for Champion List validity
-        const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0) 
-            ? league.currentChampionList 
-            : championList;
-    
-        // 4. Set Data for Live Modal (Added isManualMode flag)
+
+        const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0)
+          ? league.currentChampionList : championList;
+
         setLiveMatchData({
           match: nextGlobalMatch,
           teamA: { ...t1Obj, roster: t1Roster },
           teamB: { ...t2Obj, roster: t2Roster },
-          safeChampionList: safeChampionList,
-          isManualMode: mode === 'manual' 
+          safeChampionList,
+          isManualMode: mode === 'manual'
         });
-        
         setIsLiveGameMode(true);
-    
+
       } catch (error) {
         console.error("경기 시작 오류:", error);
         alert(`경기 시작 실패: ${error.message}`);
@@ -1171,37 +1256,39 @@ const handleMatchClick = (match) => {
     };
   
     const handleLiveMatchComplete = (match, resultData) => {
-      // 1. 매치 결과 업데이트
-      const updatedMatches = league.matches.map(m => {
-          if (m.id === match.id) {
-              return {
-                  ...m,
-                  status: 'finished',
-                  result: {
-                      winner: resultData.winner,
-                      score: resultData.scoreString,
-                      history: resultData.history,
-                      posPlayer: resultData.posPlayer // Save Series MVP if exists
-                  }
-              };
-          }
-          return m;
-      });
-  
-      // 2. 리그 데이터 저장 및 상태 갱신
-      const updatedLeague = { ...league, matches: updatedMatches };
+      const result = {
+        winner: resultData.winner,
+        score: resultData.scoreString,
+        history: resultData.history,
+        posPlayer: resultData.posPlayer
+      };
+
+      let updatedLeague;
+
+      if (isMyLeagueForeign) {
+        // ── Save to foreignMatches[myLeague] ──────────────────────────────
+        const updatedForeignMatches = (league.foreignMatches?.[myLeague] || []).map(m =>
+          m.id === match.id ? { ...m, status: 'finished', result } : m
+        );
+        updatedLeague = {
+          ...league,
+          foreignMatches: { ...league.foreignMatches, [myLeague]: updatedForeignMatches }
+        };
+      } else {
+        // ── Save to league.matches (LCK) ──────────────────────────────────
+        const updatedMatches = (league.matches || []).map(m =>
+          m.id === match.id ? { ...m, status: 'finished', result } : m
+        );
+        updatedLeague = { ...league, matches: updatedMatches };
+        checkAndGenerateNextPlayInRound(updatedMatches);
+        checkAndGenerateNextPlayoffRound(updatedMatches);
+      }
+
       updateLeague(league.id, updatedLeague);
       setLeague(updatedLeague);
       recalculateStandings(updatedLeague);
-  
-      // 3. 다음 라운드 생성 체크
-      checkAndGenerateNextPlayInRound(updatedMatches);
-      checkAndGenerateNextPlayoffRound(updatedMatches);
-  
-      // 4. 모달 닫기
       setIsLiveGameMode(false);
       setLiveMatchData(null);
-      
       setTimeout(() => alert(`경기 종료! 승리: ${resultData.winner}`), 100);
     };
   
@@ -1301,7 +1388,19 @@ const handleMatchClick = (match) => {
       ...(hasFST ? [{ id: 'fst', name: 'FST 토너먼트', icon: '🌍' }] : []),
     ];
     
-    const myRecord = computedStandings[myTeam.id] || { w: 0, l: 0, diff: 0 };
+    const myRecord = (() => {
+      if (!isMyLeagueForeign) return computedStandings[myTeam.id] || { w: 0, l: 0, diff: 0 };
+      // For foreign: compute W/L from their league's finished matches
+      const fMatches = (league.foreignMatches?.[myLeague] || [])
+        .filter(m => (m.type === 'regular' || m.type === 'super') && m.status === 'finished');
+      let w = 0, l = 0;
+      fMatches.forEach(m => {
+        const involved = m.t1 === myTeam.name || m.t2 === myTeam.name || m.t1 === myTeam.id || m.t2 === myTeam.id;
+        if (!involved || !m.result?.winner) return;
+        if (m.result.winner === myTeam.name) w++; else l++;
+      });
+      return { w, l, diff: w - l };
+    })();
     const finance = teamFinanceData[viewingTeam.name] || { total_expenditure: 0, cap_expenditure: 0, luxury_tax: 0 };
   
     
@@ -1657,22 +1756,27 @@ const handleMatchClick = (match) => {
     };
   
     let effectiveDate;
-    if (isSeasonOver) {
+    if (isSeasonOver && !isMyLeagueForeign) {
       effectiveDate = '시즌 종료';
     } else if (nextGlobalMatch) {
-      const lastFinished = league.matches
+      const matchPool = isMyLeagueForeign ? (league.foreignMatches?.[myLeague] || []) : (league.matches || []);
+      const lastFinished = matchPool
         .filter(m => m.status === 'finished')
         .sort((a, b) => parseDate(b.date) - parseDate(a.date))[0];
-      // Stay on the last played date until we actually start a new day's games
       effectiveDate = (lastFinished && lastFinished.date !== nextGlobalMatch.date)
         ? lastFinished.date
         : nextGlobalMatch.date;
     } else if (hasDrafted) {
-      const lastMatch = league.matches.filter(m => m.status === 'finished').sort((a,b) => parseDate(b.date) - parseDate(a.date))[0];
-      if (isPlayInFinished) effectiveDate = "2.9 (월) 이후";
-      else if (isSuperWeekFinished) effectiveDate = "2.2 (월) 이후";
-      else if (isRegularSeasonFinished) effectiveDate = "1.26 (월) 이후";
-      else effectiveDate = lastMatch ? `${lastMatch.date} 이후` : '대진 생성 대기 중';
+      const matchPool = isMyLeagueForeign ? (league.foreignMatches?.[myLeague] || []) : (league.matches || []);
+      const lastMatch = matchPool.filter(m => m.status === 'finished').sort((a,b) => parseDate(b.date) - parseDate(a.date))[0];
+      if (isMyLeagueForeign) {
+        effectiveDate = lastMatch ? `${lastMatch.date} 이후` : '시즌 진행 중';
+      } else {
+        if (isPlayInFinished) effectiveDate = "2.9 (월) 이후";
+        else if (isSuperWeekFinished) effectiveDate = "2.2 (월) 이후";
+        else if (isRegularSeasonFinished) effectiveDate = "1.26 (월) 이후";
+        else effectiveDate = lastMatch ? `${lastMatch.date} 이후` : '대진 생성 대기 중';
+      }
     } else {
       effectiveDate = '2026 프리시즌';
     }
@@ -1960,7 +2064,7 @@ const handleMatchClick = (match) => {
               </button>
             )}
 
-            {hasDrafted && isRegularSeasonFinished && league.metaVersion !== '16.02' && !hasFST && (
+            {!isMyLeagueForeign && hasDrafted && isRegularSeasonFinished && league.metaVersion !== '16.02' && !hasFST && (
                  <button 
                  onClick={handleGenerateSuperWeek} 
                  className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition whitespace-nowrap"
@@ -1969,7 +2073,7 @@ const handleMatchClick = (match) => {
                </button>
             )}
 
-            {isSuperWeekFinished && !hasPlayInGenerated && (
+            {!isMyLeagueForeign && isSuperWeekFinished && !hasPlayInGenerated && (
                 <button 
                 onClick={handleGeneratePlayIn} 
                 className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition whitespace-nowrap"
@@ -1978,7 +2082,7 @@ const handleMatchClick = (match) => {
               </button>
             )} 
 
-            {isPlayInFinished && !hasPlayoffsGenerated && (
+            {!isMyLeagueForeign && isPlayInFinished && !hasPlayoffsGenerated && (
                 <button 
                 onClick={handleGeneratePlayoffs} 
                 className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-yellow-500 hover:bg-yellow-600 text-white shadow-sm flex items-center gap-2 animate-bounce transition whitespace-nowrap"
@@ -1987,7 +2091,7 @@ const handleMatchClick = (match) => {
               </button>
             )}
             
-            {hasDrafted && nextGlobalMatch && !isMyNextMatch && 
+            {(hasDrafted || isMyLeagueForeign) && nextGlobalMatch && !isMyNextMatch && 
              !(nextGlobalMatch.type === 'super' && league.metaVersion !== '16.02') && (
                 <button 
                   onClick={handleProceedNextMatch} 
@@ -1997,7 +2101,7 @@ const handleMatchClick = (match) => {
                 </button>
             )}
 
-            <button onClick={handleDraftStart} disabled={hasDrafted} className={`px-3 lg:px-6 py-1.5 rounded-full font-bold text-xs lg:text-sm shadow-sm transition flex items-center gap-2 whitespace-nowrap ${hasDrafted ? 'bg-gray-100 text-gray-400 cursor-not-allowed hidden' : 'bg-green-600 hover:bg-green-700 text-white animate-pulse'}`}>
+            <button onClick={handleDraftStart} disabled={hasDrafted} className={`px-3 lg:px-6 py-1.5 rounded-full font-bold text-xs lg:text-sm shadow-sm transition flex items-center gap-2 whitespace-nowrap ${hasDrafted || isMyLeagueForeign ? 'hidden' : 'bg-green-600 hover:bg-green-700 text-white animate-pulse'}`}>
                 <span>▶</span> {hasDrafted ? "" : (isCaptain ? "팀 선정" : "조 추첨")}
             </button>
           </div>
@@ -2224,6 +2328,7 @@ const handleMatchClick = (match) => {
                     league={league}
                     teams={teams}
                     myTeam={myTeam}
+                    myLeague={myLeague}
                     computedStandings={computedStandings}
                     setViewingTeamId={setViewingTeamId}
                     hasDrafted={hasDrafted}
@@ -2236,6 +2341,7 @@ const handleMatchClick = (match) => {
                 <PlayoffTab 
                     league={league}
                     teams={teams}
+                    myLeague={myLeague}
                     hasPlayoffsGenerated={hasPlayoffsGenerated}
                     handleMatchClick={handleMatchClick}
                     formatTeamName={formatTeamName}
@@ -2255,9 +2361,10 @@ const handleMatchClick = (match) => {
                     <RosterTab
                     viewingTeam={viewingTeam}
                     roster={currentRoster}
+                    myLeague={myLeague}
                     onPrevTeam={handlePrevTeam}
                     onNextTeam={handleNextTeam}
-                    league={league}   // ← add this
+                    league={league}
                 />
                       )}
 
@@ -2273,16 +2380,18 @@ const handleMatchClick = (match) => {
             {activeTab === 'stats' && (
                 <StatsTab 
                     league={league}
+                    myLeague={myLeague}
                 />
             )}
-  
+
   {(activeTab === 'schedule' || activeTab === 'team_schedule') && (
                 <ScheduleTab 
                     activeTab={activeTab}
                     league={league}
-                    setLeague={setLeague} // <--- [NEW] Pass the memory controller!
+                    setLeague={setLeague}
                     teams={teams}
                     myTeam={myTeam}
+                    myLeague={myLeague}
                     hasDrafted={hasDrafted}
                     formatTeamName={formatTeamName}
                     onMatchClick={handleMatchClick} 
@@ -2290,13 +2399,13 @@ const handleMatchClick = (match) => {
             )}
 
 {activeTab === 'awards' && (
-    <AwardsTab league={league} teams={teams} playerList={playerList} />
+    <AwardsTab league={league} teams={teams} playerList={playerList} myLeague={myLeague} />
 )}
 
 
 {/* [NEW] History Tab Render */}
 {activeTab === 'history' && (
-    <HistoryTab league={league} />
+    <HistoryTab league={league} myLeague={myLeague} />
 )}
 
 {/* [NEW] FST World Tournament Tab */}
