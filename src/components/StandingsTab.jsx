@@ -19,13 +19,16 @@ const StandingsTab = ({
     league, 
     teams, 
     myTeam, 
+    myLeague: myLeagueProp,
     computedStandings, 
     setViewingTeamId, 
     hasDrafted, 
     baronTotalWins, 
     elderTotalWins 
 }) => {
-    const [currentLeague, setCurrentLeague] = useState('LCK');
+    const myLeague = myLeagueProp || 'LCK';
+    const isMyLeagueForeign = myLeague !== 'LCK';
+    const [currentLeague, setCurrentLeague] = useState(myLeague);
 
     const getScoreDiff = (scoreStr) => {
         if (!scoreStr || typeof scoreStr !== 'string') return 0;
@@ -232,12 +235,13 @@ const StandingsTab = ({
                                 }
 
                                 return (
-                                    <tr key={t.id || t.name} className="hover:bg-gray-50 transition">
+                                    <tr key={t.id || t.name} className={`transition ${t.name === myTeam?.name ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-gray-50'}`}>
                                         <td className={`py-2 ${pxClass} text-center font-bold text-gray-600`}>{idx + 1}</td>
-                                        <td className={`py-2 ${pxClass} font-bold text-gray-800`}>
+                                        <td className={`py-2 ${pxClass} font-bold ${t.name === myTeam?.name ? 'text-blue-700' : 'text-gray-800'}`}>
                                             <div className="flex items-center gap-1.5 sm:gap-2">
                                                 <div className="w-4 h-4 sm:w-5 sm:h-5 rounded-full text-white text-[8px] sm:text-[10px] flex-shrink-0 flex items-center justify-center" style={{ backgroundColor: teamColor }}>{t.name.slice(0,3)}</div>
                                                 <span className="truncate max-w-[60px] sm:max-w-full">{t.fullName || t.name}</span>
+                                                {t.name === myTeam?.name && <span className="text-[9px] font-black text-blue-500 bg-blue-100 px-1.5 py-0.5 rounded-full whitespace-nowrap">나의 팀</span>}
                                                 {statusBadge}
                                             </div>
                                         </td>
@@ -370,7 +374,9 @@ const StandingsTab = ({
                     </div>
                 ) : (
                     <div className="bg-white rounded-lg border shadow-sm p-4 sm:p-8 text-center text-gray-500 text-sm sm:text-base">
-                        아직 시즌이 시작되지 않았습니다. 조 추첨을 완료해주세요.
+                        {isMyLeagueForeign
+                            ? 'LCK 일정이 아직 생성되지 않았습니다. 잠시 후 자동으로 생성됩니다.'
+                            : '아직 시즌이 시작되지 않았습니다. 조 추첨을 완료해주세요.'}
                     </div>
                 )
             )}
