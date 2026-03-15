@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { teams, teamFinanceData } from '../data/teams';
-import { championList, difficulties, TEAM_COLORS } from '../data/constants';
+import { championList, difficulties } from '../data/constants';
 import { simulateMatch, getTeamRoster, generateSchedule, quickSimulateMatch } from '../engine/simEngine';
 import { getFullTeamRoster } from '../engine/rosterLogic';
 import LiveGamePlayer from '../components/LiveGamePlayer';
@@ -26,12 +26,6 @@ import { computeAwards, computePlayoffAwards } from '../engine/statsManager';
 import { FOREIGN_LEAGUES, FOREIGN_PLAYERS } from '../data/foreignLeagues';
 
 // --- HELPER FUNCTIONS ---
-// Safe color resolver — foreign team JSONs don't have a colors object
-const getTeamColor = (team) => {
-    if (team?.colors?.primary) return team.colors.primary;
-    return (TEAM_COLORS && TEAM_COLORS[team?.name]) || '#607d8b';
-};
-
 const getOvrBadgeStyle = (ovr) => {
     if (ovr >= 95) return 'bg-red-100 text-red-700 border-red-300 ring-red-200';
     if (ovr >= 90) return 'bg-orange-100 text-orange-700 border-orange-300 ring-orange-200';
@@ -100,14 +94,8 @@ const getOvrBadgeStyle = (ovr) => {
           };
           setLeague(sanitizedLeague);
           updateLeague(leagueId, { lastPlayed: new Date().toISOString() });
-          // For foreign leagues, use team name as viewingTeamId since they don't have numeric IDs
-          const lt = sanitizedLeague.leagueType || 'LCK';
-          setViewingTeamId(lt === 'LCK' ? sanitizedLeague.team.id : sanitizedLeague.team.name);
+          setViewingTeamId(sanitizedLeague.team.id);
           recalculateStandings(sanitizedLeague);
-          // Auto-navigate foreign leagues to schedule tab so schedule sync fires immediately
-          if (lt !== 'LCK') {
-              setActiveTab('schedule');
-          }
         }
       };
       loadData();
@@ -773,47 +761,16 @@ const handleMatchClick = (match) => {
     };
   
     if (!league) return <div className="flex h-screen items-center justify-center font-bold text-gray-500">데이터 로딩 중... (응답이 없으면 메인에서 초기화해주세요)</div>;
-
-    // ── League type detection ─────────────────────────────────
-    const leagueType = league.leagueType || 'LCK';
-    const isLCKMode = leagueType === 'LCK';
-    const allLeagueTeams = isLCKMode ? teams : (FOREIGN_LEAGUES[leagueType] || []);
-
-    const _myTeamRaw = allLeagueTeams.find(t =>
-        String(t.id) === String(league.team.id) || t.name === league.team.name
-    ) || league.team;
-    // Always ensure colors exist — foreign JSON teams don't have a colors object
-    const myTeam = (_myTeamRaw.colors?.primary)
-        ? _myTeamRaw
-        : { ..._myTeamRaw, colors: league.team.colors || { primary: getTeamColor(_myTeamRaw), secondary: '#fff' } };
-
-    const _viewingRaw = allLeagueTeams.find(t =>
-        String(t.id) === String(viewingTeamId) || t.name === String(viewingTeamId)
-    ) || myTeam;
-    const viewingTeam = (_viewingRaw.colors?.primary)
-        ? _viewingRaw
-        : { ..._viewingRaw, colors: myTeam.colors || { primary: getTeamColor(_viewingRaw), secondary: '#fff' } };
-
-    // Roster: LCK uses players.json, foreign leagues use FOREIGN_PLAYERS
-    const getForeignRoster = (teamName) => {
-        const lgPlayers = (FOREIGN_PLAYERS && FOREIGN_PLAYERS[leagueType]) ? FOREIGN_PLAYERS[leagueType] : [];
-        return lgPlayers.filter(p => p.팀 === teamName || p.team === teamName);
-    };
-    const currentRoster = isLCKMode
-        ? (playerList || []).filter(p => p.팀 === viewingTeam.name)
-        : getForeignRoster(viewingTeam.name);
      
-    const isCaptain = isLCKMode && (myTeam.id === 1 || myTeam.id === 2); 
-    // For foreign leagues: hasDrafted = season has been kicked off (groups.baron non-empty OR foreignMatches populated)
-    const hasDrafted = isLCKMode
-        ? (league.groups && league.groups.baron && league.groups.baron.length > 0)
-        : (league.groups?.baron?.length > 0 || (league.foreignMatches?.[leagueType] || []).length > 0);
+    const myTeam = teams.find(t => String(t.id) === String(league.team.id)) || league.team;
+    const viewingTeam = teams.find(t => String(t.id) === String(viewingTeamId)) || myTeam;
+    const currentRoster = (playerList || []).filter(p => p.팀 === viewingTeam.name);
+     
+    const isCaptain = myTeam.id === 1 || myTeam.id === 2; 
+    const hasDrafted = league.groups && league.groups.baron && league.groups.baron.length > 0;
     
-    const activeMatchArray = isLCKMode
-        ? (league.matches || [])
-        : (league.foreignMatches?.[leagueType] || []);
-
-    const nextGlobalMatch = [...activeMatchArray]
+    const nextGlobalMatch = league.matches
+      ? [...league.matches]
           .filter(m => m.status === 'pending')
           .sort((a, b) => {
             const parseDateTime = (m) => {
@@ -822,28 +779,18 @@ const handleMatchClick = (match) => {
               return (month || 0) * 10000000 + (day || 0) * 100000 + (h || 0) * 100 + (min || 0);
             };
             return parseDateTime(a) - parseDateTime(b);
-          })[0] || null;
+          })[0] || null
+      : null;
   
     // ID Normalization Helper to safely compare IDs
     const safeId = (id) => (typeof id === 'object' ? id.id : Number(id));
   
     const isMyNextMatch = nextGlobalMatch 
-      ? isLCKMode
-          ? (safeId(nextGlobalMatch.t1) === safeId(myTeam.id) || safeId(nextGlobalMatch.t2) === safeId(myTeam.id))
-          : (nextGlobalMatch.t1 === myTeam.name || nextGlobalMatch.t2 === myTeam.name ||
-             String(nextGlobalMatch.t1) === String(myTeam.id) || String(nextGlobalMatch.t2) === String(myTeam.id))
+      ? (safeId(nextGlobalMatch.t1) === safeId(myTeam.id) || safeId(nextGlobalMatch.t2) === safeId(myTeam.id)) 
       : false;
   
-    const t1 = nextGlobalMatch
-        ? (isLCKMode
-            ? teams.find(t => t.id === safeId(nextGlobalMatch.t1))
-            : allLeagueTeams.find(t => t.name === nextGlobalMatch.t1 || String(t.id) === String(nextGlobalMatch.t1)))
-        : null;
-    const t2 = nextGlobalMatch
-        ? (isLCKMode
-            ? teams.find(t => t.id === safeId(nextGlobalMatch.t2))
-            : allLeagueTeams.find(t => t.name === nextGlobalMatch.t2 || String(t.id) === String(nextGlobalMatch.t2)))
-        : null;
+    const t1 = nextGlobalMatch ? teams.find(t => t.id === safeId(nextGlobalMatch.t1)) : null;
+    const t2 = nextGlobalMatch ? teams.find(t => t.id === safeId(nextGlobalMatch.t2)) : null;
 
     // isMyNextFSTMatch MUST be here — after myTeam is defined
     const isMyNextFSTMatch = nextFSTMatch
@@ -1123,108 +1070,90 @@ const handleMatchClick = (match) => {
       // Safe ID check
       const getID = (val) => (val && typeof val === 'object' && val.id) ? val.id : val;
       const myId = String(myTeam.id);
-      const myName = myTeam.name;
       
-      const isPlayerMatch = isLCKMode
-        ? (String(getID(nextGlobalMatch.t1)) === myId || String(getID(nextGlobalMatch.t2)) === myId)
-        : (nextGlobalMatch.t1 === myName || nextGlobalMatch.t2 === myName ||
-           String(nextGlobalMatch.t1) === myId || String(nextGlobalMatch.t2) === myId);
-
+      const isPlayerMatch =
+        String(getID(nextGlobalMatch.t1)) === myId ||
+        String(getID(nextGlobalMatch.t2)) === myId;
+  
       if (!isPlayerMatch) {
-        // For foreign leagues: find team objects by name
-        const resolveTeam = (identifier) => isLCKMode
-            ? teams.find(t => Number(t.id) === (typeof identifier === 'object' ? identifier.id : Number(identifier)))
-            : allLeagueTeams.find(t => t.name === identifier || String(t.id) === String(identifier));
-
-        const t1Obj = resolveTeam(nextGlobalMatch.t1);
-        const t2Obj = resolveTeam(nextGlobalMatch.t2);
-        if (!t1Obj || !t2Obj) return;
-
-        const getForeignRosterForTeam = (teamObj) => {
-            const lgPlayers = (FOREIGN_PLAYERS && FOREIGN_PLAYERS[leagueType]) ? FOREIGN_PLAYERS[leagueType] : [];
-            const r = lgPlayers.filter(p => p.팀 === teamObj.name || p.team === teamObj.name);
-            if (r.length >= 5) return r;
-            return ['TOP','JGL','MID','ADC','SUP'].map(role => ({ 이름: `${teamObj.name} ${role}`, 포지션: role, 종합: teamObj.power || 80 }));
-        };
-        const t1Roster = isLCKMode ? getTeamRoster(t1Obj.name) : getForeignRosterForTeam(t1Obj);
-        const t2Roster = isLCKMode ? getTeamRoster(t2Obj.name) : getForeignRosterForTeam(t2Obj);
-
-        const format = nextGlobalMatch.format || 'BO3';
-        const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0) ? league.currentChampionList : championList;
-        const result = quickSimulateMatch({ ...t1Obj, roster: t1Roster }, { ...t2Obj, roster: t2Roster }, format, safeChampionList);
-
+        // Run the sim (this now calls the fast Quick Sim)
+        const result = runSimulationForMatch(nextGlobalMatch, false);
+  
         if (!result) throw new Error("Simulation returned null");
-
-        let scoreStr = result.scoreString || "2-0";
-        const finalResult = { winner: result.winner?.name || result.winner, score: scoreStr, history: result.history || [] };
-
-        if (isLCKMode) {
-            const updatedMatches = league.matches.map(m =>
-                m.id === nextGlobalMatch.id ? { ...m, status: 'finished', result: finalResult } : m
-            );
-            const updatedLeague = { ...league, matches: updatedMatches };
-            updateLeague(league.id, updatedLeague);
-            setLeague(updatedLeague);
-            recalculateStandings(updatedLeague);
-            checkAndGenerateNextPlayInRound(updatedMatches);
-            checkAndGenerateNextPlayoffRound(updatedMatches);
-        } else {
-            const updatedForeignMatches = (league.foreignMatches?.[leagueType] || []).map(m =>
-                m.id === nextGlobalMatch.id ? { ...m, status: 'finished', result: finalResult } : m
-            );
-            const updatedLeague = { ...league, foreignMatches: { ...league.foreignMatches, [leagueType]: updatedForeignMatches } };
-            updateLeague(league.id, updatedLeague);
-            setLeague(updatedLeague);
+  
+        // Standardize Score String
+        let scoreStr = "2:0"; 
+        if (result.scoreString) {
+            scoreStr = result.scoreString;
+        } else if (result.score) {
+            const values = Object.values(result.score);
+            if (values.length >= 2) scoreStr = `${values[0]}:${values[1]}`;
         }
+  
+        // Construct Final Result Object
+        const finalResult = { 
+            winner: result.winnerName, 
+            score: scoreStr,
+            history: result.history
+        };
+  
+        // Update League State
+        const updatedMatches = league.matches.map(m => 
+            m.id === nextGlobalMatch.id ? { ...m, status: 'finished', result: finalResult } : m
+        );
+  
+        const updatedLeague = { ...league, matches: updatedMatches };
+        
+        updateLeague(league.id, updatedLeague);
+        setLeague(updatedLeague);
+        recalculateStandings(updatedLeague); 
+  
+        // Trigger Next Round Checks
+        checkAndGenerateNextPlayInRound(updatedMatches);
+        checkAndGenerateNextPlayoffRound(updatedMatches);
+  
         return;
       }
   
-      // If player match, launch live game
-      handleStartMyMatch('auto');
+      // If player match, navigate to game
+      navigate(`/match/${nextGlobalMatch.id}`);
     } catch (err) {
       console.error("Next Match Error:", err);
       alert("경기 진행 중 오류 발생: " + err.message);
     }
   };
   
-    // [FIX] Robust Start Match Handler (Green Button) - Updated for Captain Mode + Foreign Leagues
+    // [FIX] Robust Start Match Handler (Green Button) - Updated for Captain Mode
     const handleStartMyMatch = (mode = 'auto') => {
       try {
         if (!nextGlobalMatch) {
           alert("진행할 경기가 없습니다.");
           return;
         }
-
-        const getForeignRosterForTeam = (teamObj) => {
-            const lgPlayers = (FOREIGN_PLAYERS && FOREIGN_PLAYERS[leagueType]) ? FOREIGN_PLAYERS[leagueType] : [];
-            const r = lgPlayers.filter(p => p.팀 === teamObj.name || p.team === teamObj.name);
-            if (r.length >= 5) return r;
-            return ['TOP','JGL','MID','ADC','SUP'].map(role => ({ 이름: `${teamObj.name} ${role}`, 포지션: role, 종합: teamObj.power || 80 }));
-        };
-
-        let t1Obj, t2Obj;
-        if (isLCKMode) {
-            const t1Id = typeof nextGlobalMatch.t1 === 'object' ? nextGlobalMatch.t1.id : Number(nextGlobalMatch.t1);
-            const t2Id = typeof nextGlobalMatch.t2 === 'object' ? nextGlobalMatch.t2.id : Number(nextGlobalMatch.t2);
-            t1Obj = teams.find(t => Number(t.id) === t1Id);
-            t2Obj = teams.find(t => Number(t.id) === t2Id);
-        } else {
-            t1Obj = allLeagueTeams.find(t => t.name === nextGlobalMatch.t1 || String(t.id) === String(nextGlobalMatch.t1));
-            t2Obj = allLeagueTeams.find(t => t.name === nextGlobalMatch.t2 || String(t.id) === String(nextGlobalMatch.t2));
-        }
+    
+        // 1. Force IDs to Numbers
+        const t1Id = typeof nextGlobalMatch.t1 === 'object' ? nextGlobalMatch.t1.id : Number(nextGlobalMatch.t1);
+        const t2Id = typeof nextGlobalMatch.t2 === 'object' ? nextGlobalMatch.t2.id : Number(nextGlobalMatch.t2);
+    
+        const t1Obj = teams.find(t => Number(t.id) === t1Id);
+        const t2Obj = teams.find(t => Number(t.id) === t2Id);
     
         if (!t1Obj || !t2Obj) {
-          alert(`팀 데이터 오류! T1: ${nextGlobalMatch.t1}, T2: ${nextGlobalMatch.t2}`);
+          alert(`팀 데이터 오류! T1 ID: ${t1Id}, T2 ID: ${t2Id}`);
           return;
         }
     
-        const t1Roster = isLCKMode ? getFullTeamRoster(t1Obj.name) : getForeignRosterForTeam(t1Obj);
-        const t2Roster = isLCKMode ? getFullTeamRoster(t2Obj.name) : getForeignRosterForTeam(t2Obj);
+        // 2. Fetch Rosters using the global function (Full Roster for Manual Mode)
+        // [MODIFIED] Now using getFullTeamRoster to support substitutes in LiveGamePlayer
+        const t1Roster = getFullTeamRoster(t1Obj.name);
+        const t2Roster = getFullTeamRoster(t2Obj.name);
   
+        // 3. Check for Champion List validity
         const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0) 
             ? league.currentChampionList 
             : championList;
     
+        // 4. Set Data for Live Modal (Added isManualMode flag)
         setLiveMatchData({
           match: nextGlobalMatch,
           teamA: { ...t1Obj, roster: t1Roster },
@@ -1242,54 +1171,43 @@ const handleMatchClick = (match) => {
     };
   
     const handleLiveMatchComplete = (match, resultData) => {
-      const matchResult = {
-          winner: resultData.winner,
-          score: resultData.scoreString,
-          history: resultData.history,
-          posPlayer: resultData.posPlayer
-      };
-
-      if (isLCKMode) {
-          const updatedMatches = league.matches.map(m => {
-              if (m.id === match.id) return { ...m, status: 'finished', result: matchResult };
-              return m;
-          });
-          const updatedLeague = { ...league, matches: updatedMatches };
-          updateLeague(league.id, updatedLeague);
-          setLeague(updatedLeague);
-          recalculateStandings(updatedLeague);
-          checkAndGenerateNextPlayInRound(updatedMatches);
-          checkAndGenerateNextPlayoffRound(updatedMatches);
-      } else {
-          const updatedForeignMatches = (league.foreignMatches?.[leagueType] || []).map(m => {
-              if (m.id === match.id) return { ...m, status: 'finished', result: matchResult };
-              return m;
-          });
-          const updatedLeague = { ...league, foreignMatches: { ...league.foreignMatches, [leagueType]: updatedForeignMatches } };
-          updateLeague(league.id, updatedLeague);
-          setLeague(updatedLeague);
-      }
+      // 1. 매치 결과 업데이트
+      const updatedMatches = league.matches.map(m => {
+          if (m.id === match.id) {
+              return {
+                  ...m,
+                  status: 'finished',
+                  result: {
+                      winner: resultData.winner,
+                      score: resultData.scoreString,
+                      history: resultData.history,
+                      posPlayer: resultData.posPlayer // Save Series MVP if exists
+                  }
+              };
+          }
+          return m;
+      });
   
+      // 2. 리그 데이터 저장 및 상태 갱신
+      const updatedLeague = { ...league, matches: updatedMatches };
+      updateLeague(league.id, updatedLeague);
+      setLeague(updatedLeague);
+      recalculateStandings(updatedLeague);
+  
+      // 3. 다음 라운드 생성 체크
+      checkAndGenerateNextPlayInRound(updatedMatches);
+      checkAndGenerateNextPlayoffRound(updatedMatches);
+  
+      // 4. 모달 닫기
       setIsLiveGameMode(false);
       setLiveMatchData(null);
+      
       setTimeout(() => alert(`경기 종료! 승리: ${resultData.winner}`), 100);
     };
   
     // [3] 드래프트 시작 핸들러
     const handleDraftStart = () => {
       if (hasDrafted) return;
-
-      // Foreign leagues skip the LCK draft — just mark season as started
-      // ScheduleTab's sync logic will auto-generate the schedule
-      if (!isLCKMode) {
-        const updates = { groups: { baron: ['started'], elder: [] } };
-        updateLeague(league.id, updates);
-        setLeague(prev => ({ ...prev, ...updates }));
-        setActiveTab('schedule');
-        alert(`${leagueType} 시즌이 시작되었습니다! 일정 탭에서 경기를 진행하세요.`);
-        return;
-      }
-
       setIsDrafting(true);
       const pool = teams.filter(t => t.id !== 1 && t.id !== 2);
       setDraftPool(pool);
@@ -1365,16 +1283,8 @@ const handleMatchClick = (match) => {
       }
     };
   
-    const handlePrevTeam = () => {
-        const idx = allLeagueTeams.findIndex(t => t.id === viewingTeam.id || t.name === viewingTeam.name);
-        const prev = allLeagueTeams[(idx - 1 + allLeagueTeams.length) % allLeagueTeams.length];
-        setViewingTeamId(prev.id ?? prev.name);
-    };
-    const handleNextTeam = () => {
-        const idx = allLeagueTeams.findIndex(t => t.id === viewingTeam.id || t.name === viewingTeam.name);
-        const next = allLeagueTeams[(idx + 1) % allLeagueTeams.length];
-        setViewingTeamId(next.id ?? next.name);
-    };
+    const handlePrevTeam = () => { const idx = teams.findIndex(t => t.id === viewingTeam.id); setViewingTeamId(teams[(idx - 1 + teams.length) % teams.length].id); };
+    const handleNextTeam = () => { const idx = teams.findIndex(t => t.id === viewingTeam.id); setViewingTeamId(teams[(idx + 1) % teams.length].id); };
   
     const menuItems = [
       { id: 'dashboard', name: '대시보드', icon: '📊' },
@@ -1391,17 +1301,7 @@ const handleMatchClick = (match) => {
       ...(hasFST ? [{ id: 'fst', name: 'FST 토너먼트', icon: '🌍' }] : []),
     ];
     
-    const myRecord = isLCKMode
-        ? (computedStandings[myTeam.id] || { w: 0, l: 0, diff: 0 })
-        : (() => {
-            const fMatches = league.foreignMatches?.[leagueType] || [];
-            const myName = myTeam.name;
-            let w = 0, l = 0;
-            fMatches.filter(m => m.status === 'finished' && m.result?.winner && (m.type === 'regular' || m.type === 'super')).forEach(m => {
-                if (m.result.winner === myName) w++; else if (m.t1 === myName || m.t2 === myName) l++;
-            });
-            return { w, l, diff: w - l };
-        })();
+    const myRecord = computedStandings[myTeam.id] || { w: 0, l: 0, diff: 0 };
     const finance = teamFinanceData[viewingTeam.name] || { total_expenditure: 0, cap_expenditure: 0, luxury_tax: 0 };
   
     
@@ -1667,25 +1567,25 @@ const handleMatchClick = (match) => {
       alert('🛡️ 플레이-인 대진이 생성되었습니다! (1,2시드 2라운드 직행)');
   };
     
-    const isRegularSeasonFinished = isLCKMode && league.matches 
-      ? league.matches.filter(m => m.type === 'regular').length > 0 && league.matches.filter(m => m.type === 'regular').every(m => m.status === 'finished') 
+    const isRegularSeasonFinished = league.matches 
+      ? league.matches.filter(m => m.type === 'regular').every(m => m.status === 'finished') 
       : false;
     
-    const hasSuperWeekGenerated = isLCKMode && league.matches
+    const hasSuperWeekGenerated = league.matches
       ? league.matches.some(m => m.type === 'super')
       : false;
   
-    const isSuperWeekFinished = isLCKMode && league.matches
+    const isSuperWeekFinished = league.matches
       ? league.matches.filter(m => m.type === 'super').length > 0 && league.matches.filter(m => m.type === 'super').every(m => m.status === 'finished')
       : false;
   
-    const hasPlayInGenerated = isLCKMode && league.matches
+    const hasPlayInGenerated = league.matches
       ? league.matches.some(m => m.type === 'playin')
       : false;
       
-    const isPlayInFinished = isLCKMode && hasPlayInGenerated && league.matches.some(m => m.type === 'playin' && m.round === 3 && m.status === 'finished');
+      const isPlayInFinished = hasPlayInGenerated && league.matches.some(m => m.type === 'playin' && m.round === 3 && m.status === 'finished');
       
-    const hasPlayoffsGenerated = isLCKMode && league.matches
+    const hasPlayoffsGenerated = league.matches
       ? league.matches.some(m => m.type === 'playoff')
       : false;
   
@@ -1760,22 +1660,19 @@ const handleMatchClick = (match) => {
     if (isSeasonOver) {
       effectiveDate = '시즌 종료';
     } else if (nextGlobalMatch) {
-      const lastFinished = activeMatchArray
+      const lastFinished = league.matches
         .filter(m => m.status === 'finished')
         .sort((a, b) => parseDate(b.date) - parseDate(a.date))[0];
+      // Stay on the last played date until we actually start a new day's games
       effectiveDate = (lastFinished && lastFinished.date !== nextGlobalMatch.date)
         ? lastFinished.date
         : nextGlobalMatch.date;
     } else if (hasDrafted) {
-      const lastMatch = activeMatchArray.filter(m => m.status === 'finished').sort((a,b) => parseDate(b.date) - parseDate(a.date))[0];
-      if (isLCKMode) {
-        if (isPlayInFinished) effectiveDate = "2.9 (월) 이후";
-        else if (isSuperWeekFinished) effectiveDate = "2.2 (월) 이후";
-        else if (isRegularSeasonFinished) effectiveDate = "1.26 (월) 이후";
-        else effectiveDate = lastMatch ? `${lastMatch.date} 이후` : '대진 생성 대기 중';
-      } else {
-        effectiveDate = lastMatch ? `${lastMatch.date} 이후` : `${leagueType} 시즌 진행 중`;
-      }
+      const lastMatch = league.matches.filter(m => m.status === 'finished').sort((a,b) => parseDate(b.date) - parseDate(a.date))[0];
+      if (isPlayInFinished) effectiveDate = "2.9 (월) 이후";
+      else if (isSuperWeekFinished) effectiveDate = "2.2 (월) 이후";
+      else if (isRegularSeasonFinished) effectiveDate = "1.26 (월) 이후";
+      else effectiveDate = lastMatch ? `${lastMatch.date} 이후` : '대진 생성 대기 중';
     } else {
       effectiveDate = '2026 프리시즌';
     }
@@ -1835,7 +1732,7 @@ const handleMatchClick = (match) => {
                               onClick={() => opponentChoice.onConfirm(opp)}
                               className="p-3 lg:p-4 rounded-xl border-2 transition flex flex-col items-center gap-2 bg-white border-gray-200 hover:border-blue-500 hover:shadow-md cursor-pointer"
                           >
-                              <div className="w-12 h-12 lg:w-16 lg:h-16 rounded-full flex items-center justify-center text-white font-bold shadow-sm text-sm lg:text-lg" style={{backgroundColor:getTeamColor(opp)}}>{opp.name}</div>
+                              <div className="w-12 h-12 lg:w-16 lg:h-16 rounded-full flex items-center justify-center text-white font-bold shadow-sm text-sm lg:text-lg" style={{backgroundColor:opp.colors.primary}}>{opp.name}</div>
                               <div className="font-bold text-sm lg:text-lg">{opp.fullName}</div>
                               <div className="text-xs bg-gray-100 px-3 py-1 rounded-full font-bold">
                                   {getTeamSeed(opp.id, opponentChoice.type.startsWith('playoff') ? 'playoff' : 'playin')} 시드
@@ -1930,7 +1827,7 @@ const handleMatchClick = (match) => {
                           {draftPool.map(t => (
                               <button key={t.id} onClick={() => handleUserPick(t.id)} disabled={draftTurn !== 'user'}
                                   className={`p-2 lg:p-4 rounded-xl border-2 transition flex flex-col items-center gap-2 hover:shadow-md ${draftTurn === 'user' ? 'bg-white border-gray-200 hover:border-blue-500 cursor-pointer' : 'bg-gray-50 border-gray-100 opacity-50 cursor-not-allowed'}`}>
-                                  <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-full flex items-center justify-center text-white font-bold shadow-sm text-xs" style={{backgroundColor:getTeamColor(t)}}>{t.name}</div>
+                                  <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-full flex items-center justify-center text-white font-bold shadow-sm text-xs" style={{backgroundColor:t.colors.primary}}>{t.name}</div>
                                   <div className="font-bold text-xs lg:text-sm truncate w-full">{t.fullName}</div>
                                   <div className="text-[10px] lg:text-xs bg-gray-100 px-2 py-1 rounded">전력 {t.power}</div>
                               </button>
@@ -1953,7 +1850,7 @@ const handleMatchClick = (match) => {
         {/* Responsive Sidebar: Hidden on mobile unless toggled, Fixed on Desktop */}
         <aside className={`${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:relative w-64 h-full bg-gray-900 text-gray-300 flex-shrink-0 flex flex-col shadow-xl z-40 transition-transform duration-300 ease-in-out`}>
           <div className="p-5 bg-gray-800 border-b border-gray-700 flex items-center gap-3 mt-10 lg:mt-0">
-            <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white text-xs shadow-lg" style={{backgroundColor: getTeamColor(myTeam)}}>{myTeam.name}</div>
+            <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white text-xs shadow-lg" style={{backgroundColor: myTeam.colors.primary}}>{myTeam.name}</div>
             <div><div className="text-white font-bold text-sm leading-tight">{myTeam.fullName}</div><div className="text-xs text-gray-400">GM 모드</div></div>
           </div>
           <div className="flex-1 overflow-y-auto py-4 px-2 space-y-1">
@@ -2283,7 +2180,7 @@ const handleMatchClick = (match) => {
   
                   <div className="col-span-1 lg:col-span-12 bg-white rounded-lg border shadow-sm flex flex-col min-h-[300px] lg:min-h-[500px]">
                     <div className="p-3 lg:p-5 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
-                      <div className="flex items-center gap-4"><div className="w-10 h-10 lg:w-12 lg:h-12 rounded-full flex items-center justify-center font-bold text-white shadow-sm" style={{backgroundColor: getTeamColor(viewingTeam)}}>{viewingTeam.name}</div><div><h2 className="text-lg lg:text-2xl font-black text-gray-800">{viewingTeam.fullName}</h2><p className="text-[10px] lg:text-xs font-bold text-gray-500 uppercase tracking-wide">로스터 요약</p></div></div>
+                      <div className="flex items-center gap-4"><div className="w-10 h-10 lg:w-12 lg:h-12 rounded-full flex items-center justify-center font-bold text-white shadow-sm" style={{backgroundColor: viewingTeam.colors.primary}}>{viewingTeam.name}</div><div><h2 className="text-lg lg:text-2xl font-black text-gray-800">{viewingTeam.fullName}</h2><p className="text-[10px] lg:text-xs font-bold text-gray-500 uppercase tracking-wide">로스터 요약</p></div></div>
                       <button onClick={()=>setActiveTab('roster')} className="text-xs lg:text-sm font-bold text-blue-600 hover:underline">상세 정보 보기 →</button>
                     </div>
                     <div className="p-0 overflow-x-auto">
@@ -2302,31 +2199,19 @@ const handleMatchClick = (match) => {
                               </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
-                              {currentRoster.length > 0 ? currentRoster.map((p, i) => {
-                                  const pName = p.이름 || p.playerName || p.name || '-';
-                                  const pRole = p.포지션 || p.role || p.position || '-';
-                                  const pOvr  = p.종합 || p.ovr || p.overall || '-';
-                                  const pAge  = p.나이 || p.age || '-';
-                                  const pExp  = p.경력 || p.career || '-';
-                                  const pTenure = p['팀 소속기간'] || '-';
-                                  const pSalary = p.연봉 || p.salary || '-';
-                                  const pPot  = p.잠재력 || p.potential || '-';
-                                  const pContract = p.계약 || p.contract || '-';
-                                  const pAlias = p.실명 || p.realName || '';
-                                  return (
+                              {currentRoster.length > 0 ? currentRoster.map((p, i) => (
                                   <tr key={i} className="hover:bg-gray-50 transition">
-                                      <td className="py-2 px-3 font-bold text-gray-400 text-center whitespace-nowrap">{pRole}</td>
-                                      <td className="py-2 px-3 font-bold text-gray-800 whitespace-nowrap">{pName} {pAlias && <span className="text-gray-400 font-normal text-[10px] hidden lg:inline">({pAlias})</span>} {p.주장 && <span className="text-yellow-500" title="주장">👑</span>}</td>
-                                      <td className="py-2 px-3 text-center"><span className={`inline-flex items-center justify-center w-8 h-6 rounded font-black text-xs shadow-sm border ${getOvrBadgeStyle(pOvr)}`}>{pOvr}</span></td>
-                                      <td className="py-2 px-3 text-center text-gray-600 whitespace-nowrap">{pAge}</td>
-                                      <td className="py-2 px-3 text-center text-gray-600 whitespace-nowrap">{pExp}</td>
-                                      <td className="py-2 px-3 text-center text-gray-700 whitespace-nowrap">{pTenure}</td>
-                                      <td className="py-2 px-3 text-center text-gray-700 font-bold whitespace-nowrap">{pSalary}</td>
-                                      <td className="py-2 px-3 text-center"><span className={`text-[10px] ${getPotBadgeStyle(pPot)}`}>{pPot}</span></td>
-                                      <td className="py-2 px-3 text-gray-500 font-medium whitespace-nowrap">{pContract}</td>
+                                      <td className="py-2 px-3 font-bold text-gray-400 text-center whitespace-nowrap">{p.포지션}</td>
+                                      <td className="py-2 px-3 font-bold text-gray-800 whitespace-nowrap">{p.이름} <span className="text-gray-400 font-normal text-[10px] hidden lg:inline">({p.실명})</span> {p.주장 && <span className="text-yellow-500" title="주장">👑</span>}</td>
+                                      <td className="py-2 px-3 text-center"><span className={`inline-flex items-center justify-center w-8 h-6 rounded font-black text-xs shadow-sm border ${getOvrBadgeStyle(p.종합)}`}>{p.종합}</span></td>
+                                      <td className="py-2 px-3 text-center text-gray-600 whitespace-nowrap">{p.나이 || '-'}</td>
+                                      <td className="py-2 px-3 text-center text-gray-600 whitespace-nowrap">{p.경력 || '-'}</td>
+                                      <td className="py-2 px-3 text-center text-gray-700 whitespace-nowrap">{p['팀 소속기간'] || '-'}</td>
+                                      <td className="py-2 px-3 text-center text-gray-700 font-bold whitespace-nowrap">{p.연봉 || '-'}</td>
+                                      <td className="py-2 px-3 text-center"><span className={`text-[10px] ${getPotBadgeStyle(p.잠재력)}`}>{p.잠재력}</span></td>
+                                      <td className="py-2 px-3 text-gray-500 font-medium whitespace-nowrap">{p.계약}</td>
                                   </tr>
-                                  );
-                              }) : <tr><td colSpan="9" className="py-10 text-center text-gray-300">데이터 없음</td></tr>}
+                              )) : <tr><td colSpan="9" className="py-10 text-center text-gray-300">데이터 없음</td></tr>}
                           </tbody>
                       </table>
                     </div>
