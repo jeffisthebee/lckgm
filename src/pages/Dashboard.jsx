@@ -2468,9 +2468,11 @@ const handleMatchClick = (match) => {
   
                  {activeTab === 'roster' && (
                     <RosterTab
+                    key={myLeague}
                     viewingTeam={viewingTeam}
                     roster={currentRoster}
                     myLeague={myLeague}
+                    myTeam={myTeam}
                     onPrevTeam={handlePrevTeam}
                     onNextTeam={handleNextTeam}
                     league={league}

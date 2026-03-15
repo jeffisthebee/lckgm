@@ -32,10 +32,20 @@ const getPotBadgeStyle = (pot) => {
     return 'text-gray-500 font-medium';
 };
 
-const RosterTab = ({ viewingTeam, roster, onPrevTeam, onNextTeam, league }) => {
-    // [NEW] 2. The Memory Boxes (State)
-    const [currentLeague, setCurrentLeague] = useState('LCK');
-    const [foreignTeamIndex, setForeignTeamIndex] = useState(0);
+const RosterTab = ({ viewingTeam, roster, onPrevTeam, onNextTeam, league, myLeague: myLeagueProp, myTeam }) => {
+    const myLeague = myLeagueProp || 'LCK';
+    const isMyLeagueForeign = myLeague !== 'LCK';
+
+    // When the user's own league is foreign, default to showing their team
+    const getInitialTeamIndex = (leagueName) => {
+        if (!isMyLeagueForeign || !myTeam || leagueName !== myLeague) return 0;
+        const lgTeams = FOREIGN_LEAGUES[leagueName] || [];
+        const idx = lgTeams.findIndex(t => t.name === myTeam.name || t.id === myTeam.id);
+        return idx >= 0 ? idx : 0;
+    };
+
+    const [currentLeague, setCurrentLeague] = useState(myLeague);
+    const [foreignTeamIndex, setForeignTeamIndex] = useState(() => getInitialTeamIndex(myLeague));
     const [selectedPlayer, setSelectedPlayer] = useState(null);
     const [selectedCoach, setSelectedCoach] = useState(null);
 
@@ -86,7 +96,7 @@ const RosterTab = ({ viewingTeam, roster, onPrevTeam, onNextTeam, league }) => {
 
     const handleLeagueSwitch = (leagueName) => {
         setCurrentLeague(leagueName);
-        setForeignTeamIndex(0); // Always start at the first team when switching leagues
+        setForeignTeamIndex(getInitialTeamIndex(leagueName));
     };
 
     // Fallback if team is somehow missing
