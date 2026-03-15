@@ -9,6 +9,7 @@ import {
     generateLPLRegularSchedule, generateLPLPlayoffs
 } from '../engine/scheduleLogic';
 import { FOREIGN_LEAGUES, FOREIGN_PLAYERS } from '../data/foreignLeagues';
+import playersLCK from '../data/players.json';
 import { updateLeague } from '../engine/storage';
 import { championList } from '../data/constants'; 
 
@@ -198,6 +199,70 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
             }
         }
     }, [displayLeague, league, setLeague]);
+
+    // ── LCK auto-sim for foreign players ────────────────────────────────────
+    // When a foreign player views the LCK tab, sim LCK matches date-by-date
+    // up to (but not including) the gate date, same as other league tabs.
+    useEffect(() => {
+        if (!isMyLeagueForeign) return;
+        if (displayLeague !== 'LCK') return;
+        if (!league.matches || league.matches.length === 0) return;
+        // Don't sim if gate is the blocking sentinel (user hasn't started their season)
+        if (currentPendingLCK.date === '0.01') return;
+
+        const pending = league.matches.filter(m => m.status === 'pending');
+        const simable = pending.filter(m =>
+            m.t1 && m.t2 &&
+            String(m.t1) !== 'TBD' && String(m.t2) !== 'TBD' &&
+            compareDatesObj(m, currentPendingLCK) < 0
+        );
+        if (simable.length === 0) return;
+
+        let updated = false;
+        const newMatches = league.matches.map(m => {
+            if (m.status !== 'pending') return m;
+            if (compareDatesObj(m, currentPendingLCK) >= 0) return m;
+            if (!m.t1 || !m.t2 || String(m.t1) === 'TBD' || String(m.t2) === 'TBD') return m;
+
+            const getId = v => typeof v === 'object' ? Number(v?.id) : Number(v);
+            const t1Obj = teams.find(t => t.id === getId(m.t1));
+            const t2Obj = teams.find(t => t.id === getId(m.t2));
+            if (!t1Obj || !t2Obj) return m;
+
+            try {
+                const t1 = { ...t1Obj, roster: getSafeRoster(t1Obj, playersLCK) };
+                const t2 = { ...t2Obj, roster: getSafeRoster(t2Obj, playersLCK) };
+                const sim = quickSimulateMatch(t1, t2, m.format || 'BO3', championList);
+                const score = typeof sim.scoreString === 'string' ? sim.scoreString
+                    : typeof sim.score === 'object'
+                        ? `${Math.max(sim.score.A ?? 0, sim.score.B ?? 0)}-${Math.min(sim.score.A ?? 0, sim.score.B ?? 0)}`
+                        : '2-0';
+                updated = true;
+                return {
+                    ...m, status: 'finished',
+                    result: {
+                        winner: sim.winner?.name || sim.winner,
+                        score,
+                        history: (sim.history || []).map(s => ({ ...s, logs: [] }))
+                    }
+                };
+            } catch (e) {
+                const t1w = (t1Obj.power || 80) + (Math.random() * 10 - 5) >=
+                            (t2Obj.power || 80) + (Math.random() * 10 - 5);
+                updated = true;
+                return {
+                    ...m, status: 'finished',
+                    result: { winner: t1w ? t1Obj.name : t2Obj.name, score: '2-0', history: [] }
+                };
+            }
+        });
+
+        if (updated) {
+            const updatedLeague = { ...league, matches: newMatches };
+            updateLeague(league.id, updatedLeague);
+            if (setLeague) setLeague(updatedLeague);
+        }
+    }, [isMyLeagueForeign, displayLeague, currentPendingLCK.date, league.matches?.length]);
 
     useEffect(() => {
         if (!needsSync || !targetLeague) { setSyncDone(true); return; }
