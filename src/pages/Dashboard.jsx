@@ -2515,9 +2515,8 @@ const handleMatchClick = (match) => {
 )}
 
 
-{/* [NEW] History Tab Render */}
 {activeTab === 'history' && (
-    <HistoryTab league={league} myLeague={myLeague} />
+    <HistoryTab key={myLeague} league={league} myLeague={myLeague} />
 )}
 
 {/* [NEW] FST World Tournament Tab */}

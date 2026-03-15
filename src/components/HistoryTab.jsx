@@ -127,8 +127,9 @@ const SmallMvpCard = ({ title, player, colorClass }) => {
     );
 };
 
-const HistoryTab = ({ league }) => {
-  const [currentLeague, setCurrentLeague] = useState('LCK');
+const HistoryTab = ({ league, myLeague: myLeagueProp }) => {
+  const myLeague = myLeagueProp || 'LCK';
+  const [currentLeague, setCurrentLeague] = useState(myLeague);
   
   const hasFST = !!(league?.fst || league?.foreignHistory?.FST?.length);
 
