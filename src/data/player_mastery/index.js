@@ -9,7 +9,7 @@ import ns from './player_masteryns.json';
 import bro from './player_masterybro.json';
 import drx from './player_masterydrx.json';
 import dns from './player_masterydns.json';
-import tt from './player_mastertt.json'
+import tt from './player_masterytt.json'
 import al from './player_masteryal.json'
 import blg from './player_masteryblg.json'
 import c9 from './player_masteryc9.json'
