@@ -31,7 +31,7 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
     // We apply a heavy multiplier to prioritize OP champs.
     let tierMultiplier = 1.0;
     switch (champ.tier) {
-        case 1: tierMultiplier = 1.28; break; // God Tier
+        case 1: tierMultiplier = 1.3; break; // God Tier
         case 2: tierMultiplier = 1.1; break; // Strong
         case 3: tierMultiplier = 1.0; break; // Average
         case 4: tierMultiplier = 0.80; break; // Weak
