@@ -207,7 +207,7 @@ const getOvrBadgeStyle = (ovr) => {
 
         let didUpdate = false;
         const newMatches = league.matches.map(m => {
-            if (m.type !== 'regular' || m.status !== 'pending') return m;
+            if (m.type !== 'regular' || m.status !== 'pending') return m; // regular only
             if (!m.t1 || !m.t2 || String(m.t1) === 'TBD' || String(m.t2) === 'TBD') return m;
             if (compareDates(m, gate) >= 0) return m;
 
@@ -457,13 +457,17 @@ const getOvrBadgeStyle = (ovr) => {
 
   const currentYear = league.year || 2026;
   const currentSeasonName = league.seasonName || 'LCK CUP';
+  const _isMyLeagueForeign = (league.myLeague || 'LCK') !== 'LCK';
 
   console.log("Archiving Season & Foreign Leagues...");
   
-  // --- 1. LCK ARCHIVE ---
-  const finalStandings = calculateFinalStandings(league);
-  const regularAwards = computeAwards(league, teams);
-  const playoffAwards = computePlayoffAwards(league, teams); 
+  // --- 1. LCK ARCHIVE --- (skip for foreign players who have no LCK groups/playoffs)
+  const hasLCKGroups = !!(league.groups?.baron?.length > 0);
+  const hasLCKPlayoffs = !!(league.matches?.some(m => m.type === 'playoff' && m.status === 'finished'));
+
+  const finalStandings = (hasLCKGroups && hasLCKPlayoffs) ? calculateFinalStandings(league) : [];
+  const regularAwards = hasLCKGroups ? computeAwards(league, teams) : { seasonMvp: null, allProTeams: {}, pogLeader: null };
+  const playoffAwards = (hasLCKGroups && hasLCKPlayoffs) ? computePlayoffAwards(league, teams) : { finalsMvp: null, pogLeader: null, allProTeams: {} };
   
   const seasonSnapshot = {
       year: currentYear,
@@ -471,20 +475,20 @@ const getOvrBadgeStyle = (ovr) => {
       champion: finalStandings[0]?.team, 
       runnerUp: finalStandings[1]?.team,
       finalStandings: finalStandings,
-      groupStandings: {
+      groupStandings: hasLCKGroups ? {
           baron: sortGroupByStandings(league.groups.baron, computedStandings).map(id => ({
               teamName: teams.find(t=>t.id===id).name,
-              w: computedStandings[id].w,
-              l: computedStandings[id].l,
-              diff: computedStandings[id].diff
+              w: computedStandings[id]?.w || 0,
+              l: computedStandings[id]?.l || 0,
+              diff: computedStandings[id]?.diff || 0
           })),
           elder: sortGroupByStandings(league.groups.elder, computedStandings).map(id => ({
               teamName: teams.find(t=>t.id===id).name,
-              w: computedStandings[id].w,
-              l: computedStandings[id].l,
-              diff: computedStandings[id].diff
+              w: computedStandings[id]?.w || 0,
+              l: computedStandings[id]?.l || 0,
+              diff: computedStandings[id]?.diff || 0
           }))
-      },
+      } : { baron: [], elder: [] },
       awards: {
         regular: {
             mvp: regularAwards.seasonMvp, 
@@ -793,6 +797,7 @@ const getOvrBadgeStyle = (ovr) => {
     const autoArchiveFSTRanRef = useRef(false);
     useEffect(() => {
         if (!league || !league.matches) return;
+        if ((league.myLeague || 'LCK') !== 'LCK') return; // foreign players don't auto-archive LCK
         if (autoArchiveRanRef.current) return;
         if (isSeasonOver && !isSavedInHistory) {
             autoArchiveRanRef.current = true;
@@ -1339,9 +1344,13 @@ const handleMatchClick = (match) => {
           nextGlobalMatch.format || 'BO3'
         );
 
+        // Normalize score for BO1 — quickSimulateMatch may return '2-0' even for BO1
+        let resultScore = result.scoreString || result.score || '2-0';
+        if (nextGlobalMatch.format === 'BO1') resultScore = '1-0';
+
         const updatedForeignMatches = (league.foreignMatches?.[myLeague] || []).map(m =>
           m.id === nextGlobalMatch.id
-            ? { ...m, status: 'finished', result: { winner: result.winner, score: result.scoreString, history: result.history } }
+            ? { ...m, status: 'finished', result: { winner: result.winner, score: resultScore, history: result.history } }
             : m
         );
         const updatedLeague = { ...league, foreignMatches: { ...league.foreignMatches, [myLeague]: updatedForeignMatches } };
@@ -1437,7 +1446,7 @@ const handleMatchClick = (match) => {
           ? league.currentChampionList : championList;
 
         setLiveMatchData({
-          match: nextGlobalMatch,
+          match: { ...nextGlobalMatch, blueSidePriority: t1Obj.name },
           teamA: { ...t1Obj, roster: t1Roster },
           teamB: { ...t2Obj, roster: t2Roster },
           safeChampionList,
