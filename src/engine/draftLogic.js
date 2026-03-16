@@ -354,7 +354,20 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
   return top3[0];
 }
 
-export function selectBanFromProbabilities(opponentTeam, availableChampions, targetRoles, opponentPicks = [], myTeamPicks = []) {
+// Ban phase weights:
+// Phase 1 (orders 1-6):   mastery 1.25, tier 1.3, synergy_denial 0.5,  counter_denial 0.5
+// Phase 2 (orders 13-16): mastery 1.00, tier 1.2, synergy_denial 1.5,  counter_denial 1.5
+const BAN_PHASE_WEIGHTS = {
+  1: { mastery: 1.25, tier: 1.3, synergy_denial: 0.5,  counter_denial: 0.5  },
+  2: { mastery: 1.00, tier: 1.2, synergy_denial: 1.5,  counter_denial: 1.5  },
+};
+
+const getBanPhase = (order) => order <= 6 ? 1 : 2;
+
+export function selectBanFromProbabilities(opponentTeam, availableChampions, targetRoles, opponentPicks = [], myTeamPicks = [], banOrder = 1) {
+  const phase = getBanPhase(banOrder);
+  const bw    = BAN_PHASE_WEIGHTS[phase];
+
   let candidates = [];
 
   const targetPlayers   = opponentTeam.roster.filter(p => targetRoles.includes(p.포지션));
@@ -379,8 +392,10 @@ export function selectBanFromProbabilities(opponentTeam, availableChampions, tar
       const isKnown = knownPool.has(c.name);
       const mastery = findMastery(playerData, c.name);
       let banScore  = calculateChampionScore(player, c, isKnown ? mastery : null, isKnown ? 1.0 : 0.3);
+      // Phase mastery weight
+      banScore *= bw.mastery;
 
-      // Tier Weighting
+      // Tier Weighting scaled by phase
       let tierWeight = 1.0;
       switch (c.tier) {
         case 1: tierWeight = 1.10; break;
@@ -389,9 +404,10 @@ export function selectBanFromProbabilities(opponentTeam, availableChampions, tar
         case 4: tierWeight = 0.90; break;
         case 5: tierWeight = 0.80; break;
       }
-      banScore *= tierWeight;
+      const tierImpact = tierWeight - 1.0;
+      banScore *= (1.0 + tierImpact * bw.tier);
 
-      // Synergy Denial
+      // Synergy Denial scaled by phase
       let synergyMultiplier = 1.0;
       SYNERGIES.forEach(syn => {
         if (syn.champions.includes(c.name)) {
@@ -399,14 +415,16 @@ export function selectBanFromProbabilities(opponentTeam, availableChampions, tar
           if (partners.every(p => opponentPickNames.includes(p))) synergyMultiplier *= 1.5;
         }
       });
-      banScore *= synergyMultiplier;
+      const synDenialImpact = synergyMultiplier - 1.0;
+      banScore *= (1.0 + synDenialImpact * bw.synergy_denial);
 
-      // Counter Logic — ban things that counter my team
+      // Counter Denial scaled by phase — ban things that counter my team
       let counterMultiplier = 1.0;
       myTeamPickNames.forEach(myPickName => {
         if (c.counters && c.counters.includes(myPickName)) counterMultiplier *= 1.2;
       });
-      banScore *= counterMultiplier;
+      const counterDenialImpact = counterMultiplier - 1.0;
+      banScore *= (1.0 + counterDenialImpact * bw.counter_denial);
 
       return { champ: c, score: banScore, player };
     });
@@ -462,7 +480,8 @@ export function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChamp
         availableChamps,
         remainingRoles[opponentSide],
         currentEnemyPicks,
-        currentMySidePicks
+        currentMySidePicks,
+        step.order
       );
       if (banCandidate) {
         localBans.add(banCandidate.name);
