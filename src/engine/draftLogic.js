@@ -31,11 +31,11 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
     // We apply a heavy multiplier to prioritize OP champs.
     let tierMultiplier = 1.0;
     switch (champ.tier) {
-        case 1: tierMultiplier = 1.5; break; // God Tier
-        case 2: tierMultiplier = 1.25; break; // Strong
+        case 1: tierMultiplier = 1.10; break; // God Tier
+        case 2: tierMultiplier = 1.05; break; // Strong
         case 3: tierMultiplier = 1.0; break; // Average
-        case 4: tierMultiplier = 0.8; break; // Weak
-        case 5: tierMultiplier = 0.6; break; // Bad
+        case 4: tierMultiplier = 0.90; break; // Weak
+        case 5: tierMultiplier = 0.80; break; // Bad
         default: tierMultiplier = 1.0;
     }
     score *= tierMultiplier;
@@ -135,11 +135,11 @@ export function selectBanFromProbabilities(opponentTeam, availableChampions, tar
            // Tier Weighting for Bans (Ban OP champs)
            let tierWeight = 1.0;
            switch (c.tier) {
-               case 1: tierWeight = 1.5; break;
-               case 2: tierWeight = 1.2; break;
+               case 1: tierWeight = 1.10; break;
+               case 2: tierWeight = 1.05; break;
                case 3: tierWeight = 1.0; break;
-               case 4: tierWeight = 0.8; break;
-               case 5: tierWeight = 0.6; break;
+               case 4: tierWeight = 0.90; break;
+               case 5: tierWeight = 0.80; break;
            }
            banScore *= tierWeight;
 
