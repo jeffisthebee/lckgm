@@ -1,7 +1,7 @@
 // src/engine/mechanics.js
 import { SIM_CONSTANTS, GAME_RULES, SIDES } from '../data/constants';
 import { SYNERGIES } from '../data/synergies';
-import allMastery from '../data/player_mastery/index';
+import allMastery from '../data/masteries/index';
 
 // --- HELPER LOGIC ---
 export const getChampionClass = (champ, position) => {
@@ -90,9 +90,10 @@ export function getMetaScore(position, tier, masteryScore) {
   return 100 * coeff;
 }
 
-export function calculateChampionScore(player, champion, masteryData) {
+export function calculateChampionScore(player, champion, masteryData, fallbackMultiplier = 1.0) {
   const playerStat = player.종합 || 85;
-  const masteryScore = calculateMasteryScore(player, masteryData);
+  const rawMasteryScore = calculateMasteryScore(player, masteryData);
+  const masteryScore = masteryData ? rawMasteryScore : rawMasteryScore * fallbackMultiplier;
   const metaScore = getMetaScore(player.포지션, champion.tier, masteryScore);
   return (playerStat * SIM_CONSTANTS.WEIGHTS.STATS) +
          (metaScore  * SIM_CONSTANTS.WEIGHTS.META)  +
