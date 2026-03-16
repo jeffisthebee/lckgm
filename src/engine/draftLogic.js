@@ -224,7 +224,26 @@ const findMastery = (playerData, korChampName) => {
 
 // --- DRAFT LOGIC ---
 
-export function selectPickFromTop3(player, availableChampions, currentTeamPicks = [], enemyTeamPicks = []) {
+// Phase weights by pick order:
+// Phase 1 (orders 7-11):  mastery 1.25, counter 0.50, synergy 0.75, versatility 1.25
+// Phase 2 (orders 12-14): mastery 1.00, counter 1.00, synergy 1.25, versatility 1.00
+// Phase 3 (orders 17-20): mastery 0.75, counter 1.75, synergy 1.50, versatility 0.75
+const PICK_PHASE_WEIGHTS = {
+  1: { mastery: 1.25, counter: 0.50, synergy: 0.75,  versatility: 1.25 },
+  2: { mastery: 1.00, counter: 1.00, synergy: 1.25,  versatility: 1.00 },
+  3: { mastery: 0.75, counter: 1.75, synergy: 1.50,  versatility: 0.75 },
+};
+
+const getPickPhase = (order) => {
+  if (order <= 11) return 1;
+  if (order <= 14) return 2;
+  return 3;
+};
+
+export function selectPickFromTop3(player, availableChampions, currentTeamPicks = [], enemyTeamPicks = [], pickOrder = 7) {
+  const phase = getPickPhase(pickOrder);
+  const pw    = PICK_PHASE_WEIGHTS[phase];
+
   const playerData = MASTERY_MAP[player.이름];
   const knownPool = getKnownPool(playerData);
 
@@ -262,8 +281,15 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
       effectiveMastery,
       isKnown ? 1.0 : 0.3   // fallback multiplier passed to calculateChampionScore
     );
+    // Phase 1: boost mastery score influence; Phase 3: reduce it
+    score *= pw.mastery;
 
-    // --- [STEP 0] Tier Weighting ---
+    // --- [STEP 0] Tier Weighting + Versatility ---
+    // Versatility: early picks favour well-rounded (high stats sum) champs
+    const statsSum = (champ.stats ? Object.values(champ.stats).reduce((a, v) => a + v, 0) : 0);
+    const versatilityScore = statsSum / 50; // normalize
+    score += versatilityScore * pw.versatility;
+
     let tierMultiplier = 1.0;
     switch (champ.tier) {
       case 1: tierMultiplier = 1.10; break;
@@ -298,7 +324,9 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
         if (partners.every(p => availableNames.has(p))) synergyBonus *= 1.03;
       }
     });
-    score *= synergyBonus;
+    // Scale synergy impact by phase weight
+    const synergyImpact = synergyBonus - 1.0;
+    score *= (1.0 + synergyImpact * pw.synergy);
 
     // --- [STEP 3] Counter Logic ---
     let counterBonus = 1.0;
@@ -306,7 +334,9 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
       if (champ.counters && champ.counters.includes(enemy.name)) counterBonus *= 0.85;
       if (enemy.counters && enemy.counters.includes(champ.name)) counterBonus *= 1.15;
     });
-    score *= counterBonus;
+    // Scale counter impact by phase weight
+    const counterImpact = counterBonus - 1.0;
+    score *= (1.0 + counterImpact * pw.counter);
 
     return { ...champ, mastery: effectiveMastery, score, isKnown };
   });
@@ -452,7 +482,8 @@ export function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChamp
             player,
             availableChamps,
             currentMySidePicks,
-            currentEnemyPicks
+            currentEnemyPicks,
+            step.order
           );
           if (candidateChamp) {
             roleCandidates.push({ role, champ: candidateChamp, score: candidateChamp.score });
