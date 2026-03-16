@@ -240,7 +240,7 @@ const getPickPhase = (order) => {
   return 3;
 };
 
-export function selectPickFromTop3(player, availableChampions, currentTeamPicks = [], enemyTeamPicks = [], pickOrder = 7) {
+export function selectPickFromTop3(player, availableChampions, currentTeamPicks = [], enemyTeamPicks = [], pickOrder = 7, fearlessBans = []) {
   const phase = getPickPhase(pickOrder);
   const pw    = PICK_PHASE_WEIGHTS[phase];
 
@@ -269,6 +269,21 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
   const currentAD = currentTeamPicks.filter(c => c.damageType === 'AD').length;
   const currentAP = currentTeamPicks.filter(c => c.damageType === 'AP').length;
 
+  // --- FEARLESS POOL PRESERVATION ---
+  // Count how many known champs this player still has left after fearless bans.
+  // If the remaining pool is small (<=3), they are in "conservation mode" —
+  // apply a bonus to champs NOT yet used so they survive longer into the series.
+  const fearlessSet = new Set(fearlessBans);
+  const remainingKnown = [...knownPool].filter(name => !fearlessSet.has(name));
+  const isConservationMode = remainingKnown.length <= 3;
+  // In conservation mode, boost unused known champs and penalise already-used ones
+  const getFearlessBonus = (champName) => {
+    if (!isConservationMode) return 1.0;
+    if (fearlessSet.has(champName)) return 0.0; // already used, can't pick anyway
+    if (knownPool.has(champName)) return 1.3;   // rare remaining known champ — save it wisely
+    return 0.5;                                  // unknown fallback in conservation mode
+  };
+
   const scoredChamps = pool.map(champ => {
     const isKnown = knownPool.has(champ.name);
     const mastery = findMastery(playerData, champ.name);
@@ -283,6 +298,9 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
     );
     // Phase 1: boost mastery score influence; Phase 3: reduce it
     score *= pw.mastery;
+
+    // Fearless pool preservation bonus
+    score *= getFearlessBonus(champ.name);
 
     // --- [STEP 0] Tier Weighting + Versatility ---
     // Versatility: early picks favour well-rounded (high stats sum) champs
@@ -502,7 +520,8 @@ export function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChamp
             availableChamps,
             currentMySidePicks,
             currentEnemyPicks,
-            step.order
+            step.order,
+            fearlessBans
           );
           if (candidateChamp) {
             roleCandidates.push({ role, champ: candidateChamp, score: candidateChamp.score });
