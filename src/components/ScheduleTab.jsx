@@ -141,13 +141,19 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
         if (isMyLeagueForeign) {
             const myLeagueMatches = league.foreignMatches?.[myLeague] || [];
             const myPending = [...myLeagueMatches].filter(m => m.status === 'pending').sort(compareDatesObj);
+            // Only truly done when ALL matches (regular + playoffs) are finished
             const myAllDone = myLeagueMatches.length > 0 && myLeagueMatches.every(m => m.status === 'finished');
             if (myPending.length > 0) return myPending[0];
             if (myAllDone) return { date: '99.99 (완료)', time: '23:59' };
-            // User's league not started yet — block everything with an early sentinel
-            return { date: '0.01', time: '00:00' };
+            // Regular season done but no playoffs yet, or season not started —
+            // use the last finished match date so same-day other-league games can still sim,
+            // but we don't blast all other leagues with '99.99'
+            const lastFinished = [...myLeagueMatches]
+                .filter(m => m.status === 'finished')
+                .sort((a, b) => -compareDatesObj(a, b))[0];
+            if (lastFinished) return { ...lastFinished, _isLastFinished: true };
+            return { date: '0.01', time: '00:00' }; // not started yet
         }
-        // LCK player — original logic
         if (pendingLCK.length > 0) return pendingLCK[0];
         if (lckTrulyDone) return { date: '99.99 (완료)', time: '23:59' };
         return { date: '12.31', time: '23:59' };
@@ -176,7 +182,17 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
         forceRegen ||
         activeMatches.length === 0 || 
         activeMatches.some(m => m.status === 'pending' && currentPendingLCK.date !== '99.99 (완료)' && compareDatesObj(m, currentPendingLCK) < 0) ||
-        (currentPendingLCK.date === '99.99 (완료)' && activeMatches.some(m => m.status === 'pending'))
+        (currentPendingLCK.date === '99.99 (완료)' && activeMatches.some(m => m.status === 'pending')) ||
+        // Generate playoff bracket when regular is done and no bracket exists yet
+        (activeMatches.length > 0 &&
+         activeMatches.filter(m => m.type === 'regular' || m.type === 'super').every(m => m.status === 'finished') &&
+         activeMatches.filter(m => m.type === 'regular' || m.type === 'super').length > 0 &&
+         !activeMatches.some(m => m.type === 'playoff' || m.type === 'playin') &&
+         // For user's own league: only generate bracket if season is actually started (gate !== '0.01')
+         // For other leagues: only when user is fully done (gate = 99.99)
+         (targetLeague === myLeague
+            ? currentPendingLCK.date !== '0.01'
+            : currentPendingLCK.date === '99.99 (완료)'))
     );
 
     const hasErrors = targetLeague ? checkBadData(activeMatches, targetLeague) : false;
@@ -201,17 +217,15 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
     }, [displayLeague, league, setLeague]);
 
     // ── LCK auto-sim for foreign players ────────────────────────────────────
-    // When a foreign player views the LCK tab, sim LCK matches date-by-date
-    // up to (but not including) the gate date, same as other league tabs.
+    // Sims ALL pending LCK match types (regular, super, playin, playoff) date-by-date.
     useEffect(() => {
         if (!isMyLeagueForeign) return;
         if (displayLeague !== 'LCK') return;
         if (!league.matches || league.matches.length === 0) return;
-        // Don't sim if gate is the blocking sentinel (user hasn't started their season)
         if (currentPendingLCK.date === '0.01') return;
 
-        const pending = league.matches.filter(m => m.status === 'pending');
-        const simable = pending.filter(m =>
+        const simable = league.matches.filter(m =>
+            m.status === 'pending' &&
             m.t1 && m.t2 &&
             String(m.t1) !== 'TBD' && String(m.t2) !== 'TBD' &&
             compareDatesObj(m, currentPendingLCK) < 0
@@ -229,31 +243,28 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
             const t2Obj = teams.find(t => t.id === getId(m.t2));
             if (!t1Obj || !t2Obj) return m;
 
+            const useMeta = (league.metaVersion === '16.02' || league.metaVersion === '16.03') && league.currentChampionList
+                ? league.currentChampionList : championList;
+            const fmt = m.format || (m.type === 'super' || m.type === 'playoff' ? 'BO5' : 'BO3');
+
             try {
                 const t1 = { ...t1Obj, roster: getSafeRoster(t1Obj, playersLCK) };
                 const t2 = { ...t2Obj, roster: getSafeRoster(t2Obj, playersLCK) };
-                const sim = quickSimulateMatch(t1, t2, m.format || 'BO3', championList);
-                const score = typeof sim.scoreString === 'string' ? sim.scoreString
+                const sim = quickSimulateMatch(t1, t2, fmt, useMeta);
+                let score = typeof sim.scoreString === 'string' ? sim.scoreString
                     : typeof sim.score === 'object'
                         ? `${Math.max(sim.score.A ?? 0, sim.score.B ?? 0)}-${Math.min(sim.score.A ?? 0, sim.score.B ?? 0)}`
-                        : '2-0';
+                        : (fmt === 'BO5' ? '3-0' : fmt === 'BO1' ? '1-0' : '2-0');
+                if (fmt === 'BO1') score = '1-0';
                 updated = true;
                 return {
                     ...m, status: 'finished',
-                    result: {
-                        winner: sim.winner?.name || sim.winner,
-                        score,
-                        history: (sim.history || []).map(s => ({ ...s, logs: [] }))
-                    }
+                    result: { winner: sim.winner?.name || sim.winner, score, history: (sim.history || []).map(s => ({ ...s, logs: [] })) }
                 };
             } catch (e) {
-                const t1w = (t1Obj.power || 80) + (Math.random() * 10 - 5) >=
-                            (t2Obj.power || 80) + (Math.random() * 10 - 5);
+                const t1w = (t1Obj.power || 80) + (Math.random() * 10 - 5) >= (t2Obj.power || 80) + (Math.random() * 10 - 5);
                 updated = true;
-                return {
-                    ...m, status: 'finished',
-                    result: { winner: t1w ? t1Obj.name : t2Obj.name, score: '2-0', history: [] }
-                };
+                return { ...m, status: 'finished', result: { winner: t1w ? t1Obj.name : t2Obj.name, score: fmt === 'BO5' ? '3-0' : '2-0', history: [] } };
             }
         });
 
@@ -262,7 +273,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
             updateLeague(league.id, updatedLeague);
             if (setLeague) setLeague(updatedLeague);
         }
-    }, [isMyLeagueForeign, displayLeague, currentPendingLCK.date, league.matches?.length]);
+    }, [isMyLeagueForeign, displayLeague, currentPendingLCK.date, league.matches?.length, league.metaVersion]);
 
     useEffect(() => {
         if (!needsSync || !targetLeague) { setSyncDone(true); return; }

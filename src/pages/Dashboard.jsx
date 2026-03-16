@@ -107,8 +107,8 @@ const getOvrBadgeStyle = (ovr) => {
 
     // Check Season Status Helper — only meaningful for LCK players
     const grandFinalMatch = league?.matches?.find(m => m.type === 'playoff' && m.round === 5);
-    const isSeasonOver = !!(grandFinalMatch && grandFinalMatch.status === 'finished' && !league?.myLeague || league?.myLeague === 'LCK')
-        && !!(grandFinalMatch && grandFinalMatch.status === 'finished');
+    const _myLgForSeason = league?.myLeague || 'LCK';
+    const isSeasonOver = _myLgForSeason === 'LCK' && !!(grandFinalMatch && grandFinalMatch.status === 'finished');
 
     // ── [FOREIGN] Auto-draft LCK groups and generate LCK schedule (all pending)
     // Uses the same power-based draft as the real LCK mode:
@@ -843,10 +843,17 @@ const getOvrBadgeStyle = (ovr) => {
     }, [league?.matches?.length, league?.metaVersion]);
 
     // Handler for the foreign player's manual 16.02 button
+    // Also generates LCK super week so the LCK background sim can continue past regular season
     const handleForeignMeta1602 = () => {
         const sourceList = (league.currentChampionList?.length > 0) ? league.currentChampionList : championList;
         const newChampionList = updateChampionMeta(sourceList);
-        const updates = { currentChampionList: newChampionList, metaVersion: '16.02' };
+        // Generate LCK super week so ScheduleTab can sim it in the background
+        const superMatches = generateSuperWeekMatches(league);
+        const cleanMatches = (league.matches || []).filter(m => m.type !== 'tbd');
+        const updatedMatches = [...cleanMatches, ...superMatches].sort((a, b) =>
+            (parseFloat((a.date || '').split(' ')[0]) || 0) - (parseFloat((b.date || '').split(' ')[0]) || 0)
+        );
+        const updates = { matches: updatedMatches, currentChampionList: newChampionList, metaVersion: '16.02' };
         setLeague(prev => ({ ...prev, ...updates }));
         updateLeague(league.id, updates);
     };
@@ -1336,7 +1343,10 @@ const handleMatchClick = (match) => {
 
         const t1Obj = resolveTeam(nextGlobalMatch.t1);
         const t2Obj = resolveTeam(nextGlobalMatch.t2);
-        if (!t1Obj || !t2Obj) { alert(`팀 데이터 오류`); return; }
+        if (!t1Obj || !t2Obj) { 
+            alert(`팀 데이터 오류: T1=${nextGlobalMatch.t1}, T2=${nextGlobalMatch.t2}\n대진표가 아직 완성되지 않았습니다.`); 
+            return; 
+        }
 
         const result = quickSimulateMatch(
           { ...t1Obj, roster: resolveRoster(t1Obj.name) },
@@ -1446,7 +1456,7 @@ const handleMatchClick = (match) => {
           ? league.currentChampionList : championList;
 
         setLiveMatchData({
-          match: { ...nextGlobalMatch, blueSidePriority: t1Obj.name },
+          match: { ...nextGlobalMatch, blueSidePriority: t1Obj.id || t1Obj.name },
           teamA: { ...t1Obj, roster: t1Roster },
           teamB: { ...t2Obj, roster: t2Roster },
           safeChampionList,
