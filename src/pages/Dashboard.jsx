@@ -157,6 +157,101 @@ const getOvrBadgeStyle = (ovr) => {
         recalculateStandings({ ...league, ...updates });
     }, [league?.id, league?.myLeague]);
 
+    // ── [FOREIGN] Background-sim LCK regular season matches automatically ────
+    // Only sims LCK 'regular' matches dated BEFORE the user's next foreign match.
+    // This means LCK progresses in sync with the user's league, so by the time
+    // the user finishes their own regular season, LCK's is also done → 16.02 fires.
+    useEffect(() => {
+        if (!league) return;
+        const myLg = league.myLeague || 'LCK';
+        if (myLg === 'LCK') return;
+
+        const regularMatches = (league.matches || []).filter(m => m.type === 'regular');
+        if (regularMatches.length === 0) return;
+        if (regularMatches.every(m => m.status === 'finished')) return; // already done
+
+        // Gate: only sim LCK matches before the user's next foreign game
+        const myLeagueMatches = league.foreignMatches?.[myLg] || [];
+        const myPending = [...myLeagueMatches]
+            .filter(m => m.status === 'pending')
+            .sort((a, b) => {
+                const parse = (m) => {
+                    const [mo, d] = (m.date || '').split(' ')[0].split('.').map(Number);
+                    const [h, mi] = (m.time || '0:00').split(':').map(Number);
+                    return (mo || 0) * 10000000 + (d || 0) * 100000 + (h || 0) * 100 + (mi || 0);
+                };
+                return parse(a) - parse(b);
+            });
+
+        // If user hasn't started their season yet, don't sim anything
+        if (myPending.length === 0 && myLeagueMatches.length === 0) return;
+
+        const gate = myPending.length > 0 ? myPending[0] : { date: '99.99', time: '23:59' };
+
+        const compareDates = (m, g) => {
+            const parse = (x) => {
+                const [mo, d] = (x.date || '').split(' ')[0].split('.').map(Number);
+                const [h, mi] = (x.time || '0:00').split(':').map(Number);
+                return (mo || 0) * 10000000 + (d || 0) * 100000 + (h || 0) * 100 + (mi || 0);
+            };
+            return parse(m) - parse(g);
+        };
+
+        const simable = regularMatches.filter(m =>
+            m.status === 'pending' &&
+            m.t1 && m.t2 &&
+            String(m.t1) !== 'TBD' && String(m.t2) !== 'TBD' &&
+            compareDates(m, gate) < 0
+        );
+        if (simable.length === 0) return;
+
+        let didUpdate = false;
+        const newMatches = league.matches.map(m => {
+            if (m.type !== 'regular' || m.status !== 'pending') return m;
+            if (!m.t1 || !m.t2 || String(m.t1) === 'TBD' || String(m.t2) === 'TBD') return m;
+            if (compareDates(m, gate) >= 0) return m;
+
+            const getId = v => typeof v === 'object' ? Number(v?.id) : Number(v);
+            const t1Obj = teams.find(t => t.id === getId(m.t1));
+            const t2Obj = teams.find(t => t.id === getId(m.t2));
+            if (!t1Obj || !t2Obj) return m;
+
+            try {
+                const t1 = { ...t1Obj, roster: getFullTeamRoster(t1Obj.name) };
+                const t2 = { ...t2Obj, roster: getFullTeamRoster(t2Obj.name) };
+                const sim = quickSimulateMatch(t1, t2, m.format || 'BO3');
+                const score = typeof sim.scoreString === 'string' ? sim.scoreString
+                    : typeof sim.score === 'object'
+                        ? `${Math.max(sim.score.A ?? 0, sim.score.B ?? 0)}-${Math.min(sim.score.A ?? 0, sim.score.B ?? 0)}`
+                        : '2-0';
+                didUpdate = true;
+                return {
+                    ...m, status: 'finished',
+                    result: {
+                        winner: sim.winner?.name || sim.winner,
+                        score,
+                        history: (sim.history || []).map(s => ({ ...s, logs: [] }))
+                    }
+                };
+            } catch (e) {
+                const t1Wins = (t1Obj.power || 80) + (Math.random() * 10 - 5) >=
+                               (t2Obj.power || 80) + (Math.random() * 10 - 5);
+                didUpdate = true;
+                return {
+                    ...m, status: 'finished',
+                    result: { winner: t1Wins ? t1Obj.name : t2Obj.name, score: '2-0', history: [] }
+                };
+            }
+        });
+
+        if (didUpdate) {
+            const updates = { matches: newMatches };
+            updateLeague(league.id, updates);
+            setLeague(prev => ({ ...prev, ...updates }));
+            recalculateStandings({ ...league, matches: newMatches });
+        }
+    }, [league?.foreignMatches?.[league?.myLeague]?.filter(m => m.status === 'finished').length, league?.matches?.length, league?.myLeague]);
+
     // FST: ready to create when season over + not yet created
     // FST: ready to create when season over + not yet created
     const hasFST = !!league?.fst;
@@ -714,6 +809,44 @@ const getOvrBadgeStyle = (ovr) => {
             handleManualArchive();
         }
     }, [isFSTOver, isFSTSavedInHistory]);
+
+    // ── 16.02 PATCH HANDLER ──────────────────────────────────────────────────
+    // LCK players: auto-fires when all regular matches finish (same as before).
+    // Foreign players: button appears when LCK regular season is done → click to apply.
+    const meta1602Ref = useRef(false);
+    useEffect(() => {
+        if (!league || !league.matches) return;
+        if ((league.myLeague || 'LCK') !== 'LCK') return; // foreign: button handles it
+        if (meta1602Ref.current) return;
+        if (league.metaVersion === '16.02' || league.metaVersion === '16.03') return;
+
+        const regularMatches = league.matches.filter(m => m.type === 'regular');
+        if (regularMatches.length === 0) return;
+        if (!regularMatches.every(m => m.status === 'finished')) return;
+
+        meta1602Ref.current = true;
+        const sourceList = (league.currentChampionList?.length > 0) ? league.currentChampionList : championList;
+        const newChampionList = updateChampionMeta(sourceList);
+        const superMatches = generateSuperWeekMatches(league);
+        const cleanMatches = league.matches.filter(m => m.type !== 'tbd');
+        const updatedMatches = [...cleanMatches, ...superMatches].sort((a, b) =>
+            (parseFloat((a.date || '').split(' ')[0]) || 0) - (parseFloat((b.date || '').split(' ')[0]) || 0)
+        );
+        const updates = { matches: updatedMatches, currentChampionList: newChampionList, metaVersion: '16.02' };
+        setLeague(prev => ({ ...prev, ...updates }));
+        updateLeague(league.id, updates);
+    }, [league?.matches?.length, league?.metaVersion]);
+
+    // Handler for the foreign player's manual 16.02 button
+    const handleForeignMeta1602 = () => {
+        const sourceList = (league.currentChampionList?.length > 0) ? league.currentChampionList : championList;
+        const newChampionList = updateChampionMeta(sourceList);
+        const updates = { currentChampionList: newChampionList, metaVersion: '16.02' };
+        setLeague(prev => ({ ...prev, ...updates }));
+        updateLeague(league.id, updates);
+    };
+
+
   
   // [CRITICAL FIX] handleMatchClick now injects round info for old saves
   // [CRITICAL FIX] Global Team Finder for the Modal!
@@ -1749,14 +1882,6 @@ const handleMatchClick = (match) => {
     const isRegularSeasonFinished = league.matches 
       ? league.matches.filter(m => m.type === 'regular').every(m => m.status === 'finished') 
       : false;
-
-    // LCK regular season done = all LCK regular matches finished (last game 1.25 19:30)
-    // For LCK players this is the same as isRegularSeasonFinished.
-    // For foreign players the LCK schedule lives in league.matches (auto-simmed).
-    const isLCKRegularSeasonOver = (() => {
-      const lckRegular = (league.matches || []).filter(m => m.type === 'regular');
-      return lckRegular.length > 0 && lckRegular.every(m => m.status === 'finished');
-    })();
     
     const hasSuperWeekGenerated = league.matches
       ? league.matches.some(m => m.type === 'super')
@@ -2152,31 +2277,22 @@ const handleMatchClick = (match) => {
               </button>
             )}
 
-            {/* LCK player: patch + superweek button */}
             {!isMyLeagueForeign && hasDrafted && isRegularSeasonFinished && league.metaVersion !== '16.02' && !hasFST && (
                  <button 
                  onClick={handleGenerateSuperWeek} 
                  className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition whitespace-nowrap"
                >
-                   <span>🔥</span> <span className="hidden sm:inline">16.02 메타 확인 / 슈퍼위크 생성 완료</span><span className="sm:hidden">슈퍼위크</span>
+                   <span>🔥</span> <span className="hidden sm:inline">슈퍼위크</span>
                </button>
             )}
 
-            {/* Foreign league player: meta-only confirm — appears when LCK regular season ends */}
-            {isMyLeagueForeign && isLCKRegularSeasonOver && league.metaVersion !== '16.02' && (
+            {/* Foreign players: manual 16.02 meta patch button — appears once LCK regular season is done */}
+            {isMyLeagueForeign && isRegularSeasonFinished && league.metaVersion !== '16.02' && league.metaVersion !== '16.03' && (
                 <button
-                  onClick={() => {
-                    const sourceList = (league.currentChampionList && league.currentChampionList.length > 0)
-                      ? league.currentChampionList : championList;
-                    const newChampionList = updateChampionMeta(sourceList);
-                    const updates = { currentChampionList: newChampionList, metaVersion: '16.02' };
-                    setLeague(prev => ({ ...prev, ...updates }));
-                    updateLeague(league.id, updates);
-                    alert('🔥 16.02 메타 패치가 적용되었습니다!');
-                  }}
-                  className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition whitespace-nowrap"
+                    onClick={handleForeignMeta1602}
+                    className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition whitespace-nowrap"
                 >
-                  <span>🔥</span> <span className="hidden sm:inline">16.02 메타 확인</span><span className="sm:hidden">메타</span>
+                    <span>🔥</span> <span className="hidden sm:inline">16.02 메타 확인</span>
                 </button>
             )}
 
