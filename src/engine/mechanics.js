@@ -1,7 +1,7 @@
 // src/engine/mechanics.js
 import { SIM_CONSTANTS, GAME_RULES, SIDES } from '../data/constants';
 import { SYNERGIES } from '../data/synergies';
-import allMastery from '../data/masteries/index';
+import allMastery from '../data/player_mastery/index';
 
 // --- HELPER LOGIC ---
 export const getChampionClass = (champ, position) => {
