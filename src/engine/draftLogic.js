@@ -264,10 +264,12 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
     ? knownChamps
     : [...knownChamps, ...unknownChamps].slice(0, Math.max(MIN_POOL, knownChamps.length));
 
-  const availableNames  = new Set(availableChampions.map(c => c.name));
+  const availableNames   = new Set(availableChampions.map(c => c.name));
   const currentTeamNames = currentTeamPicks.map(c => c.name);
-  const currentAD = currentTeamPicks.filter(c => c.damageType === 'AD').length;
-  const currentAP = currentTeamPicks.filter(c => c.damageType === 'AP').length;
+
+  // Use dmg_type (correct field from champions.json)
+  const currentAD = currentTeamPicks.filter(c => c.dmg_type === 'AD').length;
+  const currentAP = currentTeamPicks.filter(c => c.dmg_type === 'AP').length;
 
   // --- FEARLESS POOL PRESERVATION ---
   // Count how many known champs this player still has left after fearless bans.
@@ -319,13 +321,15 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
     }
     score *= tierMultiplier;
 
-    // --- [STEP 1] Damage Profile Balance ---
+    // --- [STEP 1] Damage Profile Balance + Comp Role Requirements ---
+
+    // A) Damage balance (fixed field: dmg_type, max 4 of same type)
     if (currentTeamPicks.length >= 3) {
       let compMultiplier = 1.0;
-      if (currentAD >= 3 && champ.damageType === 'AD') compMultiplier = 0.6;
-      if (currentAP >= 3 && champ.damageType === 'AP') compMultiplier = 0.6;
-      if (currentAP === 0 && champ.damageType === 'AP') compMultiplier = 1.5;
-      if (currentAD === 0 && champ.damageType === 'AD') compMultiplier = 1.5;
+      if (currentAD >= 4 && champ.dmg_type === 'AD') compMultiplier = 0.5;
+      if (currentAP >= 4 && champ.dmg_type === 'AP') compMultiplier = 0.5;
+      if (currentAP === 0 && champ.dmg_type === 'AP') compMultiplier = 1.5;
+      if (currentAD === 0 && champ.dmg_type === 'AD') compMultiplier = 1.5;
       score *= compMultiplier;
     }
 
