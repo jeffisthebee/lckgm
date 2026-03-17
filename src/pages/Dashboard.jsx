@@ -2602,7 +2602,7 @@ const handleMatchClick = (match) => {
           </div>
         )}
 
-{showFinalStandings && <FinalStandingsModal league={league} onClose={() => setShowFinalStandings(false)} />}
+{showFinalStandings && <FinalStandingsModal league={league} myLeague={myLeague} teams={teams} onClose={() => setShowFinalStandings(false)} />}
 
 {/* FST 경기 모드 선택 */}
 {fstMatchPending && (() => {
