@@ -520,7 +520,8 @@ export function computePlayoffAwards(league, teams) {
   const isExplicitFinalMatch = (m) => {
     if (!m) return false;
     const id = String(m.id || '');
-    const label = String(m.label || m.roundName || '').trim().toUpperCase();
+    const rawLabel = String(m.label || m.roundName || '').trim();
+    const label = rawLabel.toUpperCase();
     const round = Number(m.round || 0);
 
     if (round === 5) return true; // LCK/LEC/LPL style
@@ -530,8 +531,10 @@ export function computePlayoffAwards(league, teams) {
 
     if (!label) return false;
     if (label.includes('GRAND FINAL')) return true;
-    if (label === 'FINAL' || label.includes('FINAL')) return true;
-    if (label.includes('결승')) return true; // 결승 / 결승전
+    // Only accept explicit "Final" labels (avoid "Upper Final", etc.)
+    if (label === 'FINAL' || label === 'FINALS' || label === 'GRAND FINAL') return true;
+    // Korean: ONLY exact finals wording. Do NOT match "승자조 결승", "결승 진출전", etc.
+    if (rawLabel === '결승전' || rawLabel === '결승') return true;
     return false;
   };
 
