@@ -1074,17 +1074,6 @@ const getOvrBadgeStyle = (ovr) => {
         doPicks([...available], 0, {});
     };
 
-    // Detect when LEC user needs to pick seeds (regular done, no playoffs yet)
-    const lecPlayoffPickNeeded = isMyLeagueForeign && myLeague === 'LEC' &&
-        (() => {
-            const lecMs = league.foreignMatches?.['LEC'] || [];
-            const regularDone = lecMs.filter(m => m.type === 'regular').length > 0 &&
-                                lecMs.filter(m => m.type === 'regular').every(m => m.status === 'finished');
-            const noPlayoffs = !lecMs.some(m => m.type === 'playoff');
-            return regularDone && noPlayoffs;
-        })();
-
-
   
   // [CRITICAL FIX] handleMatchClick now injects round info for old saves
   // [CRITICAL FIX] Global Team Finder for the Modal!
@@ -1199,6 +1188,16 @@ const handleMatchClick = (match) => {
         return 'LCK';
     })();
     const isMyLeagueForeign = myLeague !== 'LCK';
+
+    // Detect when LEC user needs to pick seeds (regular done, no playoffs yet)
+    const lecPlayoffPickNeeded = isMyLeagueForeign && myLeague === 'LEC' &&
+        (() => {
+            const lecMs = league.foreignMatches?.['LEC'] || [];
+            const regularDone = lecMs.filter(m => m.type === 'regular').length > 0 &&
+                                lecMs.filter(m => m.type === 'regular').every(m => m.status === 'finished');
+            const noPlayoffs = !lecMs.some(m => m.type === 'playoff');
+            return regularDone && noPlayoffs;
+        })();
 
     // ── myTeam: LCK uses numeric ID, foreign uses name string ───────────────
     const myTeam = (() => {
