@@ -938,6 +938,131 @@ const getOvrBadgeStyle = (ovr) => {
         updateLeague(league.id, updates);
     };
 
+    // ── LEC Playoff Seed Picking ──────────────────────────────────────────────
+    // Seeds 1, 2, 3 each pick their opponent from seeds 5-8 in order.
+    // If the player IS one of those seeds, show the opponentChoice modal.
+    // CPU seeds use 80% rule (pick weakest available).
+    const handleLECPlayoffStart = () => {
+        if (myLeague !== 'LEC') return;
+        const foreignTeamsList = FOREIGN_LEAGUES['LEC'] || [];
+        const lecMatches = league.foreignMatches?.['LEC'] || [];
+
+        // Build standings from regular season
+        const st = {};
+        foreignTeamsList.forEach(t => { st[t.name] = { w: 0, l: 0, diff: 0, h2h: {}, defeatedOpponents: [], id: t.id || t.name, name: t.name }; });
+        lecMatches.filter(m => m.type === 'regular' && m.status === 'finished').forEach(m => {
+            const w = m.result?.winner;
+            const t1n = foreignTeamsList.find(t => t.name === m.t1 || t.id === m.t1)?.name || m.t1;
+            const t2n = foreignTeamsList.find(t => t.name === m.t2 || t.id === m.t2)?.name || m.t2;
+            const l = w === t1n ? t2n : t1n;
+            if (st[w]) { st[w].w++; st[w].defeatedOpponents.push(l); if (!st[w].h2h[l]) st[w].h2h[l] = { w: 0, l: 0 }; st[w].h2h[l].w++; }
+            if (st[l]) { st[l].l++; if (!st[l].h2h[w]) st[l].h2h[w] = { w: 0, l: 0 }; st[l].h2h[w].l++; }
+        });
+        const sorted = Object.values(st).sort((a, b) => b.w - a.w || b.diff - a.diff);
+        const seeds = sorted.map((t, i) => ({ ...t, seed: i + 1 }));
+
+        // Save seeds
+        const seedUpdates = { foreignPlayoffSeeds: { ...(league.foreignPlayoffSeeds || {}), LEC: seeds } };
+        updateLeague(league.id, seedUpdates);
+        setLeague(prev => ({ ...prev, ...seedUpdates }));
+
+        const getSeedObj = (n) => seeds.find(s => s.seed === n);
+        const getTeamObj = (seedObj) => {
+            if (!seedObj) return null;
+            const t = foreignTeamsList.find(x => x.name === seedObj.name || x.id === seedObj.id);
+            return t ? { ...t, colors: { primary: TEAM_COLORS[t.name] || TEAM_COLORS['DEFAULT'], secondary: '#fff' } } : null;
+        };
+
+        const mySeed = seeds.find(s => s.name === myTeam.name || s.id === myTeam.id)?.seed;
+        const pickerSeeds = [1, 2, 3]; // seeds that pick opponents
+        const available = [5, 6, 7, 8]; // seeds available to be picked
+
+        // CPU auto-pick: 80% picks weakest (highest seed number)
+        const cpuPick = (pool) => {
+            const sorted = [...pool].sort((a, b) => b - a);
+            return Math.random() < 0.80 ? sorted[0] : (sorted[1] || sorted[0]);
+        };
+
+        // Build the bracket picks for seeds 1,2,3,4
+        const buildBracket = (picks) => {
+            // picks = { 1: seedNum, 2: seedNum, 3: seedNum, 4: seedNum }
+            const getTeamId = (n) => getSeedObj(n)?.id || getSeedObj(n)?.name;
+            const dates = ['2.17 (화)', '2.17 (화)', '2.18 (수)', '2.18 (수)'];
+            const times = ['00:45', '02:30', '00:45', '02:30'];
+            const ub1 = [
+                { id: 'lec_po_ub1g1', label: '1라운드 승자조', t1: getTeamId(1), t2: getTeamId(picks[1]), date: dates[0], time: times[0], type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 1 },
+                { id: 'lec_po_ub1g2', label: '1라운드 승자조', t1: getTeamId(2), t2: getTeamId(picks[2]), date: dates[1], time: times[1], type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 2 },
+                { id: 'lec_po_ub1g3', label: '1라운드 승자조', t1: getTeamId(3), t2: getTeamId(picks[3]), date: dates[2], time: times[2], type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 3 },
+                { id: 'lec_po_ub1g4', label: '1라운드 승자조', t1: getTeamId(4), t2: getTeamId(picks[4]), date: dates[3], time: times[3], type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 4 },
+            ];
+            const rest = [
+                { id: 'lec_po_ub2g1', label: '2라운드 승자조', t1: null, t2: null, date: '2.21 (토)', time: '00:45', type: 'playoff', format: 'BO3', status: 'pending', round: 2, match: 1 },
+                { id: 'lec_po_ub2g2', label: '2라운드 승자조', t1: null, t2: null, date: '2.21 (토)', time: '02:30', type: 'playoff', format: 'BO3', status: 'pending', round: 2, match: 2 },
+                { id: 'lec_po_lb1g1', label: '1라운드 패자조', t1: null, t2: null, date: '2.22 (일)', time: '00:45', type: 'playoff', format: 'BO3', status: 'pending', round: 1.1, match: 1 },
+                { id: 'lec_po_lb1g2', label: '1라운드 패자조', t1: null, t2: null, date: '2.22 (일)', time: '02:30', type: 'playoff', format: 'BO3', status: 'pending', round: 1.1, match: 2 },
+                { id: 'lec_po_lb2g1', label: '2라운드 패자조', t1: null, t2: null, date: '2.23 (월)', time: '00:45', type: 'playoff', format: 'BO3', status: 'pending', round: 2.1, match: 1 },
+                { id: 'lec_po_lb2g2', label: '2라운드 패자조', t1: null, t2: null, date: '2.23 (월)', time: '02:30', type: 'playoff', format: 'BO3', status: 'pending', round: 2.1, match: 2 },
+                { id: 'lec_po_ubf',   label: '3라운드 승자조', t1: null, t2: null, date: '2.24 (화)', time: '00:45', type: 'playoff', format: 'BO5', status: 'pending', round: 3, match: 1 },
+                { id: 'lec_po_lbsf',  label: '3라운드 패자조', t1: null, t2: null, date: '2.28 (토)', time: '01:00', type: 'playoff', format: 'BO5', status: 'pending', round: 3.1, match: 1 },
+                { id: 'lec_po_r4',    label: '4라운드',         t1: null, t2: null, date: '3.1 (일)',  time: '01:00', type: 'playoff', format: 'BO5', status: 'pending', round: 4, match: 1 },
+                { id: 'lec_po_final', label: '결승전',           t1: null, t2: null, date: '3.2 (월)',  time: '01:00', type: 'playoff', format: 'BO5', status: 'pending', round: 5, match: 1 },
+            ];
+            const allPlayoffs = [...ub1, ...rest];
+            const updatedMatches = [...lecMatches, ...allPlayoffs];
+            const updates = {
+                foreignMatches: { ...league.foreignMatches, LEC: updatedMatches },
+                foreignPlayoffSeeds: { ...(league.foreignPlayoffSeeds || {}), LEC: seeds }
+            };
+            updateLeague(league.id, updates);
+            setLeague(prev => ({ ...prev, ...updates }));
+            setOpponentChoice(null);
+        };
+
+        // Sequential pick logic — seeds 1,2,3 pick in order, seed 4 gets what's left
+        const doPicks = (remaining, pickerIdx, currentPicks) => {
+            const pickerSeed = pickerSeeds[pickerIdx];
+            if (pickerIdx >= pickerSeeds.length) {
+                currentPicks[4] = remaining[0];
+                buildBracket(currentPicks);
+                return;
+            }
+
+            const isPlayerPicker = mySeed === pickerSeed;
+            if (isPlayerPicker) {
+                const oppTeams = remaining.map(n => getTeamObj(getSeedObj(n))).filter(Boolean);
+                setOpponentChoice({
+                    title: `🏆 LEC 플레이오프 — ${pickerSeed}시드 상대 선택`,
+                    description: `${pickerSeed}시드로서 1라운드 상대를 선택하세요.`,
+                    type: 'lec_seed_pick',
+                    opponents: oppTeams.map(t => ({ ...t, _seed: seeds.find(s => s.name === t.name)?.seed })),
+                    onConfirm: (picked) => {
+                        const pickedSeedNum = seeds.find(s => s.name === picked.name || s.id === picked.id)?.seed;
+                        const newRemaining = remaining.filter(n => n !== pickedSeedNum);
+                        const newPicks = { ...currentPicks, [pickerSeed]: pickedSeedNum };
+                        doPicks(newRemaining, pickerIdx + 1, newPicks);
+                    }
+                });
+            } else {
+                const picked = cpuPick(remaining);
+                const newRemaining = remaining.filter(n => n !== picked);
+                const newPicks = { ...currentPicks, [pickerSeed]: picked };
+                doPicks(newRemaining, pickerIdx + 1, newPicks);
+            }
+        };
+
+        doPicks([...available], 0, {});
+    };
+
+    // Detect when LEC user needs to pick seeds (regular done, no playoffs yet)
+    const lecPlayoffPickNeeded = isMyLeagueForeign && myLeague === 'LEC' &&
+        (() => {
+            const lecMs = league.foreignMatches?.['LEC'] || [];
+            const regularDone = lecMs.filter(m => m.type === 'regular').length > 0 &&
+                                lecMs.filter(m => m.type === 'regular').every(m => m.status === 'finished');
+            const noPlayoffs = !lecMs.some(m => m.type === 'playoff');
+            return regularDone && noPlayoffs;
+        })();
+
 
   
   // [CRITICAL FIX] handleMatchClick now injects round info for old saves
@@ -2146,14 +2271,16 @@ const handleMatchClick = (match) => {
                   <div className="grid grid-cols-2 gap-4">
                       {opponentChoice.opponents.map(opp => (
                           <button 
-                              key={opp.id}
+                              key={opp.id || opp.name}
                               onClick={() => opponentChoice.onConfirm(opp)}
                               className="p-3 lg:p-4 rounded-xl border-2 transition flex flex-col items-center gap-2 bg-white border-gray-200 hover:border-blue-500 hover:shadow-md cursor-pointer"
                           >
-                              <div className="w-12 h-12 lg:w-16 lg:h-16 rounded-full flex items-center justify-center text-white font-bold shadow-sm text-sm lg:text-lg" style={{backgroundColor:opp.colors.primary}}>{opp.name}</div>
-                              <div className="font-bold text-sm lg:text-lg">{opp.fullName}</div>
+                              <div className="w-12 h-12 lg:w-16 lg:h-16 rounded-full flex items-center justify-center text-white font-bold shadow-sm text-sm lg:text-lg" style={{backgroundColor: opp.colors?.primary || '#333'}}>{opp.name}</div>
+                              <div className="font-bold text-sm lg:text-lg">{opp.fullName || opp.name}</div>
                               <div className="text-xs bg-gray-100 px-3 py-1 rounded-full font-bold">
-                                  {getTeamSeed(opp.id, opponentChoice.type.startsWith('playoff') ? 'playoff' : 'playin')} 시드
+                                  {opp._seed
+                                      ? `${opp._seed}시드`
+                                      : `${getTeamSeed(opp.id, opponentChoice.type.startsWith('playoff') ? 'playoff' : 'playin')} 시드`}
                               </div>
                           </button>
                       ))}
@@ -2394,6 +2521,16 @@ const handleMatchClick = (match) => {
                     className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition whitespace-nowrap"
                 >
                     <span>🔥</span> <span className="hidden sm:inline">16.02 메타 확인</span>
+                </button>
+            )}
+
+            {/* LEC players: playoff seed picking button */}
+            {lecPlayoffPickNeeded && (
+                <button
+                    onClick={handleLECPlayoffStart}
+                    className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition whitespace-nowrap"
+                >
+                    <span>🏆</span> <span className="hidden sm:inline">플레이오프 대진 선택</span>
                 </button>
             )}
 

@@ -188,6 +188,8 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
          activeMatches.filter(m => m.type === 'regular' || m.type === 'super').every(m => m.status === 'finished') &&
          activeMatches.filter(m => m.type === 'regular' || m.type === 'super').length > 0 &&
          !activeMatches.some(m => m.type === 'playoff' || m.type === 'playin') &&
+         // LEC user's own league: Dashboard handles seed picking, don't auto-gen here
+         !(isMyLeagueForeign && targetLeague === myLeague && myLeague === 'LEC') &&
          // For user's own league: only generate bracket if season is actually started (gate !== '0.01')
          // For other leagues: only when user is fully done (gate = 99.99)
          (targetLeague === myLeague
