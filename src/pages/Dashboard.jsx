@@ -105,10 +105,32 @@ const getOvrBadgeStyle = (ovr) => {
       loadData();
     }, [leagueId]);
 
-    // Check Season Status Helper — only meaningful for LCK players
+    // Check Season Status Helper
+    // LCK: playoff round 5 finished
+    // Foreign: their league final finished (e.g. lec_po_final)
     const grandFinalMatch = league?.matches?.find(m => m.type === 'playoff' && m.round === 5);
     const _myLgForSeason = league?.myLeague || 'LCK';
-    const isSeasonOver = _myLgForSeason === 'LCK' && !!(grandFinalMatch && grandFinalMatch.status === 'finished');
+    const isSeasonOver = (() => {
+      if (_myLgForSeason === 'LCK') return !!(grandFinalMatch && grandFinalMatch.status === 'finished');
+      const fMatches = league?.foreignMatches?.[_myLgForSeason] || [];
+      if (!Array.isArray(fMatches) || fMatches.length === 0) return false;
+      const isExplicitFinal = (m) => {
+        if (!m || m.type !== 'playoff') return false;
+        const id = String(m.id || '');
+        const label = String(m.label || m.roundName || '').trim().toUpperCase();
+        const round = Number(m.round || 0);
+        if (_myLgForSeason === 'LEC' && id === 'lec_po_final') return true;
+        if (_myLgForSeason === 'LPL' && id === 'lpl_po14') return true;
+        if (_myLgForSeason === 'LCS' && id === 'lcs_po8') return true;
+        if (_myLgForSeason === 'CBLOL' && id === 'cblol_po10') return true;
+        if (_myLgForSeason === 'LCP' && id.startsWith('lcp_') && round === 4) return true;
+        if (round === 5) return true;
+        if (label.includes('GRAND FINAL') || label.includes('FINAL') || label.includes('결승')) return true;
+        return false;
+      };
+      const finalMatch = fMatches.find(isExplicitFinal);
+      return !!(finalMatch && finalMatch.status === 'finished');
+    })();
 
     // ── [FOREIGN] Auto-draft LCK groups and generate LCK schedule (all pending)
     // Uses the same power-based draft as the real LCK mode:
@@ -994,7 +1016,6 @@ const getOvrBadgeStyle = (ovr) => {
     const autoArchiveFSTRanRef = useRef(false);
     useEffect(() => {
         if (!league || !league.matches) return;
-        if ((league.myLeague || 'LCK') !== 'LCK') return; // foreign players don't auto-archive LCK
         if (autoArchiveRanRef.current) return;
         if (isSeasonOver && !isSavedInHistory) {
             autoArchiveRanRef.current = true;
@@ -1102,33 +1123,29 @@ const getOvrBadgeStyle = (ovr) => {
 
         // Build the bracket picks for seeds 1,2,3,4
         const buildBracket = (picks) => {
-          // Helper: randomly assign teams to t1/t2 (50/50 blue/red side)
-          const randomizeTeams = (seedA, seedB) => {
-              const idA = getSeedObj(seedA)?.id || getSeedObj(seedA)?.name;
-              const idB = getSeedObj(seedB)?.id || getSeedObj(seedB)?.name;
-              
-              // 50/50 chance for blue side
-              if (Math.random() < 0.5) {
-                  return { t1: idA, t2: idB };
-              } else {
-                  return { t1: idB, t2: idA };
-              }
-          };
+          // Higher seed must always be Blue side (t1).
+          // In LEC playoffs: smaller seed number = higher seed.
+          const asToken = (seedNum) => getSeedObj(seedNum)?.id || getSeedObj(seedNum)?.name;
+          const seedMatch = (higherSeedNum, lowerSeedNum) => ({
+            t1: asToken(higherSeedNum),
+            t2: asToken(lowerSeedNum),
+            blueSidePriority: asToken(higherSeedNum),
+          });
           
           const dates = ['2.17 (화)', '2.17 (화)', '2.18 (수)', '2.18 (수)'];
           const times = ['00:45', '02:30', '00:45', '02:30'];
           
-          // Randomize each match
-          const match1 = randomizeTeams(1, picks[1]);
-          const match2 = randomizeTeams(2, picks[2]);
-          const match3 = randomizeTeams(3, picks[3]);
-          const match4 = randomizeTeams(4, picks[4]);
+          // Seeded side assignment (higher seed = t1)
+          const match1 = seedMatch(1, picks[1]);
+          const match2 = seedMatch(2, picks[2]);
+          const match3 = seedMatch(3, picks[3]);
+          const match4 = seedMatch(4, picks[4]);
           
           const ub1 = [
-              { id: 'lec_po_ub1g1', label: '1라운드 승자조', t1: match1.t1, t2: match1.t2, date: dates[0], time: times[0], type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 1 },
-              { id: 'lec_po_ub1g2', label: '1라운드 승자조', t1: match2.t1, t2: match2.t2, date: dates[1], time: times[1], type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 2 },
-              { id: 'lec_po_ub1g3', label: '1라운드 승자조', t1: match3.t1, t2: match3.t2, date: dates[2], time: times[2], type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 3 },
-              { id: 'lec_po_ub1g4', label: '1라운드 승자조', t1: match4.t1, t2: match4.t2, date: dates[3], time: times[3], type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 4 },
+              { id: 'lec_po_ub1g1', label: '1라운드 승자조', t1: match1.t1, t2: match1.t2, blueSidePriority: match1.blueSidePriority, date: dates[0], time: times[0], type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 1 },
+              { id: 'lec_po_ub1g2', label: '1라운드 승자조', t1: match2.t1, t2: match2.t2, blueSidePriority: match2.blueSidePriority, date: dates[1], time: times[1], type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 2 },
+              { id: 'lec_po_ub1g3', label: '1라운드 승자조', t1: match3.t1, t2: match3.t2, blueSidePriority: match3.blueSidePriority, date: dates[2], time: times[2], type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 3 },
+              { id: 'lec_po_ub1g4', label: '1라운드 승자조', t1: match4.t1, t2: match4.t2, blueSidePriority: match4.blueSidePriority, date: dates[3], time: times[3], type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 4 },
           ];
           
           const rest = [
@@ -1674,6 +1691,7 @@ const handleMatchClick = (match) => {
       if (leagueName !== 'LEC') return { league: leagueObj, didUpdate: false };
 
       const lecTeams = FOREIGN_LEAGUES['LEC'] || [];
+      const lecSeeds = leagueObj.foreignPlayoffSeeds?.LEC || [];
       const matches = [...(leagueObj.foreignMatches?.[leagueName] || [])];
       if (matches.length === 0) return { league: leagueObj, didUpdate: false };
 
@@ -1695,11 +1713,42 @@ const handleMatchClick = (match) => {
         return null;
       };
       const needsTeam = (token) => !token || String(token) === 'TBD' || String(token) === 'null' || String(token) === 'undefined';
+      const getSeedNum = (token) => {
+        if (!token) return null;
+        const s = String(token).trim().toUpperCase();
+        const found = lecSeeds.find(x => {
+          const id = (x.id != null) ? String(x.id).trim().toUpperCase() : '';
+          const nm = (x.name != null) ? String(x.name).trim().toUpperCase() : '';
+          return id === s || nm === s;
+        });
+        return found?.seed ?? null;
+      };
+      const orderBySeed = (aTok, bTok) => {
+        const aS = getSeedNum(aTok);
+        const bS = getSeedNum(bTok);
+        if (aS == null || bS == null) return [aTok, bTok];
+        // smaller seed number = higher seed -> blue side (t1)
+        return aS <= bS ? [aTok, bTok] : [bTok, aTok];
+      };
       const assignTeam = (m, t1, t2) => {
         if (!m) return false;
         let changed = false;
         if (needsTeam(m.t1) && t1) { m.t1 = t1; changed = true; }
         if (needsTeam(m.t2) && t2) { m.t2 = t2; changed = true; }
+
+        // Once both teams exist, enforce higher seed = t1 (blue side)
+        if (!needsTeam(m.t1) && !needsTeam(m.t2)) {
+          const [blue, red] = orderBySeed(m.t1, m.t2);
+          if (blue !== m.t1 || red !== m.t2) {
+            m.t1 = blue;
+            m.t2 = red;
+            changed = true;
+          }
+          if (blue && m.blueSidePriority !== blue) {
+            m.blueSidePriority = blue;
+            changed = true;
+          }
+        }
         return changed;
       };
 

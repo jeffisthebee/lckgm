@@ -338,17 +338,29 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
             };
         }, [isDecidingGame, soundEnabled, phase]);
     
-        // [FIXED] Robust detection for Finals: also consider match.stage
+        // Finals detection MUST be strict:
+        // - Never use roundIndex (can collide with regular-season "rounds")
+        // - Never treat any random match as finals based on loose stage/name alone
+        // This prevents BO1 games (e.g., first 16.02 game) from showing Finals MVP.
         const isFinals = useMemo(() => {
             if (!match) return false;
-            const name = (match.name || '').toString().toLowerCase();
-            const stage = (match.stage || '').toString().toLowerCase();
-            return (
-                match.round == 5 || 
-                match.roundIndex == 4 || 
-                name.includes('final') || name.includes('결승') ||
-                stage.includes('final') || stage.includes('grand final') || stage.includes('finals')
-            );
+            const type = String(match.type || '').toLowerCase();
+            if (type !== 'playoff') return false;
+
+            const id = String(match.id || '');
+            const label = String(match.label || match.roundName || match.name || match.stage || '').trim().toUpperCase();
+            const round = Number(match.round || 0);
+
+            if (id === 'lec_po_final' || id === 'lpl_po14' || id === 'lcs_po8' || id === 'cblol_po10') return true;
+            if (id.startsWith('lcp_') && round === 4) return true;
+            if (round === 5) return true;
+
+            // label-based fallback for finals only (not for regular season)
+            if (!label) return false;
+            if (label.includes('GRAND FINAL')) return true;
+            if (label === 'FINAL' || label.includes('FINAL')) return true;
+            if (label.includes('결승')) return true;
+            return false;
         }, [match]);
     
         const safeArray = (v) => Array.isArray(v) ? v : [];
@@ -1990,8 +2002,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                             </div>
                        </div>
     
-                       {/* POS CARD (Only if Series Ends & BO5/BO3 etc.) */}
-                       {isMatchFinished && (isFinals || isBo5) && (
+                       {/* POS CARD (Only if series length > 1 and match ends) */}
+                       {isMatchFinished && bestOf > 1 && (isFinals || isBo5 || bestOf === 3) && (
                             <div className="bg-gradient-to-br from-purple-900 to-indigo-900 border border-purple-400 p-3 sm:p-4 lg:p-6 rounded-xl lg:rounded-2xl shadow-2xl w-1/2 lg:w-1/3 flex flex-col items-center relative overflow-hidden animate-pulse-slow">
                                 <div className="absolute top-0 right-0 bg-purple-500 text-white font-bold px-2 py-0.5 lg:px-3 lg:py-1 text-[8px] sm:text-[10px] lg:text-xs rounded-bl-lg z-10">
                                     {isFinals ? "파이널 MVP" : "SERIES MVP"}
