@@ -514,13 +514,36 @@ export function computePlayoffAwards(league, teams) {
   const pogLeaderName = pogLeader?.playerName ? pogLeader.playerName : null;
 
   // B. Finals MVP Logic
-  // Sort matches by round desc to find the "Grand Final"
-  const sortedMatches = [...playoffMatches].sort((a, b) => (b.round || 0) - (a.round || 0));
-  const finalMatch = sortedMatches[0]; // The match with the highest round number is the Final
+  // IMPORTANT:
+  // Do NOT treat "highest finished round so far" as the Final.
+  // Otherwise Finals MVP appears after the first playoff series.
+  const isExplicitFinalMatch = (m) => {
+    if (!m) return false;
+    const id = String(m.id || '');
+    const label = String(m.label || m.roundName || '').trim().toUpperCase();
+    const round = Number(m.round || 0);
+
+    if (round === 5) return true; // LCK/LEC/LPL style
+    if (id === 'lec_po_final' || id === 'lpl_po14' || id === 'lcs_po8' || id === 'cblol_po10') return true;
+    // LCP uses round 4 as its Final
+    if (id.startsWith('lcp_') && round === 4) return true;
+
+    if (!label) return false;
+    if (label.includes('GRAND FINAL')) return true;
+    if (label === 'FINAL' || label.includes('FINAL')) return true;
+    if (label.includes('결승')) return true; // 결승 / 결승전
+    return false;
+  };
+
+  const explicitFinal = playoffMatches.find(m => isExplicitFinalMatch(m));
+  const finalMatch = explicitFinal || null;
 
   // Only read explicitly saved posPlayer (series POS) — never read pogPlayer which is a
   // per-game POG winner and would incorrectly count as Finals MVP
-  let finalsMvpName = normalizePlayerNameMaybe(finalMatch?.result?.posPlayer || finalMatch?.result?.posPlayerName || null);
+  let finalsMvpName = null;
+  if (finalMatch) {
+    finalsMvpName = normalizePlayerNameMaybe(finalMatch?.result?.posPlayer || finalMatch?.result?.posPlayerName || null);
+  }
 
   // [FALLBACK LOGIC]
   if (!finalsMvpName && finalMatch && finalMatch.result) {
@@ -724,7 +747,7 @@ export function computePlayoffAwards(league, teams) {
   });
 
   return {
-      finalsMvp: allProCandidates.find(p => p.isFinalsMvp) || null,
+      finalsMvp: finalMatch ? (allProCandidates.find(p => p.isFinalsMvp) || null) : null,
       pogLeader: allProCandidates.find(p => p.isPogLeader) || null,
       allProTeams
   };

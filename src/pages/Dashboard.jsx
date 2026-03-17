@@ -292,13 +292,64 @@ const getOvrBadgeStyle = (ovr) => {
             return;
         }
 
+        // After play-in exists, auto-generate next play-in rounds + full playoffs progression.
+        // This prevents "only appears after refresh" issues for foreign players viewing LCK.
+        let currentMatches = allMatches;
+        let didUpdate = false;
+        const patchLeague = (partial) => {
+          didUpdate = true;
+          const next = { ...league, ...partial };
+          updateLeague(league.id, partial);
+          setLeague(prev => ({ ...prev, ...partial }));
+          // keep local ref in sync for sequential generation
+          if (partial.matches) currentMatches = partial.matches;
+        };
+
+        // 1) Ensure play-in rounds 2 and 3 are generated as soon as prerequisites finish.
+        try {
+          const playinMatches = currentMatches.filter(m => m.type === 'playin');
+          const r1 = playinMatches.filter(m => m.round === 1);
+          const r2Exists = playinMatches.some(m => m.round === 2);
+          const r3Exists = playinMatches.some(m => m.round === 3);
+
+          const r1Finished = r1.length > 0 && r1.every(m => m.status === 'finished');
+          if (r1Finished && !r2Exists) {
+            const playInSeeds = league.playInSeeds || [];
+            const seed1 = teams.find(t => t.id === (playInSeeds[0]?.id || 0));
+            const seed2 = teams.find(t => t.id === (playInSeeds[1]?.id || 0));
+            if (seed1 && seed2) {
+              const r1Winners = r1
+                .map(m => teams.find(t => t.name === m.result?.winner))
+                .filter(Boolean);
+              const winnersWithSeed = r1Winners.map(w => ({ ...w, seedIndex: playInSeeds.findIndex(s => s.id === w.id) }));
+              winnersWithSeed.sort((a, b) => a.seedIndex - b.seedIndex);
+              if (winnersWithSeed.length >= 2) {
+                const lowerSeedWinner = winnersWithSeed[1];
+                const higherSeedWinner = winnersWithSeed[0];
+                const pickedTeam = (Math.random() < 0.65) ? lowerSeedWinner : higherSeedWinner;
+                const remainingTeam = (pickedTeam.id === lowerSeedWinner.id) ? higherSeedWinner : lowerSeedWinner;
+                const newMatches = createPlayInRound2Matches(currentMatches, seed1, seed2, pickedTeam, remainingTeam);
+                patchLeague({ matches: newMatches });
+              }
+            }
+          }
+
+          const r2 = playinMatches.filter(m => m.round === 2);
+          const r2Finished = r2.length > 0 && r2.every(m => m.status === 'finished');
+          if (r2Finished && !r3Exists) {
+            const newMatches = createPlayInFinalMatch(currentMatches, teams);
+            patchLeague({ matches: newMatches });
+          }
+        } catch (e) {
+          console.error('[LCK BG] Play-in next-round generation failed:', e);
+        }
+
+        // 2) Generate playoffs once play-in Final is finished.
         if (!hasPlayoff) {
-            // Check if play-in is done enough to generate playoffs
-            const playinMatches = allMatches.filter(m => m.type === 'playin');
+            const playinMatches = currentMatches.filter(m => m.type === 'playin');
             const r3 = playinMatches.filter(m => m.round === 3);
             if (r3.length === 0 || !r3.every(m => m.status === 'finished')) return;
 
-            // Generate playoffs using existing season summary seeds
             const directPO = league.seasonSummary?.poTeams || [];
             const playInQualifiers = playinMatches
                 .filter(m => m.status === 'finished')
@@ -325,10 +376,76 @@ const getOvrBadgeStyle = (ovr) => {
             const remaining = playInPO.filter(s => s.id !== pickedSeed.id);
             const r1m1 = { id: Date.now() + 300, round: 1, match: 1, label: '1라운드', t1: seed3.id, t2: pickedSeed.id, date: '2.11 (수)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' };
             const r1m2 = { id: Date.now() + 301, round: 1, match: 2, label: '1라운드', t1: remaining[0]?.id, t2: remaining[1]?.id, date: '2.12 (목)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' };
-            const newMatches = [...allMatches, r1m1, r1m2];
-            const updates = { matches: newMatches, playoffSeeds };
-            updateLeague(league.id, updates);
-            setLeague(prev => ({ ...prev, ...updates }));
+            const newMatches = [...currentMatches, r1m1, r1m2];
+            patchLeague({ matches: newMatches, playoffSeeds });
+            return;
+        }
+
+        // 3) If playoffs exist, generate subsequent rounds automatically as series finish.
+        try {
+          const playoffSeeds = league.playoffSeeds || [];
+          if (playoffSeeds.length === 0) return;
+
+          const getWinnerId = (m) => teams.find(t => t.name === m.result?.winner)?.id;
+          const getLoserId = (m) => {
+            const wId = getWinnerId(m);
+            if (!wId) return null;
+            return (m.t1 === wId) ? m.t2 : m.t1;
+          };
+
+          const r1 = currentMatches.filter(m => m.type === 'playoff' && m.round === 1);
+          const r2Exists = currentMatches.some(m => m.type === 'playoff' && m.round === 2);
+          const r1Finished = r1.length === 2 && r1.every(m => m.status === 'finished');
+          if (r1Finished && !r2Exists) {
+            const r1Winners = r1.map(m => ({ id: getWinnerId(m), fromMatch: m.match })).filter(w => !!w.id);
+            const r1Losers = r1.map(m => ({ id: getLoserId(m), fromMatch: m.match })).filter(l => !!l.id);
+            const seed1 = playoffSeeds.find(s => s.seed === 1)?.id;
+            const seed2 = playoffSeeds.find(s => s.seed === 2)?.id;
+            if (seed1 && seed2 && r1Winners.length === 2 && r1Losers.length === 2) {
+              const pickedWinner = r1Winners[Math.floor(Math.random() * r1Winners.length)];
+              const remainingWinner = r1Winners.find(w => w.id !== pickedWinner.id)?.id;
+              const newMatches = createPlayoffRound2Matches(currentMatches, seed1, seed2, pickedWinner.id, remainingWinner, r1Losers[0].id, r1Losers[1].id);
+              patchLeague({ matches: newMatches });
+              return;
+            }
+          }
+
+          const r2w = currentMatches.filter(m => m.type === 'playoff' && m.round === 2);
+          const r2l = currentMatches.find(m => m.type === 'playoff' && m.round === 2.1);
+          const r3Exists = currentMatches.some(m => m.type === 'playoff' && m.round === 3);
+          const r2Finished = r2w.length === 2 && r2w.every(m => m.status === 'finished') && r2l?.status === 'finished';
+          if (r2Finished && !r3Exists) {
+            const newMatches = createPlayoffRound3Matches(currentMatches, playoffSeeds, teams);
+            patchLeague({ matches: newMatches });
+            return;
+          }
+
+          const r2_2 = currentMatches.find(m => m.type === 'playoff' && m.round === 2.2);
+          const r3w = currentMatches.find(m => m.type === 'playoff' && m.round === 3);
+          const r3lExists = currentMatches.some(m => m.type === 'playoff' && m.round === 3.1);
+          if (r2_2?.status === 'finished' && r3w?.status === 'finished' && !r3lExists) {
+            const newMatches = createPlayoffLoserRound3Match(currentMatches, playoffSeeds, teams);
+            patchLeague({ matches: newMatches });
+            return;
+          }
+
+          const r3l = currentMatches.find(m => m.type === 'playoff' && m.round === 3.1);
+          const r4Exists = currentMatches.some(m => m.type === 'playoff' && m.round === 4);
+          if (r3l?.status === 'finished' && r3w?.status === 'finished' && !r4Exists) {
+            const newMatches = createPlayoffQualifierMatch(currentMatches, teams);
+            patchLeague({ matches: newMatches });
+            return;
+          }
+
+          const r4 = currentMatches.find(m => m.type === 'playoff' && m.round === 4);
+          const finalExists = currentMatches.some(m => m.type === 'playoff' && m.round === 5);
+          if (r4?.status === 'finished' && r3w?.status === 'finished' && !finalExists) {
+            const newMatches = createPlayoffFinalMatch(currentMatches, teams);
+            patchLeague({ matches: newMatches });
+            return;
+          }
+        } catch (e) {
+          console.error('[LCK BG] Playoff next-round generation failed:', e);
         }
     }, [
         league?.matches?.filter(m => m.status === 'finished').length,
@@ -1547,6 +1664,87 @@ const handleMatchClick = (match) => {
         throw err; 
       }
     };
+
+    // ── [FOREIGN] Bracket advancement (no-refresh) ──────────────────────────
+    // ScheduleTab can advance foreign playoff brackets when that tab is open,
+    // but the Dashboard "next match" needs the bracket to advance immediately
+    // after a match finishes (otherwise the next round appears only after refresh).
+    const advanceForeignBracketIfNeeded = (leagueObj, leagueName) => {
+      if (!leagueObj || !leagueName) return { league: leagueObj, didUpdate: false };
+      if (leagueName !== 'LEC') return { league: leagueObj, didUpdate: false };
+
+      const lecTeams = FOREIGN_LEAGUES['LEC'] || [];
+      const matches = [...(leagueObj.foreignMatches?.[leagueName] || [])];
+      if (matches.length === 0) return { league: leagueObj, didUpdate: false };
+
+      const findM = (id) => matches.find(m => m.id === id);
+      const resolveName = (token) => {
+        if (!token || token === 'TBD' || token === 'null' || token === 'undefined') return null;
+        const t = lecTeams.find(x => x.name === token || x.id === token);
+        return t?.name || String(token);
+      };
+      const getWinner = (m) => (m && m.status === 'finished' && m.result?.winner) ? resolveName(m.result.winner) : null;
+      const getLoser = (m) => {
+        if (!m || m.status !== 'finished' || !m.result?.winner) return null;
+        const w = resolveName(m.result.winner);
+        const t1 = resolveName(m.t1);
+        const t2 = resolveName(m.t2);
+        if (!w || !t1 || !t2) return null;
+        if (w === t1) return t2;
+        if (w === t2) return t1;
+        return null;
+      };
+      const needsTeam = (token) => !token || String(token) === 'TBD' || String(token) === 'null' || String(token) === 'undefined';
+      const assignTeam = (m, t1, t2) => {
+        if (!m) return false;
+        let changed = false;
+        if (needsTeam(m.t1) && t1) { m.t1 = t1; changed = true; }
+        if (needsTeam(m.t2) && t2) { m.t2 = t2; changed = true; }
+        return changed;
+      };
+
+      let changed = false;
+      const ub1g1 = findM('lec_po_ub1g1');
+      const ub1g2 = findM('lec_po_ub1g2');
+      const ub1g3 = findM('lec_po_ub1g3');
+      const ub1g4 = findM('lec_po_ub1g4');
+      const ub2g1 = findM('lec_po_ub2g1');
+      const ub2g2 = findM('lec_po_ub2g2');
+      const lb1g1 = findM('lec_po_lb1g1');
+      const lb1g2 = findM('lec_po_lb1g2');
+      const lb2g1 = findM('lec_po_lb2g1');
+      const lb2g2 = findM('lec_po_lb2g2');
+      const ubf = findM('lec_po_ubf');
+      const lbsf = findM('lec_po_lbsf');
+      const r4 = findM('lec_po_r4');
+      const finalM = findM('lec_po_final');
+
+      // Upper/Lower round 2 + LB1 from UB1 results
+      changed = assignTeam(ub2g1, getWinner(ub1g1), getWinner(ub1g4)) || changed;
+      changed = assignTeam(ub2g2, getWinner(ub1g2), getWinner(ub1g3)) || changed;
+      changed = assignTeam(lb1g1, getLoser(ub1g1), getLoser(ub1g4)) || changed;
+      changed = assignTeam(lb1g2, getLoser(ub1g2), getLoser(ub1g3)) || changed;
+
+      // LB2 from LB1 winners + UB2 losers
+      changed = assignTeam(lb2g1, getWinner(lb1g1), getLoser(ub2g2)) || changed;
+      changed = assignTeam(lb2g2, getWinner(lb1g2), getLoser(ub2g1)) || changed;
+
+      // UBF / LBSF
+      changed = assignTeam(ubf, getWinner(ub2g1), getWinner(ub2g2)) || changed;
+      changed = assignTeam(lbsf, getWinner(lb2g1), getWinner(lb2g2)) || changed;
+
+      // R4 and Final
+      changed = assignTeam(r4, getWinner(lbsf), getLoser(ubf)) || changed;
+      changed = assignTeam(finalM, getWinner(r4), getWinner(ubf)) || changed;
+
+      if (!changed) return { league: leagueObj, didUpdate: false };
+
+      const updatedLeague = {
+        ...leagueObj,
+        foreignMatches: { ...(leagueObj.foreignMatches || {}), [leagueName]: matches }
+      };
+      return { league: updatedLeague, didUpdate: true };
+    };
     
   const handleProceedNextMatch = () => {
     try {
@@ -1592,7 +1790,9 @@ const handleMatchClick = (match) => {
             ? { ...m, status: 'finished', result: { winner: result.winner, score: resultScore, history: result.history } }
             : m
         );
-        const updatedLeague = { ...league, foreignMatches: { ...league.foreignMatches, [myLeague]: updatedForeignMatches } };
+        const baseLeague = { ...league, foreignMatches: { ...league.foreignMatches, [myLeague]: updatedForeignMatches } };
+        const advanced = advanceForeignBracketIfNeeded(baseLeague, myLeague);
+        const updatedLeague = advanced.league;
         updateLeague(league.id, updatedLeague);
         setLeague(updatedLeague);
         recalculateStandings(updatedLeague);
@@ -1714,10 +1914,11 @@ const handleMatchClick = (match) => {
         const updatedForeignMatches = (league.foreignMatches?.[myLeague] || []).map(m =>
           m.id === match.id ? { ...m, status: 'finished', result } : m
         );
-        updatedLeague = {
+        const baseLeague = {
           ...league,
           foreignMatches: { ...league.foreignMatches, [myLeague]: updatedForeignMatches }
         };
+        updatedLeague = advanceForeignBracketIfNeeded(baseLeague, myLeague).league;
       } else {
         // ── Save to league.matches (LCK) ──────────────────────────────────
         const updatedMatches = (league.matches || []).map(m =>
@@ -2163,6 +2364,14 @@ const handleMatchClick = (match) => {
     const isRegularSeasonFinished = league.matches 
       ? league.matches.filter(m => m.type === 'regular').every(m => m.status === 'finished') 
       : false;
+
+    // Foreign players: LCK regular season finished → require manual meta patch confirmation.
+    // Render this prompt in the same spot as the next-match card to prevent skipping it.
+    const foreignMetaPending =
+      isMyLeagueForeign &&
+      isRegularSeasonFinished &&
+      league.metaVersion !== '16.02' &&
+      league.metaVersion !== '16.03';
     
     const hasSuperWeekGenerated = league.matches
       ? league.matches.some(m => m.type === 'super')
@@ -2569,16 +2778,6 @@ const handleMatchClick = (match) => {
                </button>
             )}
 
-            {/* Foreign players: manual 16.02 meta patch button — appears once LCK regular season is done */}
-            {isMyLeagueForeign && isRegularSeasonFinished && league.metaVersion !== '16.02' && league.metaVersion !== '16.03' && (
-                <button
-                    onClick={handleForeignMeta1602}
-                    className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-purple-600 hover:bg-purple-700 text-white shadow-sm flex items-center gap-2 animate-bounce transition whitespace-nowrap"
-                >
-                    <span>🔥</span> <span className="hidden sm:inline">16.02 메타 확인</span>
-                </button>
-            )}
-
             {/* LEC players: playoff seed picking button */}
             {lecPlayoffPickNeeded && (
                 <button
@@ -2607,7 +2806,8 @@ const handleMatchClick = (match) => {
               </button>
             )}
             
-            {(hasDrafted || isMyLeagueForeign) && nextGlobalMatch && !isMyNextMatch && 
+            {(hasDrafted || isMyLeagueForeign) && nextGlobalMatch && !isMyNextMatch &&
+             !foreignMetaPending &&
              !(nextGlobalMatch.type === 'super' && league.metaVersion !== '16.02') && (
                 <button 
                   onClick={handleProceedNextMatch} 
@@ -2681,7 +2881,19 @@ const handleMatchClick = (match) => {
                                   {nextGlobalMatch.label || nextGlobalMatch.format}
                               </span>
                               
-                              {isMyNextMatch ? (
+                              {foreignMetaPending ? (
+                                  <div className="flex flex-col gap-2 mt-3 w-full">
+                                      <button
+                                        onClick={handleForeignMeta1602}
+                                        className="w-full px-2 lg:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs lg:text-base rounded-lg shadow-md transform transition hover:scale-105 flex items-center justify-center gap-2 whitespace-nowrap"
+                                      >
+                                          <span>🔥</span> 16.02 메타 확인
+                                      </button>
+                                      <div className="text-[10px] lg:text-xs text-gray-500 font-bold text-center">
+                                          메타 패치를 적용해야 다음 일정이 진행됩니다.
+                                      </div>
+                                  </div>
+                              ) : isMyNextMatch ? (
                                   <div className="flex flex-col gap-2 mt-3 w-full">
                                       <button 
                                         onClick={() => handleStartMyMatch('manual')} 
