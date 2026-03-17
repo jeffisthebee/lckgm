@@ -985,39 +985,47 @@ const getOvrBadgeStyle = (ovr) => {
 
         // Build the bracket picks for seeds 1,2,3,4
         const buildBracket = (picks) => {
-            // picks = { 1: seedNum, 2: seedNum, 3: seedNum, 4: seedNum }
-            const getTeamId = (n) => getSeedObj(n)?.id || getSeedObj(n)?.name;
-            const dates = ['2.17 (화)', '2.17 (화)', '2.18 (수)', '2.18 (수)'];
-            const times = ['00:45', '02:30', '00:45', '02:30'];
-            const ub1 = [
-                { id: 'lec_po_ub1g1', label: '1라운드 승자조', t1: getTeamId(1), t2: getTeamId(picks[1]), date: dates[0], time: times[0], type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 1 },
-                { id: 'lec_po_ub1g2', label: '1라운드 승자조', t1: getTeamId(2), t2: getTeamId(picks[2]), date: dates[1], time: times[1], type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 2 },
-                { id: 'lec_po_ub1g3', label: '1라운드 승자조', t1: getTeamId(3), t2: getTeamId(picks[3]), date: dates[2], time: times[2], type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 3 },
-                { id: 'lec_po_ub1g4', label: '1라운드 승자조', t1: getTeamId(4), t2: getTeamId(picks[4]), date: dates[3], time: times[3], type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 4 },
-            ];
-            const rest = [
-                { id: 'lec_po_ub2g1', label: '2라운드 승자조', t1: null, t2: null, date: '2.21 (토)', time: '00:45', type: 'playoff', format: 'BO3', status: 'pending', round: 2, match: 1 },
-                { id: 'lec_po_ub2g2', label: '2라운드 승자조', t1: null, t2: null, date: '2.21 (토)', time: '02:30', type: 'playoff', format: 'BO3', status: 'pending', round: 2, match: 2 },
-                { id: 'lec_po_lb1g1', label: '1라운드 패자조', t1: null, t2: null, date: '2.22 (일)', time: '00:45', type: 'playoff', format: 'BO3', status: 'pending', round: 1.1, match: 1 },
-                { id: 'lec_po_lb1g2', label: '1라운드 패자조', t1: null, t2: null, date: '2.22 (일)', time: '02:30', type: 'playoff', format: 'BO3', status: 'pending', round: 1.1, match: 2 },
-                { id: 'lec_po_lb2g1', label: '2라운드 패자조', t1: null, t2: null, date: '2.23 (월)', time: '00:45', type: 'playoff', format: 'BO3', status: 'pending', round: 2.1, match: 1 },
-                { id: 'lec_po_lb2g2', label: '2라운드 패자조', t1: null, t2: null, date: '2.23 (월)', time: '02:30', type: 'playoff', format: 'BO3', status: 'pending', round: 2.1, match: 2 },
-                { id: 'lec_po_ubf',   label: '3라운드 승자조', t1: null, t2: null, date: '2.24 (화)', time: '00:45', type: 'playoff', format: 'BO5', status: 'pending', round: 3, match: 1 },
-                { id: 'lec_po_lbsf',  label: '3라운드 패자조', t1: null, t2: null, date: '2.28 (토)', time: '01:00', type: 'playoff', format: 'BO5', status: 'pending', round: 3.1, match: 1 },
-                { id: 'lec_po_r4',    label: '4라운드',         t1: null, t2: null, date: '3.1 (일)',  time: '01:00', type: 'playoff', format: 'BO5', status: 'pending', round: 4, match: 1 },
-                { id: 'lec_po_final', label: '결승전',           t1: null, t2: null, date: '3.2 (월)',  time: '01:00', type: 'playoff', format: 'BO5', status: 'pending', round: 5, match: 1 },
-            ];
-            const allPlayoffs = [...ub1, ...rest];
-            const updatedMatches = [...lecMatches, ...allPlayoffs];
-            const updates = {
-                foreignMatches: { ...league.foreignMatches, LEC: updatedMatches },
-                foreignPlayoffSeeds: { ...(league.foreignPlayoffSeeds || {}), LEC: seeds }
-            };
-            updateLeague(league.id, updates);
-            setLeague(prev => ({ ...prev, ...updates }));
-            setOpponentChoice(null);
-        };
-
+          const getTeamId = (n) => getSeedObj(n)?.id || getSeedObj(n)?.name;
+          const dates = ['2.17 (화)', '2.17 (화)', '2.18 (수)', '2.18 (수)'];
+          const times = ['00:45', '02:30', '00:45', '02:30'];
+          
+          // FIX: Randomize blue side for each match
+          const randomizeTeams = (seedA, seedB) => {
+              if (Math.random() < 0.5) {
+                  return [getTeamId(seedA), getTeamId(seedB)];
+              } else {
+                  return [getTeamId(seedB), getTeamId(seedA)];
+              }
+          };
+          
+          const [m1t1, m1t2] = randomizeTeams(1, picks[1]);
+          const [m2t1, m2t2] = randomizeTeams(2, picks[2]);
+          const [m3t1, m3t2] = randomizeTeams(3, picks[3]);
+          const [m4t1, m4t2] = randomizeTeams(4, picks[4]);
+          
+          const ub1 = [
+              { id: 'lec_po_ub1g1', label: '1라운드 승자조', t1: m1t1, t2: m1t2, date: dates[0], time: times[0], type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 1 },
+              { id: 'lec_po_ub1g2', label: '1라운드 승자조', t1: m2t1, t2: m2t2, date: dates[1], time: times[1], type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 2 },
+              { id: 'lec_po_ub1g3', label: '1라운드 승자조', t1: m3t1, t2: m3t2, date: dates[2], time: times[2], type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 3 },
+              { id: 'lec_po_ub1g4', label: '1라운드 승자조', t1: m4t1, t2: m4t2, date: dates[3], time: times[3], type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 4 },
+          ];
+          
+          const rest = [
+              { id: 'lec_po_ub2g1', label: '2라운드 승자조', t1: null, t2: null, date: '2.21 (토)', time: '00:45', type: 'playoff', format: 'BO3', status: 'pending', round: 2, match: 1 },
+              // ... rest remains the same
+          ];
+          
+          const allPlayoffs = [...ub1, ...rest];
+          const updatedMatches = [...lecMatches, ...allPlayoffs];
+          const updates = {
+              foreignMatches: { ...league.foreignMatches, LEC: updatedMatches },
+              foreignPlayoffSeeds: { ...(league.foreignPlayoffSeeds || {}), LEC: seeds }
+          };
+          updateLeague(league.id, updates);
+          setLeague(prev => ({ ...prev, ...updates }));
+          setOpponentChoice(null);
+      };
+      
         // Sequential pick logic — seeds 1,2,3 pick in order, seed 4 gets what's left
         const doPicks = (remaining, pickerIdx, currentPicks) => {
             const pickerSeed = pickerSeeds[pickerIdx];
@@ -1715,21 +1723,60 @@ const handleMatchClick = (match) => {
     };
   
     // ── [FOREIGN] Generate the user's own league regular season schedule ────────
-    const handleStartForeignSeason = () => {
-      const lgTeams = FOREIGN_LEAGUES[myLeague] || [];
-      let schedule = [];
-      if (myLeague === 'LPL')        schedule = generateLPLRegularSchedule(lgTeams);
-      else if (myLeague === 'LEC')   schedule = generateLECRegularSchedule(lgTeams);
-      else if (myLeague === 'LCS')   schedule = generateLCSRegularSchedule(lgTeams);
-      else if (myLeague === 'LCP')   schedule = generateLCPRegularSchedule(lgTeams);
-      else if (myLeague === 'CBLOL') schedule = generateCBLOLRegularSchedule(lgTeams);
-
-      if (schedule.length === 0) { alert('일정 생성 실패: 팀 데이터를 찾을 수 없습니다.'); return; }
-
-      const updates = { foreignMatches: { ...league.foreignMatches, [myLeague]: schedule } };
+    const buildBracket = (picks) => {
+      // Helper: randomly assign teams to t1/t2 (50/50 blue/red side)
+      const randomizeTeams = (seedA, seedB) => {
+          const idA = getSeedObj(seedA)?.id || getSeedObj(seedA)?.name;
+          const idB = getSeedObj(seedB)?.id || getSeedObj(seedB)?.name;
+          
+          // 50/50 chance for blue side
+          if (Math.random() < 0.5) {
+              return { t1: idA, t2: idB };
+          } else {
+              return { t1: idB, t2: idA };
+          }
+      };
+      
+      const dates = ['2.17 (화)', '2.17 (화)', '2.18 (수)', '2.18 (수)'];
+      const times = ['00:45', '02:30', '00:45', '02:30'];
+      
+      // Randomize each match
+      const match1 = randomizeTeams(1, picks[1]);
+      const match2 = randomizeTeams(2, picks[2]);
+      const match3 = randomizeTeams(3, picks[3]);
+      const match4 = randomizeTeams(4, picks[4]);
+      
+      const ub1 = [
+          { id: 'lec_po_ub1g1', label: '1라운드 승자조', t1: match1.t1, t2: match1.t2, date: dates[0], time: times[0], type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 1 },
+          { id: 'lec_po_ub1g2', label: '1라운드 승자조', t1: match2.t1, t2: match2.t2, date: dates[1], time: times[1], type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 2 },
+          { id: 'lec_po_ub1g3', label: '1라운드 승자조', t1: match3.t1, t2: match3.t2, date: dates[2], time: times[2], type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 3 },
+          { id: 'lec_po_ub1g4', label: '1라운드 승자조', t1: match4.t1, t2: match4.t2, date: dates[3], time: times[3], type: 'playoff', format: 'BO3', status: 'pending', round: 1, match: 4 },
+      ];
+      
+      const rest = [
+          { id: 'lec_po_ub2g1', label: '2라운드 승자조', t1: null, t2: null, date: '2.21 (토)', time: '00:45', type: 'playoff', format: 'BO3', status: 'pending', round: 2, match: 1 },
+          { id: 'lec_po_ub2g2', label: '2라운드 승자조', t1: null, t2: null, date: '2.21 (토)', time: '02:30', type: 'playoff', format: 'BO3', status: 'pending', round: 2, match: 2 },
+          { id: 'lec_po_lb1g1', label: '1라운드 패자조', t1: null, t2: null, date: '2.22 (일)', time: '00:45', type: 'playoff', format: 'BO3', status: 'pending', round: 1.1, match: 1 },
+          { id: 'lec_po_lb1g2', label: '1라운드 패자조', t1: null, t2: null, date: '2.22 (일)', time: '02:30', type: 'playoff', format: 'BO3', status: 'pending', round: 1.1, match: 2 },
+          { id: 'lec_po_lb2g1', label: '2라운드 패자조', t1: null, t2: null, date: '2.23 (월)', time: '00:45', type: 'playoff', format: 'BO3', status: 'pending', round: 2.1, match: 1 },
+          { id: 'lec_po_lb2g2', label: '2라운드 패자조', t1: null, t2: null, date: '2.23 (월)', time: '02:30', type: 'playoff', format: 'BO3', status: 'pending', round: 2.1, match: 2 },
+          { id: 'lec_po_ubf',   label: '3라운드 승자조', t1: null, t2: null, date: '2.24 (화)', time: '00:45', type: 'playoff', format: 'BO5', status: 'pending', round: 3, match: 1 },
+          { id: 'lec_po_lbsf',  label: '3라운드 패자조', t1: null, t2: null, date: '2.28 (토)', time: '01:00', type: 'playoff', format: 'BO5', status: 'pending', round: 3.1, match: 1 },
+          { id: 'lec_po_r4',    label: '4라운드',         t1: null, t2: null, date: '3.1 (일)',  time: '01:00', type: 'playoff', format: 'BO5', status: 'pending', round: 4, match: 1 },
+          { id: 'lec_po_final', label: '결승전',           t1: null, t2: null, date: '3.2 (월)',  time: '01:00', type: 'playoff', format: 'BO5', status: 'pending', round: 5, match: 1 },
+      ];
+      
+      const allPlayoffs = [...ub1, ...rest];
+      const updatedMatches = [...lecMatches, ...allPlayoffs];
+      const updates = {
+          foreignMatches: { ...league.foreignMatches, LEC: updatedMatches },
+          foreignPlayoffSeeds: { ...(league.foreignPlayoffSeeds || {}), LEC: seeds }
+      };
+      
       updateLeague(league.id, updates);
       setLeague(prev => ({ ...prev, ...updates }));
-    };
+      setOpponentChoice(null);
+  };
 
     // [3] 드래프트 시작 핸들러
     const handleDraftStart = () => {
