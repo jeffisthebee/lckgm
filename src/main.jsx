@@ -4,6 +4,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { migrateFromLocalStorage } from './engine/migrate';
+import ErrorBoundary from './components/ErrorBoundary';
 import './index.css';
 
 const init = async () => {
@@ -12,7 +13,9 @@ const init = async () => {
 
     ReactDOM.createRoot(document.getElementById('root')).render(
         <BrowserRouter>
-            <App />
+            <ErrorBoundary>
+                <App />
+            </ErrorBoundary>
         </BrowserRouter>
     );
 };
