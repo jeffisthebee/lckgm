@@ -3030,7 +3030,8 @@ const handleMatchClick = (match) => {
   
                           {(hasPlayoffsGenerated || (hasPlayInGenerated && showPlayInBracket)) ? (
                               <div className="flex-1 space-y-3">
-                                  {[...league.matches]
+                                  {[...(league.matches || [])]
+                                      .filter(Boolean)
                                       .filter(m => m.type === (hasPlayoffsGenerated ? 'playoff' : 'playin'))
                                       .sort((a,b) => a.id - b.id)
                                       .map(m => (
@@ -3038,7 +3039,7 @@ const handleMatchClick = (match) => {
                                           <div className="font-bold text-gray-400 mb-1">{m.label || m.date}</div>
                                           <div className="flex justify-between items-center">
                                               <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t1)?.name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t1, m.type)}</div>
-                                              <div className="text-gray-400 font-bold">{m.status === 'finished' ? m.result.score : 'vs'}</div>
+                                              <div className="text-gray-400 font-bold">{m.status === 'finished' ? (m.result?.score || '-') : 'vs'}</div>
                                               <div className={`font-bold ${m.result?.winner === teams.find(t=>t.id===m.t2)?.name ? 'text-green-600' : 'text-gray-700'}`}>{formatTeamName(m.t2, m.type)}</div>
                                           </div>
                                       </div>
