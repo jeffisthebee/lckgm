@@ -285,7 +285,7 @@ const getOvrBadgeStyle = (ovr) => {
 
             try {
                 const { newMatches: piMatches, playInSeeds, seasonSummary } = createPlayInBracket(tempLeague, standings, teams, bWins, eWins);
-                const updates = { matches: piMatches, playInSeeds, seasonSummary };
+                const updates = { matches: [...allMatches, ...piMatches], playInSeeds, seasonSummary }; // Fix: correctly append PlayIn!
                 updateLeague(league.id, updates);
                 setLeague(prev => ({ ...prev, ...updates }));
             } catch (e) { console.error('[LCK BG] Play-in bracket failed:', e); }
@@ -1153,9 +1153,11 @@ const handleMatchClick = (match) => {
   setMyMatchResult({
       resultData: {
           ...match.result,
-          round: match.round,
+          type: match.type, // Fix: Tell the modal EXACTLY what type of match this is
+          // Fix: Never pass round '5' to the modal if it is NOT a playoff match, preventing false Finals MVPs.
+          round: match.type === 'playoff' ? match.round : undefined, 
           roundIndex: match.roundIndex,
-          roundName: match.label || match.roundName || match.fstRound || (match.round === 5 ? 'Grand Final' : undefined),
+          roundName: match.label || match.roundName || match.fstRound || ((match.type === 'playoff' && match.round === 5) ? 'Grand Final' : undefined),
           matchId: match.id,
           fstRound: match.fstRound
       }, 
@@ -2096,7 +2098,6 @@ const handleMatchClick = (match) => {
         const loss = Math.random() < 0.3 ? 0 : Math.random() < 0.55 ? 1 : 2;
         result = { winner: winner.name, score: `3-${loss}`, history: [] };
       }
-
       applyFSTResult(match.id, result);
     };
 

@@ -194,7 +194,9 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
          // For other leagues: only when user is fully done (gate = 99.99)
          (targetLeague === myLeague
             ? currentPendingLCK.date !== '0.01'
-            : currentPendingLCK.date === '99.99 (완료)'))
+            : currentPendingLCK.date === '99.99 (완료)')) ||
+        // Always trigger sync if any playoff match is missing its advancing teams to ensure bracket flows forward
+        activeMatches.some(m => (m.type === 'playoff' || m.type === 'playin') && (!m.t1 || !m.t2 || String(m.t1) === 'TBD' || String(m.t2) === 'TBD' || String(m.t1) === 'null' || String(m.t2) === 'null'))
     );
 
     const hasErrors = targetLeague ? checkBadData(activeMatches, targetLeague) : false;
@@ -206,7 +208,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
             );
             if (hasCorruptedFormat) {
                 const healedMatches = league.matches.map(m => {
-                    if (m.type === 'super')   return { ...m, format: 'BO5' };
+                    if (m.type === 'super')   return { ...m, format: 'BO3' }; // Fix 16.02 meta fallback
                     if (m.type === 'regular') return { ...m, format: 'BO3' };
                     if (m.type === 'playoff' && !m.format) return { ...m, format: 'BO5' };
                     return m;
@@ -247,7 +249,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
 
             const useMeta = (league.metaVersion === '16.02' || league.metaVersion === '16.03') && league.currentChampionList
                 ? league.currentChampionList : championList;
-            const fmt = m.format || (m.type === 'super' || m.type === 'playoff' ? 'BO5' : 'BO3');
+            const fmt = m.format || (m.type === 'playoff' ? 'BO5' : 'BO3'); // Fix format fallback
 
             try {
                 const t1 = { ...t1Obj, roster: getSafeRoster(t1Obj, playersLCK) };
@@ -568,12 +570,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                     return { winnerId: wId, loserId: lId };
                 }
 
-                // NEVER auto-sim playoff/playin matches in the user's OWN league —
-                // the ⏩ proceed button handles all advancement match by match
-                if (isMyLeagueForeign && targetLeague === myLeague) {
-                    return { winnerId: null, loserId: null };
-                }
-                
                 if (currentPendingLCK.date !== '99.99 (완료)' && compareDatesObj(matchObj, currentPendingLCK) >= 0) return { winnerId: null, loserId: null };
 
                 if (!matchObj.t1 || !matchObj.t2 || matchObj.t1 === 'TBD' || matchObj.t2 === 'TBD' || matchObj.t1 === 'null' || matchObj.t2 === 'null' || matchObj.t1 === matchObj.t2) {
