@@ -252,8 +252,88 @@ const getOvrBadgeStyle = (ovr) => {
         }
     }, [league?.foreignMatches?.[league?.myLeague]?.filter(m => m.status === 'finished').length, league?.matches?.length, league?.myLeague]);
 
-    // FST: ready to create when season over + not yet created
-    // FST: ready to create when season over + not yet created
+    // ── [FOREIGN] Background LCK bracket generator ───────────────────────────
+    // After super week is simmed, auto-generates LCK play-in → playoff brackets
+    // so the LCK schedule tab shows results as the user plays through their season.
+    useEffect(() => {
+        if (!league?.matches) return;
+        if ((league.myLeague || 'LCK') === 'LCK') return;
+
+        const allMatches = league.matches;
+        const regularDone = allMatches.filter(m => m.type === 'regular').every(m => m.status === 'finished');
+        const superMatches = allMatches.filter(m => m.type === 'super');
+        const superDone = superMatches.length > 0 && superMatches.every(m => m.status === 'finished');
+        if (!regularDone || !superDone) return;
+
+        const hasPlayin = allMatches.some(m => m.type === 'playin');
+        const hasPlayoff = allMatches.some(m => m.type === 'playoff');
+
+        if (!hasPlayin) {
+            // Generate play-in bracket
+            const tempLeague = { ...league, matches: allMatches };
+            const standings = computeStandings(tempLeague);
+            const bWins = allMatches.filter(m => {
+                if ((m.type !== 'regular' && m.type !== 'super') || m.status !== 'finished') return false;
+                const wt = teams.find(t => t.name === m.result?.winner);
+                return wt && (league.groups?.baron || []).includes(wt.id);
+            }).length;
+            const eWins = allMatches.filter(m => {
+                if ((m.type !== 'regular' && m.type !== 'super') || m.status !== 'finished') return false;
+                const wt = teams.find(t => t.name === m.result?.winner);
+                return wt && (league.groups?.elder || []).includes(wt.id);
+            }).length;
+
+            try {
+                const { newMatches: piMatches, playInSeeds, seasonSummary } = createPlayInBracket(tempLeague, standings, teams, bWins, eWins);
+                const updates = { matches: piMatches, playInSeeds, seasonSummary };
+                updateLeague(league.id, updates);
+                setLeague(prev => ({ ...prev, ...updates }));
+            } catch (e) { console.error('[LCK BG] Play-in bracket failed:', e); }
+            return;
+        }
+
+        if (!hasPlayoff) {
+            // Check if play-in is done enough to generate playoffs
+            const playinMatches = allMatches.filter(m => m.type === 'playin');
+            const r3 = playinMatches.filter(m => m.round === 3);
+            if (r3.length === 0 || !r3.every(m => m.status === 'finished')) return;
+
+            // Generate playoffs using existing season summary seeds
+            const directPO = league.seasonSummary?.poTeams || [];
+            const playInQualifiers = playinMatches
+                .filter(m => m.status === 'finished')
+                .reduce((acc, m) => {
+                    const winner = teams.find(t => t.name === m.result?.winner);
+                    if (winner && !acc.some(a => a.id === winner.id) && !directPO.some(d => d.id === winner.id))
+                        acc.push(winner);
+                    return acc;
+                }, [])
+                .slice(0, 3)
+                .map((t, i) => {
+                    const orig = league.playInSeeds?.find(s => s.id === t.id);
+                    return { id: t.id, seed: 4 + i, originalSeed: orig?.seed || 99 };
+                });
+
+            const playoffSeeds = [...directPO, ...playInQualifiers].sort((a, b) => a.seed - b.seed);
+            if (playoffSeeds.length < 6) return;
+
+            const seed3 = playoffSeeds.find(s => s.seed === 3);
+            const playInPO = playoffSeeds.filter(s => s.seed >= 4);
+            if (!seed3 || playInPO.length < 3) return;
+
+            const pickedSeed = playInPO[playInPO.length - 1];
+            const remaining = playInPO.filter(s => s.id !== pickedSeed.id);
+            const r1m1 = { id: Date.now() + 300, round: 1, match: 1, label: '1라운드', t1: seed3.id, t2: pickedSeed.id, date: '2.11 (수)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' };
+            const r1m2 = { id: Date.now() + 301, round: 1, match: 2, label: '1라운드', t1: remaining[0]?.id, t2: remaining[1]?.id, date: '2.12 (목)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' };
+            const newMatches = [...allMatches, r1m1, r1m2];
+            const updates = { matches: newMatches, playoffSeeds };
+            updateLeague(league.id, updates);
+            setLeague(prev => ({ ...prev, ...updates }));
+        }
+    }, [
+        league?.matches?.filter(m => m.status === 'finished').length,
+        league?.myLeague
+    ]);
     const hasFST = !!league?.fst;
     const isFSTReady = isSeasonOver && !hasFST;
     
@@ -1021,7 +1101,9 @@ const handleMatchClick = (match) => {
         ? (league.foreignMatches?.[myLeague] || [])
         : (league.matches || []);
       return [...matchPool]
-        .filter(m => m.status === 'pending')
+        .filter(m => m.status === 'pending' && m.t1 && m.t2 &&
+          String(m.t1) !== 'null' && String(m.t2) !== 'null' &&
+          String(m.t1) !== 'TBD' && String(m.t2) !== 'TBD')
         .sort((a, b) => parseDateTime(a) - parseDateTime(b))[0] || null;
     })();
 

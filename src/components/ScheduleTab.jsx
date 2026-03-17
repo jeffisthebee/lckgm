@@ -556,8 +556,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                 isUpdated = true;
             }
 
-            // [THE FIX] Flawless State Lock to prevent Infinite Loops!
-            const simPlayoffMatch = (id) => {
+        const simPlayoffMatch = (id) => {
                 const matchObj = playoffs.find(m => m.id === id);
                 if (!matchObj) return { winnerId: null, loserId: null };
 
@@ -565,6 +564,12 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                     const wId = findGlobalTeam(matchObj.result.winner, teams).name;
                     const lId = wId === findGlobalTeam(matchObj.t1, teams).name ? matchObj.t2 : matchObj.t1;
                     return { winnerId: wId, loserId: lId };
+                }
+
+                // NEVER auto-sim playoff/playin matches in the user's OWN league —
+                // the ⏩ proceed button handles all advancement match by match
+                if (isMyLeagueForeign && targetLeague === myLeague) {
+                    return { winnerId: null, loserId: null };
                 }
                 
                 if (currentPendingLCK.date !== '99.99 (완료)' && compareDatesObj(matchObj, currentPendingLCK) >= 0) return { winnerId: null, loserId: null };
@@ -575,7 +580,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
 
                 const simulatedMatch = simMatchIfPast(matchObj);
                 
-                // ONLY trigger a save if the match actually completely simulated to 'finished'
                 if (simulatedMatch.status === 'finished') {
                     Object.assign(matchObj, simulatedMatch); 
                     isUpdated = true; 
