@@ -107,9 +107,13 @@ const getOvrBadgeStyle = (ovr) => {
     }, [leagueId]);
 
     // Check Season Status Helper
-    // LCK: playoff round 5 finished
-    // Foreign: their league final finished (e.g. lec_po_final)
-    const grandFinalMatch = league?.matches?.find(m => m.type === 'playoff' && m.round === 5);
+    // LCK: playoff round 5 finished — must be the TRUE grand final, not 결승 진출전 (qualifier)
+    // Guard: a match with round===5 that has '진출' in its label is the qualifier, not the final.
+    const grandFinalMatch = league?.matches?.find(m =>
+        m.type === 'playoff' &&
+        m.round === 5 &&
+        !String(m.label || '').includes('진출')
+    );
     const _myLgForSeason = league?.myLeague || 'LCK';
     const isSeasonOver = (() => {
       if (_myLgForSeason === 'LCK') return !!(grandFinalMatch && grandFinalMatch.status === 'finished');
@@ -511,7 +515,11 @@ const getOvrBadgeStyle = (ovr) => {
           }
 
           const r4 = currentMatches.find(m => m.type === 'playoff' && m.round === 4);
-          const finalExists = currentMatches.some(m => m.type === 'playoff' && m.round === 5);
+          const finalExists = currentMatches.some(m =>
+              m.type === 'playoff' &&
+              m.round === 5 &&
+              !String(m.label || '').includes('진출')
+          );
           if (r4?.status === 'finished' && r3w?.status === 'finished' && !finalExists) {
             const newMatches = createPlayoffFinalMatch(currentMatches, teams);
             patchLeague({ matches: newMatches });
@@ -1656,7 +1664,11 @@ const handleMatchClick = (match) => {
     }
   
     const r4Match = currentMatches.find(m => m.type === 'playoff' && m.round === 4);
-    const finalExists = currentMatches.some(m => m.type === 'playoff' && m.round === 5);
+    const finalExists = currentMatches.some(m =>
+        m.type === 'playoff' &&
+        m.round === 5 &&
+        !String(m.label || '').includes('진출')
+    );
 
     if (r4Match?.status === 'finished' && r3wMatch?.status === 'finished' && !finalExists) {
         const newMatches = createPlayoffFinalMatch(currentMatches, teams);
