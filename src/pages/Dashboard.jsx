@@ -1795,6 +1795,82 @@ const handleMatchClick = (match) => {
       return { league: updatedLeague, didUpdate: true };
     };
     
+  // ── [LCS] Fill in Swiss round 2/3 team slots immediately after each match ──
+  // Mirrors the same logic in ScheduleTab so the dashboard doesn't need a tab
+  // visit to discover the next match.
+  const advanceLCSSwissRounds = (matches, lgTeams) => {
+    const isTBD = (v) => !v || String(v) === 'TBD' || String(v) === 'null' || String(v) === 'undefined';
+    const resolveName = (token) => lgTeams.find(t => t.name === token || t.id === token)?.name || token;
+
+    const getSwissStandings = (pastMatches) => {
+      const st = {};
+      lgTeams.forEach(t => { st[t.name] = { w: 0, l: 0, played: [] }; });
+      pastMatches.forEach(m => {
+        if (m.status !== 'finished' || !m.result?.winner) return;
+        const wName = resolveName(m.result.winner);
+        const t1Name = resolveName(m.t1);
+        const t2Name = resolveName(m.t2);
+        const lName = wName === t1Name ? t2Name : t1Name;
+        if (st[wName]) { st[wName].w++; st[wName].played.push(lName); }
+        if (st[lName]) { st[lName].l++; st[lName].played.push(wName); }
+      });
+      return st;
+    };
+
+    // Work on a mutable copy
+    const updated = matches.map(m => ({ ...m }));
+    let changed = false;
+
+    [2, 3].forEach(roundNum => {
+      const roundMatches = updated.filter(m => m.swissRound === roundNum);
+      if (!roundMatches.some(m => isTBD(m.t1) || isTBD(m.t2))) return;
+
+      const prevDone = updated
+        .filter(m => m.swissRound === roundNum - 1)
+        .every(m => m.status === 'finished');
+      if (!prevDone) return;
+
+      const pastMatches = updated.filter(m => m.swissRound < roundNum && m.status === 'finished');
+      const st = getSwissStandings(pastMatches);
+
+      // Build bracket pools (e.g. "1-0", "0-1") 
+      const pools = {};
+      Object.entries(st).forEach(([tName, rec]) => {
+        const key = `${rec.w}-${rec.l}`;
+        if (!pools[key]) pools[key] = [];
+        pools[key].push(tName);
+      });
+
+      roundMatches.forEach(m => {
+        if (!isTBD(m.t1) && !isTBD(m.t2)) return;
+        let pool = [...new Set(pools[m.bracket] || [])];
+        if (pool.length >= 2) {
+          pool = pool.sort(() => Math.random() - 0.5);
+          let t1 = pool[0];
+          let t2Index = pool.findIndex((t, idx) => idx > 0 && !(st[t1]?.played || []).includes(t));
+          if (t2Index <= 0) t2Index = 1;
+          let t2 = pool[t2Index];
+          if (t1 === t2) t2 = pool.find(t => t !== t1) || lgTeams.find(t => t.name !== t1)?.name;
+          m.t1 = t1;
+          m.t2 = t2;
+          pools[m.bracket] = pool.filter(t => t !== t1 && t !== t2);
+          changed = true;
+        } else {
+          // Fallback: assign any unassigned teams
+          const assigned = roundMatches.flatMap(rm => [rm.t1, rm.t2]).filter(x => !isTBD(x));
+          const remaining = lgTeams.map(t => t.name).filter(t => !assigned.includes(t));
+          if (remaining.length >= 2) {
+            m.t1 = remaining[0];
+            m.t2 = remaining[1];
+            changed = true;
+          }
+        }
+      });
+    });
+
+    return { matches: updated, changed };
+  };
+
   const handleProceedNextMatch = () => {
     try {
       if (!nextGlobalMatch) return;
@@ -1834,11 +1910,19 @@ const handleMatchClick = (match) => {
         let resultScore = result.scoreString || result.score || '2-0';
         if (nextGlobalMatch.format === 'BO1') resultScore = '1-0';
 
-        const updatedForeignMatches = (league.foreignMatches?.[myLeague] || []).map(m =>
+        let updatedForeignMatches = (league.foreignMatches?.[myLeague] || []).map(m =>
           m.id === nextGlobalMatch.id
             ? { ...m, status: 'finished', result: { winner: result.winner, score: resultScore, history: result.history } }
             : m
         );
+
+        // LCS Swiss: fill in round 2/3 team slots as soon as the previous round finishes
+        if (myLeague === 'LCS') {
+          const lgTeams = FOREIGN_LEAGUES['LCS'] || [];
+          const { matches: swissAdvanced, changed } = advanceLCSSwissRounds(updatedForeignMatches, lgTeams);
+          if (changed) updatedForeignMatches = swissAdvanced;
+        }
+
         const baseLeague = { ...league, foreignMatches: { ...league.foreignMatches, [myLeague]: updatedForeignMatches } };
         const advanced = advanceForeignBracketIfNeeded(baseLeague, myLeague);
         const updatedLeague = advanced.league;
@@ -1960,9 +2044,17 @@ const handleMatchClick = (match) => {
 
       if (isMyLeagueForeign) {
         // ── Save to foreignMatches[myLeague] ──────────────────────────────
-        const updatedForeignMatches = (league.foreignMatches?.[myLeague] || []).map(m =>
+        let updatedForeignMatches = (league.foreignMatches?.[myLeague] || []).map(m =>
           m.id === match.id ? { ...m, status: 'finished', result } : m
         );
+
+        // LCS Swiss: fill in round 2/3 team slots immediately after each match
+        if (myLeague === 'LCS') {
+          const lgTeams = FOREIGN_LEAGUES['LCS'] || [];
+          const { matches: swissAdvanced, changed } = advanceLCSSwissRounds(updatedForeignMatches, lgTeams);
+          if (changed) updatedForeignMatches = swissAdvanced;
+        }
+
         const baseLeague = {
           ...league,
           foreignMatches: { ...league.foreignMatches, [myLeague]: updatedForeignMatches }
