@@ -107,12 +107,13 @@ const getOvrBadgeStyle = (ovr) => {
     }, [leagueId]);
 
     // Check Season Status Helper
-    // LCK: playoff round 5 finished — must be the TRUE grand final, not 결승 진출전 (qualifier)
-    // Guard: a match with round===5 that has '진출' in its label is the qualifier, not the final.
+    // LCK: grand final finished — identified by label NOT containing '진출전'.
+    // BracketManager may assign round:5 to both the qualifier (결승 진출전) and the final (결승전),
+    // so we must use the label to tell them apart.
     const grandFinalMatch = league?.matches?.find(m =>
         m.type === 'playoff' &&
-        m.round === 5 &&
-        !String(m.label || '').includes('진출')
+        !String(m.label || '').includes('진출') &&
+        (m.round === 5 || String(m.label || '').includes('결승전') || String(m.label || '').toUpperCase().includes('FINAL'))
     );
     const _myLgForSeason = league?.myLeague || 'LCK';
     const isSeasonOver = (() => {
@@ -506,19 +507,22 @@ const getOvrBadgeStyle = (ovr) => {
             return;
           }
 
+          const isQualifierMatchBg = (m) =>
+              m.type === 'playoff' &&
+              (String(m.label || '').includes('진출') || m.round === 4);
           const r3l = currentMatches.find(m => m.type === 'playoff' && m.round === 3.1);
-          const r4Exists = currentMatches.some(m => m.type === 'playoff' && m.round === 4);
+          const r4Exists = currentMatches.some(isQualifierMatchBg);
           if (r3l?.status === 'finished' && r3w?.status === 'finished' && !r4Exists) {
             const newMatches = createPlayoffQualifierMatch(currentMatches, teams);
             patchLeague({ matches: newMatches });
             return;
           }
 
-          const r4 = currentMatches.find(m => m.type === 'playoff' && m.round === 4);
+          const r4 = currentMatches.find(isQualifierMatchBg);
           const finalExists = currentMatches.some(m =>
               m.type === 'playoff' &&
-              m.round === 5 &&
-              !String(m.label || '').includes('진출')
+              !String(m.label || '').includes('진출') &&
+              (m.round === 5 || String(m.label || '').includes('결승전') || String(m.label || '').toUpperCase().includes('FINAL'))
           );
           if (r4?.status === 'finished' && r3w?.status === 'finished' && !finalExists) {
             const newMatches = createPlayoffFinalMatch(currentMatches, teams);
@@ -579,7 +583,10 @@ const getOvrBadgeStyle = (ovr) => {
 
         const winnerId = getID(getWinnerId(grandFinalMatch));
         const runnerUpId = getID(getLoserId(grandFinalMatch));
-        const r4Match = league.matches.find(m => m.type === 'playoff' && m.round === 4);
+        const r4Match = league.matches.find(m =>
+            m.type === 'playoff' &&
+            (String(m.label || '').includes('진출') || m.round === 4)
+        );
         const thirdId = getID(getLoserId(r4Match));
         
         // Use ID from league state directly
@@ -1350,7 +1357,9 @@ const handleMatchClick = (match) => {
           // Fix: Never pass round '5' to the modal if it is NOT a playoff match, preventing false Finals MVPs.
           round: match.type === 'playoff' ? match.round : undefined, 
           roundIndex: match.roundIndex,
-          roundName: match.label || match.roundName || match.fstRound || ((match.type === 'playoff' && match.round === 5) ? 'Grand Final' : undefined),
+          roundName: match.label || match.roundName || match.fstRound ||
+              ((match.type === 'playoff' && !String(match.label || '').includes('진출') &&
+                (match.round === 5 || String(match.label || '').includes('결승전'))) ? 'Grand Final' : undefined),
           matchId: match.id,
           fstRound: match.fstRound
       }, 
@@ -1651,9 +1660,14 @@ const handleMatchClick = (match) => {
         return;
     }
   
-    // --- R4 Qualifier (Loser Bracket Final) ---
+    // --- R4 Qualifier (결승 진출전 / Loser Bracket Final) ---
+    // BracketManager may assign round:5 OR round:4 to this match.
+    // Identify it by label to be safe, falling back to round===4.
+    const isQualifierMatch = (m) =>
+        m.type === 'playoff' &&
+        (String(m.label || '').includes('진출') || m.round === 4);
     const r3lMatch = currentMatches.find(m => m.type === 'playoff' && m.round === 3.1);
-    const r4Exists = currentMatches.some(m => m.type === 'playoff' && m.round === 4);
+    const r4Exists = currentMatches.some(isQualifierMatch);
 
     if (r3lMatch?.status === 'finished' && r3wMatch?.status === 'finished' && !r4Exists) {
         const newMatches = createPlayoffQualifierMatch(currentMatches, teams);
@@ -1662,12 +1676,13 @@ const handleMatchClick = (match) => {
         alert("👑 플레이오프 결승 진출전이 생성되었습니다!");
         return;
     }
-  
-    const r4Match = currentMatches.find(m => m.type === 'playoff' && m.round === 4);
+
+    // Grand Final — identified by label NOT containing '진출', regardless of round number
+    const r4Match = currentMatches.find(isQualifierMatch);
     const finalExists = currentMatches.some(m =>
         m.type === 'playoff' &&
-        m.round === 5 &&
-        !String(m.label || '').includes('진출')
+        !String(m.label || '').includes('진출') &&
+        (m.round === 5 || String(m.label || '').includes('결승전') || String(m.label || '').toUpperCase().includes('FINAL'))
     );
 
     if (r4Match?.status === 'finished' && r3wMatch?.status === 'finished' && !finalExists) {
