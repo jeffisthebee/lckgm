@@ -40,10 +40,6 @@ const findGlobalTeam = (token, teamsList) => {
     return found || { name: String(token) };
 };
 
-
-// --- HELPER: Recalculate POG scores on stored match history using the current formula ---
-// Always recalculates from the actual end-of-game stats so both manual and CPU games
-// use the same scoring. Runs at display time so saved data is never mutated.
 const recalcPogForMatch = (match) => {
     if (!match?.result?.history) return match;
     const newHistory = match.result.history.map(set => {
@@ -64,7 +60,6 @@ const recalcPogForMatch = (match) => {
                 return { ...p, pogScore };
             });
         });
-        // Re-elect POG winner from whichever side won this set
         const winnerName = set.winner || set.winnerName;
         const sideATeam = newPicks.A[0]?.playerData?.팀 || '';
         const winnerSideKey = (sideATeam && winnerName && (sideATeam === winnerName || winnerName.includes(sideATeam) || sideATeam.includes(winnerName))) ? 'A' : 'B';
@@ -107,25 +102,21 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
     const isMyLeagueForeign = myLeague !== 'LCK';
 
     const [currentLeague, setCurrentLeague] = useState(myLeague);
-    // team_schedule always shows the user's own league schedule
     const displayLeague = activeTab === 'team_schedule' ? myLeague : currentLeague;
 
-    // FST data
     const fstMatches = league?.fst?.matches || [];
     const fstTeams = league?.fst?.teams || [];
     const hasFST = !!league?.fst;
 
-    // Check if myTeam is in FST
     const myFSTTeam = fstTeams.find(t => t.name === myTeam?.name || t.name === myTeam?.fullName);
     const showFSTInTeamSchedule = activeTab === 'team_schedule' && hasFST && !!myFSTTeam;
 
     const [forceRegen, setForceRegen] = useState(false);
     const [syncDone, setSyncDone] = useState(false);
-    const [selectedTeam, setSelectedTeam] = useState(null); // null = show all
+    const [selectedTeam, setSelectedTeam] = useState(null);
 
     const targetLeague = ['LPL', 'LCP', 'CBLOL', 'LCS', 'LEC'].includes(displayLeague) ? displayLeague : null;
 
-    // Reset sync completion whenever the viewed league changes so it re-evaluates
     useEffect(() => { setSyncDone(false); setSelectedTeam(null); }, [targetLeague, displayLeague]);
 
     const activeMatches = displayLeague === 'LCK' ? (league.matches || []) : (league.foreignMatches?.[displayLeague] || []);
@@ -133,26 +124,18 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
     const lckPlayoffMatches = league.matches?.filter(m => m.type === 'playoff') || [];
     const lckTrulyDone = lckPlayoffMatches.length > 0 && lckPlayoffMatches.every(m => m.status === 'finished');
 
-    // The "gate" controls how far other leagues can be auto-simmed.
-    // For foreign players: gate = their OWN league's next pending match.
-    // When their schedule isn't ready yet, use date '0.01' (before all real dates)
-    // so compareDatesObj(anyRealMatch, gate) >= 0 → all matches blocked.
     const currentPendingLCK = (() => {
         if (isMyLeagueForeign) {
             const myLeagueMatches = league.foreignMatches?.[myLeague] || [];
             const myPending = [...myLeagueMatches].filter(m => m.status === 'pending').sort(compareDatesObj);
-            // Only truly done when ALL matches (regular + playoffs) are finished
             const myAllDone = myLeagueMatches.length > 0 && myLeagueMatches.every(m => m.status === 'finished');
             if (myPending.length > 0) return myPending[0];
             if (myAllDone) return { date: '99.99 (완료)', time: '23:59' };
-            // Regular season done but no playoffs yet, or season not started —
-            // use the last finished match date so same-day other-league games can still sim,
-            // but we don't blast all other leagues with '99.99'
             const lastFinished = [...myLeagueMatches]
                 .filter(m => m.status === 'finished')
                 .sort((a, b) => -compareDatesObj(a, b))[0];
             if (lastFinished) return { ...lastFinished, _isLastFinished: true };
-            return { date: '0.01', time: '00:00' }; // not started yet
+            return { date: '0.01', time: '00:00' };
         }
         if (pendingLCK.length > 0) return pendingLCK[0];
         if (lckTrulyDone) return { date: '99.99 (완료)', time: '23:59' };
@@ -183,19 +166,14 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
         activeMatches.length === 0 || 
         activeMatches.some(m => m.status === 'pending' && currentPendingLCK.date !== '99.99 (완료)' && compareDatesObj(m, currentPendingLCK) < 0) ||
         (currentPendingLCK.date === '99.99 (완료)' && activeMatches.some(m => m.status === 'pending')) ||
-        // Generate playoff bracket when regular is done and no bracket exists yet
         (activeMatches.length > 0 &&
          activeMatches.filter(m => m.type === 'regular' || m.type === 'super').every(m => m.status === 'finished') &&
          activeMatches.filter(m => m.type === 'regular' || m.type === 'super').length > 0 &&
          !activeMatches.some(m => m.type === 'playoff' || m.type === 'playin') &&
-         // LEC user's own league: Dashboard handles seed picking, don't auto-gen here
          !(isMyLeagueForeign && targetLeague === myLeague && myLeague === 'LEC') &&
-         // For user's own league: only generate bracket if season is actually started (gate !== '0.01')
-         // For other leagues: only when user is fully done (gate = 99.99)
          (targetLeague === myLeague
             ? currentPendingLCK.date !== '0.01'
             : currentPendingLCK.date === '99.99 (완료)')) ||
-        // Always trigger sync if any playoff match is missing its advancing teams to ensure bracket flows forward
         activeMatches.some(m => (m.type === 'playoff' || m.type === 'playin') && (!m.t1 || !m.t2 || String(m.t1) === 'TBD' || String(m.t2) === 'TBD' || String(m.t1) === 'null' || String(m.t2) === 'null'))
     );
 
@@ -208,7 +186,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
             );
             if (hasCorruptedFormat) {
                 const healedMatches = league.matches.map(m => {
-                    if (m.type === 'super')   return { ...m, format: 'BO3' }; // Fix 16.02 meta fallback
+                    if (m.type === 'super')   return { ...m, format: 'BO3' };
                     if (m.type === 'regular') return { ...m, format: 'BO3' };
                     if (m.type === 'playoff' && !m.format) return { ...m, format: 'BO5' };
                     return m;
@@ -220,8 +198,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
         }
     }, [displayLeague, league, setLeague]);
 
-    // ── LCK auto-sim for foreign players ────────────────────────────────────
-    // Sims ALL pending LCK match types (regular, super, playin, playoff) date-by-date.
     useEffect(() => {
         if (!isMyLeagueForeign) return;
         if (displayLeague !== 'LCK') return;
@@ -249,7 +225,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
 
             const useMeta = (league.metaVersion === '16.02' || league.metaVersion === '16.03') && league.currentChampionList
                 ? league.currentChampionList : championList;
-            const fmt = m.format || (m.type === 'playoff' ? 'BO5' : 'BO3'); // Fix format fallback
+            const fmt = m.format || (m.type === 'playoff' ? 'BO5' : 'BO3');
 
             try {
                 const t1 = { ...t1Obj, roster: getSafeRoster(t1Obj, playersLCK) };
@@ -297,6 +273,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
             isUpdated = true;
         }
 
+        // ✅ LCS SWISS ROUND FILL-IN LOGIC
         if (targetLeague === 'LCS') {
             const getSwissStandings = (pastMatches) => {
                 const st = {};
@@ -313,45 +290,18 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                 });
                 return st;
             };
-        
-            // Ensure all 9 rounds are initially created with TBD teams
-            const totalRounds = 9;
-            const teamsPerRound = 4; // 4 matches = 8 teams per round
-            if (!schedule.some(m => m.swissRound === totalRounds)) {
-                // Generate skeleton for all rounds if they don't exist
-                for (let round = 1; round <= totalRounds; round++) {
-                    for (let match = 1; match <= teamsPerRound; match++) {
-                        if (!schedule.find(m => m.swissRound === round && m.match === match)) {
-                            schedule.push({
-                                id: `lcs_swiss_r${round}g${match}`,
-                                swissRound: round,
-                                match: match,
-                                bracket: '', // Will be filled as teams are assigned
-                                t1: 'TBD',
-                                t2: 'TBD',
-                                date: `3.${10 + round} (수)`, // Placeholder dates
-                                time: match <= 2 ? '16:00' : '18:00',
-                                type: 'regular',
-                                format: 'BO1',
-                                status: 'pending'
-                            });
-                        }
-                    }
-                }
-                isUpdated = true;
-            }
-        
-            // NOW fill in matches for rounds 2-9 as previous round finishes
-            for (let roundNum = 2; roundNum <= totalRounds; roundNum++) {
+
+            // Fill in Rounds 2-3 as each previous round finishes
+            for (let roundNum = 2; roundNum <= 3; roundNum++) {
                 const roundMatches = schedule.filter(m => m.swissRound === roundNum);
                 const prevRoundMatches = schedule.filter(m => m.swissRound === roundNum - 1);
                 
                 // Only proceed if previous round is completely finished
                 if (!prevRoundMatches.every(m => m.status === 'finished')) continue;
                 
-                // Check if ANY match in this round still needs teams
+                // Check if this round still needs teams filled in
                 if (!roundMatches.some(m => !m.t1 || !m.t2 || m.t1 === 'TBD' || m.t2 === 'TBD')) continue;
-        
+
                 const pastMatches = schedule.filter(m => m.swissRound < roundNum && m.status === 'finished');
                 const st = getSwissStandings(pastMatches);
                 
@@ -361,53 +311,34 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                     if (!pools[bracketStr]) pools[bracketStr] = [];
                     pools[bracketStr].push(tName);
                 });
-        
-                // Sort pools by bracket key to ensure consistent seeding
-                const sortedBrackets = Object.keys(pools).sort((a, b) => {
-                    const [aW, aL] = a.split('-').map(Number);
-                    const [bW, bL] = b.split('-').map(Number);
-                    return bW - aW || aL - bL; // Higher W first, then lower L
-                });
-        
+
                 roundMatches.forEach(m => {
                     if (!m.t1 || !m.t2 || m.t1 === 'TBD' || m.t2 === 'TBD') {
-                        // Determine which bracket this match belongs to based on its position
-                        const bracketIndex = m.match - 1;
-                        const bracket = sortedBrackets[bracketIndex];
-                        
-                        if (bracket && pools[bracket] && pools[bracket].length >= 2) {
-                            let pool = [...pools[bracket]];
-                            pool = pool.sort(() => Math.random() - 0.5);
-                            
+                        let pool = pools[m.bracket] || [];
+                        pool = [...new Set(pool)]; 
+                        if (pool.length >= 2) {
+                            pool = pool.sort(() => Math.random() - 0.5); 
                             let t1 = pool[0];
-                            // Find opponent that hasn't played t1 yet
-                            let t2Index = pool.findIndex((t, idx) => idx > 0 && !st[t1]?.played.includes(t));
-                            if (t2Index < 0) t2Index = 1; // Fallback: just pick second team
-                            
+                            let t2Index = pool.findIndex((t, idx) => idx > 0 && !st[t1].played.includes(t));
+                            if (t2Index <= 0) t2Index = 1; 
                             let t2 = pool[t2Index];
-                            
+                            if (t1 === t2) {
+                                const emergencyT2 = pool.find(t => t !== t1);
+                                if (emergencyT2) t2 = emergencyT2;
+                                else t2 = lgTeams.find(t => t.name !== t1)?.name; 
+                            }
                             if (t1 && t2 && t1 !== t2) {
                                 m.t1 = t1;
                                 m.t2 = t2;
-                                m.bracket = bracket;
-                                m.status = 'pending';
-                                
-                                // Remove assigned teams from pool
-                                pools[bracket] = pools[bracket].filter(t => t !== t1 && t !== t2);
+                                pools[m.bracket] = pool.filter(t => t !== t1 && t !== t2);
                                 isUpdated = true;
                             }
-                        } else if (pools[bracket]?.length === 1) {
-                            // Only one team in bracket - pair with next available
-                            const t1 = pools[bracket][0];
-                            const allAssigned = new Set(schedule.filter(sm => sm.swissRound === roundNum).flatMap(sm => [sm.t1, sm.t2]).filter(t => t && t !== 'TBD'));
-                            const available = lgTeams.map(t => t.name).filter(t => !allAssigned.has(t) && t !== t1);
-                            
-                            if (available.length > 0) {
-                                m.t1 = t1;
-                                m.t2 = available[0];
-                                m.bracket = bracket;
-                                m.status = 'pending';
-                                pools[bracket] = [];
+                        } else if (pool.length === 1) {
+                            const assigned = roundMatches.flatMap(rm => [rm.t1, rm.t2]).filter(Boolean).filter(t => t !== 'TBD');
+                            const remaining = lgTeams.map(t => t.name).filter(t => !assigned.includes(t));
+                            if (remaining.length > 0) {
+                                m.t1 = pool[0];
+                                m.t2 = remaining[0];
                                 isUpdated = true;
                             }
                         }
@@ -428,7 +359,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
         const simMatchIfPast = (matchObj) => {
             if (matchObj.status === 'finished') return matchObj; 
 
-            // CRITICAL: never auto-sim a match involving the user's own team in their league
+            // NEVER auto-sim user's own match in their league
             if (isMyLeagueForeign && targetLeague === myLeague) {
                 const myName = myTeam?.name;
                 const myId   = myTeam?.id;
@@ -613,7 +544,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                 isUpdated = true;
             }
 
-        const simPlayoffMatch = (id) => {
+            const simPlayoffMatch = (id) => {
                 const matchObj = playoffs.find(m => m.id === id);
                 if (!matchObj) return { winnerId: null, loserId: null };
 
@@ -649,7 +580,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
             const getSeedId = (s) => seeds.find(x => x.seed === s)?.name || seeds.find(x => x.seed === s)?.id || null;
 
             if (targetLeague === 'LPL') {
-                // --- PLAY-IN ---
                 const pi1g1 = simPlayoffMatch('lpl_pi1');
                 const pi1g2 = simPlayoffMatch('lpl_pi2');
                 const pi2g1 = simPlayoffMatch('lpl_pi3');
@@ -663,7 +593,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                 assignTeam(pi3g2Match, pi1g2.loserId, pi2g2.winnerId);
                 const pi3g2 = simPlayoffMatch('lpl_pi6');
 
-                // --- UPPER BRACKET R1 ---
                 const po1ub1Match = playoffs.find(m => m.id === 'lpl_po1');
                 assignT1(po1ub1Match, getSeedId(1)); assignT2(po1ub1Match, pi3g2.winnerId);
                 const po1ub1 = simPlayoffMatch('lpl_po1');
@@ -680,7 +609,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                 assignT1(po1ub4Match, getSeedId(3)); assignT2(po1ub4Match, pi1g2.winnerId);
                 const po1ub4 = simPlayoffMatch('lpl_po4');
 
-                // --- UPPER BRACKET R2 ---
                 const po2ub1Match = playoffs.find(m => m.id === 'lpl_po5');
                 assignTeam(po2ub1Match, po1ub1.winnerId, po1ub2.winnerId);
                 const po2ub1 = simPlayoffMatch('lpl_po5');
@@ -689,7 +617,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                 assignTeam(po2ub2Match, po1ub3.winnerId, po1ub4.winnerId);
                 const po2ub2 = simPlayoffMatch('lpl_po6');
 
-                // --- LOWER BRACKET R1 ---
                 const po1lb1Match = playoffs.find(m => m.id === 'lpl_po7');
                 assignTeam(po1lb1Match, po1ub1.loserId, po1ub2.loserId);
                 const po1lb1 = simPlayoffMatch('lpl_po7');
@@ -698,7 +625,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                 assignTeam(po1lb2Match, po1ub3.loserId, po1ub4.loserId);
                 const po1lb2 = simPlayoffMatch('lpl_po8');
 
-                // --- LOWER BRACKET R2 ---
                 const po2lb1Match = playoffs.find(m => m.id === 'lpl_po9');
                 assignTeam(po2lb1Match, po1lb1.winnerId, po2ub2.loserId);
                 const po2lb1 = simPlayoffMatch('lpl_po9');
@@ -707,7 +633,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                 assignTeam(po2lb2Match, po1lb2.winnerId, po2ub1.loserId);
                 const po2lb2 = simPlayoffMatch('lpl_po10');
 
-                // --- ROUND 3 ---
                 const po3ubMatch = playoffs.find(m => m.id === 'lpl_po11');
                 assignTeam(po3ubMatch, po2ub1.winnerId, po2ub2.winnerId);
                 const po3ub = simPlayoffMatch('lpl_po11');
@@ -716,16 +641,13 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                 assignTeam(po3lbMatch, po2lb1.winnerId, po2lb2.winnerId);
                 const po3lb = simPlayoffMatch('lpl_po12');
 
-                // --- ROUND 4 ---
                 const po4lbMatch = playoffs.find(m => m.id === 'lpl_po13');
                 assignTeam(po4lbMatch, po3ub.loserId, po3lb.winnerId);
                 const po4lb = simPlayoffMatch('lpl_po13');
 
-                // --- FINAL ---
                 const finalMatch = playoffs.find(m => m.id === 'lpl_po14');
                 assignTeam(finalMatch, po3ub.winnerId, po4lb.winnerId);
                 simPlayoffMatch('lpl_po14');
-            
 
             } else if (targetLeague === 'LCP') {
                 const r1m1Match = playoffs.find(m => m.id === 'lcp_po1');
@@ -938,8 +860,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
             
             if (forceRegen) setForceRegen(false);
         }
-        // Mark sync as complete regardless — avoids infinite loading when
-        // some playoff matches are still TBD and can't be simulated yet.
         setSyncDone(true);
     }, [needsSync, currentPendingLCK, targetLeague, activeMatches, league, setLeague, teams, forceRegen, setSyncDone]);
 
@@ -972,12 +892,9 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                         </button>
                     ))}
                 </div>
-                {/* ── Team filter row ── */}
                 {(() => {
                     let leagueTeamNames = [];
                     if (currentLeague === 'LCK') {
-                        // Use the teams prop (full roster) so playoff-only slots aren't missed.
-                        // Store raw ID as key so filter works directly against m.t1/m.t2.
                         const teamPool = (teams || []).length > 0 ? teams : [];
                         if (teamPool.length > 0) {
                             leagueTeamNames = teamPool.map(t => ({
@@ -1042,7 +959,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                 )}
             </div>
 
-            {/* ── FST Schedule View ── */}
             {displayLeague === 'FST' ? (
                 fstMatches.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 pb-4">
@@ -1126,7 +1042,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                 )
             ) : ['LCK', 'LPL', 'LCP', 'CBLOL', 'LCS', 'LEC'].includes(displayLeague) ? (
                 <>
-                {/* ── Team Schedule: append FST matches if user is in FST ── */}
                 {showFSTInTeamSchedule && fstMatches.length > 0 && (
                     <div className="mb-6">
                         <div className="text-xs font-black uppercase tracking-widest text-blue-600 mb-3 flex items-center gap-2">
@@ -1184,7 +1099,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                         {activeMatches
                             .filter(m => {
                                 if (activeTab === 'schedule') return true;
-                                // team_schedule: only show user's matches
                                 if (isMyLeagueForeign) {
                                     return m.t1 === myTeam.name || m.t2 === myTeam.name ||
                                            m.t1 === myTeam.id   || m.t2 === myTeam.id;
@@ -1194,10 +1108,8 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                             .filter(m => {
                                 if (!selectedTeam) return true;
                                 if (displayLeague === 'LCK') {
-                                    // selectedTeam is a raw team ID for LCK
                                     return String(m.t1) === selectedTeam || String(m.t2) === selectedTeam;
                                 }
-                                // For foreign leagues / FST, selectedTeam is a name
                                 const t1 = findGlobalTeam(m.t1, teams);
                                 const t2 = findGlobalTeam(m.t2, teams);
                                 return t1.name === selectedTeam || t2.name === selectedTeam || m.t1 === selectedTeam || m.t2 === selectedTeam;
@@ -1234,21 +1146,21 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                                                 {isFinished && m.result?.winner === t1.name && <span className="text-[10px] lg:text-xs text-blue-500 font-bold mt-1">WIN</span>}
                                             </div>
                                             <div className="text-center font-bold flex flex-col items-center shrink-0 w-1/4">
-                                            {isFinished ? (
-                                                <div className="flex flex-col items-center">
-                                                    <span className="text-lg lg:text-xl text-gray-800">
-                                                        {m.result?.score || expectedFallbackScore}
-                                                    </span>
-                                                    <button 
-                                                        onClick={() => onMatchClick && onMatchClick(recalcPogForMatch(m))}
-                                                        className="mt-1 text-[9px] lg:text-[10px] bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 px-1.5 lg:px-2 py-0.5 rounded transition flex items-center gap-1 whitespace-nowrap"
-                                                    >
-                                                        <span>📊</span> <span className="hidden sm:inline">상세보기</span><span className="sm:hidden">기록</span>
-                                                    </button>
-                                                </div>
-                                            ) : (
-                                                <span className="text-gray-400 text-sm lg:text-base">VS</span>
-                                            )}
+                                                {isFinished ? (
+                                                    <div className="flex flex-col items-center">
+                                                        <span className="text-lg lg:text-xl text-gray-800">
+                                                            {m.result?.score || expectedFallbackScore}
+                                                        </span>
+                                                        <button 
+                                                            onClick={() => onMatchClick && onMatchClick(recalcPogForMatch(m))}
+                                                            className="mt-1 text-[9px] lg:text-[10px] bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 px-1.5 lg:px-2 py-0.5 rounded transition flex items-center gap-1 whitespace-nowrap"
+                                                        >
+                                                            <span>📊</span> <span className="hidden sm:inline">상세보기</span><span className="sm:hidden">기록</span>
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-gray-400 text-sm lg:text-base">VS</span>
+                                                )}
                                             </div>
                                             <div className="flex flex-col items-center w-1/3">
                                                 <span className={`font-bold text-xs lg:text-base text-center break-keep leading-tight ${isMyMatch && (m.t2 === myTeam.id || m.t2 === myTeam.name) ? 'text-blue-600' : 'text-gray-800'}`}>{t2Name === 'TBD' ? 'TBD' : t2Name}</span>
