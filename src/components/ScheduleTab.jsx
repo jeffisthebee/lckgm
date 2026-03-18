@@ -196,9 +196,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
             ? currentPendingLCK.date !== '0.01'
             : currentPendingLCK.date === '99.99 (완료)')) ||
         // Always trigger sync if any playoff match is missing its advancing teams to ensure bracket flows forward
-        activeMatches.some(m => (m.type === 'playoff' || m.type === 'playin') && (!m.t1 || !m.t2 || String(m.t1) === 'TBD' || String(m.t2) === 'TBD' || String(m.t1) === 'null' || String(m.t2) === 'null')) ||
-        // Also trigger sync if LCS swiss rounds 2/3 still have TBD teams
-        (targetLeague === 'LCS' && activeMatches.some(m => m.type === 'regular' && (m.swissRound === 2 || m.swissRound === 3) && (!m.t1 || !m.t2 || String(m.t1) === 'TBD' || String(m.t2) === 'TBD') && activeMatches.filter(r => r.swissRound === (m.swissRound - 1)).every(r => r.status === 'finished')))
+        activeMatches.some(m => (m.type === 'playoff' || m.type === 'playin') && (!m.t1 || !m.t2 || String(m.t1) === 'TBD' || String(m.t2) === 'TBD' || String(m.t1) === 'null' || String(m.t2) === 'null'))
     );
 
     const hasErrors = targetLeague ? checkBadData(activeMatches, targetLeague) : false;
@@ -318,8 +316,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
 
             [2, 3].forEach(roundNum => {
                 const roundMatches = schedule.filter(m => m.swissRound === roundNum);
-                const isTBD = (v) => !v || String(v) === 'TBD' || String(v) === 'null' || String(v) === 'undefined';
-                if (roundMatches.some(m => isTBD(m.t1) || isTBD(m.t2))) {
+                if (roundMatches.some(m => !m.t1 || !m.t2)) {
                     const prevRoundFinished = schedule.filter(m => m.swissRound === roundNum - 1).every(m => m.status === 'finished');
                     if (prevRoundFinished) {
                         const pastMatches = schedule.filter(m => m.swissRound < roundNum && m.status === 'finished');
@@ -332,7 +329,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                         });
 
                         roundMatches.forEach(m => {
-                            if (isTBD(m.t1) || isTBD(m.t2)) {
+                            if (!m.t1 || !m.t2) {
                                 let pool = pools[m.bracket] || [];
                                 pool = [...new Set(pool)]; 
                                 if (pool.length >= 2) {
@@ -378,8 +375,11 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
         const simMatchIfPast = (matchObj) => {
             if (matchObj.status === 'finished') return matchObj; 
 
-            // CRITICAL: never auto-sim a match involving the user's own team in their league
+            // CRITICAL: never auto-sim any playoff/playin match in the user's own league.
+            // Those must be driven by the dashboard (handleProceedNextMatch / handleStartMyMatch).
+            // Also never auto-sim any match involving the user's own team.
             if (isMyLeagueForeign && targetLeague === myLeague) {
+                if (matchObj.type === 'playoff' || matchObj.type === 'playin') return matchObj;
                 const myName = myTeam?.name;
                 const myId   = myTeam?.id;
                 if (myName && (

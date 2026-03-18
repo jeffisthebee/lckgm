@@ -180,7 +180,56 @@ const getOvrBadgeStyle = (ovr) => {
         recalculateStandings({ ...league, ...updates });
     }, [league?.id, league?.myLeague]);
 
-    // ── [FOREIGN] Background-sim LCK regular season matches automatically ────
+    // ── [LCS] On load: advance Swiss rounds and playoff bracket if TBD slots exist ──
+    // This catches the case where the user reloads and the stored state still has
+    // TBD team slots — without this, nextGlobalMatch returns null and no buttons show.
+    const lcsOnLoadRef = useRef(false);
+    useEffect(() => {
+        if (!league) return;
+        if ((league.myLeague || 'LCK') !== 'LCS') return;
+        if (lcsOnLoadRef.current) return;
+
+        const foreignMatches = league.foreignMatches?.['LCS'] || [];
+        if (foreignMatches.length === 0) return;
+
+        const isTBD = (v) => !v || String(v) === 'TBD' || String(v) === 'null' || String(v) === 'undefined';
+        const hasTBDSwiss = foreignMatches.some(m => m.type === 'regular' && (m.swissRound === 2 || m.swissRound === 3) && (isTBD(m.t1) || isTBD(m.t2)));
+        const hasTBDPlayoff = foreignMatches.some(m => (m.type === 'playoff' || m.type === 'playin') && (isTBD(m.t1) || isTBD(m.t2)));
+        const missingPlayoffs = foreignMatches.filter(m => m.type === 'regular').every(m => m.status === 'finished') &&
+                                !foreignMatches.some(m => m.type === 'playoff' || m.type === 'playin');
+
+        if (!hasTBDSwiss && !hasTBDPlayoff && !missingPlayoffs) return;
+        lcsOnLoadRef.current = true;
+
+        const lgTeams = FOREIGN_LEAGUES['LCS'] || [];
+        let updatedMatches = foreignMatches;
+        let lcsPoSeeds = null;
+
+        // Advance Swiss rounds first
+        if (hasTBDSwiss) {
+            const { matches: swissAdv, changed } = advanceLCSSwissRounds(updatedMatches, lgTeams);
+            if (changed) updatedMatches = swissAdv;
+        }
+
+        // Then build/advance playoff bracket
+        if (hasTBDPlayoff || missingPlayoffs) {
+            const { matches: poAdv, seeds: poSeeds, changed: poChanged } = advanceLCSPlayoffBracket(updatedMatches);
+            if (poChanged) {
+                updatedMatches = poAdv;
+                lcsPoSeeds = poSeeds;
+            }
+        }
+
+        if (updatedMatches !== foreignMatches) {
+            const updatedLeague = {
+                ...league,
+                foreignMatches: { ...league.foreignMatches, LCS: updatedMatches },
+                ...(lcsPoSeeds ? { foreignPlayoffSeeds: { ...(league.foreignPlayoffSeeds || {}), LCS: lcsPoSeeds } } : {}),
+            };
+            updateLeague(league.id, updatedLeague);
+            setLeague(updatedLeague);
+        }
+    }, [league?.id, league?.foreignMatches?.LCS?.length]);
     // Only sims LCK 'regular' matches dated BEFORE the user's next foreign match.
     // This means LCK progresses in sync with the user's league, so by the time
     // the user finishes their own regular season, LCK's is also done → 16.02 fires.
