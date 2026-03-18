@@ -678,40 +678,102 @@ const PlayoffTab = ({
 
     const renderLCKBracket = () => {
         const poMatches = league.matches ? league.matches.filter(m => m.type === 'playoff') : [];
-        const findMatch = (round, matchNum) => poMatches.find(m => m.round === round && m.match === matchNum);
+
+        // Flexible find: try round+match first, then round-only fallback (handles missing match field)
+        const findMatch = (round, matchNum) => {
+            let m = poMatches.find(m => m.round === round && m.match === matchNum);
+            if (!m) m = poMatches.find(m => m.round === round);
+            return m || null;
+        };
 
         const getLckSeedId = (num) => {
             const s = league.playoffSeeds?.find(item => item.seed === num);
             return s ? s.id : null;
         };
 
-        const dispR1m1 = displayMatch(findMatch(1, 1), getLckSeedId(3), getLckSeedId(6));
-        const dispR1m2 = displayMatch(findMatch(1, 2), getLckSeedId(4), getLckSeedId(5));
-        const dispR2m1 = displayMatch(findMatch(2, 1), getLckSeedId(1), getMatchWinner(dispR1m1));
-        const dispR2m2 = displayMatch(findMatch(2, 2), getLckSeedId(2), getMatchWinner(dispR1m2));
-        
-        const getHigherSeedLoser = (mA, mB) => {
-            const lA = getMatchLoser(mA);
-            const lB = getMatchLoser(mB);
+        // Compute canonical bracket teams from known results.
+        // We always use these computed values for t1/t2 so BracketManager bugs
+        // (wrong or TBD teams stored) can never corrupt the display.
+        const computedWinner = (m) => {
+            if (!m || m.status !== 'finished' || !m.result?.winner) return null;
+            const wName = m.result.winner;
+            const t1 = teams.find(t => t.id === m.t1);
+            const t2 = teams.find(t => t.id === m.t2);
+            if (t1?.name === wName) return m.t1;
+            if (t2?.name === wName) return m.t2;
+            return teams.find(t => t.name === wName)?.id ?? null;
+        };
+        const computedLoser = (m) => {
+            if (!m || m.status !== 'finished') return null;
+            const w = computedWinner(m);
+            if (!w) return null;
+            return (m.t1 === w) ? m.t2 : m.t1;
+        };
+
+        // mergeMatch: use computed teams as primary (fixes wrong stored data),
+        // but keep the actual match object for status, result, format, id, etc.
+        const mergeMatch = (actual, computedT1, computedT2) => {
+            const isTBD = (v) => !v || String(v) === 'TBD' || String(v) === 'null' || String(v) === 'undefined';
+            return {
+                ...(actual || { status: 'pending', type: 'playoff' }),
+                t1: computedT1 || (isTBD(actual?.t1) ? null : actual?.t1) || null,
+                t2: computedT2 || (isTBD(actual?.t2) ? null : actual?.t2) || null,
+            };
+        };
+
+        // Seeds → known from bracket creation
+        const s1 = getLckSeedId(1), s2 = getLckSeedId(2);
+        const s3 = getLckSeedId(3), s4 = getLckSeedId(4);
+        const s5 = getLckSeedId(5), s6 = getLckSeedId(6);
+
+        const r1m1Raw = findMatch(1, 1);
+        const r1m2Raw = findMatch(1, 2);
+        const dispR1m1 = mergeMatch(r1m1Raw, s3, s6);
+        const dispR1m2 = mergeMatch(r1m2Raw, s4, s5);
+
+        const r2m1Raw = findMatch(2, 1);
+        const r2m2Raw = findMatch(2, 2);
+        const dispR2m1 = mergeMatch(r2m1Raw, s1, computedWinner(dispR1m1));
+        const dispR2m2 = mergeMatch(r2m2Raw, s2, computedWinner(dispR1m2));
+
+        const r2lm1Raw = findMatch(2.1, 1);
+        const dispR2lm1 = mergeMatch(r2lm1Raw, computedLoser(dispR1m1), computedLoser(dispR1m2));
+
+        // Higher-seed loser of r2m1/r2m2
+        const getHigherSeedLoser = () => {
+            const lA = computedLoser(dispR2m1);
+            const lB = computedLoser(dispR2m2);
+            if (!lA && !lB) return null;
             if (!lA) return lB;
             if (!lB) return lA;
-            const sA = league.playoffSeeds?.find(s => s.id === lA)?.seed || 99;
-            const sB = league.playoffSeeds?.find(s => s.id === lB)?.seed || 99;
-            return sA < sB ? lA : lB;
+            const sA = league.playoffSeeds?.find(s => s.id === lA)?.seed ?? 99;
+            const sB = league.playoffSeeds?.find(s => s.id === lB)?.seed ?? 99;
+            return sA <= sB ? lA : lB;
+        };
+        const getLowerSeedLoser = () => {
+            const lA = computedLoser(dispR2m1);
+            const lB = computedLoser(dispR2m2);
+            if (!lA && !lB) return null;
+            if (!lA) return lB;
+            if (!lB) return lA;
+            const higher = getHigherSeedLoser();
+            return String(lA) === String(higher) ? lB : lA;
         };
 
-        const getLowerSeedLoser = (mA, mB) => {
-            const higher = getHigherSeedLoser(mA, mB);
-            const lA = getMatchLoser(mA);
-            return (lA === higher) ? getMatchLoser(mB) : lA;
-        };
+        const r2lm2Raw = findMatch(2.2, 1);
+        const dispR2lm2 = mergeMatch(r2lm2Raw, getHigherSeedLoser(), computedWinner(dispR2lm1));
 
-        const dispR2lm1 = displayMatch(findMatch(2.1, 1), getMatchLoser(dispR1m1), getMatchLoser(dispR1m2));
-        const dispR2lm2 = displayMatch(findMatch(2.2, 1), getHigherSeedLoser(dispR2m1, dispR2m2), getMatchWinner(dispR2lm1));
-        const dispR3m1 = displayMatch(findMatch(3, 1), getMatchWinner(dispR2m1), getMatchWinner(dispR2m2));
-        const dispR3lm1 = displayMatch(findMatch(3.1, 1), getLowerSeedLoser(dispR2m1, dispR2m2), getMatchWinner(dispR2lm2));
-        const dispR4m1 = displayMatch(findMatch(4, 1), getMatchLoser(dispR3m1), getMatchWinner(dispR3lm1));
-        const dispFinal = displayMatch(findMatch(5, 1), getMatchWinner(dispR3m1), getMatchWinner(dispR4m1));
+        const r3m1Raw = findMatch(3, 1);
+        const dispR3m1 = mergeMatch(r3m1Raw, computedWinner(dispR2m1), computedWinner(dispR2m2));
+
+        const r3lm1Raw = findMatch(3.1, 1);
+        const dispR3lm1 = mergeMatch(r3lm1Raw, getLowerSeedLoser(), computedWinner(dispR2lm2));
+
+        const r4m1Raw = findMatch(4, 1);
+        const dispR4m1 = mergeMatch(r4m1Raw, computedLoser(dispR3m1), computedWinner(dispR3lm1));
+
+        const r5m1Raw = findMatch(5, 1);
+        const dispFinal = mergeMatch(r5m1Raw, computedWinner(dispR3m1), computedWinner(dispR4m1));
 
         return (
             <div className="flex-1 overflow-x-auto pb-8">
