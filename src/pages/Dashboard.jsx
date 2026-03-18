@@ -126,7 +126,8 @@ const getOvrBadgeStyle = (ovr) => {
         if (_myLgForSeason === 'CBLOL' && id === 'cblol_po10') return true;
         if (_myLgForSeason === 'LCP' && id.startsWith('lcp_') && round === 4) return true;
         if (round === 5) return true;
-        if (label.includes('GRAND FINAL') || label.includes('FINAL') || label.includes('결승')) return true;
+        // Use exact matches only — '결승' alone would match '결승 진출전' (qualifier), '결승전' is the actual grand final
+        if (label === '결승전' || label === 'GRAND FINAL') return true;
         return false;
       };
       const finalMatch = fMatches.find(isExplicitFinal);
