@@ -1105,10 +1105,9 @@ const getOvrBadgeStyle = (ovr) => {
     const meta1602Ref = useRef(false);
 
     // ── LCK Playoff bracket team-fill ────────────────────────────────────────
-    // BracketManager sometimes stores TBD/null teams in r2.2, r3.1, r4, r5 when
-    // it can't resolve them at creation time. This effect fires whenever a match
-    // finishes and fills in any TBD slots based on known bracket results —
-    // exactly like advanceForeignBracketIfNeeded does for LEC.
+    // Runs after every match finishes. Recomputes ALL bracket team slots from
+    // first principles (seed assignments + actual results) and writes any slot
+    // that is wrong OR empty — handles both TBD and BracketManager mis-fills.
     useEffect(() => {
         if (!league?.matches) return;
         if ((league.myLeague || 'LCK') !== 'LCK') return;
@@ -1116,107 +1115,102 @@ const getOvrBadgeStyle = (ovr) => {
         const po = league.matches.filter(m => m.type === 'playoff');
         if (po.length === 0) return;
 
-        const isTBD = (v) => !v || String(v) === 'TBD' || String(v) === 'null' || String(v) === 'undefined';
-        const hasTBDTeams = po.some(m => isTBD(m.t1) || isTBD(m.t2));
-        // Also check if any match has wrong round number (qualifier stored as round 5)
-        const knownRounds = new Set([1, 2, 2.1, 2.2, 3, 3.1, 4, 5]);
-        const hasWrongRound = po.some(m => !knownRounds.has(m.round));
-        if (!hasTBDTeams && !hasWrongRound) return;
-
-        // --- Heal qualifier stored with wrong round ---
-        let matches = league.matches.map(m => {
-            if (m.type !== 'playoff') return m;
-            if (knownRounds.has(m.round)) return m;
-            // Unknown round → must be the qualifier (결승 진출전)
-            return { ...m, round: 4, label: m.label || '결승 진출전' };
-        });
-
         const seeds = league.playoffSeeds || [];
-        const getSeedId = (n) => seeds.find(s => s.seed === n)?.id ?? null;
+        const sid = (n) => seeds.find(s => s.seed === n)?.id ?? null;
+        const s1 = sid(1), s2 = sid(2), s3 = sid(3), s4 = sid(4);
 
-        // Flexible find: round+match first, then round-only fallback
-        const findPO = (round, matchNum) => {
-            let m = matches.find(x => x.type === 'playoff' && x.round === round && x.match === matchNum);
-            if (!m) m = matches.find(x => x.type === 'playoff' && x.round === round);
-            return m || null;
-        };
+        const isTBD = (v) => !v || String(v) === 'TBD' || String(v) === 'null' || String(v) === 'undefined';
 
-        const getWinnerToken = (m) => {
+        // ── Identify each match by its known participants, not by match-field ──
+        const r1All = po.filter(m => m.round === 1);
+        const r1m1 = r1All.find(m => [String(m.t1),String(m.t2)].includes(String(s3))) || r1All[0] || null;
+        const r1m2 = r1All.find(m => [String(m.t1),String(m.t2)].includes(String(s4))) || r1All[1] || null;
+
+        const r2All = po.filter(m => m.round === 2);
+        const r2m1 = r2All.find(m => [String(m.t1),String(m.t2)].includes(String(s1))) || r2All[0] || null;
+        const r2m2 = r2All.find(m => [String(m.t1),String(m.t2)].includes(String(s2))) || r2All[1] || null;
+
+        const r2lm1 = po.find(m => m.round === 2.1) || null;
+        const r2lm2 = po.find(m => m.round === 2.2) || null;
+        const r3m1  = po.find(m => m.round === 3)   || null;
+        const r3lm1 = po.find(m => m.round === 3.1) || null;
+        // qualifier may be stored as round:4 (correct) or round:5 (BracketManager bug)
+        const r4m1  = po.find(m => m.round === 4) ||
+                      po.find(m => m.round === 5 && String(m.label||'').includes('진출')) || null;
+        const r5m1  = po.find(m => m.round === 5 && !String(m.label||'').includes('진출')) || null;
+
+        // ── Winner/loser resolvers ──────────────────────────────────────────
+        const getW = (m) => {
             if (!m || m.status !== 'finished' || !m.result?.winner) return null;
             const wName = m.result.winner;
-            const t1 = teams.find(t => t.id === m.t1 || t.name === m.t1);
-            const t2 = teams.find(t => t.id === m.t2 || t.name === m.t2);
-            if (t1?.name === wName) return m.t1;
-            if (t2?.name === wName) return m.t2;
-            return teams.find(t => t.name === wName)?.id ?? wName;
+            const t1t = teams.find(t => String(t.id) === String(m.t1));
+            const t2t = teams.find(t => String(t.id) === String(m.t2));
+            if (t1t?.name === wName) return m.t1;
+            if (t2t?.name === wName) return m.t2;
+            const byName = teams.find(t => t.name === wName);
+            return byName ? byName.id : null;
+        };
+        const getL = (m) => {
+            const w = getW(m);
+            if (!w || !m) return null;
+            return String(m.t1) === String(w) ? m.t2 : m.t1;
         };
 
-        const getLoserToken = (m) => {
-            if (!m || m.status !== 'finished') return null;
-            const w = getWinnerToken(m);
-            if (!w) return null;
-            return (String(m.t1) === String(w)) ? m.t2 : m.t1;
-        };
-
-        const r2m1 = findPO(2, 1);
-        const r2m2 = findPO(2, 2);
-        const r2lm1 = findPO(2.1, 1);   // 패자조 1R
-        const r2lm2 = findPO(2.2, 1);   // 패자조 2R
-        const r3m1  = findPO(3, 1);     // 승자조 결승
-        const r3lm1 = findPO(3.1, 1);   // 패자조 3R
-        const r4m1  = findPO(4, 1);     // 결승 진출전
-        const r5m1  = findPO(5, 1);     // 결승전
-
-        // Higher-seed loser of r2m1/r2m2 → goes to 패자조 2R t1
-        const getHigherSeedLoser = () => {
-            const lA = getLoserToken(r2m1);
-            const lB = getLoserToken(r2m2);
+        // Higher-seed (lower seed number) loser of R2 upper
+        const r2HigherLoser = (() => {
+            const lA = getL(r2m1), lB = getL(r2m2);
             if (!lA && !lB) return null;
             if (!lA) return lB;
             if (!lB) return lA;
-            const sA = seeds.find(s => s.id === lA)?.seed ?? 99;
-            const sB = seeds.find(s => s.id === lB)?.seed ?? 99;
+            const sA = seeds.find(s => String(s.id) === String(lA))?.seed ?? 99;
+            const sB = seeds.find(s => String(s.id) === String(lB))?.seed ?? 99;
             return sA <= sB ? lA : lB;
-        };
-
-        // Lower-seed loser → goes to 패자조 3R t1
-        const getLowerSeedLoser = () => {
-            const lA = getLoserToken(r2m1);
-            const lB = getLoserToken(r2m2);
+        })();
+        const r2LowerLoser = (() => {
+            const lA = getL(r2m1), lB = getL(r2m2);
             if (!lA && !lB) return null;
             if (!lA) return lB;
             if (!lB) return lA;
-            const higher = getHigherSeedLoser();
-            if (String(lA) === String(higher)) return lB;
-            return lA;
+            return String(lA) === String(r2HigherLoser) ? lB : lA;
+        })();
+
+        // Expected teams for each bracket slot
+        const expected = {
+            '2.1': [getL(r1m1),       getL(r1m2)],
+            '2.2': [r2HigherLoser,     getW(r2lm1)],
+            '3':   [getW(r2m1),        getW(r2m2)],
+            '3.1': [r2LowerLoser,      getW(r2lm2)],
+            '4':   [getL(r3m1),        getW(r3lm1)],
+            '5':   [getW(r3m1),        getW(r4m1)],
         };
 
         let changed = false;
-        const fill = (matchObj, t1, t2) => {
-            if (!matchObj) return;
-            if (t1 && isTBD(matchObj.t1)) { matchObj.t1 = t1; changed = true; }
-            if (t2 && isTBD(matchObj.t2)) { matchObj.t2 = t2; changed = true; }
-        };
+        const updatedMatches = league.matches.map(m => {
+            if (m.type !== 'playoff') return m;
 
-        // Work on mutable copies
-        matches = matches.map(m => ({ ...m }));
-        const r2lm2Mut  = matches.find(m => m.type === 'playoff' && m.round === 2.2);
-        const r3lm1Mut  = matches.find(m => m.type === 'playoff' && m.round === 3.1);
-        const r4m1Mut   = matches.find(m => m.type === 'playoff' && m.round === 4);
-        const r5m1Mut   = matches.find(m => m.type === 'playoff' && m.round === 5);
+            // Normalize qualifier round if BracketManager stored it as round:5 with '진출' label
+            let base = m;
+            if (m.round === 5 && String(m.label||'').includes('진출')) {
+                base = { ...m, round: 4, label: '결승 진출전' };
+                changed = true;
+            }
 
-        // 패자조 2R: higher-seed R2 loser vs winner of 패자조 1R
-        fill(r2lm2Mut, getHigherSeedLoser(), getWinnerToken(r2lm1));
-        // 패자조 3R: lower-seed R2 loser vs winner of 패자조 2R
-        fill(r3lm1Mut, getLowerSeedLoser(), getWinnerToken(r2lm2Mut || r2lm2));
-        // 결승 진출전: loser of 승자조 결승 vs winner of 패자조 3R
-        fill(r4m1Mut, getLoserToken(r3m1), getWinnerToken(r3lm1Mut || r3lm1));
-        // 결승전: winner of 승자조 결승 vs winner of 결승 진출전
-        fill(r5m1Mut, getWinnerToken(r3m1), getWinnerToken(r4m1Mut || r4m1));
+            const key = String(base.round);
+            const exp = expected[key];
+            if (!exp) return base;
+
+            const [expT1, expT2] = exp;
+            let t1 = base.t1, t2 = base.t2;
+            // Overwrite if expected is known AND current is wrong/empty
+            if (expT1 && (isTBD(t1) || String(t1) !== String(expT1))) { t1 = expT1; changed = true; }
+            if (expT2 && (isTBD(t2) || String(t2) !== String(expT2))) { t2 = expT2; changed = true; }
+            if (t1 === base.t1 && t2 === base.t2 && base === m) return m;
+            return { ...base, t1, t2 };
+        });
 
         if (!changed) return;
-        updateLeague(league.id, { matches });
-        setLeague(prev => ({ ...prev, matches }));
+        updateLeague(league.id, { matches: updatedMatches });
+        setLeague(prev => ({ ...prev, matches: updatedMatches }));
     }, [
         league?.matches?.filter(m => m.status === 'finished').length,
         league?.matches?.length,
@@ -1767,6 +1761,9 @@ const handleMatchClick = (match) => {
       return;
   }
     
+    // --- R3L + R4 + Final: identify matches by seed/round, not by label ------
+    // The qualifier (결승 진출전) is whichever playoff match sits between r3.1 and
+    // the grand final — we find it by exclusion from all other known rounds.
     const r2_2Match = currentMatches.find(m => m.type === 'playoff' && m.round === 2.2);
     const r3wMatch = currentMatches.find(m => m.type === 'playoff' && m.round === 3);
     const r3lExists = currentMatches.some(m => m.type === 'playoff' && m.round === 3.1);
@@ -1778,30 +1775,39 @@ const handleMatchClick = (match) => {
         alert("👑 플레이오프 3라운드 패자조 경기가 생성되었습니다!");
         return;
     }
-  
-    // --- R4 Qualifier (결승 진출전 / Loser Bracket Final) ---
-    // BracketManager may assign round:5 OR round:4 to this match.
-    // Identify it by label to be safe, falling back to round===4.
-    const isQualifierMatch = (m) =>
-        m.type === 'playoff' &&
-        (String(m.label || '').includes('진출') || m.round === 4);
+
     const r3lMatch = currentMatches.find(m => m.type === 'playoff' && m.round === 3.1);
-    const r4Exists = currentMatches.some(isQualifierMatch);
+
+    // Qualifier: round 4 OR (round 5 + '진출' label) OR the only playoff match
+    // whose round is not in {1,2,2.1,2.2,3,3.1} and is not yet the grand final.
+    const knownRounds = new Set([1, 2, 2.1, 2.2, 3, 3.1]);
+    const isQualifier = (m) =>
+        m.type === 'playoff' && (
+            m.round === 4 ||
+            (m.round === 5 && String(m.label || '').includes('진출')) ||
+            (!knownRounds.has(m.round) && m.round !== 5)
+        );
+    const r4Exists = currentMatches.some(isQualifier);
 
     if (r3lMatch?.status === 'finished' && r3wMatch?.status === 'finished' && !r4Exists) {
-        const newMatches = createPlayoffQualifierMatch(currentMatches, teams);
+        const rawMatches = createPlayoffQualifierMatch(currentMatches, teams);
+        // Normalize: force round:4 + label on the newly added match
+        const existingIds = new Set(currentMatches.map(m => m.id));
+        const newMatches = rawMatches.map(m =>
+            m.type === 'playoff' && !existingIds.has(m.id)
+                ? { ...m, round: 4, label: '결승 진출전' }
+                : m
+        );
         updateLeague(league.id, { matches: newMatches });
         setLeague(prev => ({ ...prev, matches: newMatches }));
         alert("👑 플레이오프 결승 진출전이 생성되었습니다!");
         return;
     }
 
-    // Grand Final — identified by label NOT containing '진출', regardless of round number
-    const r4Match = currentMatches.find(isQualifierMatch);
-    const finalExists = currentMatches.some(m =>
-        m.type === 'playoff' &&
-        !String(m.label || '').includes('진출') &&
-        (m.round === 5 || String(m.label || '').includes('결승전') || String(m.label || '').toUpperCase().includes('FINAL'))
+    // Grand final: any round-5 match that is NOT the qualifier
+    const r4Match = currentMatches.find(isQualifier);
+    const finalExists = currentMatches.some(
+        m => m.type === 'playoff' && m.round === 5 && !String(m.label || '').includes('진출')
     );
 
     if (r4Match?.status === 'finished' && r3wMatch?.status === 'finished' && !finalExists) {

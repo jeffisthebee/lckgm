@@ -677,103 +677,74 @@ const PlayoffTab = ({
     };
 
     const renderLCKBracket = () => {
-        const poMatches = league.matches ? league.matches.filter(m => m.type === 'playoff') : [];
+        const po = league.matches ? league.matches.filter(m => m.type === 'playoff') : [];
 
-        // Flexible find: try round+match first, then round-only fallback (handles missing match field)
-        const findMatch = (round, matchNum) => {
-            let m = poMatches.find(m => m.round === round && m.match === matchNum);
-            if (!m) m = poMatches.find(m => m.round === round);
-            return m || null;
-        };
+        const seeds = league.playoffSeeds || [];
+        const sid = (n) => seeds.find(s => s.seed === n)?.id ?? null;
+        const s1 = sid(1), s2 = sid(2), s3 = sid(3), s4 = sid(4);
 
-        const getLckSeedId = (num) => {
-            const s = league.playoffSeeds?.find(item => item.seed === num);
-            return s ? s.id : null;
-        };
+        // ── Find matches by known participants, not by match-field ─────────
+        const r1All = po.filter(m => m.round === 1);
+        const r1m1Raw = r1All.find(m => [String(m.t1),String(m.t2)].includes(String(s3))) || r1All[0] || null;
+        const r1m2Raw = r1All.find(m => [String(m.t1),String(m.t2)].includes(String(s4))) || r1All[1] || null;
 
-        // Compute canonical bracket teams from known results.
-        // We always use these computed values for t1/t2 so BracketManager bugs
-        // (wrong or TBD teams stored) can never corrupt the display.
-        const computedWinner = (m) => {
+        const r2All = po.filter(m => m.round === 2);
+        const r2m1Raw = r2All.find(m => [String(m.t1),String(m.t2)].includes(String(s1))) || r2All[0] || null;
+        const r2m2Raw = r2All.find(m => [String(m.t1),String(m.t2)].includes(String(s2))) || r2All[1] || null;
+
+        const r2lm1Raw = po.find(m => m.round === 2.1) || null;
+        const r2lm2Raw = po.find(m => m.round === 2.2) || null;
+        const r3m1Raw  = po.find(m => m.round === 3)   || null;
+        const r3lm1Raw = po.find(m => m.round === 3.1) || null;
+        const r4m1Raw  = po.find(m => m.round === 4) ||
+                         po.find(m => m.round === 5 && String(m.label||'').includes('진출')) || null;
+        const r5m1Raw  = po.find(m => m.round === 5 && !String(m.label||'').includes('진출')) || null;
+
+        // ── Winner / loser from actual results ──────────────────────────────
+        const cW = (m) => {
             if (!m || m.status !== 'finished' || !m.result?.winner) return null;
             const wName = m.result.winner;
-            const t1 = teams.find(t => t.id === m.t1);
-            const t2 = teams.find(t => t.id === m.t2);
-            if (t1?.name === wName) return m.t1;
-            if (t2?.name === wName) return m.t2;
+            const t1t = teams.find(t => String(t.id) === String(m.t1));
+            const t2t = teams.find(t => String(t.id) === String(m.t2));
+            if (t1t?.name === wName) return m.t1;
+            if (t2t?.name === wName) return m.t2;
             return teams.find(t => t.name === wName)?.id ?? null;
         };
-        const computedLoser = (m) => {
-            if (!m || m.status !== 'finished') return null;
-            const w = computedWinner(m);
-            if (!w) return null;
-            return (m.t1 === w) ? m.t2 : m.t1;
+        const cL = (m) => {
+            const w = cW(m);
+            if (!w || !m) return null;
+            return String(m.t1) === String(w) ? m.t2 : m.t1;
         };
 
-        // mergeMatch: use computed teams as primary (fixes wrong stored data),
-        // but keep the actual match object for status, result, format, id, etc.
-        const mergeMatch = (actual, computedT1, computedT2) => {
+        // Higher/lower seed loser of R2 upper
+        const lA2 = cL(r2m1Raw), lB2 = cL(r2m2Raw);
+        const sA2 = seeds.find(s => String(s.id) === String(lA2))?.seed ?? 99;
+        const sB2 = seeds.find(s => String(s.id) === String(lB2))?.seed ?? 99;
+        const r2HigherLoser = (!lA2 && !lB2) ? null : !lA2 ? lB2 : !lB2 ? lA2 : sA2 <= sB2 ? lA2 : lB2;
+        const r2LowerLoser  = (!lA2 && !lB2) ? null : !lA2 ? lB2 : !lB2 ? lA2 :
+                              String(lA2) === String(r2HigherLoser) ? lB2 : lA2;
+
+        // ── Build display matches: stored data + computed overrides ──────────
+        const mk = (raw, expT1, expT2) => {
             const isTBD = (v) => !v || String(v) === 'TBD' || String(v) === 'null' || String(v) === 'undefined';
+            const base = raw || { status: 'pending', type: 'playoff' };
             return {
-                ...(actual || { status: 'pending', type: 'playoff' }),
-                t1: computedT1 || (isTBD(actual?.t1) ? null : actual?.t1) || null,
-                t2: computedT2 || (isTBD(actual?.t2) ? null : actual?.t2) || null,
+                ...base,
+                t1: expT1 || (isTBD(base.t1) ? null : base.t1),
+                t2: expT2 || (isTBD(base.t2) ? null : base.t2),
             };
         };
 
-        // Seeds → known from bracket creation
-        const s1 = getLckSeedId(1), s2 = getLckSeedId(2);
-        const s3 = getLckSeedId(3), s4 = getLckSeedId(4);
-        const s5 = getLckSeedId(5), s6 = getLckSeedId(6);
-
-        const r1m1Raw = findMatch(1, 1);
-        const r1m2Raw = findMatch(1, 2);
-        const dispR1m1 = mergeMatch(r1m1Raw, s3, s6);
-        const dispR1m2 = mergeMatch(r1m2Raw, s4, s5);
-
-        const r2m1Raw = findMatch(2, 1);
-        const r2m2Raw = findMatch(2, 2);
-        const dispR2m1 = mergeMatch(r2m1Raw, s1, computedWinner(dispR1m1));
-        const dispR2m2 = mergeMatch(r2m2Raw, s2, computedWinner(dispR1m2));
-
-        const r2lm1Raw = findMatch(2.1, 1);
-        const dispR2lm1 = mergeMatch(r2lm1Raw, computedLoser(dispR1m1), computedLoser(dispR1m2));
-
-        // Higher-seed loser of r2m1/r2m2
-        const getHigherSeedLoser = () => {
-            const lA = computedLoser(dispR2m1);
-            const lB = computedLoser(dispR2m2);
-            if (!lA && !lB) return null;
-            if (!lA) return lB;
-            if (!lB) return lA;
-            const sA = league.playoffSeeds?.find(s => s.id === lA)?.seed ?? 99;
-            const sB = league.playoffSeeds?.find(s => s.id === lB)?.seed ?? 99;
-            return sA <= sB ? lA : lB;
-        };
-        const getLowerSeedLoser = () => {
-            const lA = computedLoser(dispR2m1);
-            const lB = computedLoser(dispR2m2);
-            if (!lA && !lB) return null;
-            if (!lA) return lB;
-            if (!lB) return lA;
-            const higher = getHigherSeedLoser();
-            return String(lA) === String(higher) ? lB : lA;
-        };
-
-        const r2lm2Raw = findMatch(2.2, 1);
-        const dispR2lm2 = mergeMatch(r2lm2Raw, getHigherSeedLoser(), computedWinner(dispR2lm1));
-
-        const r3m1Raw = findMatch(3, 1);
-        const dispR3m1 = mergeMatch(r3m1Raw, computedWinner(dispR2m1), computedWinner(dispR2m2));
-
-        const r3lm1Raw = findMatch(3.1, 1);
-        const dispR3lm1 = mergeMatch(r3lm1Raw, getLowerSeedLoser(), computedWinner(dispR2lm2));
-
-        const r4m1Raw = findMatch(4, 1);
-        const dispR4m1 = mergeMatch(r4m1Raw, computedLoser(dispR3m1), computedWinner(dispR3lm1));
-
-        const r5m1Raw = findMatch(5, 1);
-        const dispFinal = mergeMatch(r5m1Raw, computedWinner(dispR3m1), computedWinner(dispR4m1));
+        const dispR1m1  = mk(r1m1Raw,  s3,               sid(6));
+        const dispR1m2  = mk(r1m2Raw,  s4,               sid(5));
+        const dispR2m1  = mk(r2m1Raw,  s1,               cW(dispR1m1));
+        const dispR2m2  = mk(r2m2Raw,  s2,               cW(dispR1m2));
+        const dispR2lm1 = mk(r2lm1Raw, cL(dispR1m1),     cL(dispR1m2));
+        const dispR2lm2 = mk(r2lm2Raw, r2HigherLoser,    cW(dispR2lm1));
+        const dispR3m1  = mk(r3m1Raw,  cW(dispR2m1),     cW(dispR2m2));
+        const dispR3lm1 = mk(r3lm1Raw, r2LowerLoser,     cW(dispR2lm2));
+        const dispR4m1  = mk(r4m1Raw,  cL(dispR3m1),     cW(dispR3lm1));
+        const dispFinal = mk(r5m1Raw,  cW(dispR3m1),     cW(dispR4m1));
 
         return (
             <div className="flex-1 overflow-x-auto pb-8">
