@@ -22,7 +22,8 @@ import StatsTab from '../components/TEMP_StatsTab';
 import {updateLeague, getLeagueById } from '../engine/storage';
 import { 
     generateLPLRegularSchedule, generateLECRegularSchedule,
-    generateLCSRegularSchedule, generateLCPRegularSchedule, generateCBLOLRegularSchedule
+    generateLCSRegularSchedule, generateLCPRegularSchedule, generateCBLOLRegularSchedule,
+    generateLCSPlayoffs
 } from '../engine/scheduleLogic';
 import AwardsTab from '../components/AwardsTab';
 import HistoryTab from '../components/HistoryTab'; 
@@ -1795,6 +1796,128 @@ const handleMatchClick = (match) => {
       return { league: updatedLeague, didUpdate: true };
     };
     
+  // ── [LCS] Generate & advance playoff bracket without needing ScheduleTab ───
+  // Called after every LCS match finishes. Generates the playoff bracket when
+  // all swiss matches are done, then propagates winners/losers into TBD slots.
+  const advanceLCSPlayoffBracket = (foreignMatches) => {
+    const lgTeams = FOREIGN_LEAGUES['LCS'] || [];
+    const isTBD = (v) => !v || String(v) === 'TBD' || String(v) === 'null' || String(v) === 'undefined';
+
+    const regularMatches = foreignMatches.filter(m => m.type === 'regular' || m.type === 'super');
+    const allRegularDone = regularMatches.length > 0 && regularMatches.every(m => m.status === 'finished');
+    if (!allRegularDone) return { matches: foreignMatches, seeds: null, changed: false };
+
+    // Build standings
+    const standings = {};
+    lgTeams.forEach(t => { standings[t.name] = { w: 0, l: 0, diff: 0, h2h: {}, defeatedOpponents: [], name: t.name }; });
+    regularMatches.forEach(m => {
+      if (!m.result?.winner) return;
+      const wName = lgTeams.find(t => t.name === m.result.winner || t.id === m.result.winner)?.name || m.result.winner;
+      const t1Name = lgTeams.find(t => t.name === m.t1 || t.id === m.t1)?.name || m.t1;
+      const t2Name = lgTeams.find(t => t.name === m.t2 || t.id === m.t2)?.name || m.t2;
+      const lName = wName === t1Name ? t2Name : t1Name;
+      let diff = 0;
+      if (m.result.score) {
+        const parts = String(m.result.score).split(/[-:]/).map(Number);
+        if (parts.length === 2) diff = Math.abs(parts[0] - parts[1]);
+      }
+      if (standings[wName]) { standings[wName].w++; standings[wName].diff += diff; standings[wName].defeatedOpponents.push(lName); if (!standings[wName].h2h[lName]) standings[wName].h2h[lName] = { w: 0, l: 0 }; standings[wName].h2h[lName].w++; }
+      if (standings[lName]) { standings[lName].l++; standings[lName].diff -= diff; if (!standings[lName].h2h[wName]) standings[lName].h2h[wName] = { w: 0, l: 0 }; standings[lName].h2h[wName].l++; }
+    });
+    const sorted = Object.values(standings).sort((a, b) => {
+      if (b.w !== a.w) return b.w - a.w;
+      if (b.diff !== a.diff) return b.diff - a.diff;
+      const aWvsB = a.h2h[b.name]?.w || 0, bWvsA = b.h2h[a.name]?.w || 0;
+      if (aWvsB !== bWvsA) return bWvsA - aWvsB;
+      return 0;
+    });
+    const seeds = sorted.slice(0, 8).map((t, i) => ({ ...t, seed: i + 1 }));
+    const getSeedName = (s) => seeds.find(x => x.seed === s)?.name || null;
+
+    // Generate playoff bracket if it doesn't exist yet
+    let playoffs = foreignMatches.filter(m => m.type === 'playoff' || m.type === 'playin');
+    let changed = false;
+    if (playoffs.length === 0) {
+      playoffs = generateLCSPlayoffs(seeds);
+      changed = true;
+    }
+
+    // Work on mutable copies
+    playoffs = playoffs.map(m => ({ ...m }));
+
+    const findM = (id) => playoffs.find(m => m.id === id);
+    const getWinner = (m) => {
+      if (!m || m.status !== 'finished' || !m.result?.winner) return null;
+      return lgTeams.find(t => t.name === m.result.winner || t.id === m.result.winner)?.name || m.result.winner;
+    };
+    const getLoser = (m) => {
+      if (!m || m.status !== 'finished') return null;
+      const w = getWinner(m);
+      const t1 = lgTeams.find(t => t.name === m.t1 || t.id === m.t1)?.name || m.t1;
+      const t2 = lgTeams.find(t => t.name === m.t2 || t.id === m.t2)?.name || m.t2;
+      return w === t1 ? t2 : t1;
+    };
+    const assign = (m, t1, t2) => {
+      if (!m) return;
+      if (isTBD(m.t1) && t1) { m.t1 = t1; changed = true; }
+      if (isTBD(m.t2) && t2) { m.t2 = t2; changed = true; }
+    };
+    const assignT1 = (m, v) => { if (m && isTBD(m.t1) && v) { m.t1 = v; changed = true; } };
+    const assignT2 = (m, v) => { if (m && isTBD(m.t2) && v) { m.t2 = v; changed = true; } };
+
+    // Play-in
+    const pi1M = findM('lcs_pi1');
+    assignT1(pi1M, getSeedName(6)); assignT2(pi1M, getSeedName(7));
+    const pi1W = getWinner(pi1M);
+
+    // Upper bracket R1 — seed1 picks opponent from 3/4 (90% picks seed4)
+    const po1M = findM('lcs_po1'); const po2M = findM('lcs_po2');
+    assignT1(po1M, getSeedName(1)); assignT1(po2M, getSeedName(2));
+    if (po1M && isTBD(po1M.t2) && getSeedName(3) && getSeedName(4)) {
+      const picks4 = Math.random() < 0.90;
+      po1M.t2 = picks4 ? getSeedName(4) : getSeedName(3);
+      if (po2M && isTBD(po2M.t2)) po2M.t2 = picks4 ? getSeedName(3) : getSeedName(4);
+      changed = true;
+    }
+    const po1W = getWinner(po1M), po1L = getLoser(po1M);
+    const po2W = getWinner(po2M), po2L = getLoser(po2M);
+
+    // UB Final (po3)
+    const po3M = findM('lcs_po3');
+    assign(po3M, po1W, po2W);
+    const po3W = getWinner(po3M), po3L = getLoser(po3M);
+
+    // LB R1 (po4): seed5 vs po1 loser
+    const po4M = findM('lcs_po4');
+    assignT1(po4M, getSeedName(5)); assignT2(po4M, po1L);
+    const po4W = getWinner(po4M);
+
+    // LB R1 (po5): pi1 winner vs po2 loser
+    const po5M = findM('lcs_po5');
+    assign(po5M, pi1W, po2L);
+    const po5W = getWinner(po5M);
+
+    // LB R2 (po6)
+    const po6M = findM('lcs_po6');
+    assign(po6M, po4W, po5W);
+    const po6W = getWinner(po6M);
+
+    // LB Final (po7): po3 loser vs po6 winner
+    const po7M = findM('lcs_po7');
+    assign(po7M, po3L, po6W);
+    const po7W = getWinner(po7M);
+
+    // Grand Final (po8)
+    const po8M = findM('lcs_po8');
+    assign(po8M, po3W, po7W);
+
+    return {
+      matches: [...regularMatches, ...playoffs],
+      seeds,
+      changed,
+    };
+  };
+
   // ── [LCS] Fill in Swiss round 2/3 team slots immediately after each match ──
   // Mirrors the same logic in ScheduleTab so the dashboard doesn't need a tab
   // visit to discover the next match.
@@ -1917,13 +2040,25 @@ const handleMatchClick = (match) => {
         );
 
         // LCS Swiss: fill in round 2/3 team slots as soon as the previous round finishes
+        let lcsPoSeeds = null;
         if (myLeague === 'LCS') {
           const lgTeams = FOREIGN_LEAGUES['LCS'] || [];
           const { matches: swissAdvanced, changed } = advanceLCSSwissRounds(updatedForeignMatches, lgTeams);
           if (changed) updatedForeignMatches = swissAdvanced;
+
+          // LCS Playoffs: generate bracket + advance team slots as soon as swiss is done
+          const { matches: poAdvanced, seeds: poSeeds, changed: poChanged } = advanceLCSPlayoffBracket(updatedForeignMatches);
+          if (poChanged) {
+            updatedForeignMatches = poAdvanced;
+            lcsPoSeeds = poSeeds;
+          }
         }
 
-        const baseLeague = { ...league, foreignMatches: { ...league.foreignMatches, [myLeague]: updatedForeignMatches } };
+        const baseLeague = {
+          ...league,
+          foreignMatches: { ...league.foreignMatches, [myLeague]: updatedForeignMatches },
+          ...(lcsPoSeeds ? { foreignPlayoffSeeds: { ...(league.foreignPlayoffSeeds || {}), LCS: lcsPoSeeds } } : {}),
+        };
         const advanced = advanceForeignBracketIfNeeded(baseLeague, myLeague);
         const updatedLeague = advanced.league;
         updateLeague(league.id, updatedLeague);
@@ -2049,15 +2184,24 @@ const handleMatchClick = (match) => {
         );
 
         // LCS Swiss: fill in round 2/3 team slots immediately after each match
+        let lcsPoSeeds = null;
         if (myLeague === 'LCS') {
           const lgTeams = FOREIGN_LEAGUES['LCS'] || [];
           const { matches: swissAdvanced, changed } = advanceLCSSwissRounds(updatedForeignMatches, lgTeams);
           if (changed) updatedForeignMatches = swissAdvanced;
+
+          // LCS Playoffs: generate bracket + advance team slots as soon as swiss is done
+          const { matches: poAdvanced, seeds: poSeeds, changed: poChanged } = advanceLCSPlayoffBracket(updatedForeignMatches);
+          if (poChanged) {
+            updatedForeignMatches = poAdvanced;
+            lcsPoSeeds = poSeeds;
+          }
         }
 
         const baseLeague = {
           ...league,
-          foreignMatches: { ...league.foreignMatches, [myLeague]: updatedForeignMatches }
+          foreignMatches: { ...league.foreignMatches, [myLeague]: updatedForeignMatches },
+          ...(lcsPoSeeds ? { foreignPlayoffSeeds: { ...(league.foreignPlayoffSeeds || {}), LCS: lcsPoSeeds } } : {}),
         };
         updatedLeague = advanceForeignBracketIfNeeded(baseLeague, myLeague).league;
       } else {
