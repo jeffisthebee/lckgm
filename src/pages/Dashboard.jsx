@@ -2370,6 +2370,15 @@ const handleMatchClick = (match) => {
     };
   
     const handleLiveMatchComplete = (match, resultData) => {
+      // [FIX] Normalize qualifier round — BracketManager sometimes stores
+      // 결승 진출전 as round:5 with a '진출' label. Normalise to round:4
+      // so the result modal doesn't display "Finals MVP" for that match.
+      const normalizedMatch = (
+        match.type === 'playoff' &&
+        match.round === 5 &&
+        String(match.label || '').includes('진출')
+      ) ? { ...match, round: 4, label: '결승 진출전' } : match;
+
       const result = {
         winner: resultData.winner,
         score: resultData.scoreString,
@@ -2382,7 +2391,7 @@ const handleMatchClick = (match) => {
       if (isMyLeagueForeign) {
         // ── Save to foreignMatches[myLeague] ──────────────────────────────
         let updatedForeignMatches = (league.foreignMatches?.[myLeague] || []).map(m =>
-          m.id === match.id ? { ...m, status: 'finished', result } : m
+          m.id === normalizedMatch.id ? { ...m, status: 'finished', result } : m
         );
 
         // LCS Swiss: fill in round 2/3 team slots immediately after each match
@@ -2408,19 +2417,32 @@ const handleMatchClick = (match) => {
         updatedLeague = advanceForeignBracketIfNeeded(baseLeague, myLeague).league;
       } else {
         // ── Save to league.matches (LCK) ──────────────────────────────────
+        // Store the normalised match (round:4 qualifier fix applied above)
         const updatedMatches = (league.matches || []).map(m =>
-          m.id === match.id ? { ...m, status: 'finished', result } : m
+          m.id === normalizedMatch.id
+            ? { ...m, ...normalizedMatch, status: 'finished', result }
+            : m
         );
         updatedLeague = { ...league, matches: updatedMatches };
-        checkAndGenerateNextPlayInRound(updatedMatches);
-        checkAndGenerateNextPlayoffRound(updatedMatches);
       }
 
+      // [FIX] Commit state FIRST, then generate next rounds.
+      // Calling checkAndGenerate* before setLeague caused them to call
+      // setLeague(prev=>{...}) which was immediately overwritten by the
+      // setLeague(updatedLeague) below — making the next round disappear
+      // from state until a manual refresh.
       updateLeague(league.id, updatedLeague);
       setLeague(updatedLeague);
       recalculateStandings(updatedLeague);
       setIsLiveGameMode(false);
       setLiveMatchData(null);
+
+      // Generate next LCK bracket round only after state is committed
+      if (!isMyLeagueForeign) {
+        checkAndGenerateNextPlayInRound(updatedLeague.matches);
+        checkAndGenerateNextPlayoffRound(updatedLeague.matches);
+      }
+
       setTimeout(() => alert(`경기 종료! 승리: ${resultData.winner}`), 100);
     };
   
