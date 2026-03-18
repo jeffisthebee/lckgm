@@ -788,7 +788,7 @@ export default function AwardsTab({ league, teams, myLeague: myLeagueProp }) {
             (currentLeague === 'LCS' && m.id === 'lcs_po8') ||
             (currentLeague === 'CBLOL' && m.id === 'cblol_po10') ||
             (currentLeague === 'LEC' && m.id === 'lec_po_final') ||
-            (m.label && (m.label.trim() === '결승' || m.label.toUpperCase() === 'FINAL' || m.label.toUpperCase().includes('GRAND FINAL')))
+            (m.label && (m.label.trim() === '결승전' || m.label.toUpperCase() === 'GRAND FINAL'))
         );
 
         if (explicitFinal) {
@@ -798,7 +798,9 @@ export default function AwardsTab({ league, teams, myLeague: myLeagueProp }) {
         return playoffs.every(m => m.status === 'finished');
     }, [activeLeagueData, currentLeague]);
 
-    const hasCustomScale = isLEC || isLPL || isFST;
+    // All non-LCK leagues must go through reapplyScale — statsManager's rank-point
+    // logic is built for LCK's numeric team IDs and returns 0 for foreign name strings.
+    const hasCustomScale = !isLCK;
 
     const customRegularLeagueData = useMemo(() => {
         if (!hasCustomScale) return null;
