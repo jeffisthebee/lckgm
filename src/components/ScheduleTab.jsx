@@ -313,54 +313,107 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                 });
                 return st;
             };
-
-            [2, 3].forEach(roundNum => {
-                const roundMatches = schedule.filter(m => m.swissRound === roundNum);
-                if (roundMatches.some(m => !m.t1 || !m.t2)) {
-                    const prevRoundFinished = schedule.filter(m => m.swissRound === roundNum - 1).every(m => m.status === 'finished');
-                    if (prevRoundFinished) {
-                        const pastMatches = schedule.filter(m => m.swissRound < roundNum && m.status === 'finished');
-                        const st = getSwissStandings(pastMatches);
-                        const pools = {};
-                        Object.entries(st).forEach(([tName, record]) => {
-                            const bracketStr = `${record.w}-${record.l}`;
-                            if (!pools[bracketStr]) pools[bracketStr] = [];
-                            pools[bracketStr].push(tName);
-                        });
-
-                        roundMatches.forEach(m => {
-                            if (!m.t1 || !m.t2) {
-                                let pool = pools[m.bracket] || [];
-                                pool = [...new Set(pool)]; 
-                                if (pool.length >= 2) {
-                                    pool = pool.sort(() => Math.random() - 0.5); 
-                                    let t1 = pool[0];
-                                    let t2Index = pool.findIndex((t, idx) => idx > 0 && !st[t1].played.includes(t));
-                                    if (t2Index <= 0) t2Index = 1; 
-                                    let t2 = pool[t2Index];
-                                    if (t1 === t2) {
-                                        const emergencyT2 = pool.find(t => t !== t1);
-                                        if (emergencyT2) t2 = emergencyT2;
-                                        else t2 = lgTeams.find(t => t.name !== t1).name; 
-                                    }
-                                    m.t1 = t1;
-                                    m.t2 = t2;
-                                    pools[m.bracket] = pool.filter(t => t !== t1 && t !== t2);
-                                    isUpdated = true;
-                                } else {
-                                    const assigned = roundMatches.flatMap(rm => [rm.t1, rm.t2]).filter(Boolean);
-                                    const remaining = lgTeams.map(t => t.name).filter(t => !assigned.includes(t));
-                                    if (remaining.length >= 2) {
-                                        m.t1 = remaining[0];
-                                        m.t2 = remaining[1];
-                                        isUpdated = true;
-                                    }
-                                }
-                            }
-                        });
+        
+            // Ensure all 9 rounds are initially created with TBD teams
+            const totalRounds = 9;
+            const teamsPerRound = 4; // 4 matches = 8 teams per round
+            if (!schedule.some(m => m.swissRound === totalRounds)) {
+                // Generate skeleton for all rounds if they don't exist
+                for (let round = 1; round <= totalRounds; round++) {
+                    for (let match = 1; match <= teamsPerRound; match++) {
+                        if (!schedule.find(m => m.swissRound === round && m.match === match)) {
+                            schedule.push({
+                                id: `lcs_swiss_r${round}g${match}`,
+                                swissRound: round,
+                                match: match,
+                                bracket: '', // Will be filled as teams are assigned
+                                t1: 'TBD',
+                                t2: 'TBD',
+                                date: `3.${10 + round} (수)`, // Placeholder dates
+                                time: match <= 2 ? '16:00' : '18:00',
+                                type: 'regular',
+                                format: 'BO1',
+                                status: 'pending'
+                            });
+                        }
                     }
                 }
-            });
+                isUpdated = true;
+            }
+        
+            // NOW fill in matches for rounds 2-9 as previous round finishes
+            for (let roundNum = 2; roundNum <= totalRounds; roundNum++) {
+                const roundMatches = schedule.filter(m => m.swissRound === roundNum);
+                const prevRoundMatches = schedule.filter(m => m.swissRound === roundNum - 1);
+                
+                // Only proceed if previous round is completely finished
+                if (!prevRoundMatches.every(m => m.status === 'finished')) continue;
+                
+                // Check if ANY match in this round still needs teams
+                if (!roundMatches.some(m => !m.t1 || !m.t2 || m.t1 === 'TBD' || m.t2 === 'TBD')) continue;
+        
+                const pastMatches = schedule.filter(m => m.swissRound < roundNum && m.status === 'finished');
+                const st = getSwissStandings(pastMatches);
+                
+                const pools = {};
+                Object.entries(st).forEach(([tName, record]) => {
+                    const bracketStr = `${record.w}-${record.l}`;
+                    if (!pools[bracketStr]) pools[bracketStr] = [];
+                    pools[bracketStr].push(tName);
+                });
+        
+                // Sort pools by bracket key to ensure consistent seeding
+                const sortedBrackets = Object.keys(pools).sort((a, b) => {
+                    const [aW, aL] = a.split('-').map(Number);
+                    const [bW, bL] = b.split('-').map(Number);
+                    return bW - aW || aL - bL; // Higher W first, then lower L
+                });
+        
+                roundMatches.forEach(m => {
+                    if (!m.t1 || !m.t2 || m.t1 === 'TBD' || m.t2 === 'TBD') {
+                        // Determine which bracket this match belongs to based on its position
+                        const bracketIndex = m.match - 1;
+                        const bracket = sortedBrackets[bracketIndex];
+                        
+                        if (bracket && pools[bracket] && pools[bracket].length >= 2) {
+                            let pool = [...pools[bracket]];
+                            pool = pool.sort(() => Math.random() - 0.5);
+                            
+                            let t1 = pool[0];
+                            // Find opponent that hasn't played t1 yet
+                            let t2Index = pool.findIndex((t, idx) => idx > 0 && !st[t1]?.played.includes(t));
+                            if (t2Index < 0) t2Index = 1; // Fallback: just pick second team
+                            
+                            let t2 = pool[t2Index];
+                            
+                            if (t1 && t2 && t1 !== t2) {
+                                m.t1 = t1;
+                                m.t2 = t2;
+                                m.bracket = bracket;
+                                m.status = 'pending';
+                                
+                                // Remove assigned teams from pool
+                                pools[bracket] = pools[bracket].filter(t => t !== t1 && t !== t2);
+                                isUpdated = true;
+                            }
+                        } else if (pools[bracket]?.length === 1) {
+                            // Only one team in bracket - pair with next available
+                            const t1 = pools[bracket][0];
+                            const allAssigned = new Set(schedule.filter(sm => sm.swissRound === roundNum).flatMap(sm => [sm.t1, sm.t2]).filter(t => t && t !== 'TBD'));
+                            const available = lgTeams.map(t => t.name).filter(t => !allAssigned.has(t) && t !== t1);
+                            
+                            if (available.length > 0) {
+                                m.t1 = t1;
+                                m.t2 = available[0];
+                                m.bracket = bracket;
+                                m.status = 'pending';
+                                pools[bracket] = [];
+                                isUpdated = true;
+                            }
+                        }
+                    }
+                });
+            }
         }
 
         const getMatchMeta = (matchObj) => {
