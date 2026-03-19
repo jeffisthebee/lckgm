@@ -429,14 +429,26 @@ const getOvrBadgeStyle = (ovr) => {
             if (r3.length === 0 || !r3.every(m => m.status === 'finished')) return;
 
             const directPO = league.seasonSummary?.poTeams || [];
-            const playInQualifiers = playinMatches
-                .filter(m => m.status === 'finished')
-                .reduce((acc, m) => {
-                    const winner = teams.find(t => t.name === m.result?.winner);
-                    if (winner && !acc.some(a => a.id === winner.id) && !directPO.some(d => d.id === winner.id))
-                        acc.push(winner);
-                    return acc;
-                }, [])
+
+            // ONLY collect winners from rounds 2 and 3 — NOT round 1.
+            // Round 1 winners who then LOST round 2 are eliminated and must not get a playoff spot.
+            // The old code iterated ALL play-in matches chronologically, so R1 winners appeared
+            // first and .slice(0,3) picked them over the actual R2/R3 qualifiers (e.g. DNS who
+            // won R1 then lost R2 still occupied a slot, displacing the real R3 winner).
+            const r2Winners = playinMatches
+                .filter(m => m.round === 2 && m.status === 'finished')
+                .map(m => teams.find(t => t.name === m.result?.winner))
+                .filter(Boolean)
+                .filter(w => !directPO.some(d => d.id === w.id));
+
+            const r3Winners = playinMatches
+                .filter(m => m.round === 3 && m.status === 'finished')
+                .map(m => teams.find(t => t.name === m.result?.winner))
+                .filter(Boolean)
+                .filter(w => !directPO.some(d => d.id === w.id));
+
+            const playInQualifiers = [...r2Winners, ...r3Winners]
+                .filter((w, i, arr) => arr.findIndex(a => a.id === w.id) === i) // deduplicate
                 .slice(0, 3)
                 .map((t, i) => {
                     const orig = league.playInSeeds?.find(s => s.id === t.id);
