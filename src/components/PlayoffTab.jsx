@@ -740,9 +740,9 @@ const PlayoffTab = ({
         const dispR2m1  = mk(r2m1Raw,  s1,               cW(dispR1m1));
         const dispR2m2  = mk(r2m2Raw,  s2,               cW(dispR1m2));
         const dispR2lm1 = mk(r2lm1Raw, cL(dispR1m1),     cL(dispR1m2));
-        const dispR2lm2 = mk(r2lm2Raw, r2HigherLoser,    cW(dispR2lm1));
+        const dispR2lm2 = mk(r2lm2Raw, r2LowerLoser,     cW(dispR2lm1));  // worse seed (higher #) plays 패자조 2R
         const dispR3m1  = mk(r3m1Raw,  cW(dispR2m1),     cW(dispR2m2));
-        const dispR3lm1 = mk(r3lm1Raw, r2LowerLoser,     cW(dispR2lm2));
+        const dispR3lm1 = mk(r3lm1Raw, r2HigherLoser,    cW(dispR2lm2));  // better seed (lower #) gets bye to 패자조 3R
         const dispR4m1  = mk(r4m1Raw,  cL(dispR3m1),     cW(dispR3lm1));
         const dispFinal = mk(r5m1Raw,  cW(dispR3m1),     cW(dispR4m1));
 
