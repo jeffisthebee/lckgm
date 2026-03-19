@@ -1174,12 +1174,14 @@ const getOvrBadgeStyle = (ovr) => {
             return String(lA) === String(r2HigherLoser) ? lB : lA;
         })();
 
-        // Expected teams for each bracket slot
+        // Expected teams for each bracket slot.
+        // r2HigherLoser = lower seed number = BETTER team → gets the bye directly to 3.1 (패자조 3라운드).
+        // r2LowerLoser  = higher seed number = WORSE team → must play through 2.2 (패자조 2라운드) first.
         const expected = {
             '2.1': [getL(r1m1),       getL(r1m2)],
-            '2.2': [r2HigherLoser,     getW(r2lm1)],
+            '2.2': [r2LowerLoser,      getW(r2lm1)],
             '3':   [getW(r2m1),        getW(r2m2)],
-            '3.1': [r2LowerLoser,      getW(r2lm2)],
+            '3.1': [r2HigherLoser,     getW(r2lm2)],
             '4':   [getL(r3m1),        getW(r3lm1)],
             '5':   [getW(r3m1),        getW(r4m1)],
         };
@@ -1786,15 +1788,16 @@ const handleMatchClick = (match) => {
           const seedsList = league.playoffSeeds || [];
           const losers = r2uMs.map(m => getLId(m)).filter(Boolean);
           const getSeed = (id) => seedsList.find(s => String(s.id) === String(id))?.seed ?? 99;
-          // Higher-ranked (lower seed number) loser faces the R2.1 winner in round 2.2
-          const higherRankedLoser = losers.length === 2
-              ? (getSeed(losers[0]) <= getSeed(losers[1]) ? losers[0] : losers[1])
+          // LOWER-ranked (higher seed number = worse team) loser plays in 2.2 against R2.1 winner.
+          // HIGHER-ranked (lower seed number = better team) loser gets the bye directly to 3.1.
+          const lowerRankedLoser = losers.length === 2
+              ? (getSeed(losers[0]) >= getSeed(losers[1]) ? losers[0] : losers[1])
               : (losers[0] || null);
           const r2lWinner = r2lMs ? getWId(r2lMs) : null;
           newMatches = [...newMatches, {
               id: Date.now() + 560,
               round: 2.2, match: 1, label: '패자조 2라운드',
-              t1: higherRankedLoser || 'TBD', t2: r2lWinner || 'TBD',
+              t1: lowerRankedLoser || 'TBD', t2: r2lWinner || 'TBD',
               date: '2.20 (목)', time: '17:00',
               type: 'playoff', format: 'BO5', status: 'pending'
           }];
