@@ -569,7 +569,11 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
 
                 if (matchObj.status === 'finished') {
                     const wId = findGlobalTeam(matchObj.result.winner, teams).name;
-                    const lId = wId === findGlobalTeam(matchObj.t1, teams).name ? matchObj.t2 : matchObj.t1;
+                    // Always resolve BOTH winner and loser to names so downstream assignments
+                    // are consistent regardless of whether raw ids or names are stored.
+                    const t1Name = findGlobalTeam(matchObj.t1, teams).name;
+                    const t2Name = findGlobalTeam(matchObj.t2, teams).name;
+                    const lId = (wId && t1Name && wId === t1Name) ? t2Name : t1Name;
                     return { winnerId: wId, loserId: lId };
                 }
 
@@ -585,7 +589,10 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                     Object.assign(matchObj, simulatedMatch); 
                     isUpdated = true; 
                     const wId = findGlobalTeam(simulatedMatch.result.winner, teams).name;
-                    const lId = wId === findGlobalTeam(matchObj.t1, teams).name ? matchObj.t2 : matchObj.t1;
+                    // Resolve both to names — avoids raw-id vs resolved-name mismatch
+                    const t1Name = findGlobalTeam(matchObj.t1, teams).name;
+                    const t2Name = findGlobalTeam(matchObj.t2, teams).name;
+                    const lId = (wId && t1Name && wId === t1Name) ? t2Name : t1Name;
                     return { winnerId: wId, loserId: lId };
                 }
 
@@ -725,12 +732,25 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
 
                 const po1Match = playoffs.find(m => m.id === 'cblol_po1');
                 assignT1(po1Match, getSeedId(3));
-                if (pi2.winnerId && pi3.winnerId && !po1Match.t2) { po1Match.t2 = Math.random() < 0.90 ? pi3.winnerId : pi2.winnerId; isUpdated = true; }
+                if (pi2.winnerId && pi3.winnerId && !po1Match.t2) {
+                    // Guard: if pi2.winner === pi3.winner (data corruption), prefer pi3.winner for po1
+                    // and leave po2 empty rather than put the same team in both slots.
+                    const qual1 = pi3.winnerId;
+                    const qual2 = (pi2.winnerId !== pi3.winnerId) ? pi2.winnerId : null;
+                    po1Match.t2 = qual1;
+                    isUpdated = true;
+                    const po2Match2 = playoffs.find(m => m.id === 'cblol_po2');
+                    if (qual2 && po2Match2 && !po2Match2.t2) { po2Match2.t2 = qual2; isUpdated = true; }
+                }
                 const po1 = simPlayoffMatch('cblol_po1');
 
                 const po2Match = playoffs.find(m => m.id === 'cblol_po2');
                 assignT1(po2Match, getSeedId(4));
-                if (pi2.winnerId && pi3.winnerId && !po2Match.t2) { po2Match.t2 = po1Match.t2 === pi3.winnerId ? pi2.winnerId : pi3.winnerId; isUpdated = true; }
+                if (pi2.winnerId && pi3.winnerId && !po2Match.t2) {
+                    // Fallback: if po2.t2 still not set (only 1 qualifier resolved), use pi2.winner
+                    po2Match.t2 = (pi2.winnerId !== pi3.winnerId) ? pi2.winnerId : pi3.winnerId;
+                    isUpdated = true;
+                }
                 const po2 = simPlayoffMatch('cblol_po2');
 
                 const po3Match = playoffs.find(m => m.id === 'cblol_po3');

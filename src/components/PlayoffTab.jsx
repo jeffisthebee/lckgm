@@ -499,10 +499,14 @@ const PlayoffTab = ({
         const dispPi2 = displayMatch(findM('cblol_pi2'), getSeedToken(5), getSeedToken(6));
         const dispPi3 = displayMatch(findM('cblol_pi3'), getMatchWinner(dispPi1), getMatchLoser(dispPi2));
 
-        const dispPo1 = displayMatch(findM('cblol_po1'), getSeedToken(1), getMatchWinner(dispPi3) || getMatchWinner(dispPi2));
-        const dispPo2 = displayMatch(findM('cblol_po2'), getSeedToken(2), getMatchLoser(dispPi3) || getMatchWinner(dispPi2));
-        const dispPo3 = displayMatch(findM('cblol_po3'), getSeedToken(3), getMatchWinner(dispPo1) || getMatchWinner(dispPo2));
-        const dispPo4 = displayMatch(findM('cblol_po4'), getSeedToken(4), getMatchWinner(dispPo2) || getMatchWinner(dispPo1));
+        // po1: seed3 vs pi3.winner (or pi2.winner as fallback)
+        // po2: seed4 vs pi2.winner (or pi3.winner as fallback)
+        // pi3.loser is ELIMINATED — never place them in the playoffs
+        const dispPo1 = displayMatch(findM('cblol_po1'), getSeedToken(3), getMatchWinner(dispPi3) || getMatchWinner(dispPi2));
+        const dispPo2 = displayMatch(findM('cblol_po2'), getSeedToken(4), getMatchWinner(dispPi2) || getMatchWinner(dispPi3));
+        // po3: seed1 picks opponent from po1/po2 winners; po4: seed2 vs the other
+        const dispPo3 = displayMatch(findM('cblol_po3'), getSeedToken(1), getMatchWinner(dispPo1) || getMatchWinner(dispPo2));
+        const dispPo4 = displayMatch(findM('cblol_po4'), getSeedToken(2), getMatchWinner(dispPo2) || getMatchWinner(dispPo1));
         const dispPo5 = displayMatch(findM('cblol_po5'), getMatchWinner(dispPo3), getMatchWinner(dispPo4));
 
         const dispPo6 = displayMatch(findM('cblol_po6'), getMatchLoser(dispPo1), getMatchLoser(dispPo2));
@@ -716,13 +720,18 @@ const PlayoffTab = ({
             return String(m.t1) === String(w) ? m.t2 : m.t1;
         };
 
-        // Higher/lower seed loser of R2 upper
-        const lA2 = cL(r2m1Raw), lB2 = cL(r2m2Raw);
-        const sA2 = seeds.find(s => String(s.id) === String(lA2))?.seed ?? 99;
-        const sB2 = seeds.find(s => String(s.id) === String(lB2))?.seed ?? 99;
-        const r2HigherLoser = (!lA2 && !lB2) ? null : !lA2 ? lB2 : !lB2 ? lA2 : sA2 <= sB2 ? lA2 : lB2;
-        const r2LowerLoser  = (!lA2 && !lB2) ? null : !lA2 ? lB2 : !lB2 ? lA2 :
-                              String(lA2) === String(r2HigherLoser) ? lB2 : lA2;
+        // Higher-seed (lower seed number) loser → better team, gets bye to 패자조 3R
+        // Lower-seed  (higher seed number) loser → worse team, must play through 2.2
+        const r2Losers = (() => {
+            const lA = cL(r2m1Raw), lB = cL(r2m2Raw);
+            const items = [lA, lB].filter(Boolean);
+            if (items.length < 2) return { better: items[0] || null, worse: items[0] || null };
+            const sA = seeds.find(s => String(s.id) === String(items[0]))?.seed ?? 99;
+            const sB = seeds.find(s => String(s.id) === String(items[1]))?.seed ?? 99;
+            return sA <= sB
+                ? { better: items[0], worse: items[1] }
+                : { better: items[1], worse: items[0] };
+        })();
 
         // ── Build display matches: stored data + computed overrides ──────────
         const mk = (raw, expT1, expT2) => {
@@ -743,9 +752,9 @@ const PlayoffTab = ({
         const dispR2m1  = mk(r2m1Raw,  s1,               null);
         const dispR2m2  = mk(r2m2Raw,  s2,               null);
         const dispR2lm1 = mk(r2lm1Raw, cL(dispR1m1),     cL(dispR1m2));
-        const dispR2lm2 = mk(r2lm2Raw, r2LowerLoser,     cW(dispR2lm1));  // worse seed (higher #) plays 패자조 2R
+        const dispR2lm2 = mk(r2lm2Raw, r2Losers.worse,   cW(dispR2lm1));  // worse seed (higher #) plays 패자조 2R
         const dispR3m1  = mk(r3m1Raw,  cW(dispR2m1),     cW(dispR2m2));
-        const dispR3lm1 = mk(r3lm1Raw, r2HigherLoser,    cW(dispR2lm2));  // better seed (lower #) gets bye to 패자조 3R
+        const dispR3lm1 = mk(r3lm1Raw, r2Losers.better,  cW(dispR2lm2));  // better seed (lower #) gets bye to 패자조 3R
         const dispR4m1  = mk(r4m1Raw,  cL(dispR3m1),     cW(dispR3lm1));
         const dispFinal = mk(r5m1Raw,  cW(dispR3m1),     cW(dispR4m1));
 
