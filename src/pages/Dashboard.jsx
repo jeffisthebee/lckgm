@@ -1156,34 +1156,28 @@ const getOvrBadgeStyle = (ovr) => {
             return String(m.t1) === String(w) ? m.t2 : m.t1;
         };
 
-        // Higher-seed (lower seed number) loser of R2 upper
-        const r2HigherLoser = (() => {
+        // Higher-seed (lower seed number) loser of R2 upper → better team, gets bye to 3.1
+        // Lower-seed  (higher seed number) loser of R2 upper → worse team, must play through 2.2
+        const r2Losers = (() => {
             const lA = getL(r2m1), lB = getL(r2m2);
-            if (!lA && !lB) return null;
-            if (!lA) return lB;
-            if (!lB) return lA;
-            const sA = seeds.find(s => String(s.id) === String(lA))?.seed ?? 99;
-            const sB = seeds.find(s => String(s.id) === String(lB))?.seed ?? 99;
-            return sA <= sB ? lA : lB;
-        })();
-        const r2LowerLoser = (() => {
-            const lA = getL(r2m1), lB = getL(r2m2);
-            if (!lA && !lB) return null;
-            if (!lA) return lB;
-            if (!lB) return lA;
-            return String(lA) === String(r2HigherLoser) ? lB : lA;
+            const items = [lA, lB].filter(Boolean);
+            if (items.length < 2) return { better: items[0] || null, worse: items[0] || null };
+            const sA = seeds.find(s => String(s.id) === String(items[0]))?.seed ?? 99;
+            const sB = seeds.find(s => String(s.id) === String(items[1]))?.seed ?? 99;
+            return sA <= sB
+                ? { better: items[0], worse: items[1] }
+                : { better: items[1], worse: items[0] };
         })();
 
         // Expected teams for each bracket slot.
-        // r2HigherLoser = lower seed number = BETTER team → gets the bye directly to 3.1 (패자조 3라운드).
-        // r2LowerLoser  = higher seed number = WORSE team → must play through 2.2 (패자조 2라운드) first.
+        // worse loser (higher seed #) → 2.2, better loser (lower seed #) → 3.1 bye.
         const expected = {
-            '2.1': [getL(r1m1),       getL(r1m2)],
-            '2.2': [r2LowerLoser,      getW(r2lm1)],
-            '3':   [getW(r2m1),        getW(r2m2)],
-            '3.1': [r2HigherLoser,     getW(r2lm2)],
-            '4':   [getL(r3m1),        getW(r3lm1)],
-            '5':   [getW(r3m1),        getW(r4m1)],
+            '2.1': [getL(r1m1),         getL(r1m2)],
+            '2.2': [r2Losers.worse,      getW(r2lm1)],
+            '3':   [getW(r2m1),          getW(r2m2)],
+            '3.1': [r2Losers.better,     getW(r2lm2)],
+            '4':   [getL(r3m1),          getW(r3lm1)],
+            '5':   [getW(r3m1),          getW(r4m1)],
         };
 
         let changed = false;
@@ -1777,31 +1771,67 @@ const handleMatchClick = (match) => {
   if (r2Finished && !r3Exists) {
       let newMatches = createPlayoffRound3Matches(currentMatches, league.playoffSeeds, teams);
 
-      // Safeguard: ensure round 2.2 (패자조 2라운드 - 승자조 2라운드 패자 vs 패자조 2라운드 승자)
-      // was also created by createPlayoffRound3Matches. If not, add it with TBD teams;
-      // the bracket-fill effect will assign the correct team IDs automatically.
-      if (!newMatches.some(m => m.type === 'playoff' && Number(m.round) === 2.2)) {
-          const r2uMs = newMatches.filter(m => m.type === 'playoff' && m.round === 2);
-          const r2lMs = newMatches.find(m => m.type === 'playoff' && Number(m.round) === 2.1);
-          const getWId = (m) => teams.find(t => t.name === m?.result?.winner)?.id ?? null;
-          const getLId = (m) => { const w = getWId(m); if (!w || !m) return null; const t1r = typeof m.t1 === 'object' ? m.t1?.id : m.t1; const t2r = typeof m.t2 === 'object' ? m.t2?.id : m.t2; return String(t1r) === String(w) ? t2r : t1r; };
+      // Always correct the 2.2 and 3.1 team assignments regardless of what BracketManager set.
+      // createPlayoffRound3Matches sometimes swaps r2HigherLoser and r2LowerLoser between slots.
+      // r2LowerLoser  = higher seed number (worse team)  → must play through 2.2
+      // r2HigherLoser = lower  seed number (better team) → gets bye directly to 3.1
+      (() => {
+          const getWId = (m) => {
+              if (!m || m.status !== 'finished' || !m.result?.winner) return null;
+              const w = m.result.winner;
+              const t1t = teams.find(t => String(t.id) === String(m.t1));
+              const t2t = teams.find(t => String(t.id) === String(m.t2));
+              if (t1t?.name === w) return m.t1;
+              if (t2t?.name === w) return m.t2;
+              return teams.find(t => t.name === w)?.id ?? null;
+          };
+          const getLId = (m) => {
+              const w = getWId(m);
+              if (!w || !m) return null;
+              return String(m.t1) === String(w) ? m.t2 : m.t1;
+          };
+
           const seedsList = league.playoffSeeds || [];
-          const losers = r2uMs.map(m => getLId(m)).filter(Boolean);
-          const getSeed = (id) => seedsList.find(s => String(s.id) === String(id))?.seed ?? 99;
-          // LOWER-ranked (higher seed number = worse team) loser plays in 2.2 against R2.1 winner.
-          // HIGHER-ranked (lower seed number = better team) loser gets the bye directly to 3.1.
-          const lowerRankedLoser = losers.length === 2
-              ? (getSeed(losers[0]) >= getSeed(losers[1]) ? losers[0] : losers[1])
-              : (losers[0] || null);
-          const r2lWinner = r2lMs ? getWId(r2lMs) : null;
-          newMatches = [...newMatches, {
-              id: Date.now() + 560,
-              round: 2.2, match: 1, label: '패자조 2라운드',
-              t1: lowerRankedLoser || 'TBD', t2: r2lWinner || 'TBD',
-              date: '2.20 (목)', time: '17:00',
-              type: 'playoff', format: 'BO5', status: 'pending'
-          }];
-      }
+          const getSeedNum = (id) => seedsList.find(s => String(s.id) === String(id))?.seed ?? 99;
+
+          // Identify the two R2 upper matches
+          const r2uMs = newMatches.filter(m => m.type === 'playoff' && m.round === 2);
+          const lossers = r2uMs.map(m => getLId(m)).filter(Boolean);
+          if (lossers.length < 2) return; // R2 not fully resolved yet
+
+          // Sort by seed: lossers[0] = better seeded (lower seed number), lossers[1] = worse
+          lossers.sort((a, b) => getSeedNum(a) - getSeedNum(b));
+          const betterLoser = lossers[0]; // goes to 3.1 (bye)
+          const worseLoser  = lossers[1]; // goes to 2.2 (must play again)
+
+          const r2lMs = newMatches.find(m => m.type === 'playoff' && Number(m.round) === 2.1);
+          const r2lWinner = getWId(r2lMs); // winner of 패자조 1라운드
+
+          // Fix or create round 2.2 (패자조 2라운드): worseLoser vs r2lWinner
+          const m22Idx = newMatches.findIndex(m => m.type === 'playoff' && Number(m.round) === 2.2);
+          if (m22Idx >= 0) {
+              newMatches = newMatches.map((m, i) =>
+                  i === m22Idx ? { ...m, t1: worseLoser, t2: r2lWinner || m.t2 } : m
+              );
+          } else {
+              newMatches = [...newMatches, {
+                  id: Date.now() + 560,
+                  round: 2.2, match: 1, label: '패자조 2라운드',
+                  t1: worseLoser, t2: r2lWinner || 'TBD',
+                  date: '2.20 (목)', time: '17:00',
+                  type: 'playoff', format: 'BO5', status: 'pending'
+              }];
+          }
+
+          // Fix or create round 3.1 (패자조 3라운드): betterLoser vs winner-of-2.2 (TBD for now)
+          const m31Idx = newMatches.findIndex(m => m.type === 'playoff' && Number(m.round) === 3.1);
+          if (m31Idx >= 0) {
+              newMatches = newMatches.map((m, i) =>
+                  i === m31Idx ? { ...m, t1: betterLoser } : m
+              );
+          }
+          // (3.1 creation is handled by createPlayoffLoserRound3Match later)
+      })();
 
       updateLeague(league.id, { matches: newMatches });
       setLeague(prev => ({ ...prev, matches: newMatches }));
