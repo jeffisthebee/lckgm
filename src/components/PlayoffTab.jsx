@@ -737,8 +737,11 @@ const PlayoffTab = ({
 
         const dispR1m1  = mk(r1m1Raw,  s3,               sid(6));
         const dispR1m2  = mk(r1m2Raw,  s4,               sid(5));
-        const dispR2m1  = mk(r2m1Raw,  s1,               cW(dispR1m1));
-        const dispR2m2  = mk(r2m2Raw,  s2,               cW(dispR1m2));
+        // For R2, only force t1 (seeds 1 & 2 are always deterministic).
+        // t2 is the picked opponent — trust the stored value so the actual pick is shown correctly.
+        // Only fall back to computed R1 winner if stored t2 is genuinely TBD.
+        const dispR2m1  = mk(r2m1Raw,  s1,               null);
+        const dispR2m2  = mk(r2m2Raw,  s2,               null);
         const dispR2lm1 = mk(r2lm1Raw, cL(dispR1m1),     cL(dispR1m2));
         const dispR2lm2 = mk(r2lm2Raw, r2LowerLoser,     cW(dispR2lm1));  // worse seed (higher #) plays 패자조 2R
         const dispR3m1  = mk(r3m1Raw,  cW(dispR2m1),     cW(dispR2m2));
