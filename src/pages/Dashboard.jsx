@@ -1130,10 +1130,10 @@ const getOvrBadgeStyle = (ovr) => {
         const r2m1 = r2All.find(m => [String(m.t1),String(m.t2)].includes(String(s1))) || r2All[0] || null;
         const r2m2 = r2All.find(m => [String(m.t1),String(m.t2)].includes(String(s2))) || r2All[1] || null;
 
-        const r2lm1 = po.find(m => m.round === 2.1) || null;
-        const r2lm2 = po.find(m => m.round === 2.2) || null;
+        const r2lm1 = po.find(m => Number(m.round) === 2.1) || null;
+        const r2lm2 = po.find(m => Number(m.round) === 2.2) || null;
         const r3m1  = po.find(m => m.round === 3)   || null;
-        const r3lm1 = po.find(m => m.round === 3.1) || null;
+        const r3lm1 = po.find(m => Number(m.round) === 3.1) || null;
         // qualifier may be stored as round:4 (correct) or round:5 (BracketManager bug)
         const r4m1  = po.find(m => m.round === 4) ||
                       po.find(m => m.round === 5 && String(m.label||'').includes('진출')) || null;
@@ -1709,7 +1709,7 @@ const handleMatchClick = (match) => {
         const generateR2Matches = (pickedWinner) => {
           const remainingWinner = r1Winners.find(w => w.id !== pickedWinner.id).id;
           
-          const newMatches = createPlayoffRound2Matches(
+          let newMatches = createPlayoffRound2Matches(
               currentMatches,
               seed1,
               seed2,
@@ -1718,6 +1718,25 @@ const handleMatchClick = (match) => {
               r1Losers[0].id,
               r1Losers[1].id
           );
+          
+          // Safeguard: createPlayoffRound2Matches sometimes omits the 패자조 2라운드 (round 2.1) match.
+          // Without it, r2Finished is never true, so ALL downstream rounds (3, 2.2, 3.1, 4, 5)
+          // are never generated either. Manually add it here if missing.
+          if (!newMatches.some(m => m.type === 'playoff' && Number(m.round) === 2.1)) {
+              newMatches = [...newMatches, {
+                  id: Date.now() + 550,
+                  round: 2.1,
+                  match: 1,
+                  label: '패자조 2라운드',
+                  t1: r1Losers[0].id,
+                  t2: r1Losers[1].id,
+                  date: '2.18 (화)',
+                  time: '17:00',
+                  type: 'playoff',
+                  format: 'BO5',
+                  status: 'pending'
+              }];
+          }
           
           updateLeague(league.id, { matches: newMatches });
           setLeague(prev => ({ ...prev, matches: newMatches }));
@@ -1749,12 +1768,38 @@ const handleMatchClick = (match) => {
     }
 
   const r2wMatches = currentMatches.filter(m => m.type === 'playoff' && m.round === 2);
-  const r2lMatch = currentMatches.find(m => m.type === 'playoff' && m.round === 2.1);
+  const r2lMatch = currentMatches.find(m => m.type === 'playoff' && Number(m.round) === 2.1);
   const r2Finished = r2wMatches.length === 2 && r2wMatches.every(m => m.status === 'finished') && r2lMatch?.status === 'finished';
   const r3Exists = currentMatches.some(m => m.type === 'playoff' && m.round === 3);
 
   if (r2Finished && !r3Exists) {
-      const newMatches = createPlayoffRound3Matches(currentMatches, league.playoffSeeds, teams);
+      let newMatches = createPlayoffRound3Matches(currentMatches, league.playoffSeeds, teams);
+
+      // Safeguard: ensure round 2.2 (패자조 2라운드 - 승자조 2라운드 패자 vs 패자조 2라운드 승자)
+      // was also created by createPlayoffRound3Matches. If not, add it with TBD teams;
+      // the bracket-fill effect will assign the correct team IDs automatically.
+      if (!newMatches.some(m => m.type === 'playoff' && Number(m.round) === 2.2)) {
+          const r2uMs = newMatches.filter(m => m.type === 'playoff' && m.round === 2);
+          const r2lMs = newMatches.find(m => m.type === 'playoff' && Number(m.round) === 2.1);
+          const getWId = (m) => teams.find(t => t.name === m?.result?.winner)?.id ?? null;
+          const getLId = (m) => { const w = getWId(m); if (!w || !m) return null; const t1r = typeof m.t1 === 'object' ? m.t1?.id : m.t1; const t2r = typeof m.t2 === 'object' ? m.t2?.id : m.t2; return String(t1r) === String(w) ? t2r : t1r; };
+          const seedsList = league.playoffSeeds || [];
+          const losers = r2uMs.map(m => getLId(m)).filter(Boolean);
+          const getSeed = (id) => seedsList.find(s => String(s.id) === String(id))?.seed ?? 99;
+          // Higher-ranked (lower seed number) loser faces the R2.1 winner in round 2.2
+          const higherRankedLoser = losers.length === 2
+              ? (getSeed(losers[0]) <= getSeed(losers[1]) ? losers[0] : losers[1])
+              : (losers[0] || null);
+          const r2lWinner = r2lMs ? getWId(r2lMs) : null;
+          newMatches = [...newMatches, {
+              id: Date.now() + 560,
+              round: 2.2, match: 1, label: '패자조 2라운드',
+              t1: higherRankedLoser || 'TBD', t2: r2lWinner || 'TBD',
+              date: '2.20 (목)', time: '17:00',
+              type: 'playoff', format: 'BO5', status: 'pending'
+          }];
+      }
+
       updateLeague(league.id, { matches: newMatches });
       setLeague(prev => ({ ...prev, matches: newMatches }));
       alert("👑 플레이오프 3라운드 승자조 및 2라운드 패자조 경기가 생성되었습니다!");
@@ -1764,19 +1809,35 @@ const handleMatchClick = (match) => {
     // --- R3L + R4 + Final: identify matches by seed/round, not by label ------
     // The qualifier (결승 진출전) is whichever playoff match sits between r3.1 and
     // the grand final — we find it by exclusion from all other known rounds.
-    const r2_2Match = currentMatches.find(m => m.type === 'playoff' && m.round === 2.2);
+    const r2_2Match = currentMatches.find(m => m.type === 'playoff' && Number(m.round) === 2.2);
     const r3wMatch = currentMatches.find(m => m.type === 'playoff' && m.round === 3);
-    const r3lExists = currentMatches.some(m => m.type === 'playoff' && m.round === 3.1);
+    const r3lExists = currentMatches.some(m => m.type === 'playoff' && Number(m.round) === 3.1);
 
     if (r2_2Match?.status === 'finished' && r3wMatch?.status === 'finished' && !r3lExists) {
-        const newMatches = createPlayoffLoserRound3Match(currentMatches, league.playoffSeeds, teams);
+        let newMatches = createPlayoffLoserRound3Match(currentMatches, league.playoffSeeds, teams);
+
+        // Safeguard: ensure round 3.1 (패자조 3라운드) was actually created.
+        if (!newMatches.some(m => m.type === 'playoff' && Number(m.round) === 3.1)) {
+            const getWId = (m) => teams.find(t => t.name === m?.result?.winner)?.id ?? null;
+            const getLId = (m) => { const w = getWId(m); if (!w || !m) return null; const t1r = typeof m.t1 === 'object' ? m.t1?.id : m.t1; const t2r = typeof m.t2 === 'object' ? m.t2?.id : m.t2; return String(t1r) === String(w) ? t2r : t1r; };
+            const r3Loser = r3wMatch ? getLId(r3wMatch) : null;
+            const r22Winner = r2_2Match ? getWId(r2_2Match) : null;
+            newMatches = [...newMatches, {
+                id: Date.now() + 570,
+                round: 3.1, match: 1, label: '패자조 3라운드',
+                t1: r3Loser || 'TBD', t2: r22Winner || 'TBD',
+                date: '2.24 (월)', time: '17:00',
+                type: 'playoff', format: 'BO5', status: 'pending'
+            }];
+        }
+
         updateLeague(league.id, { matches: newMatches });
         setLeague(prev => ({ ...prev, matches: newMatches }));
         alert("👑 플레이오프 3라운드 패자조 경기가 생성되었습니다!");
         return;
     }
 
-    const r3lMatch = currentMatches.find(m => m.type === 'playoff' && m.round === 3.1);
+    const r3lMatch = currentMatches.find(m => m.type === 'playoff' && Number(m.round) === 3.1);
 
     // Qualifier: round 4 OR (round 5 + '진출' label) OR the only playoff match
     // whose round is not in {1,2,2.1,2.2,3,3.1} and is not yet the grand final.
