@@ -23,7 +23,7 @@ import {updateLeague, getLeagueById } from '../engine/storage';
 import { 
     generateLPLRegularSchedule, generateLECRegularSchedule,
     generateLCSRegularSchedule, generateLCPRegularSchedule, generateCBLOLRegularSchedule,
-    generateLCSPlayoffs, generateLCKSplit1Schedule
+    generateLCSPlayoffs, generateLCKSplit1Schedule, rescheduleLCKSplit1
 } from '../engine/scheduleLogic';
 import AwardsTab from '../components/AwardsTab';
 import HistoryTab from '../components/HistoryTab'; 
@@ -2817,6 +2817,42 @@ const handleMatchClick = (match) => {
         alert(`❌ 스플릿 1 일정 생성 실패:\n${err.message}`);
       }
     };
+    // ── LCK 스플릿 1 재편성 ──────────────────────────────────────────────────
+    // Strips all existing lck_split1_regular matches (pending only — finished ones
+    // are kept so in-progress seasons aren't broken) and regenerates from scratch.
+    const handleRescheduleLCKSplit1 = () => {
+      try {
+        const existingMatches = league.matches || [];
+        const finishedSplit1 = existingMatches.filter(
+          m => m.type === 'lck_split1_regular' && m.status === 'finished'
+        );
+        if (finishedSplit1.length > 0) {
+          alert(`❌ 이미 ${finishedSplit1.length}개 경기가 진행됐습니다. 재편성은 경기 시작 전에만 가능합니다.`);
+          return;
+        }
+
+        // Remove ALL split1 matches (all are pending at this point)
+        const otherMatches = existingMatches.filter(m => m.type !== 'lck_split1_regular');
+
+        // Generate a fresh schedule
+        const rawMatches = rescheduleLCKSplit1(teams);
+        const split1Matches = rawMatches.map(m => ({
+          ...m,
+          type: 'lck_split1_regular',
+        }));
+
+        const updatedMatches = [...otherMatches, ...split1Matches];
+        const updates = { matches: updatedMatches };
+        setLeague(prev => ({ ...prev, ...updates }));
+        updateLeague(league.id, updates);
+        setActiveTab('schedule');
+        alert(`🔄 스플릿 1 일정 재편성 완료!\n${split1Matches.length}개 경기 새로 생성됨 (4/1 ~ 5/31)`);
+      } catch (err) {
+        console.error('[LCK Split 1] 재편성 오류:', err);
+        alert(`❌ 재편성 실패:\n${err.message}`);
+      }
+    };
+
     const checkAndAdvanceFST = (updatedFstMatches, fstTeams) => {
       let current = [...updatedFstMatches];
 
@@ -3399,6 +3435,16 @@ const handleMatchClick = (match) => {
                 className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-gradient-to-r from-red-700 to-yellow-600 hover:from-red-600 hover:to-yellow-500 text-white shadow-lg flex items-center gap-2 animate-pulse transition border border-yellow-400 whitespace-nowrap"
               >
                 <span>🏆</span> <span className="hidden sm:inline">LCK 스플릿 1 개막</span><span className="sm:hidden">스플릿 1</span>
+              </button>
+            )}
+
+            {/* LCK 스플릿 1 재편성: shown when split1 exists but no matches played yet */}
+            {!isMyLeagueForeign && hasLCKSplit1 && !(league?.matches || []).some(m => m.type === 'lck_split1_regular' && m.status === 'finished') && (
+              <button
+                onClick={handleRescheduleLCKSplit1}
+                className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-gray-700 hover:bg-gray-600 text-white shadow-sm flex items-center gap-2 transition border border-gray-500 whitespace-nowrap"
+              >
+                <span>🔄</span> <span className="hidden sm:inline">일정 재편성</span><span className="sm:hidden">재편성</span>
               </button>
             )}
 
