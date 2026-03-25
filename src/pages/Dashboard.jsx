@@ -3074,6 +3074,69 @@ const handleMatchClick = (match) => {
     // so existing season-over / super-week / play-in guards (which check type === 'regular')
     // are never accidentally triggered by Split 1 matches.
     const hasLCKSplit1 = !!(league?.matches?.some(m => m.type === 'lck_split1_regular'));
+
+    // Detect scheduling violations in the pending Split 1 matches:
+    // 1. Same team playing twice on the same day
+    // 2. A team playing on back-to-back days (e.g. 수 and 목)
+    const hasLCKSplit1Error = (() => {
+      if (!hasLCKSplit1) return false;
+      const pending = (league?.matches || []).filter(
+        m => m.type === 'lck_split1_regular' && m.status === 'pending'
+      );
+      if (pending.length === 0) return false;
+
+      // Group matches by date string
+      const byDate = {};
+      pending.forEach(m => {
+        const d = m.date || '';
+        if (!byDate[d]) byDate[d] = [];
+        byDate[d].push(m);
+      });
+
+      // Build sorted unique date list for back-to-back detection
+      const parseDateNum = (dateStr) => {
+        const [mo, day] = (dateStr || '').split(' ')[0].split('.').map(Number);
+        return (mo || 0) * 100 + (day || 0);
+      };
+      const sortedDates = Object.keys(byDate).sort((a, b) => parseDateNum(a) - parseDateNum(b));
+
+      // Check same-day: a team appears twice on the same date
+      for (const date of sortedDates) {
+        const dayMatches = byDate[date];
+        const seen = new Set();
+        for (const m of dayMatches) {
+          const t1 = String(m.t1), t2 = String(m.t2);
+          if (seen.has(t1) || seen.has(t2)) return true;
+          seen.add(t1);
+          seen.add(t2);
+        }
+      }
+
+      // Check back-to-back: a team plays on two consecutive calendar days
+      // Build map of dateNum → set of teams playing that day
+      const teamsByDateNum = {};
+      sortedDates.forEach(date => {
+        const dn = parseDateNum(date);
+        teamsByDateNum[dn] = new Set();
+        byDate[date].forEach(m => {
+          teamsByDateNum[dn].add(String(m.t1));
+          teamsByDateNum[dn].add(String(m.t2));
+        });
+      });
+      const dateNums = Object.keys(teamsByDateNum).map(Number).sort((a, b) => a - b);
+      for (let i = 0; i < dateNums.length - 1; i++) {
+        const curr = dateNums[i], next = dateNums[i + 1];
+        // Only flag truly consecutive calendar days within the same week
+        // Weeks are Wed(수)~Sun(일), so max gap within a week is 1 day
+        if (next - curr === 1) {
+          for (const team of teamsByDateNum[curr]) {
+            if (teamsByDateNum[next].has(team)) return true;
+          }
+        }
+      }
+
+      return false;
+    })();
   
     const handleGeneratePlayoffs = () => {
       if (!isPlayInFinished || hasPlayoffsGenerated) return;
@@ -3438,13 +3501,13 @@ const handleMatchClick = (match) => {
               </button>
             )}
 
-            {/* LCK 스플릿 1 재편성: shown when split1 exists but no matches played yet */}
-            {!isMyLeagueForeign && hasLCKSplit1 && !(league?.matches || []).some(m => m.type === 'lck_split1_regular' && m.status === 'finished') && (
+            {/* LCK 스플릿 1 재편성: only shown when a scheduling violation is detected */}
+            {!isMyLeagueForeign && hasLCKSplit1Error && (
               <button
                 onClick={handleRescheduleLCKSplit1}
-                className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-gray-700 hover:bg-gray-600 text-white shadow-sm flex items-center gap-2 transition border border-gray-500 whitespace-nowrap"
+                className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-red-600 hover:bg-red-500 text-white shadow-sm flex items-center gap-2 transition border border-red-400 whitespace-nowrap animate-pulse"
               >
-                <span>🔄</span> <span className="hidden sm:inline">일정 재편성</span><span className="sm:hidden">재편성</span>
+                <span>⚠️</span> <span className="hidden sm:inline">일정 오류 — 재편성</span><span className="sm:hidden">재편성</span>
               </button>
             )}
 
