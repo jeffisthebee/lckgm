@@ -3078,6 +3078,7 @@ const handleMatchClick = (match) => {
     // Detect scheduling violations in the pending Split 1 matches:
     // 1. Same team playing twice on the same day
     // 2. A team playing on back-to-back days (e.g. 수 and 목)
+    // 3. A team playing the same opponent in consecutive games
     const hasLCKSplit1Error = (() => {
       if (!hasLCKSplit1) return false;
       const pending = (league?.matches || []).filter(
@@ -3093,14 +3094,13 @@ const handleMatchClick = (match) => {
         byDate[d].push(m);
       });
 
-      // Build sorted unique date list for back-to-back detection
       const parseDateNum = (dateStr) => {
         const [mo, day] = (dateStr || '').split(' ')[0].split('.').map(Number);
         return (mo || 0) * 100 + (day || 0);
       };
       const sortedDates = Object.keys(byDate).sort((a, b) => parseDateNum(a) - parseDateNum(b));
 
-      // Check same-day: a team appears twice on the same date
+      // Check 1: same-day — a team appears twice on the same date
       for (const date of sortedDates) {
         const dayMatches = byDate[date];
         const seen = new Set();
@@ -3112,8 +3112,7 @@ const handleMatchClick = (match) => {
         }
       }
 
-      // Check back-to-back: a team plays on two consecutive calendar days
-      // Build map of dateNum → set of teams playing that day
+      // Check 2: back-to-back calendar days within the same week
       const teamsByDateNum = {};
       sortedDates.forEach(date => {
         const dn = parseDateNum(date);
@@ -3126,12 +3125,27 @@ const handleMatchClick = (match) => {
       const dateNums = Object.keys(teamsByDateNum).map(Number).sort((a, b) => a - b);
       for (let i = 0; i < dateNums.length - 1; i++) {
         const curr = dateNums[i], next = dateNums[i + 1];
-        // Only flag truly consecutive calendar days within the same week
-        // Weeks are Wed(수)~Sun(일), so max gap within a week is 1 day
         if (next - curr === 1) {
           for (const team of teamsByDateNum[curr]) {
             if (teamsByDateNum[next].has(team)) return true;
           }
+        }
+      }
+
+      // Check 3: consecutive games against the same opponent
+      // Build each team's sorted game list and check adjacent entries
+      const teamGames = {};
+      pending.forEach(m => {
+        const t1 = String(m.t1), t2 = String(m.t2);
+        if (!teamGames[t1]) teamGames[t1] = [];
+        if (!teamGames[t2]) teamGames[t2] = [];
+        teamGames[t1].push({ dateNum: parseDateNum(m.date), opponent: t2 });
+        teamGames[t2].push({ dateNum: parseDateNum(m.date), opponent: t1 });
+      });
+      for (const games of Object.values(teamGames)) {
+        games.sort((a, b) => a.dateNum - b.dateNum);
+        for (let i = 0; i < games.length - 1; i++) {
+          if (games[i].opponent === games[i + 1].opponent) return true;
         }
       }
 

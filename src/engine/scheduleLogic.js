@@ -976,32 +976,42 @@ export const generateLCKSplit1Schedule = (teams) => {
     ];
 
     // --- 3. Partition 90 matches into 9 weekly bins of 10 ---
-    // Constraint: each team appears EXACTLY twice per week.
-    // NOTE: No `isBinSchedulable` check here — that check was causing valid bins
-    // to be rejected, eventually triggering the catastrophic sequential fallback
-    // (allMatches.slice) which puts the same team in 9+ games in week 1.
+    // Constraints:
+    //   (a) each team appears EXACTLY twice per week
+    //   (b) a pair {A,B} cannot appear in the same week (prevents same opponent twice in a week)
+    //   (c) a pair {A,B} cannot appear in adjacent weeks (prevents consecutive matchups:
+    //       since each team plays 2 games/week, a ≥2-week gap guarantees other games
+    //       always sit between the two meetings of any pair)
     const partitionIntoWeeks = () => {
-        for (let attempt = 0; attempt < 400; attempt++) {
-            const pool   = shuffle([...allMatches]);
-            const bins   = Array.from({ length: 9 }, () => []);
-            const counts = Array.from({ length: 9 }, () => ({}));
-            let failed   = false;
+        for (let attempt = 0; attempt < 1000; attempt++) {
+            const pool        = shuffle([...allMatches]);
+            const bins        = Array.from({ length: 9 }, () => []);
+            const counts      = Array.from({ length: 9 }, () => ({}));
+            // Track which undirected pair keys appear in each week
+            const pairsInWeek = Array.from({ length: 9 }, () => new Set());
+            let failed        = false;
 
             for (const match of pool) {
+                const pairKey   = [String(match.t1), String(match.t2)].sort().join('|');
                 const weekOrder = shuffle([...Array(9).keys()]);
-                let placed = false;
+                let placed      = false;
+
                 for (const w of weekOrder) {
-                    if (
-                        bins[w].length < 10 &&
-                        (counts[w][match.t1] || 0) < 2 &&
-                        (counts[w][match.t2] || 0) < 2
-                    ) {
-                        bins[w].push(match);
-                        counts[w][match.t1] = (counts[w][match.t1] || 0) + 1;
-                        counts[w][match.t2] = (counts[w][match.t2] || 0) + 1;
-                        placed = true;
-                        break;
-                    }
+                    if (bins[w].length >= 10)             continue;
+                    if ((counts[w][match.t1] || 0) >= 2) continue;
+                    if ((counts[w][match.t2] || 0) >= 2) continue;
+                    // (b) same pair cannot be in the same week
+                    if (pairsInWeek[w].has(pairKey))      continue;
+                    // (c) same pair cannot be in adjacent weeks
+                    if (w > 0 && pairsInWeek[w - 1].has(pairKey)) continue;
+                    if (w < 8 && pairsInWeek[w + 1].has(pairKey)) continue;
+
+                    bins[w].push(match);
+                    counts[w][match.t1]  = (counts[w][match.t1]  || 0) + 1;
+                    counts[w][match.t2]  = (counts[w][match.t2]  || 0) + 1;
+                    pairsInWeek[w].add(pairKey);
+                    placed = true;
+                    break;
                 }
                 if (!placed) { failed = true; break; }
             }
@@ -1010,33 +1020,36 @@ export const generateLCKSplit1Schedule = (teams) => {
         return null;
     };
 
-    // Emergency partition fallback: round-robin rotation guarantees exactly 2
-    // appearances per team per "round" — safe to use as a last resort.
+    // Emergency partition fallback — mathematically guaranteed to satisfy all constraints.
+    // Strategy: Berger rotation gives 9 rounds of 5 undirected pairs (a full round-robin).
+    // Forward direction goes into week W; reverse direction goes into week (W+4)%9.
+    // Gap between the two directed meetings of any pair is always 4 or 5 weeks — well
+    // above the required minimum of 2 weeks — so consecutive matchups are impossible.
     const emergencyPartition = () => {
-        // Berger's round-robin algorithm: rotate all but first team
-        const ids = [...teamIds];
-        const n = ids.length; // 10
-        const bins = [];
-        // We need 9 weeks for a double-RR; generate 9 rounds using rotation
-        // Each round: n/2 directed pairs = 5, but we need 10 (directed), so run 18 rounds
-        // and pick 9 that together cover all 90 directed edges.
-        // Simpler: use the raw ordered pairs but group them carefully.
-        // Build 9 × 10 directed pairs from the rotation schedule.
-        const rotatingRounds = [];
+        const ids  = [...teamIds];
+        const n    = ids.length; // 10
+        const rotIds = [...ids];
+
+        // Build 9 Berger rounds (undirected pairs only)
+        const bergerRounds = [];
         for (let r = 0; r < n - 1; r++) {
             const round = [];
             for (let i = 0; i < n / 2; i++) {
-                const a = ids[i];
-                const b = ids[n - 1 - i];
-                round.push({ t1: a, t2: b });
-                round.push({ t1: b, t2: a });
+                round.push([rotIds[i], rotIds[n - 1 - i]]);
             }
-            rotatingRounds.push(round); // 10 directed matches per round
-            // Rotate all elements except first
-            ids.splice(1, 0, ids.pop());
+            bergerRounds.push(round); // 5 undirected pairs per round
+            // Rotate all elements except the first (Berger's circle method)
+            rotIds.splice(1, 0, rotIds.pop());
         }
-        // rotatingRounds has exactly 9 rounds × 10 directed matches = 90. Done.
-        return rotatingRounds;
+
+        // Combine: week W gets forward matches from round W and
+        // reverse matches from round (W+4)%9 (≥4-week separation between rematches).
+        const bins = Array.from({ length: 9 }, () => []);
+        for (let w = 0; w < 9; w++) {
+            bergerRounds[w].forEach(([a, b]) => bins[w].push({ t1: a, t2: b }));
+            bergerRounds[(w + 4) % 9].forEach(([a, b]) => bins[w].push({ t1: b, t2: a }));
+        }
+        return bins;
     };
 
     const weekBins = partitionIntoWeeks() || emergencyPartition();
