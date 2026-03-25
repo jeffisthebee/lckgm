@@ -1115,6 +1115,8 @@ const getOvrBadgeStyle = (ovr) => {
     // LCK players: auto-fires when all regular matches finish (same as before).
     // Foreign players: button appears when LCK regular season is done → click to apply.
     const meta1602Ref = useRef(false);
+    const metaSplit1InitRef = useRef(false);
+    const metaSplit1PatchRef = useRef({});
 
     // ── LCK Playoff bracket team-fill ────────────────────────────────────────
     // Runs after every match finishes. Recomputes ALL bracket team slots from
@@ -1262,6 +1264,82 @@ const getOvrBadgeStyle = (ovr) => {
         setLeague(prev => ({ ...prev, ...updates }));
         updateLeague(league.id, updates);
     };
+
+    // ── SPLIT 1: Catch-up 16.03 → 16.04 for saves created before this feature ──
+// Fires once when Split 1 matches exist but metaVersion is still pre-16.04.
+// Also covers the "first game not yet started" guarantee the user requested.
+useEffect(() => {
+  if (!league?.matches) return;
+  if ((league.myLeague || 'LCK') !== 'LCK') return;
+  if (metaSplit1InitRef.current) return;
+
+  const split1Matches = league.matches.filter(m => m.type === 'lck_split1_regular');
+  if (split1Matches.length === 0) return; // Split 1 not created yet
+
+  const splitVersions = ['16.04', '16.05', '16.06', '16.07'];
+  if (splitVersions.includes(league.metaVersion)) return; // already patched
+
+  metaSplit1InitRef.current = true;
+  const sourceList = (league.currentChampionList?.length > 0)
+      ? league.currentChampionList : championList;
+  const newChampionList = updateChampionMeta(sourceList);
+  const updates = { currentChampionList: newChampionList, metaVersion: '16.04' };
+  setLeague(prev => ({ ...prev, ...updates }));
+  updateLeague(league.id, updates);
+}, [hasLCKSplit1, league?.metaVersion]);
+
+// ── SPLIT 1: In-season meta patches ─────────────────────────────────────────
+// 16.04 → 16.05 : after all games on/before 4.12, before 4.15 games
+// 16.05 → 16.06 : after all games on/before 4.26, before 4.29 games
+// 16.06 → 16.07 : after all games on/before 5.10, before 5.13 games
+useEffect(() => {
+  if (!league?.matches) return;
+  if ((league.myLeague || 'LCK') !== 'LCK') return;
+
+  const split1Matches = league.matches.filter(m => m.type === 'lck_split1_regular');
+  if (split1Matches.length === 0) return;
+
+  const parseDateNum = (dateStr) => {
+      if (!dateStr) return 0;
+      const [mo, d] = dateStr.split(' ')[0].split('.').map(Number);
+      return (mo || 0) * 100 + (d || 0);
+  };
+
+  // [from version, to version, last day of finished week (inclusive)]
+  const PATCH_GATES = [
+      { from: '16.04', to: '16.05', boundary: 412 }, // after week 2 (4.8–4.12)
+      { from: '16.05', to: '16.06', boundary: 426 }, // after week 4 (4.22–4.26)
+      { from: '16.06', to: '16.07', boundary: 510 }, // after week 6 (5.6–5.10)
+  ];
+
+  for (const gate of PATCH_GATES) {
+      if (league.metaVersion !== gate.from) continue;
+      if (metaSplit1PatchRef.current[gate.to]) continue;
+
+      const beforeBoundary = split1Matches.filter(m => parseDateNum(m.date) <= gate.boundary);
+      const afterBoundary  = split1Matches.filter(m => parseDateNum(m.date) >  gate.boundary);
+
+      // Gate: every match up to the boundary must be finished, and at least
+      // one future match must exist (avoids firing prematurely on partial saves).
+      if (beforeBoundary.length === 0) continue;
+      if (!beforeBoundary.every(m => m.status === 'finished')) continue;
+      if (afterBoundary.length === 0) continue;
+
+      metaSplit1PatchRef.current[gate.to] = true;
+
+      const sourceList = (league.currentChampionList?.length > 0)
+          ? league.currentChampionList : championList;
+      const newChampionList = updateChampionMeta(sourceList);
+      const updates = { currentChampionList: newChampionList, metaVersion: gate.to };
+      setLeague(prev => ({ ...prev, ...updates }));
+      updateLeague(league.id, updates);
+      break; // apply one patch per render cycle
+  }
+}, [
+  // Re-evaluate whenever a split1 match finishes or the version changes
+  league?.matches?.filter(m => m.type === 'lck_split1_regular' && m.status === 'finished').length,
+  league?.metaVersion,
+]);
 
     // ── LEC Playoff Seed Picking ──────────────────────────────────────────────
     // Seeds 1, 2, 3 each pick their opponent from seeds 5-8 in order.
@@ -2807,11 +2885,18 @@ const handleMatchClick = (match) => {
         }));
 
         const updatedMatches = [...(league.matches || []), ...split1Matches];
-        const updates = { matches: updatedMatches };
-        setLeague(prev => ({ ...prev, ...updates }));
-        updateLeague(league.id, updates);
-        setActiveTab('schedule');
-        alert(`🏆 LCK 정규 시즌 스플릿 1 개막!\n${split1Matches.length}개 경기 생성됨 (4/1 ~ 5/31)`);
+        const split1Meta = updateChampionMeta(
+          (league.currentChampionList?.length > 0) ? league.currentChampionList : championList
+      );
+      const updates = {
+          matches: updatedMatches,
+          currentChampionList: split1Meta,
+          metaVersion: '16.04',
+      };
+      setLeague(prev => ({ ...prev, ...updates }));
+      updateLeague(league.id, updates);
+      setActiveTab('schedule');
+      alert(`🏆 LCK 정규 시즌 스플릿 1 개막!\n${split1Matches.length}개 경기 생성됨 (4/1 ~ 5/31)\n🔥 패치 16.04 메타 적용됨`);
       } catch (err) {
         console.error('[LCK Split 1] 일정 생성 오류:', err);
         alert(`❌ 스플릿 1 일정 생성 실패:\n${err.message}`);
