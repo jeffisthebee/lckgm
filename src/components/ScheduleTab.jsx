@@ -123,12 +123,29 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
     const [syncDone, setSyncDone] = useState(false);
     const [selectedTeam, setSelectedTeam] = useState(null); // null = show all
 
+    // LCK has two sub-views: 'cup' (regular season) and 'split1' (Split 1)
+    // Default to split1 when it exists, otherwise cup
+    const hasLCKSplit1Matches = (league?.matches || []).some(m => m.type === 'lck_split1_regular');
+    const hasLCKCupMatches    = (league?.matches || []).some(m => m.type === 'regular' || m.type === 'super' || m.type === 'playoff' || m.type === 'playin');
+    const [lckView, setLckView] = useState(hasLCKSplit1Matches ? 'split1' : 'cup');
+
+    // Keep lckView in sync if split1 is added after initial render
+    useEffect(() => {
+        if (hasLCKSplit1Matches && lckView === 'cup' && !hasLCKCupMatches) setLckView('split1');
+        if (!hasLCKSplit1Matches) setLckView('cup');
+    }, [hasLCKSplit1Matches, hasLCKCupMatches]);
+
     const targetLeague = ['LPL', 'LCP', 'CBLOL', 'LCS', 'LEC'].includes(displayLeague) ? displayLeague : null;
 
     // Reset sync completion whenever the viewed league changes so it re-evaluates
     useEffect(() => { setSyncDone(false); setSelectedTeam(null); }, [targetLeague, displayLeague]);
 
-    const activeMatches = displayLeague === 'LCK' ? (league.matches || []) : (league.foreignMatches?.[displayLeague] || []);
+    const rawLCKMatches = league.matches || [];
+    const activeMatches = displayLeague === 'LCK'
+        ? (lckView === 'split1'
+            ? rawLCKMatches.filter(m => m.type === 'lck_split1_regular')
+            : rawLCKMatches.filter(m => m.type !== 'lck_split1_regular'))
+        : (league.foreignMatches?.[displayLeague] || []);
     const pendingLCK = league.matches ? league.matches.filter(m => m.status === 'pending').sort(compareDatesObj) : [];
     const lckPlayoffMatches = league.matches?.filter(m => m.type === 'playoff') || [];
     const lckTrulyDone = lckPlayoffMatches.length > 0 && lckPlayoffMatches.every(m => m.status === 'finished');
@@ -999,9 +1016,39 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
             )}
 
             <div className="flex items-center justify-between mb-4 lg:mb-6 shrink-0">
-                <h2 className="text-lg lg:text-2xl font-black text-gray-900 flex items-center gap-2">
-                    📅 {activeTab === 'team_schedule' ? `${myTeam.name} 경기 일정` : displayLeague === 'FST' ? '🌍 FST 월드 토너먼트 일정' : `2026 ${displayLeague} 전체 일정`}
-                </h2>
+                <div className="flex items-center gap-3">
+                    <h2 className="text-lg lg:text-2xl font-black text-gray-900 flex items-center gap-2">
+                        📅 {activeTab === 'team_schedule'
+                            ? `${myTeam.name} 경기 일정`
+                            : displayLeague === 'FST'
+                                ? '🌍 FST 월드 토너먼트 일정'
+                                : displayLeague === 'LCK'
+                                    ? (lckView === 'split1' ? 'LCK 정규 일정' : 'LCK 컵 전체 일정')
+                                    : `2026 ${displayLeague} 전체 일정`}
+                    </h2>
+                    {/* < > toggle: only shown when both Cup and Split 1 exist */}
+                    {displayLeague === 'LCK' && hasLCKCupMatches && hasLCKSplit1Matches && (
+                        <div className="flex items-center gap-1">
+                            <button
+                                onClick={() => setLckView(v => v === 'cup' ? 'split1' : 'cup')}
+                                className="p-1 rounded hover:bg-gray-100 text-gray-500 transition"
+                                title="이전"
+                            >
+                                ‹
+                            </button>
+                            <span className="text-[10px] font-bold text-gray-400 whitespace-nowrap">
+                                {lckView === 'cup' ? '1 / 2' : '2 / 2'}
+                            </span>
+                            <button
+                                onClick={() => setLckView(v => v === 'cup' ? 'split1' : 'cup')}
+                                className="p-1 rounded hover:bg-gray-100 text-gray-500 transition"
+                                title="다음"
+                            >
+                                ›
+                            </button>
+                        </div>
+                    )}
+                </div>
                 {targetLeague && hasErrors && (
                     <button 
                         onClick={() => setForceRegen(true)}
@@ -1186,7 +1233,8 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
 
                                 let badgeColor = 'text-gray-500';
                                 let badgeText = '정규시즌';
-                                if (m.type === 'super') { badgeColor = 'text-purple-600'; badgeText = '🔥 슈퍼위크'; }
+                                if (m.type === 'lck_split1_regular') { badgeColor = 'text-gray-500'; badgeText = '정규시즌'; }
+                                else if (m.type === 'super') { badgeColor = 'text-purple-600'; badgeText = '🔥 슈퍼위크'; }
                                 else if (m.type === 'playin') { badgeColor = 'text-indigo-600'; badgeText = m.label || '플레이-인'; }
                                 else if (m.type === 'playoff') { badgeColor = 'text-yellow-600'; badgeText = m.label || '플레이오프'; }
 
