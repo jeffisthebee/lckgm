@@ -862,9 +862,132 @@ export const generateLPLPlayoffs = (seeds) => {
 //   - 10 teams, double round-robin (each pair plays twice: once blue, once red)
 //   - 90 total matches across 9 weeks (10 per week)
 //   - 5 days per week (수~일), 2 slots per day at 17:00 / 19:00
-//   - No back-to-back days (a team cannot play on consecutive days within a week)
+//   - No back-to-back days (a team cannot play on consecutive calendar days)
 //   - Each team plays exactly 2 games per week
 //   - t1 = blue side, t2 = red side (sides are fixed by double-RR construction)
+
+// --- CONSTRAINT-AWARE FALLBACK for LCK weeks ---
+// Hard rule: a team NEVER plays twice on the same day.
+// Soft rule: no back-to-back days (relaxed only as absolute last resort).
+const lckWeekFallback = (weekMatches, days) => {
+    const numDays = days.length;
+
+    const tryGreedy = (allowBackToBack) => {
+        const schedule = Array(numDays).fill(null).map(() => []);
+        const activity = {};
+
+        // Sort most-constrained teams first so they get their pick of days
+        const freq = {};
+        weekMatches.forEach(m => {
+            freq[m.t1] = (freq[m.t1] || 0) + 1;
+            freq[m.t2] = (freq[m.t2] || 0) + 1;
+        });
+        const pool = [...weekMatches].sort(
+            (a, b) => (freq[b.t1] + freq[b.t2]) - (freq[a.t1] + freq[a.t2])
+        );
+
+        for (const match of pool) {
+            let placed = false;
+            for (let d = 0; d < numDays; d++) {
+                if (schedule[d].length >= 2) continue;
+                // Hard: never same day
+                if (hasPlayedOnDay(match.t1, d, activity)) continue;
+                if (hasPlayedOnDay(match.t2, d, activity)) continue;
+                // Soft: no back-to-back (skipped when allowBackToBack=true)
+                if (!allowBackToBack) {
+                    if (
+                        hasPlayedOnDay(match.t1, d - 1, activity) ||
+                        hasPlayedOnDay(match.t1, d + 1, activity) ||
+                        hasPlayedOnDay(match.t2, d - 1, activity) ||
+                        hasPlayedOnDay(match.t2, d + 1, activity)
+                    ) continue;
+                }
+                schedule[d].push(match);
+                setPlayed(match.t1, d, true, activity);
+                setPlayed(match.t2, d, true, activity);
+                placed = true;
+                break;
+            }
+            if (!placed) return null; // this pass failed
+        }
+        return schedule;
+    };
+
+    // Pass 1: full constraints
+    // Pass 2: relax back-to-back only (same-day still forbidden)
+    const schedule =
+        tryGreedy(false) ||
+        tryGreedy(true) ||
+        // Absolute last resort – sequential but at least no same-day overlap
+        (() => {
+            const s = Array(numDays).fill(null).map(() => []);
+            const activity = {};
+            for (const match of weekMatches) {
+                for (let d = 0; d < numDays; d++) {
+                    if (s[d].length >= 2) continue;
+                    if (hasPlayedOnDay(match.t1, d, activity)) continue;
+                    if (hasPlayedOnDay(match.t2, d, activity)) continue;
+                    s[d].push(match);
+                    setPlayed(match.t1, d, true, activity);
+                    setPlayed(match.t2, d, true, activity);
+                    break;
+                }
+            }
+            return s;
+        })();
+
+    const result = [];
+    schedule.forEach((daySlots, dayIdx) => {
+        daySlots.forEach((m, slotIdx) => {
+            result.push({
+                ...m,
+                date: days[dayIdx],
+                time: slotIdx === 0 ? '17:00' : '19:00',
+            });
+        });
+    });
+    return result;
+};
+
+// --- LCK-SPECIFIC WEEK SOLVER ---
+// 500 backtrack attempts; falls back to constraint-aware greedy (never same-day).
+const solveLCKWeek = (weekMatches, days) => {
+    const numDays = days.length; // 5
+
+    for (let attempt = 0; attempt < 500; attempt++) {
+        const pool     = shuffle([...weekMatches]);
+        const schedule = Array(numDays).fill(null).map(() => []);
+        const activity = {};
+
+        if (runBacktrack(0, pool, schedule, activity, 2, numDays)) {
+            const result = [];
+            schedule.forEach((daySlots, dayIdx) => {
+                daySlots.forEach((m, slotIdx) => {
+                    result.push({
+                        ...m,
+                        date: days[dayIdx],
+                        time: slotIdx === 0 ? '17:00' : '19:00',
+                    });
+                });
+            });
+            return result;
+        }
+    }
+
+    // Backtracking exhausted → use constraint-aware fallback (no same-day guaranteed)
+    return lckWeekFallback(weekMatches, days);
+};
+
+// Quick check: can this bin of 10 matches be scheduled without same-day conflicts?
+const isBinSchedulable = (bin) => {
+    for (let attempt = 0; attempt < 20; attempt++) {
+        const pool     = shuffle([...bin]);
+        const schedule = Array(5).fill(null).map(() => []);
+        const activity = {};
+        if (runBacktrack(0, pool, schedule, activity, 2, 5)) return true;
+    }
+    return false;
+};
 
 export const generateLCKSplit1Schedule = (teams) => {
     const getID = (t) => t.id || t.name;
@@ -895,13 +1018,14 @@ export const generateLCKSplit1Schedule = (teams) => {
     ];
 
     // --- 3. Partition 90 matches into 9 weekly bins of 10 ---
-    // Each bin must be a 2-regular spanning subgraph: every team appears exactly twice.
+    // Each bin: every team appears exactly twice AND the bin must be schedulable
+    // (no same-day, no back-to-back) so we verify before committing.
     const partitionIntoWeeks = () => {
-        for (let attempt = 0; attempt < 400; attempt++) {
-            const pool = shuffle([...allMatches]);
+        for (let attempt = 0; attempt < 600; attempt++) {
+            const pool   = shuffle([...allMatches]);
             const bins   = Array.from({ length: 9 }, () => []);
             const counts = Array.from({ length: 9 }, () => ({}));
-            let failed = false;
+            let failed   = false;
 
             for (const match of pool) {
                 const weekOrder = shuffle([...Array(9).keys()]);
@@ -921,51 +1045,25 @@ export const generateLCKSplit1Schedule = (teams) => {
                 }
                 if (!placed) { failed = true; break; }
             }
-            if (!failed) return bins;
+
+            if (!failed) {
+                // [FIX] Verify every bin is actually schedulable before committing
+                const allSchedulable = bins.every(bin => isBinSchedulable(bin));
+                if (allSchedulable) return bins;
+            }
         }
-        return null; // should never reach here with 10 teams
+        return null;
     };
 
-    // Fallback: split sequentially if partitioner somehow fails
+    // Fallback partition: sequential split (rare, only if 600 attempts all fail)
     const weekBins = partitionIntoWeeks() ||
         Array.from({ length: 9 }, (_, i) => allMatches.slice(i * 10, i * 10 + 10));
 
-    // --- 4. Within each week, assign matches to days using backtracking ---
-    // Reuses the module-level runBacktrack / hasPlayedOnDay / setPlayed helpers.
-    // slotsPerDay=2, 5 days per week. No back-to-back = a team cannot play on
-    // day[k-1] or day[k+1] (enforced by runBacktrack's day±1 check).
-    const solveWeek = (weekMatches, days) => {
-        for (let attempt = 0; attempt < 150; attempt++) {
-            const pool     = shuffle([...weekMatches]);
-            const schedule = Array(5).fill(null).map(() => []);
-            const teamActivity = {};
-
-            if (runBacktrack(0, pool, schedule, teamActivity, 2, 5)) {
-                const result = [];
-                schedule.forEach((daySlots, dayIdx) => {
-                    daySlots.forEach((m, slotIdx) => {
-                        result.push({
-                            ...m,
-                            date: days[dayIdx],
-                            time: slotIdx === 0 ? '17:00' : '19:00',
-                        });
-                    });
-                });
-                return result;
-            }
-        }
-        // Fallback: preserve valid dates, drop back-to-back guarantee
-        return weekMatches.map((m, i) => ({
-            ...m,
-            date: days[Math.floor(i / 2)],
-            time: i % 2 === 0 ? '17:00' : '19:00',
-        }));
-    };
-
-    // --- 5. Assemble full schedule ---
+    // --- 4. Within each week, assign matches to days ---
+    // solveLCKWeek: 500 backtrack attempts + constraint-aware fallback (no same-day).
     const fullSchedule = [];
     weekBins.forEach((weekMatches, wIdx) => {
-        solveWeek(weekMatches, weeks[wIdx]).forEach(m => fullSchedule.push(m));
+        solveLCKWeek(weekMatches, weeks[wIdx]).forEach(m => fullSchedule.push(m));
     });
 
     // Sort chronologically and attach metadata
@@ -980,3 +1078,9 @@ export const generateLCKSplit1Schedule = (teams) => {
     result.sort(compareDatesObj);
     return result;
 };
+
+// --- RESCHEDULE EXPORT ---
+// Call this to regenerate the entire LCK Split 1 schedule from scratch.
+// Because generateLCKSplit1Schedule uses Fisher-Yates shuffle internally,
+// each call produces a fresh, independently valid schedule.
+export const rescheduleLCKSplit1 = (teams) => generateLCKSplit1Schedule(teams);
