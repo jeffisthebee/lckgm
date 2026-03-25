@@ -8,7 +8,7 @@ import LiveGamePlayer from '../components/LiveGamePlayer';
 import DetailedMatchResultModal from '../components/DetailedMatchResultModal';
 import playerList from '../data/players.json';
 import { computeStandings, calculateFinalStandings, calculateGroupPoints, sortGroupByStandings, createPlayInBracket, createPlayInRound2Matches, createPlayInFinalMatch, createPlayoffRound2Matches, createPlayoffRound3Matches, createPlayoffLoserRound3Match, createPlayoffQualifierMatch, createPlayoffFinalMatch, createFSTGroupWave2A, createFSTGroupWave2B, createFSTGroupWave3A, createFSTGroupWave3B, createFSTPlayoffs, createFSTFinals } from '../engine/BracketManager';
-import { updateChampionMeta, generateSuperWeekMatches, initFSTTournament } from '../engine/SeasonManager';
+import { updateChampionMeta, generateSuperWeekMatches, initFSTTournament, getLCKSplit1PatchVersionForDate } from '../engine/SeasonManager';
 import FSTTournamentTab from '../components/FSTTournamentTab';
 import FinalStandingsModal from '../components/FinalStandingsModal';
 import MatchupBox from '../components/MatchupBox';
@@ -92,10 +92,17 @@ const getOvrBadgeStyle = (ovr) => {
       const loadData = async () => {
         const found = await getLeagueById(leagueId);
         if (found) {
+          const baseVersion = found.metaVersion || '16.01';
+          const metaChampionLists = found.metaChampionLists || {};
+          // Ensure the base version always has a champion list reference.
+          if (metaChampionLists[baseVersion] == null && Array.isArray(found.currentChampionList) && found.currentChampionList.length > 0) {
+            metaChampionLists[baseVersion] = found.currentChampionList;
+          }
           const sanitizedLeague = {
               ...found,
-              metaVersion: found.metaVersion || '16.01',
-              currentChampionList: found.currentChampionList || championList
+              metaVersion: baseVersion,
+              currentChampionList: found.currentChampionList || championList,
+              metaChampionLists
           };
           setLeague(sanitizedLeague);
           updateLeague(leagueId, { lastPlayed: new Date().toISOString() });
@@ -105,6 +112,136 @@ const getOvrBadgeStyle = (ovr) => {
       };
       loadData();
     }, [leagueId]);
+
+    // ── LCK SPLIT 1 patch meta sync (16.03 → 16.04 → ... → 16.07) ───────
+    // This runs even when Split 1 games are still "pending" (schedule generated
+    // but first match didn't start yet). It ensures bans/picks always use
+    // the correct patch champion list.
+    const parseSplit1DateNum = (dateStr) => {
+      if (!dateStr || typeof dateStr !== 'string') return null;
+      const [month, day] = dateStr.split(' ')[0].split('.').map(Number);
+      if (!Number.isFinite(month) || !Number.isFinite(day)) return null;
+      return month * 100 + day;
+    };
+
+    const ensureSplit1MetaChampionListsUpTo = (lg, targetPatchVersion) => {
+      const patchOrder = ['16.01', '16.02', '16.03', '16.04', '16.05', '16.06', '16.07'];
+      const targetIdx = patchOrder.indexOf(targetPatchVersion);
+      if (targetIdx < 0) return { ...(lg?.metaChampionLists || {}) };
+
+      const metaChampionLists = { ...(lg?.metaChampionLists || {}) };
+      const currentVersion = lg?.metaVersion || '16.01';
+      if (
+        metaChampionLists[currentVersion] == null &&
+        Array.isArray(lg?.currentChampionList) &&
+        lg.currentChampionList.length > 0
+      ) {
+        metaChampionLists[currentVersion] = lg.currentChampionList;
+      }
+
+      // Find the latest patch we already have a champion list for (<= target)
+      let startIdx = -1;
+      for (let i = 0; i <= targetIdx; i++) {
+        const v = patchOrder[i];
+        if (Array.isArray(metaChampionLists[v]) && metaChampionLists[v].length > 0) {
+          startIdx = i;
+        }
+      }
+
+      if (startIdx < 0) {
+        metaChampionLists[patchOrder[0]] = lg?.currentChampionList?.length ? lg.currentChampionList : championList;
+        startIdx = 0;
+      }
+
+      let prevList = metaChampionLists[patchOrder[startIdx]];
+      for (let i = startIdx + 1; i <= targetIdx; i++) {
+        const v = patchOrder[i];
+        if (!Array.isArray(metaChampionLists[v]) || metaChampionLists[v].length === 0) {
+          // Reuse cached in-memory patch list if it was computed earlier for
+          // a match draft/sim (pre-effect interaction).
+          const cached = lckSplit1MetaChampionListCacheRef.current?.[v];
+          metaChampionLists[v] = cached && Array.isArray(cached) && cached.length > 0
+            ? cached
+            : updateChampionMeta(prevList);
+        }
+        prevList = metaChampionLists[v];
+      }
+
+      return metaChampionLists;
+    };
+
+    const lckSplit1MetaChampionListCacheRef = useRef({});
+
+    const getChampionListForMatch = (lg, matchObj) => {
+      if (!lg) return championList;
+
+      if (matchObj?.type === 'lck_split1_regular') {
+        const patch = getLCKSplit1PatchVersionForDate(matchObj.date);
+        if (patch && lg.metaChampionLists?.[patch]) return lg.metaChampionLists[patch];
+        if (patch && lckSplit1MetaChampionListCacheRef.current?.[patch]) return lckSplit1MetaChampionListCacheRef.current[patch];
+
+        // Fallback for early user interactions: compute the patch list in-memory
+        // (without mutating/persisting league state) so the current match draft/sim
+        // still uses the correct meta.
+        if (patch) {
+          const metaChampionLists = ensureSplit1MetaChampionListsUpTo(lg, patch);
+          const list = metaChampionLists?.[patch];
+          if (list && Array.isArray(list)) {
+            lckSplit1MetaChampionListCacheRef.current[patch] = list;
+            return list;
+          }
+        }
+        if (
+          patch &&
+          lg.metaVersion === patch &&
+          Array.isArray(lg.currentChampionList) &&
+          lg.currentChampionList.length > 0
+        ) {
+          return lg.currentChampionList;
+        }
+        return championList;
+      }
+
+      // Legacy handling: only late-season 16.02/16.03 uses the shifted list.
+      if (
+        (lg.metaVersion === '16.02' || lg.metaVersion === '16.03') &&
+        Array.isArray(lg.currentChampionList) &&
+        lg.currentChampionList.length > 0
+      ) {
+        return lg.currentChampionList;
+      }
+
+      return championList;
+    };
+
+    useEffect(() => {
+      if (!league?.matches) return;
+
+      const split1Matches = (league.matches || []).filter(m => m.type === 'lck_split1_regular');
+      if (split1Matches.length === 0) return;
+
+      const pending = split1Matches
+        .filter(m => m.status !== 'finished')
+        .sort((a, b) => (parseSplit1DateNum(a.date) || 0) - (parseSplit1DateNum(b.date) || 0));
+
+      const finished = split1Matches
+        .filter(m => m.status === 'finished')
+        .sort((a, b) => (parseSplit1DateNum(a.date) || 0) - (parseSplit1DateNum(b.date) || 0));
+
+      const anchor = pending[0] || finished[finished.length - 1] || split1Matches[0];
+      const patchNeeded = getLCKSplit1PatchVersionForDate(anchor?.date);
+      if (!patchNeeded) return;
+
+      const hasPatchList = Array.isArray(league?.metaChampionLists?.[patchNeeded]) && league.metaChampionLists[patchNeeded].length > 0;
+      if (league.metaVersion === patchNeeded && hasPatchList) return;
+
+      const metaChampionLists = ensureSplit1MetaChampionListsUpTo(league, patchNeeded);
+      const currentChampionList = metaChampionLists[patchNeeded] || league.currentChampionList || championList;
+
+      const updates = { metaChampionLists, currentChampionList, metaVersion: patchNeeded };
+      setLeague(prev => ({ ...prev, ...updates }));
+      updateLeague(league.id, updates);
+    }, [league?.matches]);
 
     // Check Season Status Helper
     // LCK: grand final finished — identified by label NOT containing '진출전'.
@@ -1243,7 +1380,8 @@ const getOvrBadgeStyle = (ovr) => {
         const updatedMatches = [...cleanMatches, ...superMatches].sort((a, b) =>
             (parseFloat((a.date || '').split(' ')[0]) || 0) - (parseFloat((b.date || '').split(' ')[0]) || 0)
         );
-        const updates = { matches: updatedMatches, currentChampionList: newChampionList, metaVersion: '16.02' };
+        const metaChampionLists = { ...(league.metaChampionLists || {}), '16.02': newChampionList };
+        const updates = { matches: updatedMatches, currentChampionList: newChampionList, metaVersion: '16.02', metaChampionLists };
         setLeague(prev => ({ ...prev, ...updates }));
         updateLeague(league.id, updates);
     }, [league?.matches?.length, league?.metaVersion]);
@@ -1259,7 +1397,8 @@ const getOvrBadgeStyle = (ovr) => {
         const updatedMatches = [...cleanMatches, ...superMatches].sort((a, b) =>
             (parseFloat((a.date || '').split(' ')[0]) || 0) - (parseFloat((b.date || '').split(' ')[0]) || 0)
         );
-        const updates = { matches: updatedMatches, currentChampionList: newChampionList, metaVersion: '16.02' };
+        const metaChampionLists = { ...(league.metaChampionLists || {}), '16.02': newChampionList };
+        const updates = { matches: updatedMatches, currentChampionList: newChampionList, metaVersion: '16.02', metaChampionLists };
         setLeague(prev => ({ ...prev, ...updates }));
         updateLeague(league.id, updates);
     };
@@ -1950,7 +2089,8 @@ const handleMatchClick = (match) => {
             const result = quickSimulateMatch(
                 { ...t1Obj, roster: t1Roster }, 
                 { ...t2Obj, roster: t2Roster }, 
-                format
+                format,
+                getChampionListForMatch(league, match)
             );
             
             return {
@@ -1961,9 +2101,7 @@ const handleMatchClick = (match) => {
         }
 
         // --- 2. HEAVY SIM (Player Matches) ---
-        const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0) 
-            ? league.currentChampionList 
-            : championList;
+        const safeChampionList = getChampionListForMatch(league, match);
   
         const simOptions = {
           currentChampionList: safeChampionList,
@@ -2458,8 +2596,7 @@ const handleMatchClick = (match) => {
           t2Roster = getFullTeamRoster(t2Obj.name);
         }
 
-        const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0)
-          ? league.currentChampionList : championList;
+        const safeChampionList = getChampionListForMatch(league, nextGlobalMatch);
 
         setLiveMatchData({
           match: { ...nextGlobalMatch, blueSidePriority: t1Obj.id || t1Obj.name },
@@ -2748,10 +2885,12 @@ const handleMatchClick = (match) => {
       });
   
       // 4. Update State
+      const metaChampionLists = { ...(league.metaChampionLists || {}), [newMetaVersion]: newChampionList };
       const newLeagueState = { 
           matches: updatedMatches,
           currentChampionList: newChampionList,
-          metaVersion: newMetaVersion 
+          metaVersion: newMetaVersion,
+          metaChampionLists
       };
   
       setLeague(prev => ({ ...prev, ...newLeagueState }));
@@ -2778,10 +2917,12 @@ const handleMatchClick = (match) => {
       const newChampionList = updateChampionMeta(sourceList);
 
       // 3. Save everything
+      const metaChampionLists = { ...(league.metaChampionLists || {}), '16.03': newChampionList };
       const updates = {
         fst: fstData,
         currentChampionList: newChampionList,
         metaVersion: '16.03',
+        metaChampionLists,
       };
       setLeague(prev => ({ ...prev, ...updates }));
       updateLeague(league.id, updates);
@@ -2953,8 +3094,9 @@ const handleMatchClick = (match) => {
       // CPU vs CPU → quickSimulateMatch with real rosters + 16.03 meta
       const t1 = buildFSTTeamWithRoster(t1Fst);
       const t2 = buildFSTTeamWithRoster(t2Fst);
-      const fstChampionList = (league.currentChampionList && league.currentChampionList.length > 0)
-        ? league.currentChampionList : championList;
+      const fstChampionList = (league?.metaChampionLists?.['16.03'] && league.metaChampionLists['16.03'].length > 0)
+        ? league.metaChampionLists['16.03']
+        : (league?.currentChampionList && league.currentChampionList.length > 0 ? league.currentChampionList : championList);
 
       let result;
       try {
@@ -2990,8 +3132,9 @@ const handleMatchClick = (match) => {
       if (!t1Fst || !t2Fst) return;
       const t1Live = buildFSTTeamWithRoster(t1Fst);
       const t2Live = buildFSTTeamWithRoster(t2Fst);
-      const safeChampionList = (league.currentChampionList?.length > 0)
-        ? league.currentChampionList : championList;
+      const safeChampionList = (league?.metaChampionLists?.['16.03'] && league.metaChampionLists['16.03'].length > 0)
+        ? league.metaChampionLists['16.03']
+        : (league?.currentChampionList?.length > 0 ? league.currentChampionList : championList);
       setLiveMatchData({
         match:        { ...match, isFSTMatch: true },
         teamA:        t1Live,
