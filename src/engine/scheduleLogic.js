@@ -854,3 +854,129 @@ export const generateLPLPlayoffs = (seeds) => {
         { round: 5, match: 1, label: '결승전', t1: null, t2: null, date: '3.8 (일)', time: '18:00', type: 'playoff', format: 'BO5', status: 'pending', id: 'lpl_po14' }
     ];
 };
+
+// ==========================================
+// LCKSPLIT1 SCHEDULE LOGIC
+// ==========================================
+// Constraints:
+//   - 10 teams, double round-robin (each pair plays twice: once blue, once red)
+//   - 90 total matches across 9 weeks (10 per week)
+//   - 5 days per week (수~일), 2 slots per day at 17:00 / 19:00
+//   - No back-to-back days (a team cannot play on consecutive days within a week)
+//   - Each team plays exactly 2 games per week
+//   - t1 = blue side, t2 = red side (sides are fixed by double-RR construction)
+
+export const generateLCKSplit1Schedule = (teams) => {
+    const getID = (t) => t.id || t.name;
+    const teamIds = teams.map(getID);
+
+    // --- 1. Build full double round-robin matchlist (t1 = blue, t2 = red) ---
+    // 10 teams → 10×9 = 90 ordered pairs
+    const allMatches = [];
+    for (let i = 0; i < teamIds.length; i++) {
+        for (let j = 0; j < teamIds.length; j++) {
+            if (i !== j) {
+                allMatches.push({ t1: teamIds[i], t2: teamIds[j] });
+            }
+        }
+    }
+
+    // --- 2. Week date blocks (9 weeks × 5 days) ---
+    const weeks = [
+        ['4.1 (수)',  '4.2 (목)',  '4.3 (금)',  '4.4 (토)',  '4.5 (일)'],
+        ['4.8 (수)',  '4.9 (목)',  '4.10 (금)', '4.11 (토)', '4.12 (일)'],
+        ['4.15 (수)', '4.16 (목)', '4.17 (금)', '4.18 (토)', '4.19 (일)'],
+        ['4.22 (수)', '4.23 (목)', '4.24 (금)', '4.25 (토)', '4.26 (일)'],
+        ['4.29 (수)', '4.30 (목)', '5.1 (금)',  '5.2 (토)',  '5.3 (일)'],
+        ['5.6 (수)',  '5.7 (목)',  '5.8 (금)',  '5.9 (토)',  '5.10 (일)'],
+        ['5.13 (수)', '5.14 (목)', '5.15 (금)', '5.16 (토)', '5.17 (일)'],
+        ['5.20 (수)', '5.21 (목)', '5.22 (금)', '5.23 (토)', '5.24 (일)'],
+        ['5.27 (수)', '5.28 (목)', '5.29 (금)', '5.30 (토)', '5.31 (일)'],
+    ];
+
+    // --- 3. Partition 90 matches into 9 weekly bins of 10 ---
+    // Each bin must be a 2-regular spanning subgraph: every team appears exactly twice.
+    const partitionIntoWeeks = () => {
+        for (let attempt = 0; attempt < 400; attempt++) {
+            const pool = shuffle([...allMatches]);
+            const bins   = Array.from({ length: 9 }, () => []);
+            const counts = Array.from({ length: 9 }, () => ({}));
+            let failed = false;
+
+            for (const match of pool) {
+                const weekOrder = shuffle([...Array(9).keys()]);
+                let placed = false;
+                for (const w of weekOrder) {
+                    if (
+                        bins[w].length < 10 &&
+                        (counts[w][match.t1] || 0) < 2 &&
+                        (counts[w][match.t2] || 0) < 2
+                    ) {
+                        bins[w].push(match);
+                        counts[w][match.t1] = (counts[w][match.t1] || 0) + 1;
+                        counts[w][match.t2] = (counts[w][match.t2] || 0) + 1;
+                        placed = true;
+                        break;
+                    }
+                }
+                if (!placed) { failed = true; break; }
+            }
+            if (!failed) return bins;
+        }
+        return null; // should never reach here with 10 teams
+    };
+
+    // Fallback: split sequentially if partitioner somehow fails
+    const weekBins = partitionIntoWeeks() ||
+        Array.from({ length: 9 }, (_, i) => allMatches.slice(i * 10, i * 10 + 10));
+
+    // --- 4. Within each week, assign matches to days using backtracking ---
+    // Reuses the module-level runBacktrack / hasPlayedOnDay / setPlayed helpers.
+    // slotsPerDay=2, 5 days per week. No back-to-back = a team cannot play on
+    // day[k-1] or day[k+1] (enforced by runBacktrack's day±1 check).
+    const solveWeek = (weekMatches, days) => {
+        for (let attempt = 0; attempt < 150; attempt++) {
+            const pool     = shuffle([...weekMatches]);
+            const schedule = Array(5).fill(null).map(() => []);
+            const teamActivity = {};
+
+            if (runBacktrack(0, pool, schedule, teamActivity, 2, 5)) {
+                const result = [];
+                schedule.forEach((daySlots, dayIdx) => {
+                    daySlots.forEach((m, slotIdx) => {
+                        result.push({
+                            ...m,
+                            date: days[dayIdx],
+                            time: slotIdx === 0 ? '17:00' : '19:00',
+                        });
+                    });
+                });
+                return result;
+            }
+        }
+        // Fallback: preserve valid dates, drop back-to-back guarantee
+        return weekMatches.map((m, i) => ({
+            ...m,
+            date: days[Math.floor(i / 2)],
+            time: i % 2 === 0 ? '17:00' : '19:00',
+        }));
+    };
+
+    // --- 5. Assemble full schedule ---
+    const fullSchedule = [];
+    weekBins.forEach((weekMatches, wIdx) => {
+        solveWeek(weekMatches, weeks[wIdx]).forEach(m => fullSchedule.push(m));
+    });
+
+    // Sort chronologically and attach metadata
+    const result = fullSchedule.map((m, i) => ({
+        ...m,
+        id:     'lck_' + Date.now() + '_' + i,
+        type:   'regular',
+        format: 'BO3',
+        status: 'pending',
+    }));
+
+    result.sort(compareDatesObj);
+    return result;
+};

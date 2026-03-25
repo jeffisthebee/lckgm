@@ -23,7 +23,7 @@ import {updateLeague, getLeagueById } from '../engine/storage';
 import { 
     generateLPLRegularSchedule, generateLECRegularSchedule,
     generateLCSRegularSchedule, generateLCPRegularSchedule, generateCBLOLRegularSchedule,
-    generateLCSPlayoffs
+    generateLCSPlayoffs, generateLCKSplit1Schedule
 } from '../engine/scheduleLogic';
 import AwardsTab from '../components/AwardsTab';
 import HistoryTab from '../components/HistoryTab'; 
@@ -2788,7 +2788,35 @@ const handleMatchClick = (match) => {
       alert('🌍 FST 월드 토너먼트가 개막되었습니다!\n패치 16.03 메타가 적용되었습니다.');
     };
 
-    // Checks all FST bracket conditions and generates the next wave of matches if ready
+    // ── LCK 정규 시즌 스플릿 1 ────────────────────────────────────────────────
+    // Available after FST ends. Works even for saves that finished FST before this
+    // feature was added — hasLCKSplit1 will be false on those saves, so the button
+    // appears automatically the next time the player loads the dashboard.
+    const handleCreateLCKSplit1 = () => {
+      if (hasLCKSplit1) return;
+
+      try {
+        // generateLCKSplit1Schedule expects objects with at least { id, name }
+        const rawMatches = generateLCKSplit1Schedule(teams);
+
+        // Override type so existing season logic (isRegularSeasonFinished, meta-patch
+        // triggers, play-in guards, etc.) never misidentify these as LCK CUP matches.
+        const split1Matches = rawMatches.map(m => ({
+          ...m,
+          type: 'lck_split1_regular',
+        }));
+
+        const updatedMatches = [...(league.matches || []), ...split1Matches];
+        const updates = { matches: updatedMatches };
+        setLeague(prev => ({ ...prev, ...updates }));
+        updateLeague(league.id, updates);
+        setActiveTab('schedule');
+        alert(`🏆 LCK 정규 시즌 스플릿 1 개막!\n${split1Matches.length}개 경기 생성됨 (4/1 ~ 5/31)`);
+      } catch (err) {
+        console.error('[LCK Split 1] 일정 생성 오류:', err);
+        alert(`❌ 스플릿 1 일정 생성 실패:\n${err.message}`);
+      }
+    };
     const checkAndAdvanceFST = (updatedFstMatches, fstTeams) => {
       let current = [...updatedFstMatches];
 
@@ -3005,6 +3033,11 @@ const handleMatchClick = (match) => {
     const hasPlayoffsGenerated = league.matches
       ? league.matches.some(m => m.type === 'playoff')
       : false;
+
+    // LCK 정규 시즌 스플릿 1: matches stored with type 'lck_split1_regular'
+    // so existing season-over / super-week / play-in guards (which check type === 'regular')
+    // are never accidentally triggered by Split 1 matches.
+    const hasLCKSplit1 = !!(league?.matches?.some(m => m.type === 'lck_split1_regular'));
   
     const handleGeneratePlayoffs = () => {
       if (!isPlayInFinished || hasPlayoffsGenerated) return;
@@ -3354,6 +3387,18 @@ const handleMatchClick = (match) => {
                 title="FST 생성 오류 복구"
               >
                 <span>⚠️</span> <span className="hidden sm:inline">FST 오류 초기화</span>
+              </button>
+            )}
+
+            {/* LCK 정규 시즌 스플릿 1: unlocks after FST is over.
+                Also visible for existing saves that finished FST before this feature existed
+                — isFSTOver will be true, hasLCKSplit1 will be false, so the button appears. */}
+            {!isMyLeagueForeign && isFSTOver && !hasLCKSplit1 && (
+              <button
+                onClick={handleCreateLCKSplit1}
+                className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-gradient-to-r from-red-700 to-yellow-600 hover:from-red-600 hover:to-yellow-500 text-white shadow-lg flex items-center gap-2 animate-pulse transition border border-yellow-400 whitespace-nowrap"
+              >
+                <span>🏆</span> <span className="hidden sm:inline">LCK 스플릿 1 개막</span><span className="sm:hidden">스플릿 1</span>
               </button>
             )}
 
