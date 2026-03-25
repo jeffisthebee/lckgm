@@ -3206,7 +3206,22 @@ const handleMatchClick = (match) => {
     };
   
     let effectiveDate;
-    if (isSeasonOver && !isMyLeagueForeign) {
+    if (isSeasonOver && !isMyLeagueForeign && hasLCKSplit1) {
+      // Split 1 is active — show the next pending split1 match date
+      const nextSplit1 = (league.matches || [])
+        .filter(m => m.type === 'lck_split1_regular' && m.status === 'pending')
+        .sort((a, b) => parseDate(a.date) - parseDate(b.date))[0];
+      effectiveDate = nextSplit1 ? nextSplit1.date : '스플릿 1 진행 중';
+    } else if (isSeasonOver && !isMyLeagueForeign && isFSTOver) {
+      // FST is done, split1 not yet created — show a neutral waiting state
+      effectiveDate = 'FST 종료';
+    } else if (isSeasonOver && !isMyLeagueForeign && hasFST) {
+      // FST is currently in progress — show next FST match date
+      const nextFST = (league.fst?.matches || [])
+        .filter(m => m.status === 'pending')
+        .sort((a, b) => parseDate(a.date) - parseDate(b.date))[0];
+      effectiveDate = nextFST ? nextFST.date : 'FST 진행 중';
+    } else if (isSeasonOver && !isMyLeagueForeign) {
       effectiveDate = '시즌 종료';
     } else if (nextGlobalMatch) {
       const matchPool = isMyLeagueForeign ? (league.foreignMatches?.[myLeague] || []) : (league.matches || []);
@@ -3470,7 +3485,7 @@ const handleMatchClick = (match) => {
               </button>
             )}
 
-            {hasFST && (
+            {hasFST && !isFSTOver && (
               <button
                 onClick={() => setActiveTab('fst')}
                 className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-gray-900 hover:bg-black text-blue-300 shadow-sm flex items-center gap-2 transition border border-blue-700 whitespace-nowrap"
@@ -3512,7 +3527,7 @@ const handleMatchClick = (match) => {
             )}
 
             {/* FST next match: CPU game → ⏩ auto-sim, Player game → 🎮 start */}
-            {hasFST && nextFSTMatch && !isMyNextFSTMatch && (
+            {hasFST && !isFSTOver && nextFSTMatch && !isMyNextFSTMatch && (
               <button
                 onClick={() => handleFSTSimulate(nextFSTMatch)}
                 className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-2 animate-pulse transition whitespace-nowrap"
@@ -3525,7 +3540,7 @@ const handleMatchClick = (match) => {
               </button>
             )}
 
-            {hasFST && nextFSTMatch && isMyNextFSTMatch && (
+            {hasFST && !isFSTOver && nextFSTMatch && isMyNextFSTMatch && (
               <button
                 onClick={() => setFstMatchPending(nextFSTMatch)}
                 className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-500 hover:to-blue-500 text-white shadow-lg flex items-center gap-2 animate-bounce transition whitespace-nowrap"
