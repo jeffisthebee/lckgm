@@ -199,7 +199,7 @@ const getOvrBadgeStyle = (ovr) => {
         ) {
           return lg.currentChampionList;
         }
-        return championList;
+        return lg.currentChampionList?.length > 0 ? lg.currentChampionList : championList;
       }
 
       // FIX: Ensure ALL patches past 16.01 (16.04, 16.05, etc.) use the updated meta list
