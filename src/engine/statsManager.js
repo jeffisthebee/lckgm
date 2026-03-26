@@ -237,8 +237,21 @@ export function computeStatsForLeague(league, options = {}) {
       let pogBestScore = -Infinity;
       let pogBestPlayer = null;
 
-      // Because we fixed determineWinnerSide, we now know EXACTLY which side won the lobby
-      const winningPicks = winnerSide === 'A' ? (picks.A || []) : (winnerSide === 'B' ? (picks.B || []) : []);
+      let actualWinnerSide = winnerSide;
+        
+      // ULTIMATE FALLBACK 1: If the individual set is missing a winner tag, use the match winner
+      if (!actualWinnerSide && match.result?.winner) {
+          const mWin = match.result.winner;
+          const bName = typeof matchContext.t1 === 'object' ? (matchContext.t1.name || matchContext.t1.id) : matchContext.t1;
+          const rName = typeof matchContext.t2 === 'object' ? (matchContext.t2.name || matchContext.t2.id) : matchContext.t2;
+          if (mWin === bName) actualWinnerSide = 'A';
+          if (mWin === rName) actualWinnerSide = 'B';
+      }
+
+      // ULTIMATE FALLBACK 2: If we STILL don't know the winner, evaluate ALL 10 PLAYERS so the board doesn't break
+      const winningPicks = actualWinnerSide === 'A' ? (picks.A || []) : 
+                           (actualWinnerSide === 'B' ? (picks.B || []) : 
+                           [...(picks.A || []), ...(picks.B || [])]);
       
       winningPicks.forEach(p => {
         if (!p) return;
@@ -258,7 +271,7 @@ export function computeStatsForLeague(league, options = {}) {
           
           // Fallback team naming so the player card displays correctly
           const tNameRaw = pogBestPlayer.playerData?.팀 || pogBestPlayer.team || pogBestPlayer.teamName || 
-                           (winnerSide === 'A' ? matchContext.t1 : matchContext.t2) || null;
+                           (actualWinnerSide === 'A' ? matchContext.t1 : matchContext.t2) || null;
           const resolvedTeamName = typeof tNameRaw === 'object' ? (tNameRaw.name || tNameRaw.id) : tNameRaw;
           
           if (resolvedTeamName) prev.teams.add(String(resolvedTeamName));
