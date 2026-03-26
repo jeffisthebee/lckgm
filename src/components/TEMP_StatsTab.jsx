@@ -1,5 +1,6 @@
 // src/components/TEMP_StatsTab.jsx
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { getLCKSplit1PatchVersionForDate } from '../engine/SeasonManager';
 
 // [NEW] 1. Import all the global players for team/position lookups!
 import playersLCK from '../data/players.json';
@@ -68,6 +69,11 @@ export default function StatsTab({ league, myLeague: myLeagueProp }) {
   const myLeague = myLeagueProp || 'LCK';
   // League Switcher Memory — starts on the user's own league
   const [currentLeague, setCurrentLeague] = useState(myLeague);
+
+  // LCK has two sub-views: 'cup' and 'split1'
+  const hasLCKSplit1Matches = (league?.matches || []).some(m => m.type === 'lck_split1_regular');
+  const hasLCKCupMatches    = (league?.matches || []).some(m => m.type === 'regular' || m.type === 'super' || m.type === 'playoff' || m.type === 'playin');
+  const [lckStatsView, setLckStatsView] = useState(hasLCKSplit1Matches ? 'split1' : 'cup');
   
   const [posFilter, setPosFilter] = useState('ALL');
   const [stageFilter, setStageFilter] = useState('ALL'); // 'ALL', 'PLAYIN', 'REGULAR', 'PLAYOFF'
@@ -75,6 +81,9 @@ export default function StatsTab({ league, myLeague: myLeagueProp }) {
   const [activeSection, setActiveSection] = useState('POG'); // 'POG', 'RATING', 'META', 'KDA'
   const [patchFilter, setPatchFilter] = useState('ALL'); // 'ALL', '16.01', '16.02', '16.03'
   const [metaSort, setMetaSort] = useState({ key: 'picks', dir: 'desc' });
+
+  // Reset patch filter when switching between cup / split1
+  useEffect(() => { setPatchFilter('ALL'); }, [lckStatsView]);
 
   // Derive patch boundaries from the actual schedule data.
   // superWeekStart = earliest 'super' match date in LCK matches
@@ -105,6 +114,21 @@ export default function StatsTab({ league, myLeague: myLeagueProp }) {
     return '16.01';
   };
 
+  // For Split 1 matches: derive patch from date using the season manager helper
+  const getSplit1MatchPatch = (match) => getLCKSplit1PatchVersionForDate(match.date) || 'ALL';
+
+  // Available patch options for the current LCK sub-view
+  const split1Patches = useMemo(() => {
+    if (currentLeague !== 'LCK' || lckStatsView !== 'split1') return [];
+    const split1Matches = (league?.matches || []).filter(m => m.type === 'lck_split1_regular');
+    const patchSet = new Set();
+    split1Matches.forEach(m => {
+      const p = getSplit1MatchPatch(m);
+      if (p && p !== 'ALL') patchSet.add(p);
+    });
+    return Array.from(patchSet).sort();
+  }, [league?.matches, currentLeague, lckStatsView]);
+
   const stats = useMemo(() => {
     const players = {}; // playerName -> aggregated data
     const champions = {}; // champName -> { picks, wins, bans }
@@ -117,8 +141,12 @@ export default function StatsTab({ league, myLeague: myLeagueProp }) {
 
     // Direct the logic to the correct matches array based on the selected league
     let activeMatches = [];
-    if (currentLeague === 'LCK') activeMatches = league?.matches || [];
-    else if (currentLeague === 'FST') activeMatches = league?.fst?.matches || [];
+    if (currentLeague === 'LCK') {
+      const allLCK = league?.matches || [];
+      activeMatches = lckStatsView === 'split1'
+        ? allLCK.filter(m => m.type === 'lck_split1_regular')
+        : allLCK.filter(m => m.type !== 'lck_split1_regular');
+    } else if (currentLeague === 'FST') activeMatches = league?.fst?.matches || [];
     else activeMatches = league?.foreignMatches?.[currentLeague] || [];
 
     if (!activeMatches || !Array.isArray(activeMatches)) {
@@ -152,7 +180,9 @@ export default function StatsTab({ league, myLeague: myLeagueProp }) {
       // Patch boundaries are derived from the earliest super/FST match dates in league data.
       // This works for all leagues since patches are a global calendar event.
       if (patchFilter !== 'ALL') {
-        const matchPatch = currentLeague === 'FST' ? '16.03' : getMatchPatch(match);
+        const matchPatch = currentLeague === 'FST' ? '16.03'
+          : (currentLeague === 'LCK' && lckStatsView === 'split1') ? getSplit1MatchPatch(match)
+          : getMatchPatch(match);
         if (matchPatch !== patchFilter) continue;
       }
 
@@ -277,7 +307,7 @@ export default function StatsTab({ league, myLeague: myLeagueProp }) {
     }
 
     return { players, champions, championStats, totalPicks, totalBans, totalGames };
-  }, [league, stageFilter, patchFilter, currentLeague]);
+  }, [league, stageFilter, patchFilter, currentLeague, lckStatsView]);
 
   // Derived leaderboards
   const pogLeaderboard = useMemo(() => {
@@ -312,8 +342,12 @@ export default function StatsTab({ league, myLeague: myLeagueProp }) {
   // One row per player per game, using computeSetPlayerScore
   const gameScores = useMemo(() => {
     let activeMatches = [];
-    if (currentLeague === 'LCK') activeMatches = league?.matches || [];
-    else if (currentLeague === 'FST') activeMatches = league?.fst?.matches || [];
+    if (currentLeague === 'LCK') {
+      const allLCK = league?.matches || [];
+      activeMatches = lckStatsView === 'split1'
+        ? allLCK.filter(m => m.type === 'lck_split1_regular')
+        : allLCK.filter(m => m.type !== 'lck_split1_regular');
+    } else if (currentLeague === 'FST') activeMatches = league?.fst?.matches || [];
     else activeMatches = league?.foreignMatches?.[currentLeague] || [];
 
     const rows = [];
@@ -333,7 +367,9 @@ export default function StatsTab({ league, myLeague: myLeagueProp }) {
       }
 
       if (patchFilter !== 'ALL') {
-        const matchPatch = currentLeague === 'FST' ? '16.03' : getMatchPatch(match);
+        const matchPatch = currentLeague === 'FST' ? '16.03'
+          : (currentLeague === 'LCK' && lckStatsView === 'split1') ? getSplit1MatchPatch(match)
+          : getMatchPatch(match);
         if (matchPatch !== patchFilter) continue;
       }
 
@@ -381,7 +417,7 @@ export default function StatsTab({ league, myLeague: myLeagueProp }) {
     });
 
     return rows;
-  }, [league, stageFilter, patchFilter, currentLeague, scoreSort]);
+  }, [league, stageFilter, patchFilter, currentLeague, lckStatsView, scoreSort]);
 
   const championMeta = useMemo(() => {
     const targetBucket = stats.championStats[posFilter] || stats.championStats['ALL'];
@@ -454,27 +490,56 @@ export default function StatsTab({ league, myLeague: myLeagueProp }) {
             ))}
         </div>
 
-        {/* ROW 1: Title + Stage & Patch filters (right-aligned) */}
+        {/* LCK Cup / Split 1 switcher — only shown when both exist */}
+        {currentLeague === 'LCK' && hasLCKCupMatches && hasLCKSplit1Matches && (
+          <div className="flex items-center justify-between mb-4 px-1">
+            <button
+              onClick={() => setLckStatsView(v => v === 'cup' ? 'split1' : 'cup')}
+              disabled={lckStatsView === 'cup'}
+              className="flex items-center gap-1 px-4 py-1.5 rounded-full font-bold text-sm bg-gray-100 text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-200 active:scale-95 transition-all"
+            >‹</button>
+            <div className="flex items-center gap-3 text-sm font-bold text-gray-600">
+              <span className={lckStatsView === 'cup' ? 'text-blue-600' : 'text-gray-400'}>LCK 컵 통계</span>
+              <span className="text-gray-300">|</span>
+              <span className={lckStatsView === 'split1' ? 'text-blue-600' : 'text-gray-400'}>LCK 정규 시즌 통계</span>
+            </div>
+            <button
+              onClick={() => setLckStatsView(v => v === 'cup' ? 'split1' : 'cup')}
+              disabled={lckStatsView === 'split1'}
+              className="flex items-center gap-1 px-4 py-1.5 rounded-full font-bold text-sm bg-gray-100 text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-200 active:scale-95 transition-all"
+            >›</button>
+          </div>
+        )}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-3 gap-2">
           <h2 className="text-xl sm:text-2xl font-black text-gray-800 whitespace-nowrap">
-              📊 2026 {currentLeague === 'FST' ? 'FST 월드 토너먼트' : currentLeague} 통계 센터
+              📊 2026 {
+                currentLeague === 'FST' ? 'FST 월드 토너먼트 통계 센터'
+                : currentLeague === 'LCK'
+                  ? (lckStatsView === 'split1' ? 'LCK 정규 시즌 통계' : 'LCK 컵 통계')
+                  : `${currentLeague} 통계 센터`
+              }
           </h2>
           <div className="flex flex-wrap items-center gap-2 ml-auto">
             {/* STAGE FILTERS */}
             <div className="flex bg-gray-100 p-1 rounded-lg">
                 <button onClick={() => setStageFilter('ALL')} className={`px-3 py-1 text-xs sm:text-sm font-bold rounded-md transition-all ${stageFilter === 'ALL' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>전체</button>
-                {currentLeague !== 'FST' && (
+                {!(currentLeague === 'LCK' && lckStatsView === 'split1') && currentLeague !== 'FST' && (
                     <button onClick={() => setStageFilter('PLAYIN')} className={`px-3 py-1 text-xs sm:text-sm font-bold rounded-md transition-all ${stageFilter === 'PLAYIN' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>플레이인</button>
                 )}
                 <button onClick={() => setStageFilter('REGULAR')} className={`px-3 py-1 text-xs sm:text-sm font-bold rounded-md transition-all ${stageFilter === 'REGULAR' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                     {currentLeague === 'FST' ? '그룹 스테이지' : '정규시즌'}
                 </button>
-                <button onClick={() => setStageFilter('PLAYOFF')} className={`px-3 py-1 text-xs sm:text-sm font-bold rounded-md transition-all ${stageFilter === 'PLAYOFF' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>플레이오프</button>
+                {!(currentLeague === 'LCK' && lckStatsView === 'split1') && (
+                    <button onClick={() => setStageFilter('PLAYOFF')} className={`px-3 py-1 text-xs sm:text-sm font-bold rounded-md transition-all ${stageFilter === 'PLAYOFF' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>플레이오프</button>
+                )}
             </div>
             <div className="h-4 w-px bg-gray-300 hidden sm:block"></div>
             {/* PATCH FILTERS */}
             <div className="flex bg-gray-100 p-1 rounded-lg">
-                {(['ALL', '16.01', '16.02', ...(league?.fst ? ['16.03'] : [])]).map(patch => (
+                {(currentLeague === 'LCK' && lckStatsView === 'split1'
+                  ? ['ALL', ...split1Patches]
+                  : ['ALL', '16.01', '16.02', ...(league?.fst ? ['16.03'] : [])]
+                ).map(patch => (
                     <button key={patch} onClick={() => setPatchFilter(patch)}
                         className={`px-3 py-1 text-xs sm:text-sm font-bold rounded-md transition-all ${patchFilter === patch ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                         {patch === 'ALL' ? '전체' : patch}
