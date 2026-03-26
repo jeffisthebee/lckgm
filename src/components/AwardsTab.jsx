@@ -433,6 +433,7 @@ export default function AwardsTab({ league, teams, myLeague: myLeagueProp }) {
     const myLeague = myLeagueProp || 'LCK';
     const [currentLeague, setCurrentLeague] = useState(myLeague);
     const [viewMode, setViewMode] = useState('regular'); // 'regular' | 'playoff'
+    const [lckPageIndex, setLckPageIndex] = useState(0); // 0 = split1 (if avail) | cup
 
     const isLCK = currentLeague === 'LCK';
     const isLEC = currentLeague === 'LEC';
@@ -843,24 +844,121 @@ export default function AwardsTab({ league, teams, myLeague: myLeagueProp }) {
         return result;
     }, [hasCustomScale, customPlayoffLeagueData, activeLeagueData, activeTeams, isPlayoffsFinished, isLPL, isLEC, isFST]);
 
-    const activeData = (viewMode === 'playoff' && playoffData) ? playoffData : regularData;
-    const titlePrefix = currentLeague === 'LCK' ? 'LCK' : currentLeague;
+    // ── LCK Phase Detection & Split ──────────────────────────────────────
+    const hasSplit1Matches = useMemo(() => {
+        if (!isLCK) return false;
+        return (league?.matches || []).some(m => {
+            const month = parseInt((m.date || '').split('.')[0]);
+            return !isNaN(month) && month >= 4;
+        });
+    }, [isLCK, league]);
+
+    // Pages: split1 shown first when available; cup is always present
+    const lckPages = useMemo(() => {
+        const pages = [];
+        if (hasSplit1Matches) pages.push({ id: 'split1', label: 'LCK 정규시즌 어워즈' });
+        pages.push({ id: 'cup', label: 'LCK 컵 어워즈' });
+        return pages;
+    }, [hasSplit1Matches]);
+
+    const safeLckIndex    = Math.min(lckPageIndex, lckPages.length - 1);
+    const currentLckId    = lckPages[safeLckIndex]?.id || 'cup';
+    const isOnSplit1Page  = currentLckId === 'split1';
+
+    // Filtered league data per LCK phase (cup = months 1-3, split1 = months 4+)
+    const lckCupLeagueData = useMemo(() => {
+        if (!isLCK) return null;
+        const cupMatches = (league?.matches || []).filter(m => {
+            const month = parseInt((m.date || '').split('.')[0]);
+            return isNaN(month) || month <= 3;
+        });
+        return { ...league, matches: cupMatches };
+    }, [isLCK, league]);
+
+    const lckSplit1LeagueData = useMemo(() => {
+        if (!isLCK || !hasSplit1Matches) return null;
+        const s1Matches = (league?.matches || []).filter(m => {
+            const month = parseInt((m.date || '').split('.')[0]);
+            return !isNaN(month) && month >= 4;
+        });
+        return { ...league, matches: s1Matches };
+    }, [isLCK, hasSplit1Matches, league]);
+
+    // ── LCK Cup awards ───────────────────────────────────────────────────
+    const lckCupRegularData = useMemo(() => {
+        if (!isLCK || !lckCupLeagueData) return null;
+        return computeAwards(lckCupLeagueData, teams);
+    }, [isLCK, lckCupLeagueData, teams]);
+
+    const lckCupPOFinished = useMemo(() => {
+        if (!isLCK || !lckCupLeagueData) return false;
+        const po = (lckCupLeagueData.matches || []).filter(m => m.type === 'playoff');
+        return po.length > 0 && po.every(m => m.status === 'finished');
+    }, [isLCK, lckCupLeagueData]);
+
+    const lckCupPlayoffData = useMemo(() => {
+        if (!isLCK || !lckCupPOFinished || !lckCupLeagueData) return null;
+        return computePlayoffAwards(lckCupLeagueData, teams);
+    }, [isLCK, lckCupPOFinished, lckCupLeagueData, teams]);
+
+    // ── LCK Split 1 awards ───────────────────────────────────────────────
+    const lckSplit1RegularData = useMemo(() => {
+        if (!isLCK || !lckSplit1LeagueData) return null;
+        return computeAwards(lckSplit1LeagueData, teams);
+    }, [isLCK, lckSplit1LeagueData, teams]);
+
+    const lckSplit1POFinished = useMemo(() => {
+        if (!isLCK || !lckSplit1LeagueData) return false;
+        const po = (lckSplit1LeagueData.matches || []).filter(m => m.type === 'playoff');
+        return po.length > 0 && po.every(m => m.status === 'finished');
+    }, [isLCK, lckSplit1LeagueData]);
+
+    const lckSplit1PlayoffData = useMemo(() => {
+        if (!isLCK || !lckSplit1POFinished || !lckSplit1LeagueData) return null;
+        return computePlayoffAwards(lckSplit1LeagueData, teams);
+    }, [isLCK, lckSplit1POFinished, lckSplit1LeagueData, teams]);
+
+    // ── Resolve active data (LCK uses page-specific data; others use existing) ──
+    const resolvedIsPlayoffsFinished = isLCK
+        ? (isOnSplit1Page ? lckSplit1POFinished : lckCupPOFinished)
+        : isPlayoffsFinished;
+
+    const resolvedRegularData = isLCK
+        ? (isOnSplit1Page ? lckSplit1RegularData : lckCupRegularData)
+        : regularData;
+
+    const resolvedPlayoffData = isLCK
+        ? (isOnSplit1Page ? lckSplit1PlayoffData : lckCupPlayoffData)
+        : playoffData;
+
+    const activeData = (viewMode === 'playoff' && resolvedPlayoffData) ? resolvedPlayoffData : resolvedRegularData;
+
     const isFstTab = currentLeague === 'FST';
+
+    // Title & team-section prefix
+    const pageTitle = isLCK
+        ? (lckPages[safeLckIndex]?.label || 'LCK 컵 어워즈')
+        : (isFstTab ? 'FST World Tournament' : `${currentLeague} Awards`);
+
+    const teamSectionPrefix = isLCK
+        ? (isOnSplit1Page ? '정규시즌' : '컵')
+        : currentLeague;
 
     return (
         <div className="p-2 lg:p-6 max-w-7xl mx-auto space-y-8">
-            
+
+            {/* League tabs */}
             <div className="flex gap-2 p-3 border-b bg-gray-100 overflow-x-auto shrink-0 rounded-lg mb-4">
                 {['LCK', 'LPL', 'LEC', 'LCS', 'LCP', 'CBLOL', ...(league?.fst ? ['FST'] : [])].map(lg => (
                     <button
                         key={lg}
                         onClick={() => {
                             setCurrentLeague(lg);
-                            setViewMode('regular'); 
+                            setViewMode('regular');
                         }}
                         className={`px-5 py-2 rounded-full font-bold text-xs lg:text-sm transition-all whitespace-nowrap shadow-sm active:scale-95 ${
                             currentLeague === lg
-                            ? lg === 'FST' 
+                            ? lg === 'FST'
                                 ? 'bg-gradient-to-r from-blue-700 to-purple-700 text-white ring-2 ring-blue-300 transform scale-105'
                                 : 'bg-blue-600 text-white ring-2 ring-blue-300 transform scale-105'
                             : 'bg-white text-gray-600 hover:bg-gray-200 border border-gray-300'
@@ -871,17 +969,59 @@ export default function AwardsTab({ league, teams, myLeague: myLeagueProp }) {
                 ))}
             </div>
 
+            {/* LCK page navigator (< >) */}
+            {isLCK && lckPages.length > 1 && (
+                <div className="flex items-center justify-center gap-3">
+                    <button
+                        onClick={() => { setLckPageIndex(Math.max(0, safeLckIndex - 1)); setViewMode('regular'); }}
+                        disabled={safeLckIndex === 0}
+                        className="w-9 h-9 rounded-full bg-gray-100 border border-gray-300 hover:bg-gray-200 disabled:opacity-25 disabled:cursor-not-allowed flex items-center justify-center text-lg font-black text-gray-700 transition active:scale-90"
+                    >
+                        ‹
+                    </button>
+                    <div className="flex gap-1.5">
+                        {lckPages.map((p, i) => (
+                            <button
+                                key={p.id}
+                                onClick={() => { setLckPageIndex(i); setViewMode('regular'); }}
+                                className={`px-4 py-1.5 rounded-full text-xs font-black transition-all border ${
+                                    i === safeLckIndex
+                                        ? 'bg-blue-600 text-white border-blue-600 shadow-md scale-105'
+                                        : 'bg-white text-gray-500 border-gray-300 hover:bg-gray-50'
+                                }`}
+                            >
+                                {p.label}
+                            </button>
+                        ))}
+                    </div>
+                    <button
+                        onClick={() => { setLckPageIndex(Math.min(lckPages.length - 1, safeLckIndex + 1)); setViewMode('regular'); }}
+                        disabled={safeLckIndex === lckPages.length - 1}
+                        className="w-9 h-9 rounded-full bg-gray-100 border border-gray-300 hover:bg-gray-200 disabled:opacity-25 disabled:cursor-not-allowed flex items-center justify-center text-lg font-black text-gray-700 transition active:scale-90"
+                    >
+                        ›
+                    </button>
+                </div>
+            )}
+
+            {/* Title + regular/playoff toggle */}
             <div className="flex flex-col items-center justify-center gap-4">
                 <div className="text-center space-y-1">
-                    <h2 className="text-3xl lg:text-4xl font-black text-gray-900 uppercase tracking-tighter">
-                        <span className="text-blue-600">2026</span> {isFstTab ? 'FST World Tournament' : `${titlePrefix} Awards`}
+                    <h2 className="text-3xl lg:text-4xl font-black text-gray-900 tracking-tighter">
+                        <span className="text-blue-600">2026</span>{' '}
+                        {isLCK
+                            ? <span className="uppercase">{pageTitle}</span>
+                            : (isFstTab ? 'FST World Tournament' : <span className="uppercase">{pageTitle}</span>)
+                        }
                     </h2>
                     <p className="text-gray-500 text-sm font-medium">
-                        {viewMode === 'playoff' ? (isFstTab ? '플레이오프 성적' : 'Playoffs & Finals Performance') : (isFstTab ? '그룹 스테이지 성적' : 'Regular Season Performance')}
+                        {viewMode === 'playoff'
+                            ? (isFstTab ? '플레이오프 성적' : 'Playoffs & Finals Performance')
+                            : (isFstTab ? '그룹 스테이지 성적' : 'Regular Season Performance')}
                     </p>
                 </div>
 
-                {isPlayoffsFinished && (
+                {resolvedIsPlayoffsFinished && (
                     <div className="bg-gray-100 p-1 rounded-lg flex gap-1">
                         <button onClick={() => setViewMode('regular')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition ${viewMode === 'regular' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
                             {isFstTab ? '그룹 스테이지' : '정규 시즌'}
@@ -893,39 +1033,45 @@ export default function AwardsTab({ league, teams, myLeague: myLeagueProp }) {
                 )}
             </div>
 
+            {/* Main awards content */}
             {!activeData || (!activeData.seasonMvp && viewMode === 'regular') || (!activeData.pogLeader && viewMode === 'playoff') ? (
                 <div className="flex flex-col items-center justify-center bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 py-20 text-gray-400">
                     <div className="text-5xl mb-4 opacity-50">🏆</div>
                     <div className="text-xl font-bold">수상자 데이터 없음</div>
-                    <p className="mt-2 text-sm">{currentLeague} {viewMode === 'playoff' ? '플레이오프' : '시즌'} 경기가 충분히 진행되지 않았습니다.</p>
+                    <p className="mt-2 text-sm">
+                        {isLCK
+                            ? `${lckPages[safeLckIndex]?.label || ''} ${viewMode === 'playoff' ? '플레이오프' : '시즌'} 경기가 충분히 진행되지 않았습니다.`
+                            : `${currentLeague} ${viewMode === 'playoff' ? '플레이오프' : '시즌'} 경기가 충분히 진행되지 않았습니다.`
+                        }
+                    </p>
                 </div>
             ) : (
                 <>
                     <div className="w-full">
                         {viewMode === 'regular' ? (
-                            <MvpShowcaseCard 
-                                player={activeData.seasonMvp} 
-                                title={isFstTab ? "GROUP STAGE MVP" : "SEASON MVP"} 
-                                badgeColor="bg-yellow-500 text-black" 
-                                lckTeams={teams} 
+                            <MvpShowcaseCard
+                                player={activeData.seasonMvp}
+                                title={isFstTab ? "GROUP STAGE MVP" : "SEASON MVP"}
+                                badgeColor="bg-yellow-500 text-black"
+                                lckTeams={teams}
                                 fstTeams={league?.fst?.teams || []}
                                 size="large"
                             />
                         ) : (
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-8 max-w-5xl mx-auto">
-                                <MvpShowcaseCard 
-                                    player={activeData.pogLeader} 
-                                    title="PLAYOFF MVP" 
-                                    badgeColor="bg-green-400 text-black" 
-                                    lckTeams={teams} 
+                                <MvpShowcaseCard
+                                    player={activeData.pogLeader}
+                                    title="PLAYOFF MVP"
+                                    badgeColor="bg-green-400 text-black"
+                                    lckTeams={teams}
                                     fstTeams={league?.fst?.teams || []}
                                     size="medium"
                                 />
-                                 <MvpShowcaseCard 
-                                    player={activeData.finalsMvp} 
-                                    title="FINALS MVP" 
-                                    badgeColor="bg-blue-400 text-black" 
-                                    lckTeams={teams} 
+                                <MvpShowcaseCard
+                                    player={activeData.finalsMvp}
+                                    title="FINALS MVP"
+                                    badgeColor="bg-blue-400 text-black"
+                                    lckTeams={teams}
                                     fstTeams={league?.fst?.teams || []}
                                     size="medium"
                                 />
@@ -934,9 +1080,9 @@ export default function AwardsTab({ league, teams, myLeague: myLeagueProp }) {
                     </div>
 
                     <div>
-                        <TeamSection title={viewMode === 'playoff' ? `All-${titlePrefix} Playoff 1st Team` : `All-${titlePrefix} 1st Team`} rank={1} players={activeData.allProTeams?.[1]} lckTeams={teams} fstTeams={league?.fst?.teams || []} />
-                        <TeamSection title={viewMode === 'playoff' ? `All-${titlePrefix} Playoff 2nd Team` : `All-${titlePrefix} 2nd Team`} rank={2} players={activeData.allProTeams?.[2]} lckTeams={teams} fstTeams={league?.fst?.teams || []} />
-                        <TeamSection title={viewMode === 'playoff' ? `All-${titlePrefix} Playoff 3rd Team` : `All-${titlePrefix} 3rd Team`} rank={3} players={activeData.allProTeams?.[3]} lckTeams={teams} fstTeams={league?.fst?.teams || []} />
+                        <TeamSection title={viewMode === 'playoff' ? `All-LCK ${teamSectionPrefix} Playoff 1st Team` : `All-LCK ${teamSectionPrefix} 1st Team`} rank={1} players={activeData.allProTeams?.[1]} lckTeams={teams} fstTeams={league?.fst?.teams || []} />
+                        <TeamSection title={viewMode === 'playoff' ? `All-LCK ${teamSectionPrefix} Playoff 2nd Team` : `All-LCK ${teamSectionPrefix} 2nd Team`} rank={2} players={activeData.allProTeams?.[2]} lckTeams={teams} fstTeams={league?.fst?.teams || []} />
+                        <TeamSection title={viewMode === 'playoff' ? `All-LCK ${teamSectionPrefix} Playoff 3rd Team` : `All-LCK ${teamSectionPrefix} 3rd Team`} rank={3} players={activeData.allProTeams?.[3]} lckTeams={teams} fstTeams={league?.fst?.teams || []} />
                     </div>
                 </>
             )}
