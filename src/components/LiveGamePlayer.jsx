@@ -1,1248 +1,1137 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-    import { calculateIndividualIncome, simulateSet, runGameTickEngine, selectPickFromTop3, selectBanFromProbabilities } from '../engine/simEngine';
-    import { DRAFT_SEQUENCE, championList } from '../data/constants'; 
-    import { SYNERGIES } from '../data/synergies'; 
-    import { validateLineup, getDefaultLineup } from '../engine/rosterLogic';
-    
-    // --- HELPER: Champion Image Component ---
-    // Uses Riot Data Dragon CDN with patch 16.5.1
+import { calculateIndividualIncome, simulateSet, runGameTickEngine, selectPickFromTop3, selectBanFromProbabilities } from '../engine/simEngine';
+import { DRAFT_SEQUENCE, championList } from '../data/constants'; 
+import { SYNERGIES } from '../data/synergies'; 
+import { validateLineup, getDefaultLineup } from '../engine/rosterLogic';
 
-    // Hue palette for fallback tiles — deterministic per champion name
-    const champHue = (name) => {
-        if (!name) return 200;
-        let h = 0;
-        for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
-        return h;
-    };
+// --- HELPER: Champion Image Component ---
+// Uses Riot Data Dragon CDN with patch 16.5.1
 
-    const ID_TO_DDRAGON = {
-        'wukong': 'MonkeyKing', 'drmundo': 'DrMundo', 'jarvaniv': 'JarvanIV',
-        'leesin': 'LeeSin', 'masteryi': 'MasterYi', 'missfortune': 'MissFortune',
-        'tahmkench': 'TahmKench', 'twistedfate': 'TwistedFate', 'xinzhao': 'XinZhao',
-        'aurelionsol': 'AurelionSol', 'kogmaw': 'KogMaw', 'reksai': 'RekSai',
-        'leblanc': 'Leblanc', 'ksante': 'KSante', 'belveth': 'Belveth',
-        'khazix': 'Khazix', 'velkoz': 'Velkoz', 'kaisa': 'Kaisa',
-        'zahen': 'Zaahen', 'unara': 'Yunara',
-    };
+const champHue = (name) => {
+    if (!name) return 200;
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
+    return h;
+};
 
-    const getChampionImageUrl = (champName, champList) => {
-        if (!champName) return null;
-        const nameToId = {};
-        (champList || []).forEach(c => {
-            if (c.name && c.id) {
-                const base = c.id.replace(/_top|_jg|_jgl|_mid|_adc|_sup|_bot|_carry|_support/g, '');
-                nameToId[c.name] = base;
-            }
-        });
-        const baseId = nameToId[champName] || champName.toLowerCase().replace(/[\s'\.\-]/g, '').replace(/&.*/,'');
-        const ddName = ID_TO_DDRAGON[baseId] || (baseId.charAt(0).toUpperCase() + baseId.slice(1));
-        return `https://ddragon.leagueoflegends.com/cdn/16.5.1/img/champion/${ddName}.png`;
-    };
+const ID_TO_DDRAGON = {
+    'wukong': 'MonkeyKing', 'drmundo': 'DrMundo', 'jarvaniv': 'JarvanIV',
+    'leesin': 'LeeSin', 'masteryi': 'MasterYi', 'missfortune': 'MissFortune',
+    'tahmkench': 'TahmKench', 'twistedfate': 'TwistedFate', 'xinzhao': 'XinZhao',
+    'aurelionsol': 'AurelionSol', 'kogmaw': 'KogMaw', 'reksai': 'RekSai',
+    'leblanc': 'Leblanc', 'ksante': 'KSante', 'belveth': 'Belveth',
+    'khazix': 'Khazix', 'velkoz': 'Velkoz', 'kaisa': 'Kaisa',
+    'zahen': 'Zaahen', 'unara': 'Yunara',
+};
 
-    const ChampionImage = ({ champName, champList, className = '', style = {}, grayscale = false, objectPosition = 'top' }) => {
-        const [failed, setFailed] = React.useState(false);
-        const src = getChampionImageUrl(champName, champList);
-        const hue = champHue(champName);
-        const initial = (champName || '?')[0].toUpperCase();
-
-        if (!champName || failed || !src) {
-            return (
-                <div
-                    className={`flex items-center justify-center font-black select-none ${className}`}
-                    style={{ background: `hsl(${hue},55%,28%)`, color: `hsl(${hue},80%,80%)`, ...style }}
-                >
-                    <span style={{ fontSize: 'clamp(6px, 30%, 22px)', lineHeight: 1 }}>{initial}</span>
-                </div>
-            );
+const getChampionImageUrl = (champName, champList) => {
+    if (!champName) return null;
+    const nameToId = {};
+    (champList || []).forEach(c => {
+        if (c.name && c.id) {
+            const base = c.id.replace(/_top|_jg|_jgl|_mid|_adc|_sup|_bot|_carry|_support/g, '');
+            nameToId[c.name] = base;
         }
+    });
+    const baseId = nameToId[champName] || champName.toLowerCase().replace(/[\s'\.\-]/g, '').replace(/&.*/,'');
+    const ddName = ID_TO_DDRAGON[baseId] || (baseId.charAt(0).toUpperCase() + baseId.slice(1));
+    return `https://ddragon.leagueoflegends.com/cdn/16.5.1/img/champion/${ddName}.png`;
+};
 
+const ChampionImage = ({ champName, champList, className = '', style = {}, grayscale = false, objectPosition = 'top' }) => {
+    const [failed, setFailed] = React.useState(false);
+    const src = getChampionImageUrl(champName, champList);
+    const hue = champHue(champName);
+    const initial = (champName || '?')[0].toUpperCase();
+
+    if (!champName || failed || !src) {
         return (
-            <img
-                src={src}
-                alt={champName}
-                className={`${grayscale ? 'grayscale opacity-60' : ''} ${className}`}
-                style={{ objectFit: 'cover', objectPosition, ...style }}
-                onError={() => setFailed(true)}
-            />
+            <div
+                className={`flex items-center justify-center font-black select-none ${className}`}
+                style={{ background: `hsl(${hue},55%,28%)`, color: `hsl(${hue},80%,80%)`, ...style }}
+            >
+                <span style={{ fontSize: 'clamp(6px, 30%, 22px)', lineHeight: 1 }}>{initial}</span>
+            </div>
         );
-    };
+    }
 
-    // --- HELPER: Simple Scoring for Recommendation (Frontend Version) ---
-    const getRecommendedChampion = (role, currentChamps, availableChamps) => {
-        // Filter by Role
-        const roleChamps = availableChamps.filter(c => c.role === (role === 'SUP' ? 'SUP' : role));
-        if (roleChamps.length === 0) return availableChamps[0];
-    
-        // Sort by Tier (1 is best) -> Stats Sum
-        return roleChamps.sort((a, b) => {
-            if (a.tier !== b.tier) return a.tier - b.tier; // Lower tier # is better
-            const sumA = Object.values(a.stats || {}).reduce((acc, v) => acc + v, 0);
-            const sumB = Object.values(b.stats || {}).reduce((acc, v) => acc + v, 0);
-            return sumB - sumA;
-        })[0];
-    };
-    
-    // --- HELPER: Get Real-time Synergies for Draft Board ---
-    const getRealtimeSynergies = (currentPicks) => {
-        const activeNames = currentPicks.filter(p => p && p.champName).map(p => p.champName);
-        return SYNERGIES.filter(syn => {
-            // Check if all champions in the synergy exist in the current picks
-            return syn.champions.every(requiredChamp => activeNames.includes(requiredChamp));
+    return (
+        <img
+            src={src}
+            alt={champName}
+            className={`${grayscale ? 'grayscale opacity-60' : ''} ${className}`}
+            style={{ objectFit: 'cover', objectPosition, ...style }}
+            onError={() => setFailed(true)}
+        />
+    );
+};
+
+// --- HELPER: Simple Scoring for Recommendation (Frontend Version) ---
+const getRecommendedChampion = (role, currentChamps, availableChamps) => {
+    const roleChamps = availableChamps.filter(c => c.role === (role === 'SUP' ? 'SUP' : role));
+    if (roleChamps.length === 0) return availableChamps[0];
+
+    return roleChamps.sort((a, b) => {
+        if (a.tier !== b.tier) return a.tier - b.tier;
+        const sumA = Object.values(a.stats || {}).reduce((acc, v) => acc + v, 0);
+        const sumB = Object.values(b.stats || {}).reduce((acc, v) => acc + v, 0);
+        return sumB - sumA;
+    })[0];
+};
+
+// --- HELPER: Get Real-time Synergies for Draft Board ---
+const getRealtimeSynergies = (currentPicks) => {
+    const activeNames = currentPicks.filter(p => p && p.champName).map(p => p.champName);
+    return SYNERGIES.filter(syn => {
+        return syn.champions.every(requiredChamp => activeNames.includes(requiredChamp));
+    });
+};
+
+// --- HELPERS: Position normalization & matching (fix SUP/Support variants) ---
+const normalizePosition = (p) => {
+    if (!p && p !== 0) return '';
+    let s = String(p).toUpperCase().trim();
+    if (s === 'SPT') return 'SUP';
+    if (s === 'SUPP') return 'SUP';
+    if (s === 'SUPPORT' || s === '서포터' || s === '서포' || s === 'SUPPORTER') return 'SUP';
+    if (s === 'TOPLANE' || s === 'TOP' || s === '탑') return 'TOP';
+    if (s === 'JUNGLE' || s === 'JGL' || s === 'JGL.' || s === '정글') return 'JGL';
+    if (s === 'MIDDLE' || s === 'MID' || s === '미드') return 'MID';
+    if (s === 'BOT' || s === 'ADC' || s === 'BOTLANE' || s === '원딜') return 'ADC';
+    if (['TOP','JGL','MID','ADC','SUP'].includes(s)) return s;
+    return s;
+};
+
+const positionMatches = (rosterPos, targetPos) => {
+    return normalizePosition(rosterPos) === normalizePosition(targetPos);
+};
+
+// --- HELPER: Calculate POS (Player of the Series) ---
+const calculatePOS = (matchHistory, currentSetData, winningTeamName, winningTeamRoster = []) => {
+    const allGames = [...(matchHistory || [])];
+    if (currentSetData) {
+        allGames.push({
+            winner: currentSetData.winnerName,
+            picks: currentSetData.picks 
         });
-    };
-    
-    // --- HELPERS: Position normalization & matching (fix SUP/Support variants) ---
-    const normalizePosition = (p) => {
-        if (!p && p !== 0) return '';
-        let s = String(p).toUpperCase().trim();
-        // common variants mapping
-        if (s === 'SPT') return 'SUP';
-        if (s === 'SUPP') return 'SUP';
-        if (s === 'SUPPORT' || s === '서포터' || s === '서포' || s === 'SUPPORTER') return 'SUP';
-        if (s === 'TOPLANE' || s === 'TOP' || s === '탑') return 'TOP';
-        if (s === 'JUNGLE' || s === 'JGL' || s === 'JGL.' || s === '정글') return 'JGL';
-        if (s === 'MIDDLE' || s === 'MID' || s === '미드') return 'MID';
-        if (s === 'BOT' || s === 'ADC' || s === 'BOTLANE' || s === '원딜') return 'ADC';
-        // If already one of canonical short codes, return as-is
-        if (['TOP','JGL','MID','ADC','SUP'].includes(s)) return s;
-        // Last resort: try to pick first three letters
-        return s;
-    };
-    const positionMatches = (rosterPos, targetPos) => {
-        return normalizePosition(rosterPos) === normalizePosition(targetPos);
-    };
-    
-    // --- HELPER: Calculate POS (Player of the Series) ---
-    const calculatePOS = (matchHistory, currentSetData, winningTeamName, winningTeamRoster = []) => {
-        const allGames = [...(matchHistory || [])];
-        if (currentSetData) {
-            allGames.push({
-                winner: currentSetData.winnerName,
-                picks: currentSetData.picks 
-            });
-        }
-    
-        const playerScores = {};
-        const winnerRosterNames = new Set((winningTeamRoster || []).map(p => p.이름 || p.name).filter(Boolean));
-    
-        allGames.forEach(game => {
-            const picksA = game.picks?.A || [];
-            const picksB = game.picks?.B || [];
+    }
+
+    const playerScores = {};
+    const winnerRosterNames = new Set((winningTeamRoster || []).map(p => p.이름 || p.name).filter(Boolean));
+
+    allGames.forEach(game => {
+        const picksA = game.picks?.A || [];
+        const picksB = game.picks?.B || [];
+        
+        const playerA = picksA[0]?.playerName;
+        const isSideA_TheWinnerTeam = playerA && winnerRosterNames.has(playerA);
+        
+        const targetPicks = isSideA_TheWinnerTeam ? picksA : picksB;
+
+        (targetPicks || []).forEach(p => {
+            if (!p) return;
+            if (!playerScores[p.playerName]) playerScores[p.playerName] = { ...p, totalScore: 0, games: 0 };
             
-            // Determine which side corresponds to the Series Winner
-            // We check if the first player of Side A is in the Series Winner's roster
-            const playerA = picksA[0]?.playerName;
-            const isSideA_TheWinnerTeam = playerA && winnerRosterNames.has(playerA);
-            
-            // Always select the picks of the Series Winner, regardless of who won this specific game
-            // (We want to sum the scores of the MVP candidates across ALL games)
-            const targetPicks = isSideA_TheWinnerTeam ? picksA : picksB;
-    
-            (targetPicks || []).forEach(p => {
-                if (!p) return;
-                if (!playerScores[p.playerName]) playerScores[p.playerName] = { ...p, totalScore: 0, games: 0 };
-                
-                const stats = p.stats || { kills: p.k || 0, deaths: p.d || 0, assists: p.a || 0 };
-                const k = stats.kills || 0;
-                const d = stats.deaths || 0;
-                const a = stats.assists || 0;
-                const gold = p.currentGold || 0;
-
-                const kda = (k * 3 + a * 0.25) / Math.max(d, 1.5);
-                let score = 65 + kda + (gold / 1500);
-
-                const role = p.playerData?.포지션 || 'MID';
-                if (['SUP', '서포터'].includes(role)) score += Math.max(10 - (d * 1.5), 2);
-                if (['JGL', '정글'].includes(role))   score += Math.max(6 - d, 0);
-                if (['TOP', '탑'].includes(role))     score += Math.max(4 - d, 0);
-
-                playerScores[p.playerName].totalScore += score;
-                playerScores[p.playerName].games += 1;
-            });
-        });
-    
-        const sorted = Object.values(playerScores).sort((a, b) => b.totalScore - a.totalScore);
-        return sorted[0]; 
-    };
-    
-    // --- HELPER: Manual POG Calculation ---
-    const calculateManualPog = (picksBlue = [], picksRed = [], winnerSide = 'BLUE', gameMinutes = 30) => {
-        const winningPicks = winnerSide === 'BLUE' ? picksBlue : picksRed;
-        if (!Array.isArray(winningPicks) || winningPicks.length === 0) return null;
-        const candidates = winningPicks.map(p => {
-            const k = (p.stats?.kills ?? p.k) || 0;
-            const d = (p.stats?.deaths ?? p.d) || 0;
-            const a = (p.stats?.assists ?? p.a) || 0;
+            const stats = p.stats || { kills: p.k || 0, deaths: p.d || 0, assists: p.a || 0 };
+            const k = stats.kills || 0;
+            const d = stats.deaths || 0;
+            const a = stats.assists || 0;
             const gold = p.currentGold || 0;
 
             const kda = (k * 3 + a * 0.25) / Math.max(d, 1.5);
             let score = 65 + kda + (gold / 1500);
 
-            const role = p.playerData?.포지션;
+            const role = p.playerData?.포지션 || 'MID';
             if (['SUP', '서포터'].includes(role)) score += Math.max(10 - (d * 1.5), 2);
             if (['JGL', '정글'].includes(role))   score += Math.max(6 - d, 0);
             if (['TOP', '탑'].includes(role))     score += Math.max(4 - d, 0);
 
-            return { ...p, pogScore: score, kdaVal: kda };
+            playerScores[p.playerName].totalScore += score;
+            playerScores[p.playerName].games += 1;
         });
-        candidates.sort((a, b) => (b.pogScore || 0) - (a.pogScore || 0));
-        return candidates[0] || null;
+    });
+
+    const sorted = Object.values(playerScores).sort((a, b) => b.totalScore - a.totalScore);
+    return sorted[0]; 
+};
+
+// --- HELPER: Manual POG Calculation ---
+const calculateManualPog = (picksBlue = [], picksRed = [], winnerSide = 'BLUE', gameMinutes = 30) => {
+    const winningPicks = winnerSide === 'BLUE' ? picksBlue : picksRed;
+    if (!Array.isArray(winningPicks) || winningPicks.length === 0) return null;
+    const candidates = winningPicks.map(p => {
+        const k = (p.stats?.kills ?? p.k) || 0;
+        const d = (p.stats?.deaths ?? p.d) || 0;
+        const a = (p.stats?.assists ?? p.a) || 0;
+        const gold = p.currentGold || 0;
+
+        const kda = (k * 3 + a * 0.25) / Math.max(d, 1.5);
+        let score = 65 + kda + (gold / 1500);
+
+        const role = p.playerData?.포지션;
+        if (['SUP', '서포터'].includes(role)) score += Math.max(10 - (d * 1.5), 2);
+        if (['JGL', '정글'].includes(role))   score += Math.max(6 - d, 0);
+        if (['TOP', '탑'].includes(role))     score += Math.max(4 - d, 0);
+
+        return { ...p, pogScore: score, kdaVal: kda };
+    });
+    candidates.sort((a, b) => (b.pogScore || 0) - (a.pogScore || 0));
+    return candidates[0] || null;
+};
+
+export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onClose, externalGlobalBans = [], isManualMode = false }) {
+    // [FIX] Always use the meta champion list from simOptions for current patch
+    const activeChampionList = useMemo(() => {
+        const metaList = simOptions?.currentChampionList;
+        if (Array.isArray(metaList) && metaList.length > 0) {
+            return metaList;
+        }
+        console.warn('No currentChampionList in simOptions, using championList fallback');
+        return championList;
+    }, [simOptions?.currentChampionList]);
+
+    const [currentSet, setCurrentSet] = useState(1);
+    const [winsA, setWinsA] = useState(0);
+    const [winsB, setWinsB] = useState(0);
+    
+    const [phase, setPhase] = useState('ROSTER_SELECTION'); 
+    const [mobileTab, setMobileTab] = useState('LOGS'); 
+
+    const [simulationData, setSimulationData] = useState(null);
+    const [displayLogs, setDisplayLogs] = useState([]);
+    const [resultProcessed, setResultProcessed] = useState(false);
+    
+    const [activeUserRoster, setActiveUserRoster] = useState({}); 
+    const [preselectedSide, setPreselectedSide] = useState(null); 
+
+    const isUserTeamA = !simOptions?.playerTeamName || teamA.name === simOptions.playerTeamName;
+    const userTeam = isUserTeamA ? teamA : teamB;
+    const cpuTeam = isUserTeamA ? teamB : teamA;
+
+    const [manualTeams, setManualTeams] = useState({ blue: null, red: null });
+    const [manualPicks, setManualPicks] = useState({ blue: {}, red: {} }); 
+    const [manualLockedChamps, setManualLockedChamps] = useState(new Set()); 
+    const [selectedChampion, setSelectedChampion] = useState(null);
+    const [filterRole, setFilterRole] = useState('TOP');
+    const [searchTerm, setSearchTerm] = useState(''); 
+    const [draftLogs, setDraftLogs] = useState([]);
+    const [userSelectedRole, setUserSelectedRole] = useState(false); 
+    const [manualUserSide, setManualUserSide] = useState(null);
+    const finalizeManualDraftCalledRef = useRef(false);
+    const [startSetTrigger, setStartSetTrigger] = useState(0);
+
+    const [draftStep, setDraftStep] = useState(0); 
+    const [draftTimer, setDraftTimer] = useState(15);
+    const [draftState, setDraftState] = useState({
+        blueBans: [],
+        redBans: [],
+        bluePicks: Array(5).fill(null),
+        redPicks: Array(5).fill(null),
+        currentAction: 'Starting Draft...'
+    });
+
+    const [gameTime, setGameTime] = useState(0);
+    const [playbackSpeed, setPlaybackSpeed] = useState(1);
+    const [liveStats, setLiveStats] = useState({
+        kills: { BLUE: 0, RED: 0 },
+        gold: { BLUE: 2500, RED: 2500 }, 
+        towers: { BLUE: 0, RED: 0 },
+        players: [] 
+    });
+    const liveStatsRef = useRef(liveStats);
+    useEffect(() => { liveStatsRef.current = liveStats; }, [liveStats]);
+    const gameEndFiredRef = useRef(false);
+
+    const [soundEnabled, setSoundEnabled] = useState(true);
+    const soundEnabledRef = useRef(true);
+    useEffect(() => { soundEnabledRef.current = soundEnabled; }, [soundEnabled]);
+
+    const SOUND_URLS = {
+        yourBan:  '/sounds/sfx-cs-draft-10ban-your-ban.ogg',
+        enemyBan: '/sounds/sfx-cs-draft-10ban-enemy-ban.ogg',
+        pick:     '/sounds/sfx-cs-draft-notif-yourpick.ogg',
     };
-    
-    export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onClose, externalGlobalBans = [], isManualMode = false }) {
-        const activeChampionList = simOptions?.currentChampionList || championList;
-    
-        const [currentSet, setCurrentSet] = useState(1);
-        const [winsA, setWinsA] = useState(0);
-        const [winsB, setWinsB] = useState(0);
-        
-        // Phase: ROSTER_SELECTION -> SIDE_SELECTION -> LOADING -> DRAFT -> GAME -> SET_RESULT
-        // (startSet is triggered directly from handleRosterConfirm via setStartSetTrigger)
-        const [phase, setPhase] = useState('ROSTER_SELECTION'); 
-        
-        // Mobile Tab State
-        const [mobileTab, setMobileTab] = useState('LOGS'); 
-    
-        const [simulationData, setSimulationData] = useState(null);
-        const [displayLogs, setDisplayLogs] = useState([]);
-        const [resultProcessed, setResultProcessed] = useState(false);
-        
-        const [activeUserRoster, setActiveUserRoster] = useState({}); 
-        const [preselectedSide, setPreselectedSide] = useState(null); 
-    
-        const isUserTeamA = !simOptions?.playerTeamName || teamA.name === simOptions.playerTeamName;
-        const userTeam = isUserTeamA ? teamA : teamB;
-        const cpuTeam = isUserTeamA ? teamB : teamA;
-    
-        // --- MANUAL MODE STATE ---
-        const [manualTeams, setManualTeams] = useState({ blue: null, red: null });
-        const [manualPicks, setManualPicks] = useState({ blue: {}, red: {} }); 
-        const [manualLockedChamps, setManualLockedChamps] = useState(new Set()); 
-        const [selectedChampion, setSelectedChampion] = useState(null);
-        const [filterRole, setFilterRole] = useState('TOP');
-        const [searchTerm, setSearchTerm] = useState(''); 
-        const [draftLogs, setDraftLogs] = useState([]);
-        const [userSelectedRole, setUserSelectedRole] = useState(false); 
-        // New: track which side the USER is on (BLUE/RED) in manual mode to avoid name-compare errors
-        const [manualUserSide, setManualUserSide] = useState(null);
-        const finalizeManualDraftCalledRef = useRef(false); // guard against double-invocation
-        // Use an incrementing trigger instead of watching [phase, startSet].
-        // startSet is a useCallback with 15+ deps so it rebuilds constantly, causing
-        // the old useEffect to fire multiple times and replay old picks.
-        const [startSetTrigger, setStartSetTrigger] = useState(0);
-        // -------------------------
-    
-        // --- DRAFT STATE ---
-        const [draftStep, setDraftStep] = useState(0); 
-        const [draftTimer, setDraftTimer] = useState(15);
-        const [draftState, setDraftState] = useState({
-            blueBans: [],
-            redBans: [],
-            bluePicks: Array(5).fill(null),
-            redPicks: Array(5).fill(null),
-            currentAction: 'Starting Draft...'
-        });
-    
-        const [gameTime, setGameTime] = useState(0);
-        const [playbackSpeed, setPlaybackSpeed] = useState(1);
-        const [liveStats, setLiveStats] = useState({
-          kills: { BLUE: 0, RED: 0 },
-          gold: { BLUE: 2500, RED: 2500 }, 
-          towers: { BLUE: 0, RED: 0 },
-          players: [] 
-        });
-        const liveStatsRef = useRef(liveStats);
-        useEffect(() => { liveStatsRef.current = liveStats; }, [liveStats]);
-        const gameEndFiredRef = useRef(false); // guard: setPhase('SET_RESULT') fires exactly once per game
 
-        // --- SOUND MANAGER ---
-        const [soundEnabled, setSoundEnabled] = useState(true);
-        const soundEnabledRef = useRef(true);
-        useEffect(() => { soundEnabledRef.current = soundEnabled; }, [soundEnabled]);
+    const playSound = useCallback((type) => {
+        if (!soundEnabledRef.current) return;
+        try {
+            const url = SOUND_URLS[type];
+            if (!url) return;
+            const audio = new Audio(url);
+            const p = audio.play();
+            if (p) p.catch((e) => console.warn('Sound play failed:', type, e));
+        } catch (e) { console.warn('Sound error:', type, e); }
+    }, []);
 
-        // Audio objects stored in a ref so they persist without triggering re-renders.
-        // crossOrigin='anonymous' is required for cross-origin CDN URLs to avoid CORS blocks.
-        const SOUND_URLS = {
-            yourBan:  '/sounds/sfx-cs-draft-10ban-your-ban.ogg',
-            enemyBan: '/sounds/sfx-cs-draft-10ban-enemy-ban.ogg',
-            pick:     '/sounds/sfx-cs-draft-notif-yourpick.ogg',
+    const prevBanCountRef  = useRef({ blue: 0, red: 0 });
+    const prevPickCountRef = useRef(0);
+    const silverscrapesRef = useRef(null);
+  
+    const [globalBanList, setGlobalBanList] = useState(Array.isArray(externalGlobalBans) ? externalGlobalBans.slice() : []);
+    const [matchHistory, setMatchHistory] = useState([]);
+
+    const bestOf = useMemo(() => {
+        const fmt = (match?.format || '').toString().toUpperCase();
+        const fmtMatch = fmt.match(/BO(\d+)/);
+        if (fmtMatch) return Number(fmtMatch[1]);
+        if (typeof match?.bestOf === 'number' && match.bestOf > 0) return match.bestOf;
+        const type = (match?.type || '').toString().toLowerCase();
+        if (type === 'super')   return 5;
+        if (type === 'playoff') return 5;
+        if (type === 'playin')  return 3;
+        if (type === 'regular') return 3;
+        const stage = (match?.stage || match?.label || '').toString().toLowerCase();
+        if (stage.includes('final') || stage.includes('결승')) return 5;
+        if (stage.includes('playoff')) return 5;
+        if (stage.includes('play-in') || stage.includes('playin')) return 3;
+        return 3;
+    }, [match]);
+
+    const targetWins = useMemo(() => Math.ceil((bestOf || 3) / 2), [bestOf]);
+    const isBo5 = bestOf === 5;
+    const isDecidingGame = isBo5 && winsA === targetWins - 1 && winsB === targetWins - 1;
+
+    useEffect(() => {
+        if (isDecidingGame && soundEnabled && phase === 'DRAFT') {
+            if (!silverscrapesRef.current) {
+                silverscrapesRef.current = new Audio('/sounds/silverscrapes.mp3');
+                silverscrapesRef.current.loop = true;
+            }
+            silverscrapesRef.current.play().catch(e => console.warn('Silverscapes play failed:', e));
+        } else {
+            if (silverscrapesRef.current) {
+                silverscrapesRef.current.pause();
+                silverscrapesRef.current.currentTime = 0;
+            }
+        }
+        return () => {
+            if (silverscrapesRef.current) {
+                silverscrapesRef.current.pause();
+                silverscrapesRef.current.currentTime = 0;
+            }
         };
+    }, [isDecidingGame, soundEnabled, phase]);
 
-        const playSound = useCallback((type) => {
-            if (!soundEnabledRef.current) return;
-            try {
-                const url = SOUND_URLS[type];
-                if (!url) return;
-                // Create a fresh Audio each time — avoids stale/broken state on Set 2+
-                const audio = new Audio(url);
-                const p = audio.play();
-                if (p) p.catch((e) => console.warn('Sound play failed:', type, e));
-            } catch (e) { console.warn('Sound error:', type, e); }
-        }, []);
+    const isFinals = useMemo(() => {
+        if (!match) return false;
+        const type = String(match.type || '').toLowerCase();
+        if (type !== 'playoff') return false;
 
-        // Track previous ban/pick counts to detect when a new one is committed
-        const prevBanCountRef  = useRef({ blue: 0, red: 0 });
-        const prevPickCountRef = useRef(0);
-        const silverscrapesRef = useRef(null);
-      
-        const [globalBanList, setGlobalBanList] = useState(Array.isArray(externalGlobalBans) ? externalGlobalBans.slice() : []);
-        const [matchHistory, setMatchHistory] = useState([]);
+        const id = String(match.id || '');
+        const label = String(match.label || match.roundName || match.name || match.stage || '').trim().toUpperCase();
+        const round = Number(match.round || 0);
+
+        if (id === 'lec_po_final' || id === 'lpl_po14' || id === 'lcs_po8' || id === 'cblol_po10') return true;
+        if (id.startsWith('lcp_') && round === 4) return true;
+        if (round === 5) return true;
+
+        if (!label) return false;
+        if (label.includes('GRAND FINAL')) return true;
+        if (label === 'FINAL' || label.includes('FINAL')) return true;
+        if (label.includes('결승')) return true;
+        return false;
+    }, [match]);
+
+    const safeArray = (v) => Array.isArray(v) ? v : [];
     
-        // --- Parse best-of (BO3/BO5/BO1) robustly from match.format, type, or bestOf ---
-        const bestOf = useMemo(() => {
-            // 1. Explicit format string wins if present ("BO3", "BO5", "BO1")
-            const fmt = (match?.format || '').toString().toUpperCase();
-            const fmtMatch = fmt.match(/BO(\d+)/);
-            if (fmtMatch) return Number(fmtMatch[1]);
-            // 2. Explicit bestOf number
-            if (typeof match?.bestOf === 'number' && match.bestOf > 0) return match.bestOf;
-            // 3. Type-based inference — covers old saves where format was never saved
-            const type = (match?.type || '').toString().toLowerCase();
-            if (type === 'super')   return 5; // LCK Super Week = BO5
-            if (type === 'playoff') return 5; // All playoff rounds = BO5
-            if (type === 'playin')  return 3; // Play-in = BO3
-            if (type === 'regular') return 3; // LCK/foreign regular season = BO3
-            // 4. Stage / label text fallback
-            const stage = (match?.stage || match?.label || '').toString().toLowerCase();
-            if (stage.includes('final') || stage.includes('결승')) return 5;
-            if (stage.includes('playoff')) return 5;
-            if (stage.includes('play-in') || stage.includes('playin')) return 3;
-            // 5. Safe default
-            return 3;
-        }, [match]);
-    
-        const targetWins = useMemo(() => Math.ceil((bestOf || 3) / 2), [bestOf]);
-        const isBo5 = bestOf === 5;
-        // True only for Game 5 of a BO5 series
-        const isDecidingGame = isBo5 && winsA === targetWins - 1 && winsB === targetWins - 1;
+    useEffect(() => {
+        const defaultLineup = getDefaultLineup(userTeam.name);
+        setActiveUserRoster(defaultLineup);
+    }, [userTeam.name]);
 
-        // Silverscapes — local MP3, plays only during Game 5 draft
-        useEffect(() => {
-            if (isDecidingGame && soundEnabled && phase === 'DRAFT') {
-                if (!silverscrapesRef.current) {
-                    silverscrapesRef.current = new Audio('/sounds/silverscrapes.mp3');
-                    silverscrapesRef.current.loop = true;
-                }
-                silverscrapesRef.current.play().catch(e => console.warn('Silverscapes play failed:', e));
-            } else {
-                if (silverscrapesRef.current) {
-                    silverscrapesRef.current.pause();
-                    silverscrapesRef.current.currentTime = 0;
-                }
-            }
-            return () => {
-                if (silverscrapesRef.current) {
-                    silverscrapesRef.current.pause();
-                    silverscrapesRef.current.currentTime = 0;
-                }
-            };
-        }, [isDecidingGame, soundEnabled, phase]);
-    
-        // Finals detection MUST be strict:
-        // - Never use roundIndex (can collide with regular-season "rounds")
-        // - Never treat any random match as finals based on loose stage/name alone
-        // This prevents BO1 games (e.g., first 16.02 game) from showing Finals MVP.
-        const isFinals = useMemo(() => {
-            if (!match) return false;
-            const type = String(match.type || '').toLowerCase();
-            if (type !== 'playoff') return false;
+    useEffect(() => {
+        setUserSelectedRole(false);
+        setSearchTerm('');
+    }, [draftStep]);
 
-            const id = String(match.id || '');
-            const label = String(match.label || match.roundName || match.name || match.stage || '').trim().toUpperCase();
-            const round = Number(match.round || 0);
-
-            if (id === 'lec_po_final' || id === 'lpl_po14' || id === 'lcs_po8' || id === 'cblol_po10') return true;
-            if (id.startsWith('lcp_') && round === 4) return true;
-            if (round === 5) return true;
-
-            // label-based fallback for finals only (not for regular season)
-            if (!label) return false;
-            if (label.includes('GRAND FINAL')) return true;
-            if (label === 'FINAL' || label.includes('FINAL')) return true;
-            if (label.includes('결승')) return true;
-            return false;
-        }, [match]);
-    
-        const safeArray = (v) => Array.isArray(v) ? v : [];
+    const makeSafeRosterArray = (teamOrRoster, fallbackTeamName) => {
+        let arr = [];
+        const roleOrder = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
         
-        // --- INITIALIZE ROSTER ON MOUNT ---
-        useEffect(() => {
-            const defaultLineup = getDefaultLineup(userTeam.name);
-            setActiveUserRoster(defaultLineup);
-        }, [userTeam.name]);
-    
-        useEffect(() => {
-          setUserSelectedRole(false);
-          setSearchTerm('');
-        }, [draftStep]);
-      
-        // Utility: Ensure roster array of players (length ~5). Accepts team object rosters in different shapes.
-        // [FIXED] Enforce standard sorting order to guarantee index reliability
-        const makeSafeRosterArray = (teamOrRoster, fallbackTeamName) => {
-            // teamOrRoster can be an array or an object map
-            let arr = [];
-            const roleOrder = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
+        if (Array.isArray(teamOrRoster)) {
+            arr = teamOrRoster.slice();
+        } else if (teamOrRoster && typeof teamOrRoster === 'object') {
+            arr = roleOrder.map(r => {
+                const key = Object.keys(teamOrRoster).find(k => normalizePosition(k) === r);
+                return key ? teamOrRoster[key] : null;
+            }).filter(Boolean);
             
-            if (Array.isArray(teamOrRoster)) {
-                arr = teamOrRoster.slice();
-            } else if (teamOrRoster && typeof teamOrRoster === 'object') {
-                // object mapping of positions -> player objects
-                // Try to map explicitly
-                arr = roleOrder.map(r => {
-                    // Find matching key
-                    const key = Object.keys(teamOrRoster).find(k => normalizePosition(k) === r);
-                    return key ? teamOrRoster[key] : null;
-                }).filter(Boolean);
-                
-                // If explicit mapping failed significantly, just grab values
-                if (arr.length < 3) {
-                    arr = Object.values(teamOrRoster).filter(Boolean);
-                }
-            } else {
-                arr = [];
+            if (arr.length < 3) {
+                arr = Object.values(teamOrRoster).filter(Boolean);
             }
-    
-            // Sort array into standard order if it has position info
-            // This makes sure index 4 is always Support
-            arr.sort((a, b) => {
-                const posA = normalizePosition(a.포지션 || a.position || 'MID');
-                const posB = normalizePosition(b.포지션 || b.position || 'MID');
-                return roleOrder.indexOf(posA) - roleOrder.indexOf(posB);
-            });
+        } else {
+            arr = [];
+        }
 
-            // [FIX] Deduplicate roles: when a team has >5 players with duplicate roles
-            // (e.g. two ADCs), slice(0,5) would cut off the SUP. Keep the highest-rated
-            // player per canonical role so every slot 0–4 maps to the correct position.
-            if (arr.length > 5) {
-                const roleMap = {};
-                arr.forEach(p => {
-                    const pos = normalizePosition(p.포지션 || p.position || '');
-                    if (!roleMap[pos]) {
+        arr.sort((a, b) => {
+            const posA = normalizePosition(a.포지션 || a.position || 'MID');
+            const posB = normalizePosition(b.포지션 || b.position || 'MID');
+            return roleOrder.indexOf(posA) - roleOrder.indexOf(posB);
+        });
+
+        if (arr.length > 5) {
+            const roleMap = {};
+            arr.forEach(p => {
+                const pos = normalizePosition(p.포지션 || p.position || '');
+                if (!roleMap[pos]) {
+                    roleMap[pos] = p;
+                } else {
+                    const existing = roleMap[pos];
+                    if ((p.종합 || p.ovr || 0) > (existing.종합 || existing.ovr || 0)) {
                         roleMap[pos] = p;
-                    } else {
-                        // keep higher overall rating
-                        const existing = roleMap[pos];
-                        if ((p.종합 || p.ovr || 0) > (existing.종합 || existing.ovr || 0)) {
-                            roleMap[pos] = p;
-                        }
-                    }
-                });
-                // Rebuild arr in canonical order; unknown/extra roles go at the end
-                const canonical = roleOrder.map(r => roleMap[r]).filter(Boolean);
-                const extra = arr.filter(p => {
-                    const pos = normalizePosition(p.포지션 || p.position || '');
-                    return !roleOrder.includes(pos) && !canonical.includes(p);
-                });
-                arr = [...canonical, ...extra];
-            }
-
-            if (arr.length < 5) {
-                const fallback = getDefaultLineup(fallbackTeamName || '');
-                const fallbackArr = Object.values(fallback || {}).filter(Boolean);
-                // fill missing with fallback players up to 5
-                for (let i = 0; i < 5 && arr.length < 5 && i < fallbackArr.length; i++) {
-                    // Avoid duplicates if possible
-                    if (!arr.some(p => p.이름 === fallbackArr[i].이름)) {
-                        arr.push(fallbackArr[i]);
                     }
                 }
-            }
-            // final safety: if still less than 5, create placeholders
-            while (arr.length < 5) {
-                arr.push({ 이름: `Unknown${arr.length+1}`, 포지션: ['TOP','JGL','MID','ADC','SUP'][arr.length], 종합: 75 });
-            }
-            // Re-sort one last time to be safe
-            arr.sort((a, b) => {
-                const posA = normalizePosition(a.포지션 || a.position || 'MID');
-                const posB = normalizePosition(b.포지션 || b.position || 'MID');
-                return roleOrder.indexOf(posA) - roleOrder.indexOf(posB);
             });
-    
-            return arr.slice(0,5);
-        };
-    
-        // Small helper to resolve a player's display name from a roster robustly
-        const resolvePlayerNameForRole = (roster = [], role, preferredName) => {
-            // [FIXED] Aggressive check: catch all 'Unknown*' variants the engine may emit
-            if (preferredName && !preferredName.startsWith('Unknown') && preferredName !== 'Bot') return preferredName;
-            
-            if (!Array.isArray(roster) || roster.length === 0) return 'Unknown';
-            
-            const targetPos = normalizePosition(role);
-            
-            // 1. Try exact match by position string
-            let found = roster.find(r => {
-                const p = r.포지션 || r.position || r.role || r.lane || '';
-                return positionMatches(p, role);
+            const canonical = roleOrder.map(r => roleMap[r]).filter(Boolean);
+            const extra = arr.filter(p => {
+                const pos = normalizePosition(p.포지션 || p.position || '');
+                return !roleOrder.includes(pos) && !canonical.includes(p);
             });
-            
-            // 2. If not found, and we are looking for support, try robust "Support" aliases
-            if (!found && targetPos === 'SUP') {
-                const supAliases = ['SUP', 'SPT', 'SUPP', 'SUPPORT', '서포터', '서포', 'UTILITY'];
-                found = roster.find(r => {
-                    const p = normalizePosition(r.포지션 || r.position || r.role || r.lane);
-                    return supAliases.includes(p);
-                });
-            }
-            
-            return found ? (found.이름 || found.name || found.playerName || 'Unknown') : 'Unknown';
-        };
-    
-        // 1. Initialize Set Simulation or Manual Setup
-        const startSet = useCallback(() => {
-          // ensure result lock is cleared at the very start of a new run
-          setResultProcessed(false);
-          finalizeManualDraftCalledRef.current = false; // reset guard for new set
-          setPhase('LOADING');
-          setDraftStep(0);
-          setDraftTimer(isManualMode ? 25 : 15);
-          setDraftLogs([]);
-          
-          setDraftState({
-              blueBans: [], redBans: [], 
-              bluePicks: Array(5).fill(null), redPicks: Array(5).fill(null),
-              currentAction: '밴픽 준비 중...'
-          });
-    
-          setManualPicks({ blue: {}, red: {} });
-          setManualLockedChamps(new Set(globalBanList)); 
-          setSelectedChampion(null);
-          setUserSelectedRole(false);
-          setSearchTerm('');
-          setManualUserSide(null);
-    
-          // FIX: Clear simulationData in a separate tick FIRST so React commits the null
-          // before the new simulation runs. If both setSimulationData(null) and
-          // setSimulationData(newData) are in the same synchronous block, React batches
-          // them and only the last one takes effect — so the DRAFT phase would start with
-          // the old set's data still in state, replaying the same picks.
-          setSimulationData(null);
+            arr = [...canonical, ...extra];
+        }
 
-          setTimeout(() => {
-              try {
-                  gameEndFiredRef.current = false; // reset for the new game
-                  // Prepare Roster Objects (Inject Active User Roster) with robust fallbacks
-                  const safeUserRosterArray = makeSafeRosterArray(activeUserRoster, userTeam?.name);
-    
-                  const teamA_Active = isUserTeamA 
-                      ? { ...teamA, roster: safeUserRosterArray } 
-                      : { ...teamA, roster: makeSafeRosterArray(teamA.roster, teamA?.name) }; 
-    
-                  const teamB_Active = !isUserTeamA 
-                      ? { ...teamB, roster: safeUserRosterArray }
-                      : { ...teamB, roster: makeSafeRosterArray(teamB.roster, teamB?.name) };
-    
-                  let blueTeam, redTeam;
-                  let isTeamABlue = true; // Default assumption
-    
-                  if (currentSet === 1) {
-                      // --- SET 1: STRICT SCHEDULE PRIORITY ---
-                      const targetBlueId = match?.blueSidePriority;
-    
-                      if (targetBlueId && targetBlueId !== 'coin') {
-                          const tA_ID = String(teamA.id || teamA.name || '');
-                          const tBlue_ID = String(targetBlueId || '');
-                          isTeamABlue = (tA_ID === tBlue_ID);
-                      } else {
-                          // default coin flip
-                          isTeamABlue = Math.random() < 0.5;
-                      }
-                  } else {
-                      // --- SET 2+: LOSER SELECTION / USER SELECTION ---
-                      if (preselectedSide) {
-                          // preselectedSide is stored as 'BLUE' or 'RED' relative to the USER.
-                          if (isUserTeamA) {
-                              isTeamABlue = (preselectedSide === 'BLUE');
-                          } else {
-                              isTeamABlue = (preselectedSide !== 'BLUE');
-                          }
-                      } else {
-                          // CPU Choice (Loser Picks) - robust lookup for last game
-                          const lastGame = matchHistory[matchHistory.length - 1];
-                          const winnerName = lastGame?.winner;
-                          const isAWinner = winnerName && teamA.name && (winnerName === teamA.name);
-    
-                          // Loser picks side. Loser usually picks Blue (90% prob).
-                          const loserPicksBlue = Math.random() < 0.9; 
-    
-                          if (isAWinner) {
-                              isTeamABlue = !loserPicksBlue;
-                          } else {
-                              isTeamABlue = loserPicksBlue;
-                          }
-                      }
-                  }
-    
-                  // --- FINAL ASSIGNMENT ---
-                  if (isTeamABlue) {
-                      blueTeam = teamA_Active;
-                      redTeam = teamB_Active;
-                  } else {
-                      blueTeam = teamB_Active;
-                      redTeam = teamA_Active;
-                  }
-    
-                  // Determine and store which side the USER is on (BLUE/RED) for manual mode.
-                  const userSideForThisSet = (isTeamABlue === isUserTeamA) ? 'BLUE' : 'RED';
-    
-                  if (isManualMode) {
-                      setManualTeams({ blue: blueTeam, red: redTeam });
-                      setManualUserSide(userSideForThisSet);
-                      setPhase('DRAFT');
-                      return;
-                  }
-    
-                  // AUTO: Run Full Simulation Upfront (defensive)
-                  let result = null;
-                  try {
-                      result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, simOptions);
-                  } catch (err) {
-                      console.warn("simulateSet failed, falling back to runGameTickEngine", err);
-                      // Fallback: try to run the tick engine with safe minimal picks
-                      try {
-                          const samplePickFromTeam = (teamObj, side) => {
-                              const roster = makeSafeRosterArray(teamObj.roster, teamObj.name);
-                              return ['TOP','JGL','MID','ADC','SUP'].map(pos => {
-                                  const champ = activeChampionList.find(c => c.role === pos) || activeChampionList[0] || { name: 'Unknown', tier: 3 };
-                                  // use positionMatches here instead of direct equality
-                                  const player = roster.find(p => positionMatches(p.포지션, pos) || positionMatches(p.position, pos)) || roster[0] || { 이름: 'Unknown', 포지션: pos };
-                                  return {
-                                      champName: champ.name || 'Unknown',
-                                      tier: champ.tier || 3,
-                                      role: pos,
-                                      side,
-                                      classType: champ.class || '전사',
-                                      dmgType: champ.dmg_type || 'AD',
-                                      mastery: { games: 0, winRate: 50, kda: 3.0 },
-                                      playerName: player.이름 || player.name || 'Unknown',
-                                      playerOvr: player.종합 || player.ovr || 75,
-                                      playerData: player,
-                                      conditionModifier: 1.0,
-                                      currentGold: 500,
-                                      level: 1,
-                                      xp: 0,
-                                      deadUntil: 0,
-                                      flashEndTime: 0,
-                                      stats: { kills: 0, deaths: 0, assists: 0, damage: 0, takenDamage:0 }
-                                  };
-                              });
-                          };
-                          const picksA = samplePickFromTeam(blueTeam, 'BLUE');
-                          const picksB = samplePickFromTeam(redTeam, 'RED');
-                          result = runGameTickEngine(blueTeam, redTeam, picksA, picksB, simOptions || { difficulty: 'normal' });
-                      } catch (err2) {
-                          console.error("Fallback engine also failed:", err2);
-                          throw err2;
-                      }
-                  }
-    
-                  if (!result || !result.picks) throw new Error("Draft failed or no picks generated");
-    
-                  const safeResult = {
-                      ...result,
-                      logs: safeArray(result.logs),
-                      pogPlayer: result.pogPlayer || null,
-                      totalSeconds: result.totalSeconds || (result.totalMinutes ? result.totalMinutes * 60 : 30 * 60)
-                  };
-      
-                  // Robust enrichPlayer: resolve playerName from engine result or roster (handles SUP/SPT etc.)
-                  // [FIXED] Added indexInArray param to force link pick[i] -> roster[i] if name fails
-                  const enrichPlayer = (p, teamRoster, side, indexInArray) => {
-                      // roster might use Korean or English keys; be resilient
-                      const findRoster = (roster, playerNameCandidate, roleCandidate) => {
-                          if (!Array.isArray(roster)) return undefined;
-                          return roster.find(r => {
-                              // exact-name matches first (various keys)
-                              if (playerNameCandidate) {
-                                  if ((r.이름 && r.이름 === playerNameCandidate) ||
-                                      (r.name && r.name === playerNameCandidate) ||
-                                      (r.playerName && r.playerName === playerNameCandidate)) {
-                                      return true;
-                                  }
-                              }
-                              // then match by normalized role/position
-                              if (roleCandidate && (positionMatches(r.포지션, roleCandidate) || positionMatches(r.position, roleCandidate))) {
-                                  return true;
-                              }
-                              return false;
-                          });
-                      };
-    
-                      const engineName = p.playerName || p.player || p.name || null;
-                      const roleCandidate = p.role || p.position || null;
-                      
-                      // Try to find using standard methods
-                      let rosterData = findRoster(teamRoster || [], engineName, roleCandidate) || null;
-                      
-                      let finalPlayerName = engineName || 'Unknown';
-                      
-                      // If we found a roster match, use its name
-                      if (rosterData) {
-                          finalPlayerName = rosterData.이름 || rosterData.name || rosterData.playerName || finalPlayerName;
-                      }
-                      
-                      // [CRITICAL FIX] If name is still Unknown/generic, try to resolve via helper or Index
-                      if (!finalPlayerName || finalPlayerName === 'Bot' || finalPlayerName.startsWith('Unknown')) {
-                           // Try role helper
-                           if (roleCandidate) {
-                                finalPlayerName = resolvePlayerNameForRole(teamRoster, roleCandidate, null);
-                           }
-                           // If STILL Unknown, use index fallback (e.g. pick[4] is SUP, take roster[4])
-                           if ((finalPlayerName === 'Unknown' || !finalPlayerName) && teamRoster && teamRoster[indexInArray]) {
-                               const fallbackPlayer = teamRoster[indexInArray];
-                               finalPlayerName = fallbackPlayer.이름 || fallbackPlayer.name || fallbackPlayer.playerName || 'Unknown';
-                               rosterData = fallbackPlayer;
-                           }
-                      }
-    
-                      const safeData = rosterData || { 
-                          이름: finalPlayerName,
-                          포지션: roleCandidate || 'TOP', 
-                          상세: { 성장: 50, 라인전: 50, 무력: 50, 안정성: 50, 운영: 50, 한타: 50 } 
-                      };
-    
-                      return { 
-                          ...p,
-                          playerName: finalPlayerName,
-                          side: side, 
-                          k: p.stats?.kills ?? p.k ?? 0, 
-                          d: p.stats?.deaths ?? p.d ?? 0, 
-                          a: p.stats?.assists ?? p.a ?? 0, 
-                          currentGold: p.currentGold || 500, 
-                          lvl: p.level || 1, 
-                          xp: p.xp || 0, 
-                          playerData: safeData 
-                      };
-                  };
-      
-                  const initPlayers = [
-                      ...safeArray(safeResult.picks?.A).map((p, idx) => enrichPlayer(p, blueTeam.roster, 'BLUE', idx)),
-                      ...safeArray(safeResult.picks?.B).map((p, idx) => enrichPlayer(p, redTeam.roster, 'RED', idx))
-                  ];
-    
-                  // --- IMPORTANT PATCH:
-                  // Build UI-friendly pick objects that always include playerName (fix opponent SUPPORT 'Unknown' issue)
-                  const buildUIPickList = (picksList = [], teamRoster = []) => {
-                      // Sort roster into canonical role order before index-based lookup.
-                      // [FIX] Also deduplicate by role so that teams with >5 players (e.g. two ADCs)
-                      // don't push SUP to index 5 where it falls outside the 5-pick window.
-                      const roleOrder = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
-                      const roleMap = {};
-                      (teamRoster || []).forEach(r => {
-                          const pos = normalizePosition(r.포지션 || r.position || '');
-                          if (!roleMap[pos]) {
-                              roleMap[pos] = r;
-                          } else {
-                              // keep higher overall rating
-                              if ((r.종합 || r.ovr || 0) > (roleMap[pos].종합 || roleMap[pos].ovr || 0)) {
-                                  roleMap[pos] = r;
-                              }
-                          }
-                      });
-                      const sortedRoster = roleOrder.map(r => roleMap[r]).filter(Boolean);
-                      return safeArray(picksList).map((p, idx) => {
-                          const champName = p.champName || p.champion || p.name || '';
-                          const champTier = p.tier || activeChampionList.find(c => c.name === champName)?.tier || p.tier || '-';
-                          
-                          // Look up role from champion list if engine pick object lacks a role field
-                          // (draftLogic.mapPicks does not include role in the pick object)
-                          const pickRole = p.role || p.position
-                              || activeChampionList.find(c => c.name === champName)?.role
-                              || '';
-                          // Use the same robust logic for the UI list
-                          let resolvedName = resolvePlayerNameForRole(sortedRoster, pickRole, p.playerName);
-                          
-                          // UI List Fallback by index if resolvePlayerNameForRole fails.
-                          // sortedRoster is sorted TOP/JGL/MID/ADC/SUP so idx 4 = support.
-                          // mapPicks in draftLogic also iterates in that order, so indices align.
-                          if ((!resolvedName || resolvedName === 'Unknown' || resolvedName.startsWith('Unknown')) && sortedRoster[idx]) {
-                              resolvedName = sortedRoster[idx].이름 || sortedRoster[idx].name || 'Unknown';
-                          }
-    
-                          return {
-                              ...p,
-                              champName,
-                              tier: champTier,
-                              role: p.role || p.position || '',
-                              playerName: resolvedName
-                          };
-                      });
-                  };
-    
-                  const picksA_UI = buildUIPickList(safeResult.picks?.A, blueTeam.roster || []);
-                  const picksB_UI = buildUIPickList(safeResult.picks?.B, redTeam.roster || []);
-    
-                  setSimulationData({ ...safeResult, blueTeam, redTeam, picks: { A: picksA_UI, B: picksB_UI } }); 
-                  setLiveStats({
-                      kills: { BLUE: 0, RED: 0 },
-                      gold: { BLUE: 2500, RED: 2500 },
-                      towers: { BLUE: 0, RED: 0 },
-                      players: initPlayers
-                  });
-                  
-                  setGameTime(0);
-                  setDisplayLogs([]);
-                  setPhase('DRAFT'); 
-    
-              } catch (e) {
-                  console.error("Simulation Error:", e);
-                  try { onClose && onClose(); } catch { /* swallow */ }
-              }
-          }, 500);
-        }, [currentSet, teamA, teamB, globalBanList, simOptions, onClose, matchHistory, isManualMode, activeUserRoster, preselectedSide, isUserTeamA, userTeam, cpuTeam, match, activeChampionList]);
-    
-        // Fire startSet exactly once per explicit trigger increment.
-        // This replaces the old useEffect([phase, startSet]) pattern which was unreliable
-        // because startSet (a useCallback with 15+ deps) rebuilt on every state update,
-        // causing the effect to re-fire while phase was still 'READY' and replay old picks.
-        useEffect(() => {
-            if (startSetTrigger === 0) return; // skip initial mount
-            startSet();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        }, [startSetTrigger]); // intentionally omit startSet — we want the version at trigger time
-    
-        // --- PHASE TRANSITION HANDLERS ---
-        const handleRosterConfirm = () => {
-            if (!validateLineup(activeUserRoster)) {
-                alert("로스터가 불완전하거나 중복된 선수가 있습니다. 5명을 모두 채워주세요.");
-                return;
-            }
-            // Fire the trigger — this calls startSet() exactly once, with the current closure
-            // values (currentSet, globalBanList, matchHistory etc.) captured right now.
-            setStartSetTrigger(t => t + 1);
-        };
-    
-        const handlePlayerSelect = (position, player) => {
-            setActiveUserRoster(prev => ({
-                ...prev,
-                [position]: player
-            }));
-        };
-    
-        const handleSideSelection = (side) => {
-            // side param is 'blue' or 'red' from the UI -> convert to 'BLUE'/'RED' relative to the user
-            setPreselectedSide(side === 'blue' ? 'BLUE' : 'RED');
-            setPhase('ROSTER_SELECTION');
-        };
-    
-        // --- DRAFT PHASE LOGIC ---
-        useEffect(() => {
-            if (phase !== 'DRAFT') return;
-    
-            if (draftStep >= DRAFT_SEQUENCE.length) {
-                if (isManualMode) {
-                    finalizeManualDraft();
-                } else {
-                    setTimeout(() => setPhase('GAME'), 1000);
+        if (arr.length < 5) {
+            const fallback = getDefaultLineup(fallbackTeamName || '');
+            const fallbackArr = Object.values(fallback || {}).filter(Boolean);
+            for (let i = 0; i < 5 && arr.length < 5 && i < fallbackArr.length; i++) {
+                if (!arr.some(p => p.이름 === fallbackArr[i].이름)) {
+                    arr.push(fallbackArr[i]);
                 }
-                return;
             }
-    
-            if (isManualMode) {
-                const stepInfo = DRAFT_SEQUENCE[draftStep];
-                const actingTeamSide = stepInfo.side; 
-                const actingTeamObj = actingTeamSide === 'BLUE' ? manualTeams.blue : manualTeams.red;
-    
-                // Use manualUserSide instead of name-comparisons to determine player's turn.
-                const isPlayerTurn = manualUserSide ? (actingTeamSide === manualUserSide) : (actingTeamObj?.name === simOptions?.playerTeamName);
-    
-                if (isPlayerTurn && stepInfo.type === 'PICK' && !userSelectedRole) {
-                    const myPicks = actingTeamSide === 'BLUE' ? manualPicks.blue : manualPicks.red;
-                    const roles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
-                    const neededRole = roles.find(r => !myPicks[r]);
-                    if (neededRole && neededRole !== filterRole) setFilterRole(neededRole);
-                }
-    
-                if (!isPlayerTurn) {
-                    const triggerTime = 25; 
-                    const timer = setInterval(() => {
-                        setDraftTimer(prev => {
-                            if (prev <= triggerTime) {
-                                clearInterval(timer);
-                                handleCpuTurn(stepInfo, actingTeamObj, actingTeamSide);
-                                return 30;
-                            }
-                            return prev - 1;
-                        });
-                    }, 1000);
-                    return () => clearInterval(timer);
-                } else {
-                    // Player turn timer
-                    const timer = setInterval(() => {
-                        setDraftTimer(prev => {
-                            if (prev <= 0) {
-                                clearInterval(timer);
-                                handleCpuTurn(stepInfo, actingTeamObj, actingTeamSide); // Auto-pick on timeout
-                                return 30;
-                            }
-                            return prev - 1;
-                        });
-                    }, 1000);
-                    return () => clearInterval(timer);
-                }
-            } 
-            
-            else if (simulationData) {
-                const triggerTime = Math.floor(Math.random() * 12) + 1; 
-                const timer = setInterval(() => {
-                    setDraftTimer(prev => {
-                        if (prev <= triggerTime) {
-                            const stepInfo = DRAFT_SEQUENCE[draftStep];
-                            const logEntry = (simulationData.logs || []).find(l => l && l.startsWith && l.startsWith(`[${stepInfo.order}]`));
-                            
-                            if (logEntry) {
-                                processDraftStepLog(stepInfo, logEntry);
-                            }
-                            setDraftStep(s => s + 1);
-                            return 15; 
-                        }
-                        return prev - 1;
-                    });
-                }, 1000); 
-                return () => clearInterval(timer);
-            }
-    
-        }, [phase, draftStep, simulationData, isManualMode, manualTeams, manualPicks, filterRole, userSelectedRole, manualUserSide]);
+        }
 
-        // --- SOUND TRIGGER EFFECTS ---
+        while (arr.length < 5) {
+            arr.push({ 이름: `Unknown${arr.length+1}`, 포지션: ['TOP','JGL','MID','ADC','SUP'][arr.length], 종합: 75 });
+        }
 
-        // 1. Ban sound — differentiate user's ban vs enemy ban
-        useEffect(() => {
-            if (phase !== 'DRAFT') {
-                prevBanCountRef.current = { blue: 0, red: 0 };
-                prevPickCountRef.current = 0;
-                return;
-            }
+        arr.sort((a, b) => {
+            const posA = normalizePosition(a.포지션 || a.position || 'MID');
+            const posB = normalizePosition(b.포지션 || b.position || 'MID');
+            return roleOrder.indexOf(posA) - roleOrder.indexOf(posB);
+        });
 
-            const blueBans = draftState.blueBans.length;
-            const redBans  = draftState.redBans.length;
-            const totalPicks = draftState.bluePicks.filter(Boolean).length + draftState.redPicks.filter(Boolean).length;
+        return arr.slice(0,5);
+    };
 
-            // Determine user's side (manual mode has manualUserSide; auto mode compares team names)
-            const userSide = manualUserSide
-                ? manualUserSide
-                : (simulationData?.blueTeam?.name === userTeam?.name ? 'BLUE' : 'RED');
-
-            if (blueBans > prevBanCountRef.current.blue) {
-                playSound(userSide === 'BLUE' ? 'yourBan' : 'enemyBan');
-            } else if (redBans > prevBanCountRef.current.red) {
-                playSound(userSide === 'RED' ? 'yourBan' : 'enemyBan');
-            } else if (totalPicks > prevPickCountRef.current) {
-                playSound('pick');
-            }
-
-            prevBanCountRef.current  = { blue: blueBans, red: redBans };
-            prevPickCountRef.current = totalPicks;
-        }, [draftState, phase, manualUserSide, simulationData, userTeam, playSound]);
-    
-        // --- MANUAL MODE HELPER FUNCTIONS ---
-        const handleCpuTurn = (stepInfo, team, side) => {
-            const availableChamps = activeChampionList.filter(c => !manualLockedChamps.has(c.name));
-            let selectedChamp = null;
+    const resolvePlayerNameForRole = (roster = [], role, preferredName) => {
+        if (preferredName && !preferredName.startsWith('Unknown') && preferredName !== 'Bot') return preferredName;
         
-            if (stepInfo.type === 'BAN') {
-                const opponentSide = side === 'BLUE' ? 'RED' : 'BLUE';
-                const opponentTeam = side === 'BLUE' ? manualTeams.red : manualTeams.blue;
-                const opponentOpenRoles = side === 'BLUE' 
-                    ? ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].filter(r => !manualPicks.red[r])
-                    : ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].filter(r => !manualPicks.blue[r]);
-                
-                selectedChamp = selectBanFromProbabilities(opponentTeam || {}, availableChamps, opponentOpenRoles);
-                
-                if (!selectedChamp) {
-                    const idx = Math.floor(Math.random() * Math.min(10, availableChamps.length));
-                    selectedChamp = availableChamps[idx];
-                }
-            } else {
-                const currentPicks = side === 'BLUE' ? manualPicks.blue : manualPicks.red;
-                const remainingRoles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].filter(r => !currentPicks[r]);
-                
-                let roleCandidates = [];
-                remainingRoles.forEach(role => {
-                    const player = team?.roster?.find(p =>
-                        positionMatches(p.포지션, role) ||
-                        positionMatches(p.position, role) ||
-                        positionMatches(p.role, role)
-                    );
-                    if (player) {
-                        const candidateChamp = selectPickFromTop3(player, availableChamps);
-                        if (candidateChamp) {
-                            roleCandidates.push({ role, champ: candidateChamp, score: candidateChamp.score || 0 });
-                        }
-                    }
-                });
-                
-                roleCandidates.sort((a, b) => b.score - a.score);
-                
-                if (roleCandidates.length > 0) {
-                    const bestPick = roleCandidates[0];
-                    selectedChamp = { ...bestPick.champ, role: bestPick.role };
-                } else {
-                    const neededRole = remainingRoles[0] || 'MID';
-                    selectedChamp = getRecommendedChampion(neededRole, [], availableChamps);
-                    selectedChamp = { ...selectedChamp, role: neededRole };
-                }
-            }
+        if (!Array.isArray(roster) || roster.length === 0) return 'Unknown';
         
-            if (selectedChamp) {
-                commitDraftAction(stepInfo, selectedChamp, team, side);
-            }
-        };
-    
-        const handlePlayerLockIn = () => {
-            if (!selectedChampion) return;
-            const stepInfo = DRAFT_SEQUENCE[draftStep];
-            const side = stepInfo.side;
-            const team = side === 'BLUE' ? manualTeams.blue : manualTeams.red;
-            
-            commitDraftAction(stepInfo, selectedChampion, team, side);
-            setSelectedChampion(null);
-            setUserSelectedRole(true);
-            setSearchTerm('');
-        };
-    
-        const commitDraftAction = (stepInfo, champ, team, side) => {
-            const actionLabel = stepInfo.type === 'BAN' ? '🚫' : '✅';
-            const logMsg = `[${stepInfo.order}] ${stepInfo.label}: ${actionLabel} ${champ.name}`;
-            
-            setDraftLogs(prev => [...prev, logMsg]);
-            setManualLockedChamps(prev => new Set([...Array.from(prev), champ.name]));
-    
-            setDraftState(prev => {
-                const newState = { ...prev, currentAction: logMsg.split(']')[1] || logMsg };
-                if (stepInfo.type === 'BAN') {
-                    if (side === 'BLUE') newState.blueBans = [...prev.blueBans, champ.name];
-                    else newState.redBans = [...prev.redBans, champ.name];
-                } else {
-                    const teamPicks = side === 'BLUE' ? prev.bluePicks.slice() : prev.redPicks.slice();
-    
-                    const emptyIdx = teamPicks.findIndex(p => p === null);
-                    const chosenRole = champ.role || filterRole || 'MID';
-    
-                    // Use positionMatches to find the player, so SUP variants are handled
-                    const foundPlayer = (team?.roster || []).find(p => positionMatches(p.포지션, chosenRole) || positionMatches(p.position, chosenRole) || positionMatches(p.role, chosenRole));
-                    const playerName = foundPlayer?.이름 || foundPlayer?.name || foundPlayer?.playerName || 'Unknown';
-                    const pickObj = { champName: champ.name, tier: champ.tier, role: chosenRole, playerName }; // Saving tier here
-    
-                    if (emptyIdx !== -1) {
-                        teamPicks[emptyIdx] = pickObj;
-                    } else {
-                        teamPicks[teamPicks.length - 1] = pickObj;
-                    }
-    
-                    if (side === 'BLUE') newState.bluePicks = teamPicks;
-                    else newState.redPicks = teamPicks;
-                }
-                return newState;
+        const targetPos = normalizePosition(role);
+        
+        let found = roster.find(r => {
+            const p = r.포지션 || r.position || r.role || r.lane || '';
+            return positionMatches(p, role);
+        });
+        
+        if (!found && targetPos === 'SUP') {
+            const supAliases = ['SUP', 'SPT', 'SUPP', 'SUPPORT', '서포터', '서포', 'UTILITY'];
+            found = roster.find(r => {
+                const p = normalizePosition(r.포지션 || r.position || r.role || r.lane);
+                return supAliases.includes(p);
             });
-    
-            if (stepInfo.type === 'PICK') {
-                const role = champ.role || filterRole || 'MID';
-                setManualPicks(prev => ({
-                    ...prev,
-                    [side.toLowerCase()]: { ...prev[side.toLowerCase()], [role]: champ }
-                }));
-            }
-    
-            setDraftStep(prev => prev + 1);
-            setDraftTimer(30); 
-        };
-    
-        // --- FINALIZE MANUAL DRAFT ---
-        const finalizeManualDraft = () => {
-            // Guard against double-invocation (useEffect can fire multiple times)
-            if (finalizeManualDraftCalledRef.current) return;
-            finalizeManualDraftCalledRef.current = true;
-
-            if (!manualTeams.blue || !manualTeams.red) {
-                console.error("Critical Error: Teams not initialized");
-                alert("Error: Teams not initialized. Please restart.");
-                return;
-            }
-    
-            const mapToEngineFormat = (sidePicks, roster, teamSide) => {
-                return ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(pos => {
-                    const c = sidePicks[pos];
-                    // Fallback for incomplete drafts (prevents crash)
-                    const safeChamp = c || activeChampionList.find(ch => ch.role === pos) || activeChampionList[0];
-                    // Use positionMatches across all possible position fields — roster entries
-                    // may store position in .role, .lane, or nested .playerData?.포지션
-                    const p = (roster || []).find(pl =>
-                        positionMatches(pl.포지션, pos) ||
-                        positionMatches(pl.position, pos) ||
-                        positionMatches(pl.role, pos) ||
-                        positionMatches(pl.lane, pos) ||
-                        positionMatches(pl.playerData?.포지션, pos)
-                    );
-                    
-                    const safePlayerData = p || { 
-                        이름: 'Unknown', 
-                        포지션: pos, 
-                        종합: 75, 
-                        상세: { 라인전: 75, 무력: 75, 한타: 75, 성장: 75, 안정성: 75, 운영: 75 } 
-                    };
-    
-                    return {
-                        champName: safeChamp.name || 'Unknown',
-                        tier: safeChamp.tier || 3,
-                        role: pos,
-                        side: teamSide,
-                        classType: safeChamp.class || '전사',
-                        dmgType: safeChamp.dmg_type || 'AD',
-                        mastery: { games: 0, winRate: 50, kda: 3.0 },
-                        playerName: safePlayerData.이름 || safePlayerData.name || safePlayerData.playerName || 'Unknown',
-                        playerOvr: safePlayerData.종합,
-                        playerData: safePlayerData,
-                        conditionModifier: 1.0,
-                        currentGold: 500,
-                        level: 1,
-                        xp: 0,
-                        deadUntil: 0,
-                        flashEndTime: 0,
-                        stats: { kills: 0, deaths: 0, assists: 0, damage: 0, takenDamage: 0 }
-                    };
-                }).filter(Boolean);
-            };
+        }
         
+        return found ? (found.이름 || found.name || found.playerName || 'Unknown') : 'Unknown';
+    };
+
+    // [FIX] Main startSet callback - ensures fresh champion list is passed
+    const startSet = useCallback(() => {
+        setResultProcessed(false);
+        finalizeManualDraftCalledRef.current = false;
+        setPhase('LOADING');
+        setDraftStep(0);
+        setDraftTimer(isManualMode ? 25 : 15);
+        setDraftLogs([]);
+        
+        setDraftState({
+            blueBans: [], redBans: [], 
+            bluePicks: Array(5).fill(null), redPicks: Array(5).fill(null),
+            currentAction: '밴픽 준비 중...'
+        });
+
+        setManualPicks({ blue: {}, red: {} });
+        setManualLockedChamps(new Set(globalBanList)); 
+        setSelectedChampion(null);
+        setUserSelectedRole(false);
+        setSearchTerm('');
+        setManualUserSide(null);
+
+        setSimulationData(null);
+
+        setTimeout(() => {
             try {
-                const picksBlueDetailed = mapToEngineFormat(manualPicks.blue || {}, manualTeams.blue?.roster || [], 'BLUE');
-                const picksRedDetailed = mapToEngineFormat(manualPicks.red || {}, manualTeams.red?.roster || [], 'RED');
-            
-                if (picksBlueDetailed.length < 5 || picksRedDetailed.length < 5) {
-                    // If fallback failed for some reason
-                    alert('Draft Error: Incomplete teams. Filling randoms...');
+                gameEndFiredRef.current = false;
+                const safeUserRosterArray = makeSafeRosterArray(activeUserRoster, userTeam?.name);
+
+                const teamA_Active = isUserTeamA 
+                    ? { ...teamA, roster: safeUserRosterArray } 
+                    : { ...teamA, roster: makeSafeRosterArray(teamA.roster, teamA?.name) }; 
+
+                const teamB_Active = !isUserTeamA 
+                    ? { ...teamB, roster: safeUserRosterArray }
+                    : { ...teamB, roster: makeSafeRosterArray(teamB.roster, teamB?.name) };
+
+                let blueTeam, redTeam;
+                let isTeamABlue = true;
+
+                if (currentSet === 1) {
+                    const targetBlueId = match?.blueSidePriority;
+
+                    if (targetBlueId && targetBlueId !== 'coin') {
+                        const tA_ID = String(teamA.id || teamA.name || '');
+                        const tBlue_ID = String(targetBlueId || '');
+                        isTeamABlue = (tA_ID === tBlue_ID);
+                    } else {
+                        isTeamABlue = Math.random() < 0.5;
+                    }
+                } else {
+                    if (preselectedSide) {
+                        if (isUserTeamA) {
+                            isTeamABlue = (preselectedSide === 'BLUE');
+                        } else {
+                            isTeamABlue = (preselectedSide !== 'BLUE');
+                        }
+                    } else {
+                        const lastGame = matchHistory[matchHistory.length - 1];
+                        const winnerName = lastGame?.winner;
+                        const isAWinner = winnerName && teamA.name && (winnerName === teamA.name);
+
+                        const loserPicksBlue = Math.random() < 0.9; 
+
+                        if (isAWinner) {
+                            isTeamABlue = !loserPicksBlue;
+                        } else {
+                            isTeamABlue = loserPicksBlue;
+                        }
+                    }
                 }
-            
-                const safeOptions = simOptions || { difficulty: 'normal', playerTeamName: '' };
-                const result = runGameTickEngine(manualTeams.blue, manualTeams.red, picksBlueDetailed, picksRedDetailed, safeOptions);
-    
-                const winnerName = result?.winnerName || result?.gameResult?.winnerName || (result?.winner || null);
-                const totalSeconds = result?.totalSeconds ?? (result?.totalMinutes ? result.totalMinutes * 60 : 30 * 60);
-                const logs = safeArray(result?.logs);
-                const currentUsedChamps = [...picksBlueDetailed, ...picksRedDetailed].map(p => p.champName);
-                const totalMinutes = result?.totalMinutes ?? Math.floor((totalSeconds || 1800) / 60);
-    
-                const winnerSide = (winnerName === manualTeams.blue?.name) ? 'BLUE' : 'RED';
-                const pogPlayer = calculateManualPog(picksBlueDetailed, picksRedDetailed, winnerSide, totalMinutes);
-    
-                setSimulationData({
-                    winnerName: winnerName,
-                    gameResult: result,
-                    logs: [
-                        `========== [ MANUAL DRAFT ] ==========` ,
-                        ...draftLogs,
-                        `========== [ GAME START ] ==========` ,
-                        ...logs
-                    ],
-                    blueTeam: manualTeams.blue,
-                    redTeam: manualTeams.red,
-                    totalSeconds,
-                    totalMinutes,
-                    gameTime: result?.finalTimeStr || `${totalMinutes}분 00초`,
+
+                if (isTeamABlue) {
+                    blueTeam = teamA_Active;
+                    redTeam = teamB_Active;
+                } else {
+                    blueTeam = teamB_Active;
+                    redTeam = teamA_Active;
+                }
+
+                const userSideForThisSet = (isTeamABlue === isUserTeamA) ? 'BLUE' : 'RED';
+
+                if (isManualMode) {
+                    setManualTeams({ blue: blueTeam, red: redTeam });
+                    setManualUserSide(userSideForThisSet);
+                    setPhase('DRAFT');
+                    return;
+                }
+
+                // [FIX] Pass current activeChampionList to ensure meta tiers are respected
+                let result = null;
+                try {
+                    result = simulateSet(blueTeam, redTeam, currentSet, globalBanList, {
+                        ...simOptions,
+                        currentChampionList: activeChampionList
+                    });
+                } catch (err) {
+                    console.warn("simulateSet failed, falling back to runGameTickEngine", err);
+                    try {
+                        const samplePickFromTeam = (teamObj, side) => {
+                            const roster = makeSafeRosterArray(teamObj.roster, teamObj.name);
+                            return ['TOP','JGL','MID','ADC','SUP'].map(pos => {
+                                const champ = activeChampionList.find(c => c.role === pos) || activeChampionList[0] || { name: 'Unknown', tier: 3 };
+                                const player = roster.find(p => positionMatches(p.포지션, pos) || positionMatches(p.position, pos)) || roster[0] || { 이름: 'Unknown', 포지션: pos };
+                                return {
+                                    champName: champ.name || 'Unknown',
+                                    tier: champ.tier || 3,
+                                    role: pos,
+                                    side,
+                                    classType: champ.class || '전사',
+                                    dmgType: champ.dmg_type || 'AD',
+                                    mastery: { games: 0, winRate: 50, kda: 3.0 },
+                                    playerName: player.이름 || player.name || 'Unknown',
+                                    playerOvr: player.종합 || player.ovr || 75,
+                                    playerData: player,
+                                    conditionModifier: 1.0,
+                                    currentGold: 500,
+                                    level: 1,
+                                    xp: 0,
+                                    deadUntil: 0,
+                                    flashEndTime: 0,
+                                    stats: { kills: 0, deaths: 0, assists: 0, damage: 0, takenDamage:0 }
+                                };
+                            });
+                        };
+                        const picksA = samplePickFromTeam(blueTeam, 'BLUE');
+                        const picksB = samplePickFromTeam(redTeam, 'RED');
+                        result = runGameTickEngine(blueTeam, redTeam, picksA, picksB, {
+                            ...simOptions,
+                            currentChampionList: activeChampionList
+                        });
+                    } catch (err2) {
+                        console.error("Fallback engine also failed:", err2);
+                        throw err2;
+                    }
+                }
+
+                if (!result || !result.picks) throw new Error("Draft failed or no picks generated");
+
+                const safeResult = {
+                    ...result,
+                    logs: safeArray(result.logs),
+                    pogPlayer: result.pogPlayer || null,
+                    totalSeconds: result.totalSeconds || (result.totalMinutes ? result.totalMinutes * 60 : 30 * 60)
+                };
+
+                const enrichPlayer = (p, teamRoster, side, indexInArray) => {
+                    const findRoster = (roster, playerNameCandidate, roleCandidate) => {
+                        if (!Array.isArray(roster)) return undefined;
+                        return roster.find(r => {
+                            if (playerNameCandidate) {
+                                if ((r.이름 && r.이름 === playerNameCandidate) ||
+                                    (r.name && r.name === playerNameCandidate) ||
+                                    (r.playerName && r.playerName === playerNameCandidate)) {
+                                    return true;
+                                }
+                            }
+                            if (roleCandidate && (positionMatches(r.포지션, roleCandidate) || positionMatches(r.position, roleCandidate))) {
+                                return true;
+                            }
+                            return false;
+                        });
+                    };
+
+                    const engineName = p.playerName || p.player || p.name || null;
+                    const roleCandidate = p.role || p.position || null;
                     
-                    picks: { A: picksBlueDetailed, B: picksRedDetailed },
-                    bans: { A: draftState.blueBans || [], B: draftState.redBans || [] },
-                    pogPlayer: pogPlayer || null,
-                    usedChamps: currentUsedChamps 
-                });
-            
+                    let rosterData = findRoster(teamRoster || [], engineName, roleCandidate) || null;
+                    
+                    let finalPlayerName = engineName || 'Unknown';
+                    
+                    if (rosterData) {
+                        finalPlayerName = rosterData.이름 || rosterData.name || rosterData.playerName || finalPlayerName;
+                    }
+                    
+                    if (!finalPlayerName || finalPlayerName === 'Bot' || finalPlayerName.startsWith('Unknown')) {
+                        if (roleCandidate) {
+                            finalPlayerName = resolvePlayerNameForRole(teamRoster, roleCandidate, null);
+                        }
+                        if ((finalPlayerName === 'Unknown' || !finalPlayerName) && teamRoster && teamRoster[indexInArray]) {
+                            const fallbackPlayer = teamRoster[indexInArray];
+                            finalPlayerName = fallbackPlayer.이름 || fallbackPlayer.name || fallbackPlayer.playerName || 'Unknown';
+                            rosterData = fallbackPlayer;
+                        }
+                    }
+
+                    const safeData = rosterData || { 
+                        이름: finalPlayerName,
+                        포지션: roleCandidate || 'TOP', 
+                        상세: { 성장: 50, 라인전: 50, 무력: 50, 안정성: 50, 운영: 50, 한타: 50 } 
+                    };
+
+                    return { 
+                        ...p,
+                        playerName: finalPlayerName,
+                        side: side, 
+                        k: p.stats?.kills ?? p.k ?? 0, 
+                        d: p.stats?.deaths ?? p.d ?? 0, 
+                        a: p.stats?.assists ?? p.a ?? 0, 
+                        currentGold: p.currentGold || 500, 
+                        lvl: p.level || 1, 
+                        xp: p.xp || 0, 
+                        playerData: safeData 
+                    };
+                };
+
+                const initPlayers = [
+                    ...safeArray(safeResult.picks?.A).map((p, idx) => enrichPlayer(p, blueTeam.roster, 'BLUE', idx)),
+                    ...safeArray(safeResult.picks?.B).map((p, idx) => enrichPlayer(p, redTeam.roster, 'RED', idx))
+                ];
+
+                const buildUIPickList = (picksList = [], teamRoster = []) => {
+                    const roleOrder = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
+                    const roleMap = {};
+                    (teamRoster || []).forEach(r => {
+                        const pos = normalizePosition(r.포지션 || r.position || '');
+                        if (!roleMap[pos]) {
+                            roleMap[pos] = r;
+                        } else {
+                            if ((r.종합 || r.ovr || 0) > (roleMap[pos].종합 || roleMap[pos].ovr || 0)) {
+                                roleMap[pos] = r;
+                            }
+                        }
+                    });
+                    const sortedRoster = roleOrder.map(r => roleMap[r]).filter(Boolean);
+                    return safeArray(picksList).map((p, idx) => {
+                        const champName = p.champName || p.champion || p.name || '';
+                        // [FIX] Look up tier from activeChampionList (current meta)
+                        const champTier = p.tier || activeChampionList.find(c => c.name === champName)?.tier || p.tier || '-';
+                        
+                        const pickRole = p.role || p.position
+                            || activeChampionList.find(c => c.name === champName)?.role
+                            || '';
+                        let resolvedName = resolvePlayerNameForRole(sortedRoster, pickRole, p.playerName);
+                        
+                        if ((!resolvedName || resolvedName === 'Unknown' || resolvedName.startsWith('Unknown')) && sortedRoster[idx]) {
+                            resolvedName = sortedRoster[idx].이름 || sortedRoster[idx].name || 'Unknown';
+                        }
+
+                        return {
+                            ...p,
+                            champName,
+                            tier: champTier,
+                            role: p.role || p.position || '',
+                            playerName: resolvedName
+                        };
+                    });
+                };
+
+                const picksA_UI = buildUIPickList(safeResult.picks?.A, blueTeam.roster || []);
+                const picksB_UI = buildUIPickList(safeResult.picks?.B, redTeam.roster || []);
+
+                setSimulationData({ ...safeResult, blueTeam, redTeam, picks: { A: picksA_UI, B: picksB_UI } }); 
                 setLiveStats({
                     kills: { BLUE: 0, RED: 0 },
                     gold: { BLUE: 2500, RED: 2500 },
                     towers: { BLUE: 0, RED: 0 },
-                    players: [...picksBlueDetailed, ...picksRedDetailed].map(p => ({
-    
-                        ...p,
-                        k: 0, d: 0, a: 0, lvl: 1, xp: 0, currentGold: 500, stats: p.stats || { kills:0, deaths:0, assists:0, damage:0, takenDamage:0 }
-                    }))
+                    players: initPlayers
                 });
-            
-                gameEndFiredRef.current = false; // reset for this new manual game
+                
                 setGameTime(0);
                 setDisplayLogs([]);
-                setPhase('GAME');
-    
-            } catch (error) {
-                console.error("CRITICAL SIMULATION ERROR:", error);
-                alert(`Simulation Failed: ${error?.message || error}`);
-                // Force safe exit
-                onClose && onClose();
+                setPhase('DRAFT'); 
+
+            } catch (e) {
+                console.error("Simulation Error:", e);
+                try { onClose && onClose(); } catch { /* swallow */ }
             }
-        };
-    
-        const processDraftStepLog = (stepInfo, logEntry) => {
-            if (!logEntry) return;
-            let champName = 'Unknown';
-            if (logEntry.includes('🚫')) {
-                champName = logEntry.split('🚫')[1]?.trim();
-            } else if (logEntry.includes('✅')) {
-                champName = logEntry.split('✅')[1]?.split('(')[0]?.trim();
+        }, 500);
+    }, [currentSet, teamA, teamB, globalBanList, simOptions, onClose, matchHistory, isManualMode, activeUserRoster, preselectedSide, isUserTeamA, userTeam, cpuTeam, match, activeChampionList]);
+
+    useEffect(() => {
+        if (startSetTrigger === 0) return;
+        startSet();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [startSetTrigger]);
+
+    const handleRosterConfirm = () => {
+        if (!validateLineup(activeUserRoster)) {
+            alert("로스터가 불완전하거나 중복된 선수가 있습니다. 5명을 모두 채워주세요.");
+            return;
+        }
+        setStartSetTrigger(t => t + 1);
+    };
+
+    const handlePlayerSelect = (position, player) => {
+        setActiveUserRoster(prev => ({
+            ...prev,
+            [position]: player
+        }));
+    };
+
+    const handleSideSelection = (side) => {
+        setPreselectedSide(side === 'blue' ? 'BLUE' : 'RED');
+        setPhase('ROSTER_SELECTION');
+    };
+
+    useEffect(() => {
+        if (phase !== 'DRAFT') return;
+
+        if (draftStep >= DRAFT_SEQUENCE.length) {
+            if (isManualMode) {
+                finalizeManualDraft();
+            } else {
+                setTimeout(() => setPhase('GAME'), 1000);
             }
+            return;
+        }
+
+        if (isManualMode) {
+            const stepInfo = DRAFT_SEQUENCE[draftStep];
+            const actingTeamSide = stepInfo.side; 
+            const actingTeamObj = actingTeamSide === 'BLUE' ? manualTeams.blue : manualTeams.red;
+
+            const isPlayerTurn = manualUserSide ? (actingTeamSide === manualUserSide) : (actingTeamObj?.name === simOptions?.playerTeamName);
+
+            if (isPlayerTurn && stepInfo.type === 'PICK' && !userSelectedRole) {
+                const myPicks = actingTeamSide === 'BLUE' ? manualPicks.blue : manualPicks.red;
+                const roles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
+                const neededRole = roles.find(r => !myPicks[r]);
+                if (neededRole && neededRole !== filterRole) setFilterRole(neededRole);
+            }
+
+            if (!isPlayerTurn) {
+                const triggerTime = 25; 
+                const timer = setInterval(() => {
+                    setDraftTimer(prev => {
+                        if (prev <= triggerTime) {
+                            clearInterval(timer);
+                            handleCpuTurn(stepInfo, actingTeamObj, actingTeamSide);
+                            return 30;
+                        }
+                        return prev - 1;
+                    });
+                }, 1000);
+                return () => clearInterval(timer);
+            } else {
+                const timer = setInterval(() => {
+                    setDraftTimer(prev => {
+                        if (prev <= 0) {
+                            clearInterval(timer);
+                            handleCpuTurn(stepInfo, actingTeamObj, actingTeamSide);
+                            return 30;
+                        }
+                        return prev - 1;
+                    });
+                }, 1000);
+                return () => clearInterval(timer);
+            }
+        } 
+        
+        else if (simulationData) {
+            const triggerTime = Math.floor(Math.random() * 12) + 1; 
+            const timer = setInterval(() => {
+                setDraftTimer(prev => {
+                    if (prev <= triggerTime) {
+                        const stepInfo = DRAFT_SEQUENCE[draftStep];
+                        const logEntry = (simulationData.logs || []).find(l => l && l.startsWith && l.startsWith(`[${stepInfo.order}]`));
+                        
+                        if (logEntry) {
+                            processDraftStepLog(stepInfo, logEntry);
+                        }
+                        setDraftStep(s => s + 1);
+                        return 15; 
+                    }
+                    return prev - 1;
+                });
+            }, 1000); 
+            return () => clearInterval(timer);
+        }
+
+    }, [phase, draftStep, simulationData, isManualMode, manualTeams, manualPicks, filterRole, userSelectedRole, manualUserSide]);
+
+    useEffect(() => {
+        if (phase !== 'DRAFT') {
+            prevBanCountRef.current = { blue: 0, red: 0 };
+            prevPickCountRef.current = 0;
+            return;
+        }
+
+        const blueBans = draftState.blueBans.length;
+        const redBans  = draftState.redBans.length;
+        const totalPicks = draftState.bluePicks.filter(Boolean).length + draftState.redPicks.filter(Boolean).length;
+
+        const userSide = manualUserSide
+            ? manualUserSide
+            : (simulationData?.blueTeam?.name === userTeam?.name ? 'BLUE' : 'RED');
+
+        if (blueBans > prevBanCountRef.current.blue) {
+            playSound(userSide === 'BLUE' ? 'yourBan' : 'enemyBan');
+        } else if (redBans > prevBanCountRef.current.red) {
+            playSound(userSide === 'RED' ? 'yourBan' : 'enemyBan');
+        } else if (totalPicks > prevPickCountRef.current) {
+            playSound('pick');
+        }
+
+        prevBanCountRef.current  = { blue: blueBans, red: redBans };
+        prevPickCountRef.current = totalPicks;
+    }, [draftState, phase, manualUserSide, simulationData, userTeam, playSound]);
+
+    // [FIX] handleCpuTurn uses fresh activeChampionList
+    const handleCpuTurn = (stepInfo, team, side) => {
+        const availableChamps = activeChampionList.filter(c => !manualLockedChamps.has(c.name));
+        let selectedChamp = null;
     
-            setDraftState(prev => {
-                const newState = { ...prev, currentAction: logEntry.split(']')[1] || logEntry };
-                if (stepInfo.type === 'BAN') {
-                    if (stepInfo.side === 'BLUE') newState.blueBans = [...prev.blueBans, champName];
-                    else newState.redBans = [...prev.redBans, champName];
-                } else {
-                    const currentPicks = stepInfo.side === 'BLUE' ? prev.bluePicks : prev.redPicks;
-                    const teamPicks = stepInfo.side === 'BLUE' ? (simulationData?.picks?.A || []) : (simulationData?.picks?.B || []);
-                    const pickData = (teamPicks || []).find(p => p && (p.champName === champName || p.champion === champName));
-                    
-                    const emptyIdx = currentPicks.findIndex(p => p === null);
-                    if (emptyIdx !== -1 && pickData) {
-                        const newPicks = [...currentPicks];
-                        newPicks[emptyIdx] = pickData;
-                        if (stepInfo.side === 'BLUE') newState.bluePicks = newPicks;
-                        else newState.redPicks = newPicks;
+        if (stepInfo.type === 'BAN') {
+            const opponentSide = side === 'BLUE' ? 'RED' : 'BLUE';
+            const opponentTeam = side === 'BLUE' ? manualTeams.red : manualTeams.blue;
+            const opponentOpenRoles = side === 'BLUE' 
+                ? ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].filter(r => !manualPicks.red[r])
+                : ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].filter(r => !manualPicks.blue[r]);
+            
+            selectedChamp = selectBanFromProbabilities(opponentTeam || {}, availableChamps, opponentOpenRoles);
+            
+            if (!selectedChamp) {
+                const idx = Math.floor(Math.random() * Math.min(10, availableChamps.length));
+                selectedChamp = availableChamps[idx];
+            }
+        } else {
+            const currentPicks = side === 'BLUE' ? manualPicks.blue : manualPicks.red;
+            const remainingRoles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].filter(r => !currentPicks[r]);
+            
+            let roleCandidates = [];
+            remainingRoles.forEach(role => {
+                const player = team?.roster?.find(p =>
+                    positionMatches(p.포지션, role) ||
+                    positionMatches(p.position, role) ||
+                    positionMatches(p.role, role)
+                );
+                if (player) {
+                    const candidateChamp = selectPickFromTop3(player, availableChamps);
+                    if (candidateChamp) {
+                        roleCandidates.push({ role, champ: candidateChamp, score: candidateChamp.score || 0 });
                     }
                 }
-                return newState;
             });
+            
+            roleCandidates.sort((a, b) => b.score - a.score);
+            
+            if (roleCandidates.length > 0) {
+                const bestPick = roleCandidates[0];
+                selectedChamp = { ...bestPick.champ, role: bestPick.role };
+            } else {
+                const neededRole = remainingRoles[0] || 'MID';
+                selectedChamp = getRecommendedChampion(neededRole, [], availableChamps);
+                selectedChamp = { ...selectedChamp, role: neededRole };
+            }
+        }
+    
+        if (selectedChamp) {
+            commitDraftAction(stepInfo, selectedChamp, team, side);
+        }
+    };
+
+    const handlePlayerLockIn = () => {
+        if (!selectedChampion) return;
+        const stepInfo = DRAFT_SEQUENCE[draftStep];
+        const side = stepInfo.side;
+        const team = side === 'BLUE' ? manualTeams.blue : manualTeams.red;
+        
+        commitDraftAction(stepInfo, selectedChampion, team, side);
+        setSelectedChampion(null);
+        setUserSelectedRole(true);
+        setSearchTerm('');
+    };
+
+    const commitDraftAction = (stepInfo, champ, team, side) => {
+        const actionLabel = stepInfo.type === 'BAN' ? '🚫' : '✅';
+        const logMsg = `[${stepInfo.order}] ${stepInfo.label}: ${actionLabel} ${champ.name}`;
+        
+        setDraftLogs(prev => [...prev, logMsg]);
+        setManualLockedChamps(prev => new Set([...Array.from(prev), champ.name]));
+
+        setDraftState(prev => {
+            const newState = { ...prev, currentAction: logMsg.split(']')[1] || logMsg };
+            if (stepInfo.type === 'BAN') {
+                if (side === 'BLUE') newState.blueBans = [...prev.blueBans, champ.name];
+                else newState.redBans = [...prev.redBans, champ.name];
+            } else {
+                const teamPicks = side === 'BLUE' ? prev.bluePicks.slice() : prev.redPicks.slice();
+
+                const emptyIdx = teamPicks.findIndex(p => p === null);
+                const chosenRole = champ.role || filterRole || 'MID';
+
+                const foundPlayer = (team?.roster || []).find(p => positionMatches(p.포지션, chosenRole) || positionMatches(p.position, chosenRole) || positionMatches(p.role, chosenRole));
+                const playerName = foundPlayer?.이름 || foundPlayer?.name || foundPlayer?.playerName || 'Unknown';
+                const pickObj = { champName: champ.name, tier: champ.tier, role: chosenRole, playerName };
+
+                if (emptyIdx !== -1) {
+                    teamPicks[emptyIdx] = pickObj;
+                } else {
+                    teamPicks[teamPicks.length - 1] = pickObj;
+                }
+
+                if (side === 'BLUE') newState.bluePicks = teamPicks;
+                else newState.redPicks = teamPicks;
+            }
+            return newState;
+        });
+
+        if (stepInfo.type === 'PICK') {
+            const role = champ.role || filterRole || 'MID';
+            setManualPicks(prev => ({
+                ...prev,
+                [side.toLowerCase()]: { ...prev[side.toLowerCase()], [role]: champ }
+            }));
+        }
+
+        setDraftStep(prev => prev + 1);
+        setDraftTimer(30); 
+    };
+
+    // [FIX] finalizeManualDraft uses fresh activeChampionList
+    const finalizeManualDraft = () => {
+        if (finalizeManualDraftCalledRef.current) return;
+        finalizeManualDraftCalledRef.current = true;
+
+        if (!manualTeams.blue || !manualTeams.red) {
+            console.error("Critical Error: Teams not initialized");
+            alert("Error: Teams not initialized. Please restart.");
+            return;
+        }
+
+        const mapToEngineFormat = (sidePicks, roster, teamSide) => {
+            return ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].map(pos => {
+                const c = sidePicks[pos];
+                const safeChamp = c || activeChampionList.find(ch => ch.role === pos) || activeChampionList[0];
+                const p = (roster || []).find(pl =>
+                    positionMatches(pl.포지션, pos) ||
+                    positionMatches(pl.position, pos) ||
+                    positionMatches(pl.role, pos) ||
+                    positionMatches(pl.lane, pos) ||
+                    positionMatches(pl.playerData?.포지션, pos)
+                );
+                
+                const safePlayerData = p || { 
+                    이름: 'Unknown', 
+                    포지션: pos, 
+                    종합: 75, 
+                    상세: { 라인전: 75, 무력: 75, 한타: 75, 성장: 75, 안정성: 75, 운영: 75 } 
+                };
+
+                return {
+                    champName: safeChamp.name || 'Unknown',
+                    tier: safeChamp.tier || 3,
+                    role: pos,
+                    side: teamSide,
+                    classType: safeChamp.class || '전사',
+                    dmgType: safeChamp.dmg_type || 'AD',
+                    mastery: { games: 0, winRate: 50, kda: 3.0 },
+                    playerName: safePlayerData.이름 || safePlayerData.name || safePlayerData.playerName || 'Unknown',
+                    playerOvr: safePlayerData.종합,
+                    playerData: safePlayerData,
+                    conditionModifier: 1.0,
+                    currentGold: 500,
+                    level: 1,
+                    xp: 0,
+                    deadUntil: 0,
+                    flashEndTime: 0,
+                    stats: { kills: 0, deaths: 0, assists: 0, damage: 0, takenDamage: 0 }
+                };
+            }).filter(Boolean);
         };
     
-        // [FIXED] Advance one step 
-        const advanceDraft = () => {
-            // Stop if we are already done
-            if (draftStep >= DRAFT_SEQUENCE.length) {
-                 if (isManualMode) finalizeManualDraft();
-                 else setPhase('GAME');
-                 return;
+        try {
+            const picksBlueDetailed = mapToEngineFormat(manualPicks.blue || {}, manualTeams.blue?.roster || [], 'BLUE');
+            const picksRedDetailed = mapToEngineFormat(manualPicks.red || {}, manualTeams.red?.roster || [], 'RED');
+        
+            if (picksBlueDetailed.length < 5 || picksRedDetailed.length < 5) {
+                alert('Draft Error: Incomplete teams. Filling randoms...');
             }
-    
-            // [BUG FIX] Manual Mode "Next" Logic
-            if (isManualMode) {
-                 // Instead of skipping to phase 'GAME', we trigger the current draft step to resolve immediately.
-                 // This is done by setting the timer to 0, which triggers the useEffect hook to pick/ban.
-                 setDraftTimer(0);
-                 return;
-            }
+        
+            // [FIX] Pass current activeChampionList
+            const safeOptions = {
+                ...simOptions,
+                currentChampionList: activeChampionList
+            } || { difficulty: 'normal', playerTeamName: '', currentChampionList: activeChampionList };
             
-            // Auto Mode Logic (Simulation Data exists)
-            if (!simulationData) return; 
-    
-            const stepInfo = DRAFT_SEQUENCE[draftStep];
-            const logEntry = (simulationData.logs || []).find(l => l && l.startsWith && l.startsWith(`[${stepInfo.order}]`));
-            
-            if (logEntry) {
-                processDraftStepLog(stepInfo, logEntry);
-            }
-            setDraftStep(prev => prev + 1);
-            setDraftTimer(15); 
-        };
-    
-        const skipDraft = () => {
-            if (isManualMode) {
-                alert("수동 모드에서는 스킵할 수 없습니다.");
-                return;
-            }
+            const result = runGameTickEngine(manualTeams.blue, manualTeams.red, picksBlueDetailed, picksRedDetailed, safeOptions);
+
+            const winnerName = result?.winnerName || result?.gameResult?.winnerName || (result?.winner || null);
+            const totalSeconds = result?.totalSeconds ?? (result?.totalMinutes ? result.totalMinutes * 60 : 30 * 60);
+            const logs = safeArray(result?.logs);
+            const currentUsedChamps = [...picksBlueDetailed, ...picksRedDetailed].map(p => p.champName);
+            const totalMinutes = result?.totalMinutes ?? Math.floor((totalSeconds || 1800) / 60);
+
+            const winnerSide = (winnerName === manualTeams.blue?.name) ? 'BLUE' : 'RED';
+            const pogPlayer = calculateManualPog(picksBlueDetailed, picksRedDetailed, winnerSide, totalMinutes);
+
+            setSimulationData({
+                winnerName: winnerName,
+                gameResult: result,
+                logs: [
+                    `========== [ MANUAL DRAFT ] ==========` ,
+                    ...draftLogs,
+                    `========== [ GAME START ] ==========` ,
+                    ...logs
+                ],
+                blueTeam: manualTeams.blue,
+                redTeam: manualTeams.red,
+                totalSeconds,
+                totalMinutes,
+                gameTime: result?.finalTimeStr || `${totalMinutes}분 00초`,
+                
+                picks: { A: picksBlueDetailed, B: picksRedDetailed },
+                bans: { A: draftState.blueBans || [], B: draftState.redBans || [] },
+                pogPlayer: pogPlayer || null,
+                usedChamps: currentUsedChamps 
+            });
+        
+            setLiveStats({
+                kills: { BLUE: 0, RED: 0 },
+                gold: { BLUE: 2500, RED: 2500 },
+                towers: { BLUE: 0, RED: 0 },
+                players: [...picksBlueDetailed, ...picksRedDetailed].map(p => ({
+                    ...p,
+                    k: 0, d: 0, a: 0, lvl: 1, xp: 0, currentGold: 500, stats: p.stats || { kills:0, deaths:0, assists:0, damage:0, takenDamage:0 }
+                }))
+            });
+        
+            gameEndFiredRef.current = false;
+            setGameTime(0);
+            setDisplayLogs([]);
             setPhase('GAME');
-        };
-    
-        // --- GAME PHASE TICK (Unchanged) ---
-        // --- GAME PHASE TICK (Unchanged logic, completely fixed memory leak) ---
+
+        } catch (error) {
+            console.error("CRITICAL SIMULATION ERROR:", error);
+            alert(`Simulation Failed: ${error?.message || error}`);
+            onClose && onClose();
+        }
+    };
+
+    const processDraftStepLog = (stepInfo, logEntry) => {
+        if (!logEntry) return;
+        let champName = 'Unknown';
+        if (logEntry.includes('🚫')) {
+            champName = logEntry.split('🚫')[1]?.trim();
+        } else if (logEntry.includes('✅')) {
+            champName = logEntry.split('✅')[1]?.split('(')[0]?.trim();
+        }
+
+        setDraftState(prev => {
+            const newState = { ...prev, currentAction: logEntry.split(']')[1] || logEntry };
+            if (stepInfo.type === 'BAN') {
+                if (stepInfo.side === 'BLUE') newState.blueBans = [...prev.blueBans, champName];
+                else newState.redBans = [...prev.redBans, champName];
+            } else {
+                const currentPicks = stepInfo.side === 'BLUE' ? prev.bluePicks : prev.redPicks;
+                const teamPicks = stepInfo.side === 'BLUE' ? (simulationData?.picks?.A || []) : (simulationData?.picks?.B || []);
+                const pickData = (teamPicks || []).find(p => p && (p.champName === champName || p.champion === champName));
+                
+                const emptyIdx = currentPicks.findIndex(p => p === null);
+                if (emptyIdx !== -1 && pickData) {
+                    const newPicks = [...currentPicks];
+                    newPicks[emptyIdx] = pickData;
+                    if (stepInfo.side === 'BLUE') newState.bluePicks = newPicks;
+                    else newState.redPicks = newPicks;
+                }
+            }
+            return newState;
+        });
+    };
+
+    const advanceDraft = () => {
+        if (draftStep >= DRAFT_SEQUENCE.length) {
+            if (isManualMode) finalizeManualDraft();
+            else setPhase('GAME');
+            return;
+        }
+
+        if (isManualMode) {
+            setDraftTimer(0);
+            return;
+        }
+        
+        if (!simulationData) return; 
+
+        const stepInfo = DRAFT_SEQUENCE[draftStep];
+        const logEntry = (simulationData.logs || []).find(l => l && l.startsWith && l.startsWith(`[${stepInfo.order}]`));
+        
+        if (logEntry) {
+            processDraftStepLog(stepInfo, logEntry);
+        }
+        setDraftStep(prev => prev + 1);
+        setDraftTimer(15); 
+    };
+
+    const skipDraft = () => {
+        if (isManualMode) {
+            alert("수동 모드에서는 스킵할 수 없습니다.");
+            return;
+        }
+        setPhase('GAME');
+    };
+
     useEffect(() => {
-        // Guardrail: Don't start ticking if simulationData is missing or invalid
         if (phase !== 'GAME' || !simulationData || !simulationData.logs || playbackSpeed === 0) return;
         
         const finalSec = Number(simulationData.totalSeconds || simulationData.totalSeconds === 0 ? simulationData.totalSeconds : (simulationData.totalMinutes ? simulationData.totalMinutes * 60 : 1800));
