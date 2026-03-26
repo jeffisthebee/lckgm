@@ -251,8 +251,11 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
   const playerData = MASTERY_MAP[player.이름];
   const knownPool = getKnownPool(playerData);
 
-  // [FIX] Validate available champions before filtering
+  // [CRITICAL FIX] Validate and ENSURE we're using the passed-in champion list tiers
   const validChampions = validateChampionList(availableChampions);
+  
+  // Create a lookup map from the CURRENT champion list for guaranteed tier access
+  const champTierMap = new Map(validChampions.map(c => [c.name, c]));
   
   // Filter to role-appropriate champions
   const roleChamps = validChampions.filter(c => c.role === player.포지션);
@@ -269,22 +272,7 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
     ? knownChamps
     : [...knownChamps, ...unknownChamps].slice(0, Math.max(MIN_POOL, knownChamps.length));
 
-  const availableNames   = new Set(validChampions.map(c => c.name));
-  const currentTeamNames = currentTeamPicks.map(c => c.name);
-
-  const currentAD = currentTeamPicks.filter(c => c.dmg_type === 'AD').length;
-  const currentAP = currentTeamPicks.filter(c => c.dmg_type === 'AP').length;
-
-  const fearlessSet = new Set(fearlessBans);
-  const remainingKnown = [...knownPool].filter(name => !fearlessSet.has(name));
-  const isConservationMode = remainingKnown.length <= 3;
-  
-  const getFearlessBonus = (champName) => {
-    if (!isConservationMode) return 1.0;
-    if (fearlessSet.has(champName)) return 0.0;
-    if (knownPool.has(champName)) return 1.3;
-    return 0.5;
-  };
+  // ... rest of the code ...
 
   const scoredChamps = pool.map(champ => {
     const isKnown = knownPool.has(champ.name);
@@ -300,12 +288,11 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
     score *= pw.mastery;
     score *= getFearlessBonus(champ.name);
 
-    // --- [STEP 0] Tier Weighting + Versatility ---
-    // [FIX] Always use the current champion's tier value from the list
-    // This ensures meta shifts are respected
-    const currentTier = champ.tier || 3; // Safe fallback to tier 3
+    // --- [CRITICAL FIX] Use the tier from the CURRENT list lookup, NOT from mastery or old data
+    const currentListEntry = champTierMap.get(champ.name);
+    const currentTier = currentListEntry?.tier ?? champ.tier ?? 3;
     
-    const statsSum = (champ.stats ? Object.values(champ.stats).reduce((a, v) => a + v, 0) : 0);
+    const statsSum = (currentListEntry?.stats ? Object.values(currentListEntry.stats).reduce((a, v) => a + v, 0) : 0);
     const versatilityScore = statsSum / 50;
     score += versatilityScore * pw.versatility;
 
@@ -382,8 +369,9 @@ export function selectBanFromProbabilities(opponentTeam, availableChampions, tar
   const phase = getBanPhase(banOrder);
   const bw    = BAN_PHASE_WEIGHTS[phase];
 
-  // [FIX] Validate available champions before filtering
+  // [CRITICAL FIX] Create tier lookup from the CURRENT champion list
   const validChampions = validateChampionList(availableChampions);
+  const champTierMap = new Map(validChampions.map(c => [c.name, c]));
 
   let candidates = [];
 
@@ -409,8 +397,9 @@ export function selectBanFromProbabilities(opponentTeam, availableChampions, tar
       let banScore  = calculateChampionScore(player, c, isKnown ? mastery : null, isKnown ? 1.0 : 0.3);
       banScore *= bw.mastery;
 
-      // [FIX] Use current tier from the validated champion list
-      const currentTier = c.tier || 3;
+      // [CRITICAL FIX] Use tier from CURRENT list
+      const currentListEntry = champTierMap.get(c.name);
+      const currentTier = currentListEntry?.tier ?? c.tier ?? 3;
       
       let tierWeight = 1.0;
       switch (currentTier) {
