@@ -217,31 +217,36 @@ const getOvrBadgeStyle = (ovr) => {
 
     useEffect(() => {
       if (!league?.matches) return;
-
+    
       const split1Matches = (league.matches || []).filter(m => m.type === 'lck_split1_regular');
       if (split1Matches.length === 0) return;
-
+    
       const pending = split1Matches
         .filter(m => m.status !== 'finished')
         .sort((a, b) => (parseSplit1DateNum(a.date) || 0) - (parseSplit1DateNum(b.date) || 0));
-
+    
       const finished = split1Matches
         .filter(m => m.status === 'finished')
         .sort((a, b) => (parseSplit1DateNum(a.date) || 0) - (parseSplit1DateNum(b.date) || 0));
-
+    
       const anchor = pending[0] || finished[finished.length - 1] || split1Matches[0];
       const patchNeeded = getLCKSplit1PatchVersionForDate(anchor?.date);
       if (!patchNeeded) return;
-
+    
       const hasPatchList = Array.isArray(league?.metaChampionLists?.[patchNeeded]) && league.metaChampionLists[patchNeeded].length > 0;
       if (league.metaVersion === patchNeeded && hasPatchList) return;
-
+    
+      // FIX: Actually capture the return value and merge it
       const metaChampionLists = ensureSplit1MetaChampionListsUpTo(league, patchNeeded);
       const currentChampionList = metaChampionLists[patchNeeded] || league.currentChampionList || championList;
-
-      const updates = { metaChampionLists, currentChampionList, metaVersion: patchNeeded };
+    
+      const updates = { 
+        metaChampionLists,  // FIX: Now we're saving the computed lists!
+        currentChampionList, 
+        metaVersion: patchNeeded 
+      };
       setLeague(prev => ({ ...prev, ...updates }));
-      updateLeague(league.id, updates);
+      updateLeague(league.id, updates);  // FIX: Also persist to DB!
     }, [league?.matches]);
 
     // Check Season Status Helper
