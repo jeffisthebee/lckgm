@@ -669,13 +669,31 @@ export function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptio
         return (picks || []).map(p => {
             const playerData = (roster || []).find(player => player && player.이름 === p.playerName);
             const champData = (currentChampionList || championList).find(c => c.name === p.champName);
+            
+            // [FIX] Look up tier from CURRENT champion list, not from cached pick object
+            const currentTier = champData?.tier ?? p.tier ?? 3;
+            
             if (!playerData || !champData) {
-              return { ...p, dmgType: 'AD', classType: '전사', playerData: playerData || { 이름: p.playerName, 포지션: 'TOP', 상세: { 안정성: 50 }, 종합: 70 }, conditionModifier: 1.0, stats: { kills: 0, deaths: 0, assists: 0, damage: 0, takenDamage: 0 }, currentGold: 500, level: 1 };
+              return { 
+                  ...p, 
+                  tier: currentTier,  // ← Use fresh tier
+                  dmgType: 'AD', 
+                  classType: '전사', 
+                  playerData: playerData || { 이름: p.playerName, 포지션: 'TOP', 상세: { 안정성: 50 }, 종합: 70 }, 
+                  conditionModifier: 1.0, 
+                  stats: { kills: 0, deaths: 0, assists: 0, damage: 0, takenDamage: 0 }, 
+                  currentGold: 500, 
+                  level: 1 
+              };
             }
             return {
-                ...p, ...champData, dmgType: champData.dmg_type || 'AD', 
+                ...p, 
+                ...champData, 
+                tier: currentTier,  // ← Use fresh tier from champData
+                dmgType: champData.dmg_type || 'AD', 
                 classType: getChampionClass(champData, playerData.포지션),
-                playerData: playerData, conditionModifier: getConditionModifier(playerData)
+                playerData: playerData, 
+                conditionModifier: getConditionModifier(playerData)
             };
         });
     };

@@ -567,12 +567,17 @@ export function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChamp
       const c = picks[side][pos];
       if (!c) return null;
       const p = teamRoster.find(pl => pl.포지션 === pos);
+      
+      // [FIX] Always look up the tier from the CURRENT champion list
+      // This ensures 16.04 tiers are used, not cached/stale tiers
+      const currentTier = champList.find(ch => ch.name === c.name)?.tier ?? c.tier ?? 3;
+      
       return {
-        champName:  c.name,
-        tier:       c.tier,
-        mastery:    c.mastery,
-        playerName: p ? p.이름 : 'Unknown Player',
-        playerOvr:  p ? p.종합 : 70
+          champName:  c.name,
+          tier:       currentTier,  // ← Now uses fresh tier from champList
+          mastery:    c.mastery,
+          playerName: p ? p.이름 : 'Unknown Player',
+          playerOvr:  p ? p.종합 : 70
       };
     }).filter(Boolean);
 
