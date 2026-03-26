@@ -1224,7 +1224,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                 )}
                 {showFSTInTeamSchedule && fstMatches.length > 0 && (
                     <div className="text-xs font-black uppercase tracking-widest text-gray-500 mb-3 flex items-center gap-2">
-                        <span>🏆</span> LCK 리그
+                        <span>🏆</span> {lckView === 'split1' ? 'LCK 정규 시즌' : 'LCK 컵'}
                     </div>
                 )}
                 {activeMatches.length > 0 ? (
