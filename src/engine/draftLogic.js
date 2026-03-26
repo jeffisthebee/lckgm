@@ -251,11 +251,8 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
   const playerData = MASTERY_MAP[player.이름];
   const knownPool = getKnownPool(playerData);
 
-  // [CRITICAL FIX] Validate and ENSURE we're using the passed-in champion list tiers
+  // [FIX] Validate available champions before filtering
   const validChampions = validateChampionList(availableChampions);
-  
-  // Create a lookup map from the CURRENT champion list for guaranteed tier access
-  const champTierMap = new Map(validChampions.map(c => [c.name, c]));
   
   // Filter to role-appropriate champions
   const roleChamps = validChampions.filter(c => c.role === player.포지션);
@@ -272,7 +269,25 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
     ? knownChamps
     : [...knownChamps, ...unknownChamps].slice(0, Math.max(MIN_POOL, knownChamps.length));
 
-  // ... rest of the code ...
+  const availableNames   = new Set(validChampions.map(c => c.name));
+  const currentTeamNames = currentTeamPicks.map(c => c.name);
+
+  const currentAD = currentTeamPicks.filter(c => c.dmg_type === 'AD').length;
+  const currentAP = currentTeamPicks.filter(c => c.dmg_type === 'AP').length;
+
+  // ─────────────────────────────────────────────────────────────
+  // [FIX] Move getFearlessBonus OUTSIDE the scoredChamps.map() so it's defined first
+  // ─────────────────────────────────────────────────────────────
+  const fearlessSet = new Set(fearlessBans);
+  const remainingKnown = [...knownPool].filter(name => !fearlessSet.has(name));
+  const isConservationMode = remainingKnown.length <= 3;
+  
+  const getFearlessBonus = (champName) => {
+    if (!isConservationMode) return 1.0;
+    if (fearlessSet.has(champName)) return 0.0;
+    if (knownPool.has(champName)) return 1.3;
+    return 0.5;
+  };
 
   const scoredChamps = pool.map(champ => {
     const isKnown = knownPool.has(champ.name);
@@ -286,26 +301,7 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
       isKnown ? 1.0 : 0.3
     );
     score *= pw.mastery;
-    score *= getFearlessBonus(champ.name);
-
-    // --- [CRITICAL FIX] Use the tier from the CURRENT list lookup, NOT from mastery or old data
-    const currentListEntry = champTierMap.get(champ.name);
-    const currentTier = currentListEntry?.tier ?? champ.tier ?? 3;
-    
-    const statsSum = (currentListEntry?.stats ? Object.values(currentListEntry.stats).reduce((a, v) => a + v, 0) : 0);
-    const versatilityScore = statsSum / 50;
-    score += versatilityScore * pw.versatility;
-
-    let tierMultiplier = 1.0;
-    switch (currentTier) {
-      case 1: tierMultiplier = 1.25; break;
-      case 2: tierMultiplier = 1.1; break;
-      case 3: tierMultiplier = 1.00; break;
-      case 4: tierMultiplier = 0.90; break;
-      case 5: tierMultiplier = 0.75; break;
-      default: tierMultiplier = 1.0;
-    }
-    score *= tierMultiplier;
+    score *= getFearlessBonus(champ.name); // ← Now getFearlessBonus is defined
 
     // --- [STEP 1] Damage Profile Balance ---
     if (currentTeamPicks.length >= 3) {
