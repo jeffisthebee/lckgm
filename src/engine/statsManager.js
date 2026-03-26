@@ -1,5 +1,4 @@
 // src/engine/statsManager.js
-// (modified: treat 'super' / 'superweek' as regular season; use helper in computeAwards)
 
 export function computeStatsForLeague(league, options = {}) {
   const { regularOnly = false, roleFilter = 'ALL' } = options || {};
@@ -7,12 +6,15 @@ export function computeStatsForLeague(league, options = {}) {
   // Helper: robust type checks for season classification
   const normalizeType = (t) => String(t || '').toLowerCase();
   const isPlayoffType = (t) => normalizeType(t).includes('playoff') || normalizeType(t) === 'playoff';
+  const isPlayinType = (t) => normalizeType(t).includes('playin') || normalizeType(t) === 'playin';
+  
   const isRegularType = (t) => {
     const n = normalizeType(t);
-    // treat 'regular' and any 'super' (superweek / super-week / super_week) as regular season
-    return n === 'regular' || n.includes('super') || n === 'super' || n === 'superweek' || n === 'super-week' || n === 'super_week';
+    // BULLETPROOF FALLBACK: Accept everything except explicitly marked playoff/playin games.
+    if (!n || n === 'undefined' || n === 'null' || n === '') return true;
+    if (n.includes('playoff') || n.includes('playin') || n === 'playoffs') return false;
+    return true; 
   };
-  const isPlayinType = (t) => normalizeType(t).includes('playin') || normalizeType(t) === 'playin';
 
   // Aggregators
   const pogCounts = new Map(); // playerName -> { count, lastScore, teams:Set }
@@ -86,7 +88,7 @@ export function computeStatsForLeague(league, options = {}) {
     return score;
   };
 
-  const determineWinnerSide = (set, matchContext) => {
+  const determineWinnerSide = (set, matchContext, matchWinner) => {
     if (set.scores && (set.scores.A !== undefined || set.scores.B !== undefined)) {
       const a = safeNum(set.scores.A);
       const b = safeNum(set.scores.B);
@@ -94,23 +96,24 @@ export function computeStatsForLeague(league, options = {}) {
       if (b > a) return 'B';
       return null;
     }
-    if (set.winner || set.winnerName) {
-      const winnerName = set.winner || set.winnerName;
+    
+    let winnerName = set.winner || set.winnerName || matchWinner;
+    if (winnerName) {
       if (matchContext) {
-        // Now it properly checks t1/t2 directly!
+        // Bulletproof check against t1/t2 IDs and Names
         const blueN = matchContext.blueTeamName || matchContext.teamAName || matchContext.t1Name || matchContext.t1;
         const redN = matchContext.redTeamName || matchContext.teamBName || matchContext.t2Name || matchContext.t2;
         
-        // Unpack objects just in case the simulator saved them as full team objects
         const bName = typeof blueN === 'object' ? (blueN.name || blueN.id) : blueN;
         const rName = typeof redN === 'object' ? (redN.name || redN.id) : redN;
 
         if (bName && String(bName) === String(winnerName)) return 'A';
         if (rName && String(rName) === String(winnerName)) return 'B';
       }
+      
       const picks = extractPicks(set);
-      const aHasWinner = (picks.A || []).some(p => (p.playerData?.팀 || p.team || p.teamName) === winnerName);
-      const bHasWinner = (picks.B || []).some(p => (p.playerData?.팀 || p.team || p.teamName) === winnerName);
+      const aHasWinner = (picks.A || []).some(p => String(p.playerData?.팀 || p.team || p.teamName) === String(winnerName));
+      const bHasWinner = (picks.B || []).some(p => String(p.playerData?.팀 || p.team || p.teamName) === String(winnerName));
       if (aHasWinner && !bHasWinner) return 'A';
       if (bHasWinner && !aHasWinner) return 'B';
     }
@@ -147,7 +150,7 @@ export function computeStatsForLeague(league, options = {}) {
 
   matches.forEach((match) => {
     if (!match) return;
-    // If regularOnly requested, accept any type that should be considered regular (regular + superweek)
+    // Safely accept all non-playoff games as regular season
     if (regularOnly && !isRegularType(match.type)) return;
 
     const sets = getSetsFromMatch(match);
@@ -184,7 +187,8 @@ export function computeStatsForLeague(league, options = {}) {
         c.banCount = (c.banCount || 0) + 1;
       });
 
-      const winnerSide = determineWinnerSide(set, matchContext);
+      const matchWinnerFallback = match.result?.winner || match.winner;
+      const winnerSide = determineWinnerSide(set, matchContext, matchWinnerFallback);
 
       ['A', 'B'].forEach((side) => {
         const teamPicks = picks[side] || [];
@@ -240,12 +244,15 @@ export function computeStatsForLeague(league, options = {}) {
       let actualWinnerSide = winnerSide;
         
       // ULTIMATE FALLBACK 1: If the individual set is missing a winner tag, use the match winner
-      if (!actualWinnerSide && match.result?.winner) {
-          const mWin = match.result.winner;
-          const bName = typeof matchContext.t1 === 'object' ? (matchContext.t1.name || matchContext.t1.id) : matchContext.t1;
-          const rName = typeof matchContext.t2 === 'object' ? (matchContext.t2.name || matchContext.t2.id) : matchContext.t2;
+      if (!actualWinnerSide && matchWinnerFallback) {
+          const mWin = String(matchWinnerFallback);
+          const bName = String(typeof matchContext.t1 === 'object' ? (matchContext.t1.name || matchContext.t1.id) : matchContext.t1);
+          const rName = String(typeof matchContext.t2 === 'object' ? (matchContext.t2.name || matchContext.t2.id) : matchContext.t2);
+          
           if (mWin === bName) actualWinnerSide = 'A';
-          if (mWin === rName) actualWinnerSide = 'B';
+          else if (mWin === rName) actualWinnerSide = 'B';
+          else if (mWin === String(matchContext.blueTeamName)) actualWinnerSide = 'A';
+          else if (mWin === String(matchContext.redTeamName)) actualWinnerSide = 'B';
       }
 
       // ULTIMATE FALLBACK 2: If we STILL don't know the winner, evaluate ALL 10 PLAYERS so the board doesn't break
@@ -342,9 +349,6 @@ export function computeStatsForLeague(league, options = {}) {
   };
 }
 
-export default computeStatsForLeague;
-
-
 // --- Helper utilities used by award functions (kept local to this module) ---
 function normalizePlayerNameMaybe(value) {
   if (!value && value !== 0) return null;
@@ -371,11 +375,14 @@ function findTeamObjectForPlayerTeams(playerTeams = [], teams = []) {
 
 // ---------- Awards Computation (regular season) ----------
 export function computeAwards(league, teams) {
-  // Align regular-season detection with computeStatsForLeague: include 'super' types as regular
   const normalizeType = (t) => String(t || '').toLowerCase();
+  
   const isRegularType = (t) => {
     const n = normalizeType(t);
-    return n === 'regular' || n.includes('super') || n === 'super' || n === 'superweek' || n === 'super-week' || n === 'super_week';
+    // BULLETPROOF FALLBACK: Accept everything except explicitly marked playoff/playin games.
+    if (!n || n === 'undefined' || n === 'null' || n === '') return true;
+    if (n.includes('playoff') || n.includes('playin') || n === 'playoffs') return false;
+    return true; 
   };
 
   const stats = computeStatsForLeague(league, { regularOnly: true });
@@ -386,7 +393,6 @@ export function computeAwards(league, teams) {
   teams.forEach(t => teamStats.set(t.id, { id: t.id, wins: 0, diff: 0 }));
 
   if (league.matches) {
-      // Use isRegularType rather than strict equality
       league.matches.filter(m => isRegularType(m.type) && m.status === 'finished').forEach(m => {
            const t1 = typeof m.t1 === 'object' ? m.t1.id : m.t1;
            const t2 = typeof m.t2 === 'object' ? m.t2.id : m.t2;
@@ -517,7 +523,10 @@ export function computeAwards(league, teams) {
 // ---------- Playoff Awards Computation ----------
 export function computePlayoffAwards(league, teams) {
   // 1. Filter for Playoff Matches only
-  const playoffMatches = (league.matches || []).filter(m => m.type === 'playoff' && m.status === 'finished');
+  const playoffMatches = (league.matches || []).filter(m => {
+    const t = String(m.type || '').toLowerCase();
+    return (t.includes('playoff') || t === 'playoff') && m.status === 'finished';
+  });
   
   // Create a temporary league object for stats
   const playoffLeague = { ...league, matches: playoffMatches };
@@ -532,9 +541,6 @@ export function computePlayoffAwards(league, teams) {
   const pogLeaderName = pogLeader?.playerName ? pogLeader.playerName : null;
 
   // B. Finals MVP Logic
-  // IMPORTANT:
-  // Do NOT treat "highest finished round so far" as the Final.
-  // Otherwise Finals MVP appears after the first playoff series.
   const isExplicitFinalMatch = (m) => {
     if (!m) return false;
     const id = String(m.id || '');
@@ -549,9 +555,7 @@ export function computePlayoffAwards(league, teams) {
 
     if (!label) return false;
     if (label.includes('GRAND FINAL')) return true;
-    // Only accept explicit "Final" labels (avoid "Upper Final", etc.)
     if (label === 'FINAL' || label === 'FINALS' || label === 'GRAND FINAL') return true;
-    // Korean: ONLY exact finals wording. Do NOT match "승자조 결승", "결승 진출전", etc.
     if (rawLabel === '결승전' || rawLabel === '결승') return true;
     return false;
   };
@@ -559,8 +563,6 @@ export function computePlayoffAwards(league, teams) {
   const explicitFinal = playoffMatches.find(m => isExplicitFinalMatch(m));
   const finalMatch = explicitFinal || null;
 
-  // Only read explicitly saved posPlayer (series POS) — never read pogPlayer which is a
-  // per-game POG winner and would incorrectly count as Finals MVP
   let finalsMvpName = null;
   if (finalMatch) {
     finalsMvpName = normalizePlayerNameMaybe(finalMatch?.result?.posPlayer || finalMatch?.result?.posPlayerName || null);
@@ -568,41 +570,30 @@ export function computePlayoffAwards(league, teams) {
 
   // [FALLBACK LOGIC]
   if (!finalsMvpName && finalMatch && finalMatch.result) {
-      // If the file doesn't explicitly name a Finals MVP (posPlayer), 
-      // we calculate the best performing player from the winning team in that specific match.
-      
-      // Prepare Helper Data
       const winnerName = finalMatch.result.winner; // e.g. "T1"
       
-      // Hydrate Match with Team Objects to ensure we have IDs
       const t1Id = (typeof finalMatch.t1 === 'object') ? finalMatch.t1.id : finalMatch.t1;
       const t2Id = (typeof finalMatch.t2 === 'object') ? finalMatch.t2.id : finalMatch.t2;
       
       const t1Obj = teams.find(t => String(t.id) === String(t1Id));
       const t2Obj = teams.find(t => String(t.id) === String(t2Id));
 
-      // Determine which team object is the winner
-      // We match by name since result.winner is usually a name
       const winnerTeamObj = (t1Obj?.name === winnerName) ? t1Obj : ((t2Obj?.name === winnerName) ? t2Obj : null);
 
-      // Compute stats strictly for this ONE final match
       const hydratedMatch = { ...finalMatch, t1: t1Obj || finalMatch.t1, t2: t2Obj || finalMatch.t2 };
       const finalMatchStats = computeStatsForLeague({ ...league, matches: [hydratedMatch] }, { regularOnly: false });
       
       let candidates = [];
 
-      // Filter players who belong to the winning team
       if (winnerTeamObj) {
           candidates = finalMatchStats.playerRatings.filter(p => 
               (p.teams || []).includes(winnerTeamObj.name) || 
               (p.teams || []).includes(String(winnerTeamObj.id))
           );
       } else {
-           // If we can't map the object, look for any player whose team matches the winner string
            candidates = finalMatchStats.playerRatings.filter(p => (p.teams || []).includes(winnerName));
       }
 
-      // Also include POG-only players from the final match (in case the final MVP was only POG-ed)
       finalMatchStats.pogLeaderboard.forEach(pb => {
         if (!candidates.find(c => c.playerName === pb.playerName)) {
           candidates.push({
@@ -615,24 +606,16 @@ export function computePlayoffAwards(league, teams) {
         }
       });
 
-      // Sort by Score Descending
       candidates.sort((a, b) => (b.avgScore || 0) - (a.avgScore || 0));
       
-      // Pick the top player
       if (candidates.length > 0) {
           finalsMvpName = candidates[0].playerName;
       } else if (finalMatchStats.playerRatings.length > 0) {
-          // Absolute fallback: Just take the highest rated player in the game, regardless of team
-          // (Only happens if team names are totally mismatched)
           finalsMvpName = finalMatchStats.playerRatings[0].playerName;
       }
   }
 
-  // 3. Calculate Playoff Team Standings (Dynamic / Reverse Elimination)
-  // Instead of hardcoded round numbers (which might vary), we use a "Reverse Elimination" approach.
-  // The winner of the highest round is #1. The loser is #2.
-  // Then we look at the next highest round, and so on.
-  
+  // 3. Calculate Playoff Team Standings
   const teamRankPoints = new Map();
   teams.forEach(t => teamRankPoints.set(t.id, 0)); 
   
@@ -644,7 +627,6 @@ export function computePlayoffAwards(league, teams) {
       return wId === t1 ? t2 : t1;
   };
 
-  // Group matches by round
   const matchesByRound = {};
   playoffMatches.forEach(m => {
       const r = m.round || 0;
@@ -652,57 +634,48 @@ export function computePlayoffAwards(league, teams) {
       matchesByRound[r].push(m);
   });
 
-  // Sort rounds descending (Highest round = Final)
   const sortedRounds = Object.keys(matchesByRound).sort((a, b) => Number(b) - Number(a));
 
-  const pointDistribution = [100, 80, 70, 60, 40, 20, 10]; // 1st, 2nd, 3rd...
+  const pointDistribution = [100, 80, 70, 60, 40, 20, 10];
   let currentRankIndex = 0;
   const processedTeams = new Set();
 
-  // Process rounds from Final -> Start
   sortedRounds.forEach((round, idx) => {
       const roundMatches = matchesByRound[round];
       
-      // If it's the very last round (The Grand Final), we award 1st and 2nd place
       if (idx === 0) {
           roundMatches.forEach(m => {
               const wId = getWinnerId(m);
               const lId = getLoserId(m);
               
               if (wId && !processedTeams.has(wId)) {
-                  teamRankPoints.set(wId, pointDistribution[0]); // 1st Place (100)
+                  teamRankPoints.set(wId, pointDistribution[0]);
                   processedTeams.add(wId);
-                  currentRankIndex = 1; // Used 0, next is 1
+                  currentRankIndex = 1;
               }
               if (lId && !processedTeams.has(lId)) {
-                  teamRankPoints.set(lId, pointDistribution[1]); // 2nd Place (80)
+                  teamRankPoints.set(lId, pointDistribution[1]);
                   processedTeams.add(lId);
-                  currentRankIndex = 2; // Used 1, next is 2
+                  currentRankIndex = 2;
               }
           });
       } else {
-          // For all earlier rounds, the LOSERS are eliminating. 
-          // The winners advanced (and are handled in higher rounds), so we only care about losers here.
           roundMatches.forEach(m => {
               const lId = getLoserId(m);
               if (lId && !processedTeams.has(lId)) {
-                  // Assign next available point tier
                   const pts = pointDistribution[currentRankIndex] || 10;
                   teamRankPoints.set(lId, pts);
                   processedTeams.add(lId);
               }
           });
-          // After processing a round of losers, increment rank index
            currentRankIndex++;
       }
   });
 
-
   // 4. Score Players & Apply Bonuses
   const allProCandidates = [];
-
-  // Build a combined player list: include players with ratings AND players who appear only on POG board
   const playerByName = new Map();
+  
   stats.playerRatings.forEach(player => playerByName.set(player.playerName, player));
   stats.pogLeaderboard.forEach(p => {
     if (!playerByName.has(p.playerName)) {
@@ -722,7 +695,6 @@ export function computePlayoffAwards(league, teams) {
       const pogEntry = stats.pogLeaderboard.find(p => p.playerName === player.playerName);
       const pogCount = pogEntry ? pogEntry.pogs : 0;
       
-      // Bonuses
       let bonusScore = 0;
       const isFinalsMvp = finalsMvpName && (finalsMvpName === player.playerName);
       const isPogLeader = pogLeaderName && (pogLeaderName === player.playerName);
