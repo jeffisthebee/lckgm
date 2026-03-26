@@ -12,12 +12,16 @@ const PlayoffTab = ({
 }) => {
     const myLeague = myLeagueProp || 'LCK';
     const [currentLeague, setCurrentLeague] = useState(myLeague);
-    
+    // 0 = LCK 플레이오프 (Split 1, shown first), 1 = LCK 컵 플레이오프
+    const [lckBracketIndex, setLckBracketIndex] = useState(0);
+
     if (!league || !teams) return <div className="p-10 text-center text-gray-500">데이터 로딩 중...</div>;
 
     const isLCK = currentLeague === 'LCK';
     const isLCPGenerated = league.foreignMatches?.['LCP']?.some(m => m.type === 'playoff');
     const isLckFinished = !league.matches?.some(m => m.status === 'pending');
+    // Split 1 has started when matches with April dates (4.x) exist
+    const isLCKSplit1Started = league.matches?.some(m => m.date && /^4\./.test(m.date));
 
     const findGlobalTeam = (token) => {
         const strToken = String(token);
@@ -680,6 +684,56 @@ const PlayoffTab = ({
         );
     };
 
+    const renderEmptyLCKBracket = () => {
+        const emptyMatch = { status: 'pending', type: 'playoff', t1: null, t2: null };
+        return (
+            <div className="flex-1 overflow-x-auto pb-8">
+                <div className="flex flex-col space-y-24 min-w-[1400px] relative pt-12">
+                    <div className="relative border-b-2 border-dashed pb-16">
+                        <h3 className="text-lg font-black text-blue-600 mb-8 absolute -top-2">승자조 (Winner's Bracket)</h3>
+                        <div className="flex justify-between items-center mt-8">
+                            <BracketColumn title="1라운드">
+                                <div className="flex flex-col justify-around space-y-32 h-[300px]">
+                                    <MatchupBox match={emptyMatch} onClick={null} formatTeamName={getBracketDisplayName} />
+                                    <MatchupBox match={emptyMatch} onClick={null} formatTeamName={getBracketDisplayName} />
+                                </div>
+                            </BracketColumn>
+                            <BracketColumn title="승자조 2R">
+                                <div className="flex flex-col justify-around space-y-32 h-[300px]">
+                                    <MatchupBox match={emptyMatch} onClick={null} formatTeamName={getBracketDisplayName} />
+                                    <MatchupBox match={emptyMatch} onClick={null} formatTeamName={getBracketDisplayName} />
+                                </div>
+                            </BracketColumn>
+                            <BracketColumn title="승자조 결승">
+                                <MatchupBox match={emptyMatch} onClick={null} formatTeamName={getBracketDisplayName} />
+                            </BracketColumn>
+                            <BracketColumn title="결승전">
+                                <MatchupBox match={emptyMatch} onClick={null} formatTeamName={getBracketDisplayName} />
+                            </BracketColumn>
+                        </div>
+                    </div>
+                    <div className="relative pt-8">
+                        <h3 className="text-lg font-black text-red-600 mb-8 absolute -top-2">패자조 (Loser's Bracket)</h3>
+                        <div className="flex justify-start items-center space-x-24 mt-8">
+                            <BracketColumn title="패자조 1R">
+                                <MatchupBox match={emptyMatch} onClick={null} formatTeamName={getBracketDisplayName} />
+                            </BracketColumn>
+                            <BracketColumn title="패자조 2R">
+                                <MatchupBox match={emptyMatch} onClick={null} formatTeamName={getBracketDisplayName} />
+                            </BracketColumn>
+                            <BracketColumn title="패자조 3R">
+                                <MatchupBox match={emptyMatch} onClick={null} formatTeamName={getBracketDisplayName} />
+                            </BracketColumn>
+                            <BracketColumn title="결승 진출전">
+                                <MatchupBox match={emptyMatch} onClick={null} formatTeamName={getBracketDisplayName} />
+                            </BracketColumn>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     const renderLCKBracket = () => {
         const po = league.matches ? league.matches.filter(m => m.type === 'playoff') : [];
 
@@ -825,15 +879,48 @@ const PlayoffTab = ({
             </div>
 
             <h2 className="text-2xl font-black text-gray-900 mb-6">
-                👑 2026 {currentLeague} 플레이오프
+                👑 2026 {
+                    isLCK
+                        ? (isLCKSplit1Started && lckBracketIndex === 0 ? 'LCK 플레이오프' : 'LCK 컵 플레이오프')
+                        : `${currentLeague} 플레이오프`
+                }
             </h2>
 
             {isLCK ? (
-                hasPlayoffsGenerated ? renderLCKBracket() : (
-                    <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-                        <div className="text-xl font-bold">플레이오프가 아직 시작되지 않았습니다</div>
-                    </div>
-                )
+                <>
+                    {isLCKSplit1Started && (
+                        <div className="flex items-center justify-between mb-5 px-1">
+                            <button
+                                onClick={() => setLckBracketIndex(i => Math.max(0, i - 1))}
+                                disabled={lckBracketIndex === 0}
+                                className="flex items-center gap-1 px-4 py-1.5 rounded-full font-bold text-sm bg-gray-100 text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-200 active:scale-95 transition-all"
+                            >
+                                ‹
+                            </button>
+                            <div className="flex items-center gap-3 text-sm font-bold text-gray-600">
+                                <span className={lckBracketIndex === 0 ? 'text-blue-600' : 'text-gray-400'}>LCK 플레이오프</span>
+                                <span className="text-gray-300">|</span>
+                                <span className={lckBracketIndex === 1 ? 'text-blue-600' : 'text-gray-400'}>LCK 컵 플레이오프</span>
+                            </div>
+                            <button
+                                onClick={() => setLckBracketIndex(i => Math.min(1, i + 1))}
+                                disabled={lckBracketIndex === 1}
+                                className="flex items-center gap-1 px-4 py-1.5 rounded-full font-bold text-sm bg-gray-100 text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-200 active:scale-95 transition-all"
+                            >
+                                ›
+                            </button>
+                        </div>
+                    )}
+                    {isLCKSplit1Started && lckBracketIndex === 0 ? (
+                        renderEmptyLCKBracket()
+                    ) : (
+                        hasPlayoffsGenerated ? renderLCKBracket() : (
+                            <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
+                                <div className="text-xl font-bold">플레이오프가 아직 시작되지 않았습니다</div>
+                            </div>
+                        )
+                    )}
+                </>
             ) : currentLeague === 'LCP' ? (
                 (isLCPGenerated || isLckFinished) ? renderLCPBracket() : (
                     <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
