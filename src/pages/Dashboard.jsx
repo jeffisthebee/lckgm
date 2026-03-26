@@ -159,7 +159,6 @@ const getOvrBadgeStyle = (ovr) => {
         if (!Array.isArray(metaChampionLists[v]) || metaChampionLists[v].length === 0) {
           // Reuse cached in-memory patch list if it was computed earlier for
           // a match draft/sim (pre-effect interaction).
-          const cached = lckSplit1MetaChampionListCacheRef.current?.[v];
           metaChampionLists[v] = cached && Array.isArray(cached) && cached.length > 0
             ? cached
             : updateChampionMeta(prevList);
@@ -170,40 +169,27 @@ const getOvrBadgeStyle = (ovr) => {
       return metaChampionLists;
     };
 
-    const lckSplit1MetaChampionListCacheRef = useRef({});
+    
 
     const getChampionListForMatch = (lg, matchObj) => {
       if (!lg) return championList;
-
+    
       if (matchObj?.type === 'lck_split1_regular') {
         const patch = getLCKSplit1PatchVersionForDate(matchObj.date);
-        if (patch && lg.metaChampionLists?.[patch]) return lg.metaChampionLists[patch];
-        if (patch && lckSplit1MetaChampionListCacheRef.current?.[patch]) return lckSplit1MetaChampionListCacheRef.current[patch];
-
-        // Fallback for early user interactions: compute the patch list in-memory
-        // (without mutating/persisting league state) so the current match draft/sim
-        // still uses the correct meta.
-        if (patch) {
-          const metaChampionLists = ensureSplit1MetaChampionListsUpTo(lg, patch);
-          const list = metaChampionLists?.[patch];
-          if (list && Array.isArray(list)) {
-            lckSplit1MetaChampionListCacheRef.current[patch] = list;
-            return list;
-          }
+        if (!patch) return lg.currentChampionList?.length > 0 ? lg.currentChampionList : championList;
+    
+        // Always check saved data FIRST
+        const saved = lg.metaChampionLists?.[patch];
+        if (saved?.length > 0) {
+          return saved;
         }
-        if (
-          patch &&
-          lg.metaVersion === patch &&
-          Array.isArray(lg.currentChampionList) &&
-          lg.currentChampionList.length > 0
-        ) {
-          return lg.currentChampionList;
-        }
+    
+        // If not found, log error and return fallback
+        console.warn(`[Split1] Patch ${patch} not pre-computed! Falling back to current.`);
         return lg.currentChampionList?.length > 0 ? lg.currentChampionList : championList;
       }
-
-      // FIX: Ensure ALL patches past 16.01 (16.04, 16.05, etc.) use the updated meta list
-      // instead of hardcoding just 16.02 and 16.03.
+    
+      // For other match types
       if (
         lg.metaVersion !== '16.01' &&
         Array.isArray(lg.currentChampionList) &&
@@ -211,43 +197,67 @@ const getOvrBadgeStyle = (ovr) => {
       ) {
         return lg.currentChampionList;
       }
-
+    
       return championList;
     };
 
-    useEffect(() => {
-      if (!league?.matches) return;
+   // ── [CRITICAL FIX] Ensure ALL Split 1 patches are pre-computed and saved ─────
+useEffect(() => {
+  if (!league?.matches) return;
+
+  const split1Matches = (league.matches || []).filter(m => m.type === 'lck_split1_regular');
+  if (split1Matches.length === 0) return;
+
+  // Identify the latest patch needed by any split1 match
+  const allPatches = split1Matches
+    .map(m => getLCKSplit1PatchVersionForDate(m.date))
+    .filter(Boolean);
+  
+  if (allPatches.length === 0) return;
+
+  const maxPatch = allPatches.reduce((a, b) => 
+    a > b ? a : b, '16.01'
+  );
+
+  // Check if ALL patches up to maxPatch are computed and saved
+  const metaChampionLists = { ...(league?.metaChampionLists || {}) };
+  const patchOrder = ['16.01', '16.02', '16.03', '16.04', '16.05', '16.06', '16.07'];
+  const maxIdx = patchOrder.indexOf(maxPatch);
+
+  let needsUpdate = false;
+  let lastValidList = league?.currentChampionList?.length > 0 
+    ? league.currentChampionList 
+    : championList;
+
+  // Build the full chain from 16.01 to maxPatch
+  for (let i = 0; i <= maxIdx; i++) {
+    const patch = patchOrder[i];
     
-      const split1Matches = (league.matches || []).filter(m => m.type === 'lck_split1_regular');
-      if (split1Matches.length === 0) return;
-    
-      const pending = split1Matches
-        .filter(m => m.status !== 'finished')
-        .sort((a, b) => (parseSplit1DateNum(a.date) || 0) - (parseSplit1DateNum(b.date) || 0));
-    
-      const finished = split1Matches
-        .filter(m => m.status === 'finished')
-        .sort((a, b) => (parseSplit1DateNum(a.date) || 0) - (parseSplit1DateNum(b.date) || 0));
-    
-      const anchor = pending[0] || finished[finished.length - 1] || split1Matches[0];
-      const patchNeeded = getLCKSplit1PatchVersionForDate(anchor?.date);
-      if (!patchNeeded) return;
-    
-      const hasPatchList = Array.isArray(league?.metaChampionLists?.[patchNeeded]) && league.metaChampionLists[patchNeeded].length > 0;
-      if (league.metaVersion === patchNeeded && hasPatchList) return;
-    
-      // FIX: Actually capture the return value and merge it
-      const metaChampionLists = ensureSplit1MetaChampionListsUpTo(league, patchNeeded);
-      const currentChampionList = metaChampionLists[patchNeeded] || league.currentChampionList || championList;
-    
-      const updates = { 
-        metaChampionLists,  // FIX: Now we're saving the computed lists!
-        currentChampionList, 
-        metaVersion: patchNeeded 
-      };
-      setLeague(prev => ({ ...prev, ...updates }));
-      updateLeague(league.id, updates);  // FIX: Also persist to DB!
-    }, [league?.matches]);
+    // If we already have this patch saved, use it
+    if (metaChampionLists[patch]?.length > 0) {
+      lastValidList = metaChampionLists[patch];
+      continue;
+    }
+
+    // Compute the missing patch
+    const newList = updateChampionMeta(lastValidList);
+    metaChampionLists[patch] = newList;
+    lastValidList = newList;
+    needsUpdate = true;
+  }
+
+  // Only update if something was missing
+  if (needsUpdate) {
+    const updates = { 
+      metaChampionLists,
+      currentChampionList: lastValidList,
+      metaVersion: maxPatch 
+    };
+    console.log(`[Split1] Pre-computing patches up to ${maxPatch}...`);
+    setLeague(prev => ({ ...prev, ...updates }));
+    updateLeague(league.id, updates);
+  }
+}, [league?.matches?.length]);
 
     // Check Season Status Helper
     // LCK: grand final finished — identified by label NOT containing '진출전'.
