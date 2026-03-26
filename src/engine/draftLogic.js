@@ -468,20 +468,23 @@ export function selectBanFromProbabilities(opponentTeam, availableChampions, tar
 }
 
 export function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChampionList) {
-  // [CRITICAL FIX] Validate the champion list upfront
-  // This ensures we're using the current meta's tiers, not stale cached data
-  const validChampionList = validateChampionList(currentChampionList);
+  // [CRITICAL FIX] Don't just validate—ensure we're using FRESH tier data from the current list
+  // The champion list passed in should already have the current patch's tiers
+  // If it's empty, that's a real error (not a validation issue)
   
-  if (validChampionList.length === 0) {
-    console.error('Draft simulation failed: champion list is empty or invalid');
+  if (!Array.isArray(currentChampionList) || currentChampionList.length === 0) {
+    console.error('Draft simulation failed: champion list is empty or null');
     return {
       picks: { A: [], B: [] },
       bans: { A: [], B: [] },
-      draftLogs: ['Error: Invalid champion list'],
+      draftLogs: ['Error: No champions available'],
       fearlessBans: Array.isArray(fearlessBans) ? [...fearlessBans] : [],
       usedChamps: []
     };
   }
+
+  // Use the list AS-IS (it should already be the correct meta version from Dashboard)
+  const champList = currentChampionList;
 
   let localBans = new Set([...fearlessBans]);
   let picks     = { BLUE: {}, RED: {} };
@@ -499,8 +502,8 @@ export function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChamp
     const mySide       = step.side;
     const opponentSide = step.side === 'BLUE' ? 'RED' : 'BLUE';
     
-    // [FIX] Filter from the validated list to ensure we always have current tier data
-    const availableChamps = validChampionList.filter(c => !localBans.has(c.name));
+    // Filter from the CURRENT champion list (which should have current patch tiers)
+    const availableChamps = champList.filter(c => !localBans.has(c.name));
 
     const currentMySidePicks = Object.values(picks[mySide]);
     const currentEnemyPicks  = Object.values(picks[opponentSide]);
@@ -566,7 +569,7 @@ export function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChamp
       const p = teamRoster.find(pl => pl.포지션 === pos);
       return {
         champName:  c.name,
-        tier:       c.tier, // [FIX] tier is now guaranteed to be current from validChampionList
+        tier:       c.tier,
         mastery:    c.mastery,
         playerName: p ? p.이름 : 'Unknown Player',
         playerOvr:  p ? p.종합 : 70
