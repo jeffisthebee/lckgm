@@ -202,9 +202,10 @@ const getOvrBadgeStyle = (ovr) => {
         return championList;
       }
 
-      // Legacy handling: only late-season 16.02/16.03 uses the shifted list.
+      // FIX: Ensure ALL patches past 16.01 (16.04, 16.05, etc.) use the updated meta list
+      // instead of hardcoding just 16.02 and 16.03.
       if (
-        (lg.metaVersion === '16.02' || lg.metaVersion === '16.03') &&
+        lg.metaVersion !== '16.01' &&
         Array.isArray(lg.currentChampionList) &&
         lg.currentChampionList.length > 0
       ) {
@@ -2470,10 +2471,15 @@ const handleMatchClick = (match) => {
             return; 
         }
 
+        // --- THE FIX IS RIGHT HERE ---
+        // 1. Grab the correct champion list based on the current patch
+        const safeChampionList = getChampionListForMatch(league, nextGlobalMatch);
+
         const result = quickSimulateMatch(
           { ...t1Obj, roster: resolveRoster(t1Obj.name) },
           { ...t2Obj, roster: resolveRoster(t2Obj.name) },
-          nextGlobalMatch.format || 'BO3'
+          nextGlobalMatch.format || 'BO3',
+          safeChampionList // 2. Plug it in as the 4th argument!
         );
 
         // Normalize score for BO1 — quickSimulateMatch may return '2-0' even for BO1
