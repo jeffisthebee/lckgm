@@ -230,7 +230,18 @@ export function computeStatsForLeague(league, options = {}) {
       // Recalculate POG from picks using new formula — ignores stale stored pogPlayer
       // Use set.winner (team name) directly instead of winnerSide (A/B) to avoid
       // misidentification bugs where determineWinnerSide returns the wrong side
-      const setWinnerName = set.winner || set.winnerName || (winnerSide === 'A' ? matchContext.teamAName : matchContext.teamBName) || '';
+      // Recalculate POG from picks using new formula — ignores stale stored pogPlayer
+      let setWinnerName = set.winner || set.winnerName || '';
+
+      // BULLETPROOF FALLBACK FOR OLDER GAMES:
+      // Force it to grab the actual team name directly from the winning players' data
+      if (winnerSide && picks[winnerSide] && picks[winnerSide].length > 0) {
+          const firstP = picks[winnerSide][0];
+          setWinnerName = firstP.playerData?.팀 || firstP.team || firstP.teamName || setWinnerName;
+      }
+      if (!setWinnerName && match.result?.winner) {
+          setWinnerName = match.result.winner;
+      }
       const allSetPicks = [...(picks.A || []), ...(picks.B || [])];
       let pogBestScore = -Infinity;
       let pogBestPlayer = null;
