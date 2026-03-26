@@ -2838,8 +2838,35 @@ const handleMatchClick = (match) => {
     ];
     
     const myRecord = (() => {
-      if (!isMyLeagueForeign) return computedStandings[myTeam.id] || { w: 0, l: 0, diff: 0 };
-      // For foreign: compute W/L from their league's finished matches
+      if (!isMyLeagueForeign) {
+        // Check if LCK Split 1 has been generated (matches dated April = month 4+)
+        const split1Matches = (league?.matches || []).filter(m => {
+          const month = parseInt((m.date || '').split('.')[0]);
+          return !isNaN(month) && month >= 4;
+        });
+        if (split1Matches.length > 0) {
+          // Show only Split 1 record, starting from 0-0
+          let w = 0, l = 0, diff = 0;
+          split1Matches
+            .filter(m => m.status === 'finished')
+            .forEach(m => {
+              const myId   = myTeam.id;
+              const myName = myTeam.name;
+              const involved = m.t1 === myId || m.t2 === myId || m.t1 === myName || m.t2 === myName;
+              if (!involved || !m.result?.winner) return;
+              const won = m.result.winner === myName || m.result.winner === myId;
+              const parts = String(m.result?.score || '').split(/[-:]/).map(Number);
+              const setDiff = (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]))
+                ? Math.abs(parts[0] - parts[1]) : 0;
+              if (won) { w++; diff += setDiff; }
+              else     { l++; diff -= setDiff; }
+            });
+          return { w, l, diff };
+        }
+        // Cup phase — use existing standings
+        return computedStandings[myTeam.id] || { w: 0, l: 0, diff: 0 };
+      }
+      // For foreign leagues: compute W/L from their league's finished matches
       const fMatches = (league.foreignMatches?.[myLeague] || [])
         .filter(m => (m.type === 'regular' || m.type === 'super') && m.status === 'finished');
       let w = 0, l = 0;
