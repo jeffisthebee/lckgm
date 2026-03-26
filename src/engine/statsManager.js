@@ -97,10 +97,16 @@ export function computeStatsForLeague(league, options = {}) {
     if (set.winner || set.winnerName) {
       const winnerName = set.winner || set.winnerName;
       if (matchContext) {
-        const blueN = matchContext.blueTeamName || matchContext.teamAName || matchContext.t1Name;
-        const redN = matchContext.redTeamName || matchContext.teamBName || matchContext.t2Name;
-        if (blueN && blueN === winnerName) return 'A';
-        if (redN && redN === winnerName) return 'B';
+        // Now it properly checks t1/t2 directly!
+        const blueN = matchContext.blueTeamName || matchContext.teamAName || matchContext.t1Name || matchContext.t1;
+        const redN = matchContext.redTeamName || matchContext.teamBName || matchContext.t2Name || matchContext.t2;
+        
+        // Unpack objects just in case the simulator saved them as full team objects
+        const bName = typeof blueN === 'object' ? (blueN.name || blueN.id) : blueN;
+        const rName = typeof redN === 'object' ? (redN.name || redN.id) : redN;
+
+        if (bName && String(bName) === String(winnerName)) return 'A';
+        if (rName && String(rName) === String(winnerName)) return 'B';
       }
       const picks = extractPicks(set);
       const aHasWinner = (picks.A || []).some(p => (p.playerData?.팀 || p.team || p.teamName) === winnerName);
@@ -227,47 +233,35 @@ export function computeStatsForLeague(league, options = {}) {
         });
       });
 
-      // Recalculate POG from picks using new formula — ignores stale stored pogPlayer
-      // Use set.winner (team name) directly instead of winnerSide (A/B) to avoid
-      // misidentification bugs where determineWinnerSide returns the wrong side
-      // Recalculate POG from picks using new formula — ignores stale stored pogPlayer
-      let setWinnerName = set.winner || set.winnerName || '';
-
-      // BULLETPROOF FALLBACK FOR OLDER GAMES:
-      // Force it to grab the actual team name directly from the winning players' data
-      if (winnerSide && picks[winnerSide] && picks[winnerSide].length > 0) {
-          const firstP = picks[winnerSide][0];
-          setWinnerName = firstP.playerData?.팀 || firstP.team || firstP.teamName || setWinnerName;
-      }
-      if (!setWinnerName && match.result?.winner) {
-          setWinnerName = match.result.winner;
-      }
-      const allSetPicks = [...(picks.A || []), ...(picks.B || [])];
+      // Recalculate POG strictly using winnerSide (bypasses missing team names on players)
       let pogBestScore = -Infinity;
       let pogBestPlayer = null;
-      allSetPicks.forEach(p => {
+
+      // Because we fixed determineWinnerSide, we now know EXACTLY which side won the lobby
+      const winningPicks = winnerSide === 'A' ? (picks.A || []) : (winnerSide === 'B' ? (picks.B || []) : []);
+      
+      winningPicks.forEach(p => {
         if (!p) return;
-        const playerTeam = p.playerData?.팀 || p.team || p.teamName || '';
-        const isOnWinningSide = setWinnerName && playerTeam && (
-          String(playerTeam) === String(setWinnerName) ||
-          String(playerTeam).includes(String(setWinnerName)) ||
-          String(setWinnerName).includes(String(playerTeam))
-        );
-        if (!isOnWinningSide) return;
         const score = computePlayerScoreFromStats(p);
         if (score > pogBestScore) {
           pogBestScore = score;
           pogBestPlayer = p;
         }
       });
+
       if (pogBestPlayer) {
         const pname = String(pogBestPlayer.playerName || '').trim();
         if (pname) {
           const prev = pogCounts.get(pname) || { count: 0, lastScore: null, teams: new Set() };
           prev.count += 1;
           prev.lastScore = pogBestScore;
-          const teamName = pogBestPlayer.playerData?.팀 || pogBestPlayer.team || pogBestPlayer.teamName || null;
-          if (teamName) prev.teams.add(teamName);
+          
+          // Fallback team naming so the player card displays correctly
+          const tNameRaw = pogBestPlayer.playerData?.팀 || pogBestPlayer.team || pogBestPlayer.teamName || 
+                           (winnerSide === 'A' ? matchContext.t1 : matchContext.t2) || null;
+          const resolvedTeamName = typeof tNameRaw === 'object' ? (tNameRaw.name || tNameRaw.id) : tNameRaw;
+          
+          if (resolvedTeamName) prev.teams.add(String(resolvedTeamName));
           pogCounts.set(pname, prev);
         }
       }
