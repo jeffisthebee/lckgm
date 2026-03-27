@@ -275,9 +275,6 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
   const currentAD = currentTeamPicks.filter(c => c.dmg_type === 'AD').length;
   const currentAP = currentTeamPicks.filter(c => c.dmg_type === 'AP').length;
 
-  // ─────────────────────────────────────────────────────────────
-  // [FIX] Move getFearlessBonus OUTSIDE the scoredChamps.map() so it's defined first
-  // ─────────────────────────────────────────────────────────────
   const fearlessSet = new Set(fearlessBans);
   const remainingKnown = [...knownPool].filter(name => !fearlessSet.has(name));
   const isConservationMode = remainingKnown.length <= 3;
@@ -301,7 +298,27 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
       isKnown ? 1.0 : 0.3
     );
     score *= pw.mastery;
-    score *= getFearlessBonus(champ.name); // ← Now getFearlessBonus is defined
+    score *= getFearlessBonus(champ.name);
+
+    // --- [STEP 0] Tier Weighting + Versatility ---
+    // [FIX] Always use the current champion's tier value from the list
+    // This ensures meta shifts are respected
+    const currentTier = champ.tier || 3; // Safe fallback to tier 3
+    
+    const statsSum = (champ.stats ? Object.values(champ.stats).reduce((a, v) => a + v, 0) : 0);
+    const versatilityScore = statsSum / 50;
+    score += versatilityScore * pw.versatility;
+
+    let tierMultiplier = 1.0;
+    switch (currentTier) {
+      case 1: tierMultiplier = 1.25; break;
+      case 2: tierMultiplier = 1.1; break;
+      case 3: tierMultiplier = 1.00; break;
+      case 4: tierMultiplier = 0.90; break;
+      case 5: tierMultiplier = 0.75; break;
+      default: tierMultiplier = 1.0;
+    }
+    score *= tierMultiplier;
 
     // --- [STEP 1] Damage Profile Balance ---
     if (currentTeamPicks.length >= 3) {
@@ -365,9 +382,8 @@ export function selectBanFromProbabilities(opponentTeam, availableChampions, tar
   const phase = getBanPhase(banOrder);
   const bw    = BAN_PHASE_WEIGHTS[phase];
 
-  // [CRITICAL FIX] Create tier lookup from the CURRENT champion list
+  // [FIX] Validate available champions before filtering
   const validChampions = validateChampionList(availableChampions);
-  const champTierMap = new Map(validChampions.map(c => [c.name, c]));
 
   let candidates = [];
 
@@ -393,9 +409,8 @@ export function selectBanFromProbabilities(opponentTeam, availableChampions, tar
       let banScore  = calculateChampionScore(player, c, isKnown ? mastery : null, isKnown ? 1.0 : 0.3);
       banScore *= bw.mastery;
 
-      // [CRITICAL FIX] Use tier from CURRENT list
-      const currentListEntry = champTierMap.get(c.name);
-      const currentTier = currentListEntry?.tier ?? c.tier ?? 3;
+      // [FIX] Use current tier from the validated champion list
+      const currentTier = c.tier || 3;
       
       let tierWeight = 1.0;
       switch (currentTier) {
