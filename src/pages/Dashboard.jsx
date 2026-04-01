@@ -2984,24 +2984,46 @@ const handleMatchClick = (match) => {
     // appears automatically the next time the player loads the dashboard.
     const handleCreateLCKSplit1 = () => {
       if (hasLCKSplit1) return;
-
+    
       try {
         // generateLCKSplit1Schedule expects objects with at least { id, name }
         const rawMatches = generateLCKSplit1Schedule(teams);
-
-        // Override type so existing season logic (isRegularSeasonFinished, meta-patch
-        // triggers, play-in guards, etc.) never misidentify these as LCK CUP matches.
+    
+        // Override type so existing season logic never misidentify these
         const split1Matches = rawMatches.map(m => ({
           ...m,
           type: 'lck_split1_regular',
         }));
-
+    
+        // [FIX] Pre-compute all meta patches for Split 1 (16.02 → 16.04)
+        const metaChampionLists = { ...(league.metaChampionLists || {}) };
+        let currentList = league.currentChampionList?.length > 0 
+          ? league.currentChampionList 
+          : championList;
+    
+        // Pre-generate 16.02, 16.03, 16.04 if they don't exist
+        const patchOrder = ['16.01', '16.02', '16.03', '16.04'];
+        for (let i = 1; i < patchOrder.length; i++) {
+          const patch = patchOrder[i];
+          if (!metaChampionLists[patch] || metaChampionLists[patch].length === 0) {
+            currentList = updateChampionMeta(currentList);
+            metaChampionLists[patch] = currentList;
+          } else {
+            currentList = metaChampionLists[patch];
+          }
+        }
+    
         const updatedMatches = [...(league.matches || []), ...split1Matches];
-        const updates = { matches: updatedMatches };
+        const updates = { 
+          matches: updatedMatches,
+          metaVersion: '16.04',  // [FIX] Split 1 uses 16.04
+          currentChampionList: currentList,
+          metaChampionLists 
+        };
         setLeague(prev => ({ ...prev, ...updates }));
         updateLeague(league.id, updates);
         setActiveTab('schedule');
-        alert(`🏆 LCK 정규 시즌 스플릿 1 개막!\n${split1Matches.length}개 경기 생성됨 (4/1 ~ 5/31)`);
+        alert(`🏆 LCK 정규 시즌 스플릿 1 개막!\n${split1Matches.length}개 경기 생성됨 (4/1 ~ 5/31)\n📊 패치: 16.04 메타 적용됨`);
       } catch (err) {
         console.error('[LCK Split 1] 일정 생성 오류:', err);
         alert(`❌ 스플릿 1 일정 생성 실패:\n${err.message}`);

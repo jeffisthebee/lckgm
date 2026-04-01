@@ -303,14 +303,15 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
     // --- [STEP 0] Tier Weighting + Versatility ---
     // [FIX] Always use the current champion's tier value from the list
     // This ensures meta shifts are respected
-    const currentTier = champ.tier || 3; // Safe fallback to tier 3
+    const tierChamp = validChampions.find(c => c.name === champ.name);
+    const currentTier = tierChamp?.tier ?? champ.tier ?? 3; // Fresh tier from list
     
     const statsSum = (champ.stats ? Object.values(champ.stats).reduce((a, v) => a + v, 0) : 0);
     const versatilityScore = statsSum / 50;
     score += versatilityScore * pw.versatility;
 
     let tierMultiplier = 1.0;
-    switch (currentTier) {
+    switch (currentTier) {  // Use currentTier (fresh lookup)
       case 1: tierMultiplier = 1.25; break;
       case 2: tierMultiplier = 1.1; break;
       case 3: tierMultiplier = 1.00; break;
@@ -410,10 +411,11 @@ export function selectBanFromProbabilities(opponentTeam, availableChampions, tar
       banScore *= bw.mastery;
 
       // [FIX] Use current tier from the validated champion list
-      const currentTier = c.tier || 3;
+      const tierChamp = validChampions.find(ch => ch.name === c.name);
+      const currentTier = tierChamp?.tier ?? c.tier ?? 3; // Fresh tier from current list
       
       let tierWeight = 1.0;
-      switch (currentTier) {
+      switch (currentTier) {  // Use currentTier
         case 1: tierWeight = 1.25; break;
         case 2: tierWeight = 1.1; break;
         case 3: tierWeight = 1.00; break;
