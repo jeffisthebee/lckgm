@@ -228,15 +228,12 @@ const getOvrBadgeStyle = (ovr) => {
           : championList;
       }
     
-      // For other match types
-      if (
-        lg.metaVersion !== '16.01' &&
-        Array.isArray(lg.currentChampionList) &&
-        lg.currentChampionList.length > 0
-      ) {
+      // For other match types - always prefer currentChampionList if available
+      if (Array.isArray(lg.currentChampionList) && lg.currentChampionList.length > 0) {
         return lg.currentChampionList;
       }
     
+      // Final fallback to base list
       return championList;
     };
 
@@ -1506,6 +1503,10 @@ useEffect(() => {
         if ((league.myLeague || 'LCK') !== 'LCK') return; // foreign: button handles it
         if (meta1602Ref.current) return;
         if (league.metaVersion === '16.02' || league.metaVersion === '16.03') return;
+
+        // Don't auto-apply 16.02 if LCK Split 1 is active
+        const hasSplit1Matches = league.matches.some(m => m.type === 'lck_split1_regular');
+        if (hasSplit1Matches) return;
 
         const regularMatches = league.matches.filter(m => m.type === 'regular');
         if (regularMatches.length === 0) return;
@@ -3028,15 +3029,41 @@ const handleMatchClick = (match) => {
     const baronTotalWins = calculateGroupPoints(league, 'baron');
     const elderTotalWins = calculateGroupPoints(league, 'elder');
   
-    
-    // REPLACE the old "handleGenerateSuperWeek" with THIS:
-
     const handleGenerateSuperWeek = () => {
+      // For LCK leagues with Split 1, don't override the Split 1 patch versioning
+      const isLCKWithSplit1 = (league.myLeague || 'LCK') === 'LCK' && 
+                              league.matches && 
+                              league.matches.some(m => m.type === 'lck_split1_regular');
+      
+      if (isLCKWithSplit1) {
+        // For LCK Split 1, generate superweek matches without changing meta version
+        const newMatches = generateSuperWeekMatches(league);
+        
+        // Merge & Sort
+        const cleanMatches = league.matches ? league.matches.filter(m => m.type !== 'tbd') : [];
+        const updatedMatches = [...cleanMatches, ...newMatches].sort((a, b) => {
+            const parse = (d) => parseFloat(d.split(' ')[0]);
+            return parse(a.date) - parse(b.date);
+        });
+    
+        // Update State - preserve current meta version
+        const newLeagueState = { 
+            matches: updatedMatches,
+        };
+    
+        setLeague(prev => ({ ...prev, ...newLeagueState }));
+        updateLeague(league.id, newLeagueState);
+    
+        alert(`🔥 슈퍼위크 업데이트 완료! (메타 버전 유지: ${league.metaVersion})`);
+        return;
+      }
+
+      // For non-LCK leagues, use 16.02 as before
       const newMetaVersion = '16.02';
       
       if (league.metaVersion === newMetaVersion) {
-          alert("이미 16.02 메타 패치가 적용되어 있습니다.");
-          return;
+        alert("이미 16.02 메타 패치가 적용되어 있습니다.");
+        return;
       }
 
       // 1. Update Meta (Delegated to SeasonManager)
@@ -3068,37 +3095,6 @@ const handleMatchClick = (match) => {
       updateLeague(league.id, newLeagueState);
   
       alert(`🔥 16.02 메타 패치 및 슈퍼위크 업데이트 완료!`);
-    };
-
-    // ── FST Tournament ────────────────────────────────────────
-
-    const handleCreateFST = () => {
-      if (!isSeasonOver || hasFST) return;
-
-      // 1. Build FST bracket from all league results
-      const fstData = initFSTTournament(league);
-      if (!fstData) {
-        alert('⚠️ FST 토너먼트를 생성하려면 모든 리그가 완료되어야 합니다.\n(LCK, LPL, LEC, LCS, LCP, CBLOL)');
-        return;
-      }
-
-      // 2. Apply 16.03 meta patch (same pattern as 16.02)
-      const sourceList = (league.currentChampionList && league.currentChampionList.length > 0)
-          ? league.currentChampionList : championList;
-      const newChampionList = updateChampionMeta(sourceList);
-
-      // 3. Save everything
-      const metaChampionLists = { ...(league.metaChampionLists || {}), '16.03': newChampionList };
-      const updates = {
-        fst: fstData,
-        currentChampionList: newChampionList,
-        metaVersion: '16.03',
-        metaChampionLists,
-      };
-      setLeague(prev => ({ ...prev, ...updates }));
-      updateLeague(league.id, updates);
-      setActiveTab('fst');
-      alert('🌍 FST 월드 토너먼트가 개막되었습니다!\n패치 16.03 메타가 적용되었습니다.');
     };
 
     // ── LCK 정규 시즌 스플릿 1 ────────────────────────────────────────────────
