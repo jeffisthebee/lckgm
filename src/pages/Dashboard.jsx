@@ -173,20 +173,28 @@ const getOvrBadgeStyle = (ovr) => {
 
     const getChampionListForMatch = (lg, matchObj) => {
       if (!lg) return championList;
+
+      const PATCH_ORDER = ['16.01', '16.02', '16.03', '16.04', '16.05', '16.06', '16.07'];
     
       if (matchObj?.type === 'lck_split1_regular') {
         const patch = getLCKSplit1PatchVersionForDate(matchObj.date);
-        if (!patch) return lg.currentChampionList?.length > 0 ? lg.currentChampionList : championList;
-    
-        // Always check saved data FIRST
-        const saved = lg.metaChampionLists?.[patch];
-        if (saved?.length > 0) {
-          return saved;
+
+        if (patch) {
+          const targetIdx = PATCH_ORDER.indexOf(patch);
+          // [FIX Bug 2] Walk BACKWARD from the target patch to find the best available
+          // champion list. The old code jumped straight to championList (16.01 base)
+          // whenever the exact patch key was missing, bypassing all updated lists.
+          for (let i = Math.max(targetIdx, 0); i >= 0; i--) {
+            const saved = lg.metaChampionLists?.[PATCH_ORDER[i]];
+            if (Array.isArray(saved) && saved.length > 0) return saved;
+          }
         }
-    
-        // If not found, log error and return fallback
-        console.warn(`[Split1] Patch ${patch} not pre-computed! Falling back to current.`);
-        return lg.currentChampionList?.length > 0 ? lg.currentChampionList : championList;
+
+        // Last resort: prefer the live currentChampionList over the hardcoded base list
+        console.warn(`[Split1] No pre-computed list found for patch near ${patch}. Using currentChampionList.`);
+        return Array.isArray(lg.currentChampionList) && lg.currentChampionList.length > 0
+          ? lg.currentChampionList
+          : championList;
       }
     
       // For other match types
@@ -215,9 +223,10 @@ useEffect(() => {
   
   if (allPatches.length === 0) return;
 
-  const maxPatch = allPatches.reduce((a, b) => 
-    a > b ? a : b, '16.01'
-  );
+  const maxPatch = allPatches.reduce((a, b) => a > b ? a : b, '16.01');
+  // [FIX Bug 1] The first (minimum) patch of Split 1 — this is what the version
+  // label should show at the START, not the final patch of the whole split.
+  const minPatch = allPatches.reduce((a, b) => a < b ? a : b, maxPatch);
 
   // Check if ALL patches up to maxPatch are computed and saved
   const metaChampionLists = { ...(league?.metaChampionLists || {}) };
@@ -246,18 +255,76 @@ useEffect(() => {
     needsUpdate = true;
   }
 
-  // Only update if something was missing
-  if (needsUpdate) {
+  // [FIX Bug 1] Determine the correct current-patch version to display.
+  // The old code used maxPatch here (e.g. '16.07'), which jumped the label to the
+  // end of the split immediately. Now we use minPatch (the starting patch of Split 1,
+  // e.g. '16.04') so the label is correct when the split begins.
+  // The progressive effect below advances it as matches are played.
+  const currentlyActiveVersion = league.metaVersion || '16.01';
+  const patchOrder2 = patchOrder; // alias for clarity
+  const minPatchIdx = patchOrder2.indexOf(minPatch);
+  const currentVersionIdx = patchOrder2.indexOf(currentlyActiveVersion);
+
+  // We also need to update if metaVersion is still stuck before the split's start patch
+  const versionNeedsUpdate = minPatchIdx > currentVersionIdx;
+
+  if (needsUpdate || versionNeedsUpdate) {
+    const startList = metaChampionLists[minPatch] || lastValidList;
     const updates = { 
       metaChampionLists,
-      currentChampionList: lastValidList,
-      metaVersion: maxPatch 
+      // [FIX Bug 1] Set currentChampionList to the STARTING patch's list,
+      // not the final patch's list (the old bug).
+      ...(versionNeedsUpdate ? {
+        currentChampionList: startList,
+        metaVersion: minPatch,
+      } : {}),
+      // Always persist the newly-computed metaChampionLists entries
     };
-    console.log(`[Split1] Pre-computing patches up to ${maxPatch}...`);
+    console.log(`[Split1] Pre-computing patches up to ${maxPatch}. Starting version: ${versionNeedsUpdate ? minPatch : currentlyActiveVersion}`);
     setLeague(prev => ({ ...prev, ...updates }));
     updateLeague(league.id, updates);
   }
 }, [league?.matches?.length]);
+
+// ── [NEW FIX Bug 1] Advance metaVersion progressively as Split 1 matches are played ──
+// The pre-computation effect sets the STARTING patch (e.g. '16.04'). This effect
+// watches for completed matches and advances metaVersion to the patch of the next
+// pending match, keeping the MetaTab label in sync with actual match progression.
+useEffect(() => {
+  if (!league?.matches || (league.myLeague || 'LCK') !== 'LCK') return;
+
+  const split1Matches = (league.matches || []).filter(m => m.type === 'lck_split1_regular');
+  if (split1Matches.length === 0) return;
+  if (!league.metaChampionLists) return;
+
+  const PATCH_ORDER = ['16.01', '16.02', '16.03', '16.04', '16.05', '16.06', '16.07'];
+
+  const sorted = [...split1Matches].sort(
+    (a, b) => (parseSplit1DateNum(a.date) || 0) - (parseSplit1DateNum(b.date) || 0)
+  );
+
+  const nextPending = sorted.find(m => m.status === 'pending');
+  if (!nextPending) return;
+
+  const targetPatch = getLCKSplit1PatchVersionForDate(nextPending.date);
+  if (!targetPatch) return;
+
+  const currentMetaVersion = league.metaVersion || '16.01';
+  const currentIdx = PATCH_ORDER.indexOf(currentMetaVersion);
+  const targetIdx  = PATCH_ORDER.indexOf(targetPatch);
+
+  if (targetIdx <= currentIdx) return;
+
+  const newList = league.metaChampionLists[targetPatch];
+  if (!Array.isArray(newList) || newList.length === 0) return;
+
+  const updates = { metaVersion: targetPatch, currentChampionList: newList };
+  setLeague(prev => ({ ...prev, ...updates }));
+  updateLeague(league.id, updates);
+}, [
+  league?.matches?.filter(m => m.type === 'lck_split1_regular' && m.status === 'finished')?.length,
+  Object.keys(league?.metaChampionLists || {}).length,
+]);
 
     // Check Season Status Helper
     // LCK: grand final finished — identified by label NOT containing '진출전'.
@@ -2984,46 +3051,24 @@ const handleMatchClick = (match) => {
     // appears automatically the next time the player loads the dashboard.
     const handleCreateLCKSplit1 = () => {
       if (hasLCKSplit1) return;
-    
+
       try {
         // generateLCKSplit1Schedule expects objects with at least { id, name }
         const rawMatches = generateLCKSplit1Schedule(teams);
-    
-        // Override type so existing season logic never misidentify these
+
+        // Override type so existing season logic (isRegularSeasonFinished, meta-patch
+        // triggers, play-in guards, etc.) never misidentify these as LCK CUP matches.
         const split1Matches = rawMatches.map(m => ({
           ...m,
           type: 'lck_split1_regular',
         }));
-    
-        // [FIX] Pre-compute all meta patches for Split 1 (16.02 → 16.04)
-        const metaChampionLists = { ...(league.metaChampionLists || {}) };
-        let currentList = league.currentChampionList?.length > 0 
-          ? league.currentChampionList 
-          : championList;
-    
-        // Pre-generate 16.02, 16.03, 16.04 if they don't exist
-        const patchOrder = ['16.01', '16.02', '16.03', '16.04'];
-        for (let i = 1; i < patchOrder.length; i++) {
-          const patch = patchOrder[i];
-          if (!metaChampionLists[patch] || metaChampionLists[patch].length === 0) {
-            currentList = updateChampionMeta(currentList);
-            metaChampionLists[patch] = currentList;
-          } else {
-            currentList = metaChampionLists[patch];
-          }
-        }
-    
+
         const updatedMatches = [...(league.matches || []), ...split1Matches];
-        const updates = { 
-          matches: updatedMatches,
-          metaVersion: '16.04',  // [FIX] Split 1 uses 16.04
-          currentChampionList: currentList,
-          metaChampionLists 
-        };
+        const updates = { matches: updatedMatches };
         setLeague(prev => ({ ...prev, ...updates }));
         updateLeague(league.id, updates);
         setActiveTab('schedule');
-        alert(`🏆 LCK 정규 시즌 스플릿 1 개막!\n${split1Matches.length}개 경기 생성됨 (4/1 ~ 5/31)\n📊 패치: 16.04 메타 적용됨`);
+        alert(`🏆 LCK 정규 시즌 스플릿 1 개막!\n${split1Matches.length}개 경기 생성됨 (4/1 ~ 5/31)`);
       } catch (err) {
         console.error('[LCK Split 1] 일정 생성 오류:', err);
         alert(`❌ 스플릿 1 일정 생성 실패:\n${err.message}`);
