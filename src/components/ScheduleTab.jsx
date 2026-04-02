@@ -257,14 +257,20 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
         let updated = false;
         const getMetaForLCKMatch = (m) => {
             if (!m) return championList;
+            const PATCH_ORDER = ['16.01', '16.02', '16.03', '16.04', '16.05', '16.06', '16.07'];
             if (m.type === 'lck_split1_regular') {
                 const patch = getLCKSplit1PatchVersionForDate(m.date);
-                return (patch && league?.metaChampionLists?.[patch])
-                    ? league.metaChampionLists[patch]
-                    : (league?.currentChampionList || championList);
+                if (patch) {
+                    const targetIdx = PATCH_ORDER.indexOf(patch);
+                    for (let i = Math.max(targetIdx, 0); i >= 0; i--) {
+                        const saved = league?.metaChampionLists?.[PATCH_ORDER[i]];
+                        if (Array.isArray(saved) && saved.length > 0) return saved;
+                    }
+                }
             }
-            // Legacy handling for 16.02/16.03 meta inside this component
-            return (league.metaVersion === '16.02' || league.metaVersion === '16.03') && league.currentChampionList
+            // For all other match types: always prefer the live currentChampionList
+            // over the hardcoded 16.01 base constant.
+            return Array.isArray(league?.currentChampionList) && league.currentChampionList.length > 0
                 ? league.currentChampionList
                 : championList;
         };
@@ -406,18 +412,22 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
         }
 
         const getMatchMeta = (matchObj) => {
+            const PATCH_ORDER = ['16.01', '16.02', '16.03', '16.04', '16.05', '16.06', '16.07'];
             if (matchObj?.type === 'lck_split1_regular') {
                 const patch = getLCKSplit1PatchVersionForDate(matchObj.date);
-                return (patch && league?.metaChampionLists?.[patch])
-                    ? league.metaChampionLists[patch]
-                    : (league?.currentChampionList || championList);
+                if (patch) {
+                    const targetIdx = PATCH_ORDER.indexOf(patch);
+                    for (let i = Math.max(targetIdx, 0); i >= 0; i--) {
+                        const saved = league?.metaChampionLists?.[PATCH_ORDER[i]];
+                        if (Array.isArray(saved) && saved.length > 0) return saved;
+                    }
+                }
             }
-            const isLateSeason = matchObj.type === 'super' || matchObj.type === 'playoff' || matchObj.type === 'playin' || 
-                                 (matchObj.date && (matchObj.date.startsWith('2.') || matchObj.date.startsWith('3.')));
-            if (isLateSeason && league.metaVersion === '16.02' && league.currentChampionList) {
-                return league.currentChampionList;
-            }
-            return championList; 
+            // For all other match types: always prefer the live currentChampionList
+            // over the hardcoded 16.01 base constant.
+            return Array.isArray(league?.currentChampionList) && league.currentChampionList.length > 0
+                ? league.currentChampionList
+                : championList;
         };
 
         const simMatchIfPast = (matchObj) => {
