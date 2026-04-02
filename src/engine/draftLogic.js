@@ -302,9 +302,9 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
 
     // --- [STEP 0] Tier Weighting + Versatility ---
     // [FIX] Always use the current champion's tier value from the list
-    // This ensures meta shifts are respected
+    // This ensures meta shifts are respected - NO FALLBACK to old tier data
     const tierChamp = validChampions.find(c => c.name === champ.name);
-    const currentTier = tierChamp?.tier ?? champ.tier ?? 3; // Fresh tier from list
+    const currentTier = tierChamp?.tier ?? 3; // Only fallback to default tier, not old champ.tier
     
     const statsSum = (champ.stats ? Object.values(champ.stats).reduce((a, v) => a + v, 0) : 0);
     const versatilityScore = statsSum / 50;
@@ -412,7 +412,7 @@ export function selectBanFromProbabilities(opponentTeam, availableChampions, tar
 
       // [FIX] Use current tier from the validated champion list
       const tierChamp = validChampions.find(ch => ch.name === c.name);
-      const currentTier = tierChamp?.tier ?? c.tier ?? 3; // Fresh tier from current list
+      const currentTier = tierChamp?.tier; // Only use the current tier from the list
       
       let tierWeight = 1.0;
       switch (currentTier) {  // Use currentTier
@@ -571,12 +571,11 @@ export function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChamp
       const p = teamRoster.find(pl => pl.포지션 === pos);
       
       // [FIX] Always look up the tier from the CURRENT champion list
-      // This ensures 16.04 tiers are used, not cached/stale tiers
-      const currentTier = champList.find(ch => ch.name === c.name)?.tier ?? c.tier ?? 3;
+      const currentTier = champList.find(ch => ch.name === c.name)?.tier;
       
       return {
           champName:  c.name,
-          tier:       currentTier,  // ← Now uses fresh tier from champList
+          tier:       currentTier,  
           mastery:    c.mastery,
           playerName: p ? p.이름 : 'Unknown Player',
           playerOvr:  p ? p.종합 : 70
