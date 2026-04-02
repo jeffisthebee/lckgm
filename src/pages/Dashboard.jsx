@@ -568,7 +568,12 @@ useEffect(() => {
             try {
                 const t1 = { ...t1Obj, roster: getFullTeamRoster(t1Obj.name) };
                 const t2 = { ...t2Obj, roster: getFullTeamRoster(t2Obj.name) };
-                const sim = quickSimulateMatch(t1, t2, m.format || 'BO3');
+                const sim = quickSimulateMatch(
+                  t1,
+                  t2,
+                  m.format || 'BO3',
+                  getChampionListForMatch(league, m)
+                );
                 const score = typeof sim.scoreString === 'string' ? sim.scoreString
                     : typeof sim.score === 'object'
                         ? `${Math.max(sim.score.A ?? 0, sim.score.B ?? 0)}-${Math.min(sim.score.A ?? 0, sim.score.B ?? 0)}`
@@ -1537,7 +1542,7 @@ useEffect(() => {
         updateLeague(league.id, updates);
     };
 
-    // ── LEC Playoff Seed Picking ──────────────────────────────────────────────
+    // ── LEC Playoff Seed Picking ─────────────────────────────────────────────
     // Seeds 1, 2, 3 each pick their opponent from seeds 5-8 in order.
     // If the player IS one of those seeds, show the opponentChoice modal.
     // CPU seeds use 80% rule (pick weakest available).
