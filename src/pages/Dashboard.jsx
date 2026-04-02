@@ -175,6 +175,34 @@ const getOvrBadgeStyle = (ovr) => {
       if (!lg) return championList;
 
       const PATCH_ORDER = ['16.01', '16.02', '16.03', '16.04', '16.05', '16.06', '16.07'];
+      const buildPatchListOnTheFly = (targetPatch) => {
+        const targetIdx = PATCH_ORDER.indexOf(targetPatch);
+        if (targetIdx < 0) return null;
+
+        const savedLists = lg?.metaChampionLists || {};
+        for (let i = targetIdx; i >= 0; i--) {
+          const saved = savedLists[PATCH_ORDER[i]];
+          if (Array.isArray(saved) && saved.length > 0) {
+            let rolling = saved;
+            for (let j = i + 1; j <= targetIdx; j++) {
+              rolling = updateChampionMeta(rolling);
+            }
+            return rolling;
+          }
+        }
+
+        // Final fallback: derive from currentChampionList/championList so CPU
+        // drafting still reflects the intended target patch rather than 16.01.
+        let rolling = (
+          Array.isArray(lg?.currentChampionList) && lg.currentChampionList.length > 0
+            ? lg.currentChampionList
+            : championList
+        );
+        for (let i = 0; i <= targetIdx; i++) {
+          rolling = updateChampionMeta(rolling);
+        }
+        return rolling;
+      };
     
       if (matchObj?.type === 'lck_split1_regular') {
         const patch = getLCKSplit1PatchVersionForDate(matchObj.date);
@@ -188,6 +216,9 @@ const getOvrBadgeStyle = (ovr) => {
             const saved = lg.metaChampionLists?.[PATCH_ORDER[i]];
             if (Array.isArray(saved) && saved.length > 0) return saved;
           }
+
+          const generated = buildPatchListOnTheFly(patch);
+          if (Array.isArray(generated) && generated.length > 0) return generated;
         }
 
         // Last resort: prefer the live currentChampionList over the hardcoded base list
@@ -234,15 +265,31 @@ useEffect(() => {
   const maxIdx = patchOrder.indexOf(maxPatch);
 
   let needsUpdate = false;
-  let lastValidList = league?.currentChampionList?.length > 0 
-    ? league.currentChampionList 
-    : championList;
+  let lastValidList = null;
+  let startIdx = -1;
 
-  // Build the full chain from 16.01 to maxPatch
-  for (let i = 0; i <= maxIdx; i++) {
+  // Start from the most recent patch list that already exists up to maxPatch.
+  for (let i = maxIdx; i >= 0; i--) {
+    const saved = metaChampionLists[patchOrder[i]];
+    if (Array.isArray(saved) && saved.length > 0) {
+      lastValidList = saved;
+      startIdx = i;
+      break;
+    }
+  }
+
+  if (!Array.isArray(lastValidList) || lastValidList.length === 0) {
+    lastValidList = league?.currentChampionList?.length > 0
+      ? league.currentChampionList
+      : championList;
+    startIdx = -1;
+  }
+
+  // Build the full chain only for missing patches after startIdx.
+  for (let i = Math.max(startIdx + 1, 0); i <= maxIdx; i++) {
     const patch = patchOrder[i];
-    
-    // If we already have this patch saved, use it
+
+    // If this patch is already saved, continue from it (no recompute).
     if (metaChampionLists[patch]?.length > 0) {
       lastValidList = metaChampionLists[patch];
       continue;
@@ -284,7 +331,11 @@ useEffect(() => {
     setLeague(prev => ({ ...prev, ...updates }));
     updateLeague(league.id, updates);
   }
-}, [league?.matches?.length]);
+}, [
+  league?.matches?.length,
+  league?.matches?.filter(m => m.type === 'lck_split1_regular')?.map(m => `${m.id}-${m.date}`)?.join('|'),
+  league?.metaVersion
+]);
 
 // ── [NEW FIX Bug 1] Advance metaVersion progressively as Split 1 matches are played ──
 // The pre-computation effect sets the STARTING patch (e.g. '16.04'). This effect
