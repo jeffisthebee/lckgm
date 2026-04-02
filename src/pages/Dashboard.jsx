@@ -95,8 +95,9 @@ const getOvrBadgeStyle = (ovr) => {
           const baseVersion = found.metaVersion || '16.01';
           const metaChampionLists = found.metaChampionLists || {};
           // Ensure the base version always has a champion list reference.
+          // [FIX] Create deep copy to prevent reference sharing between meta versions
           if (metaChampionLists[baseVersion] == null && Array.isArray(found.currentChampionList) && found.currentChampionList.length > 0) {
-            metaChampionLists[baseVersion] = found.currentChampionList;
+            metaChampionLists[baseVersion] = found.currentChampionList.map(champ => ({ ...champ }));
           }
           const sanitizedLeague = {
               ...found,
@@ -129,14 +130,14 @@ const getOvrBadgeStyle = (ovr) => {
       const targetIdx = patchOrder.indexOf(targetPatchVersion);
       if (targetIdx < 0) return { ...(lg?.metaChampionLists || {}) };
 
-      const metaChampionLists = { ...(lg?.metaChampionLists || {}) };
+      const metaChampionLists = JSON.parse(JSON.stringify(lg?.metaChampionLists || {})); // Create deep copy
       const currentVersion = lg?.metaVersion || '16.01';
       if (
         metaChampionLists[currentVersion] == null &&
         Array.isArray(lg?.currentChampionList) &&
         lg.currentChampionList.length > 0
       ) {
-        metaChampionLists[currentVersion] = lg.currentChampionList;
+        metaChampionLists[currentVersion] = lg.currentChampionList.map(champ => ({ ...champ }));
       }
 
       // Find the latest patch we already have a champion list for (<= target)
@@ -257,7 +258,7 @@ useEffect(() => {
   const minPatch = allPatches.reduce((a, b) => a < b ? a : b, maxPatch);
 
   // Check if ALL patches up to maxPatch are computed and saved
-  const metaChampionLists = { ...(league?.metaChampionLists || {}) };
+  const metaChampionLists = JSON.parse(JSON.stringify(league?.metaChampionLists || {})); // Create deep copy
   const patchOrder = ['16.01', '16.02', '16.03', '16.04', '16.05', '16.06', '16.07'];
   const maxIdx = patchOrder.indexOf(maxPatch);
 
