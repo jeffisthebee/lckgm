@@ -534,28 +534,43 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                     });
                 } catch (err) {
                     console.warn("simulateSet failed, falling back to runGameTickEngine", err);
-                    
-                    // Fallback: Create basic player data for runGameTickEngine
-                    const createBasicPlayer = (team, side) => {
-                        return team.roster?.map(player => ({
-                            playerName: player.이름 || player.name,
-                            championName: null,
-                            team: side,
-                            currentGold: 500,
-                            level: 1,
-                            xp: 0,
-                            deadUntil: 0,
-                            flashEndTime: 0,
-                            stats: { kills: 0, deaths: 0, assists: 0, damage: 0, takenDamage: 0 }
-                        })) || [];
-                    };
-                    
-                    const picksA = createBasicPlayer(blueTeam, 'BLUE');
-                    const picksB = createBasicPlayer(redTeam, 'RED');
-                    result = runGameTickEngine(blueTeam, redTeam, picksA, picksB, {
-                        ...simOptions,
-                        currentChampionList: activeChampionList
-                    });
+                    try {
+                        const samplePickFromTeam = (teamObj, side) => {
+                            const roster = makeSafeRosterArray(teamObj.roster, teamObj.name);
+                            return ['TOP','JGL','MID','ADC','SUP'].map(pos => {
+                                const champ = activeChampionList.find(c => c.role === pos) || activeChampionList[0] || { name: 'Unknown', tier: 3 };
+                                const player = roster.find(p => positionMatches(p.포지션, pos) || positionMatches(p.position, pos)) || roster[0] || { 이름: 'Unknown', 포지션: pos };
+                                return {
+                                    champName: champ.name || 'Unknown',
+                                    tier: champ.tier || 3,
+                                    role: pos,
+                                    side,
+                                    classType: champ.class || '전사',
+                                    dmgType: champ.dmg_type || 'AD',
+                                    mastery: { games: 0, winRate: 50, kda: 3.0 },
+                                    playerName: player.이름 || player.name || 'Unknown',
+                                    playerOvr: player.종합 || player.ovr || 75,
+                                    playerData: player,
+                                    conditionModifier: 1.0,
+                                    currentGold: 500,
+                                    level: 1,
+                                    xp: 0,
+                                    deadUntil: 0,
+                                    flashEndTime: 0,
+                                    stats: { kills: 0, deaths: 0, assists: 0, damage: 0, takenDamage:0 }
+                                };
+                            });
+                        };
+                        const picksA = samplePickFromTeam(blueTeam, 'BLUE');
+                        const picksB = samplePickFromTeam(redTeam, 'RED');
+                        result = runGameTickEngine(blueTeam, redTeam, picksA, picksB, {
+                            ...simOptions,
+                            currentChampionList: activeChampionList
+                        });
+                    } catch (err2) {
+                        console.error("Fallback engine also failed:", err2);
+                        throw err2;
+                    }
                 }
 
                 if (!result || !result.picks) throw new Error("Draft failed or no picks generated");
@@ -645,22 +660,25 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                             }
                         }
                     });
-
-                    return picksList.map(p => {
-                        const champData = typeof p === 'string' ? { championName: p } : p;
-                        const champKey = champData.championName || champData.champion || '';
-                        const champInfo = activeChampionList.find(c => c.key === champKey) || {};
-                        const champName = champInfo.name || champKey;
-                        const tier = champInfo.tier || 3;
-
-                        const pos = normalizePosition(champData.role || champData.position || '');
-                        const rosterPlayer = roleMap[pos];
-                        const resolvedName = rosterPlayer ? (rosterPlayer.이름 || rosterPlayer.name || rosterPlayer.playerName || 'Unknown') : 'Unknown';
+                    const sortedRoster = roleOrder.map(r => roleMap[r]).filter(Boolean);
+                    return safeArray(picksList).map((p, idx) => {
+                        const champName = p.champName || p.champion || p.name || '';
+                        // [FIX] Look up tier from activeChampionList (current meta)
+                        const champTier = p.tier || activeChampionList.find(c => c.name === champName)?.tier || p.tier || '-';
+                        
+                        const pickRole = p.role || p.position
+                            || activeChampionList.find(c => c.name === champName)?.role
+                            || '';
+                        let resolvedName = resolvePlayerNameForRole(sortedRoster, pickRole, p.playerName);
+                        
+                        if ((!resolvedName || resolvedName === 'Unknown' || resolvedName.startsWith('Unknown')) && sortedRoster[idx]) {
+                            resolvedName = sortedRoster[idx].이름 || sortedRoster[idx].name || 'Unknown';
+                        }
 
                         return {
                             ...p,
                             champName,
-                            tier,
+                            tier: champTier,
                             role: p.role || p.position || '',
                             playerName: resolvedName
                         };
@@ -670,7 +688,6 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 const picksA_UI = buildUIPickList(safeResult.picks?.A, blueTeam.roster || []);
                 const picksB_UI = buildUIPickList(safeResult.picks?.B, redTeam.roster || []);
 
-// ...
                 setSimulationData({ ...safeResult, blueTeam, redTeam, picks: { A: picksA_UI, B: picksB_UI } }); 
                 setLiveStats({
                     kills: { BLUE: 0, RED: 0 },
@@ -905,7 +922,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
 
                 const foundPlayer = (team?.roster || []).find(p => positionMatches(p.포지션, chosenRole) || positionMatches(p.position, chosenRole) || positionMatches(p.role, chosenRole));
                 const playerName = foundPlayer?.이름 || foundPlayer?.name || foundPlayer?.playerName || 'Unknown';
-                const pickObj = { champName: champ.name, tier: champTier, role: chosenRole, playerName };
+                const pickObj = { champName: champ.name, tier: champ.tier, role: chosenRole, playerName };
 
                 if (emptyIdx !== -1) {
                     teamPicks[emptyIdx] = pickObj;
