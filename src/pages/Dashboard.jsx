@@ -335,27 +335,50 @@ useEffect(() => {
   league?.metaVersion
 ]);
 
-// ── [NEW FIX Bug 1] Advance metaVersion progressively as Split 1 matches are played ──
-// The pre-computation effect sets the STARTING patch (e.g. '16.04'). This effect
-// watches for completed matches and advances metaVersion to the patch of the next
-// pending match, keeping the MetaTab label in sync with actual match progression.
+// ── [UNIVERSAL FIX] Advance metaVersion progressively for ALL competition types ──
+// This handles both LCK Cup (16.01→16.02→16.03) and LCK Split 1 (16.04→16.05→16.06→16.07)
 useEffect(() => {
-  if (!league?.matches || (league.myLeague || 'LCK') !== 'LCK') return;
-
-  const split1Matches = (league.matches || []).filter(m => m.type === 'lck_split1_regular');
-  if (split1Matches.length === 0) return;
-  if (!league.metaChampionLists) return;
+  if (!league?.matches) return;
+  if ((league.myLeague || 'LCK') !== 'LCK') return;
 
   const PATCH_ORDER = ['16.01', '16.02', '16.03', '16.04', '16.05', '16.06', '16.07'];
+  
+  // Get the target patch based on the next pending match of ANY type
+  const getNextTargetPatch = () => {
+    // Check LCK Cup matches (regular + super) first
+    const cupMatches = (league.matches || []).filter(m => m.type === 'regular' || m.type === 'super');
+    if (cupMatches.length > 0) {
+      const sortedCup = [...cupMatches].sort((a, b) => (parseFloat((a.date || '').split(' ')[0]) || 0) - (parseFloat((b.date || '').split(' ')[0]) || 0));
+      const nextPending = sortedCup.find(m => m.status === 'pending');
+      if (nextPending) {
+        // LCK Cup: 16.01 → 16.02 → 16.03
+        const finishedRegular = cupMatches.filter(m => m.type === 'regular' && m.status === 'finished').length;
+        const totalRegular = cupMatches.filter(m => m.type === 'regular').length;
+        
+        if (finishedRegular === totalRegular && nextPending.type === 'super') {
+          return '16.02'; // Super week starts
+        }
+        return '16.01'; // Regular season
+      }
+    }
+    
+    // Check LCK Split 1 matches
+    const split1Matches = (league.matches || []).filter(m => m.type === 'lck_split1_regular');
+    if (split1Matches.length > 0) {
+      const sortedSplit1 = [...split1Matches].sort(
+        (a, b) => (parseSplit1DateNum(a.date) || 0) - (parseSplit1DateNum(b.date) || 0)
+      );
+      const nextPending = sortedSplit1.find(m => m.status === 'pending');
+      if (nextPending) {
+        const patch = getLCKSplit1PatchVersionForDate(nextPending.date);
+        return patch;
+      }
+    }
+    
+    return null;
+  };
 
-  const sorted = [...split1Matches].sort(
-    (a, b) => (parseSplit1DateNum(a.date) || 0) - (parseSplit1DateNum(b.date) || 0)
-  );
-
-  const nextPending = sorted.find(m => m.status === 'pending');
-  if (!nextPending) return;
-
-  const targetPatch = getLCKSplit1PatchVersionForDate(nextPending.date);
+  const targetPatch = getNextTargetPatch();
   if (!targetPatch) return;
 
   const currentMetaVersion = league.metaVersion || '16.01';
@@ -365,463 +388,479 @@ useEffect(() => {
   if (targetIdx <= currentIdx) return;
 
   const newList = league.metaChampionLists[targetPatch];
-  if (!Array.isArray(newList) || newList.length === 0) return;
+  let championListToUse = newList;
+  
+  // [FIX] Generate the champion list on the fly if it doesn't exist
+  if (!Array.isArray(newList) || newList.length === 0) {
+    console.warn(`[Meta] No pre-computed list for ${targetPatch}, generating on the fly`);
+    // Start from the current champion list and apply meta updates up to target patch
+    let rolling = league.currentChampionList || championList;
+    for (let i = currentIdx + 1; i <= targetIdx; i++) {
+      rolling = updateChampionMeta(rolling);
+    }
+    championListToUse = rolling;
+    
+    // Store it for future use
+    const updatedMetaChampionLists = { ...(league.metaChampionLists || {}), [targetPatch]: championListToUse };
+    setLeague(prev => ({ ...prev, metaChampionLists: updatedMetaChampionLists }));
+    updateLeague(league.id, { metaChampionLists: updatedMetaChampionLists });
+  }
+  
+  if (!Array.isArray(championListToUse) || championListToUse.length === 0) return;
 
-  const updates = { metaVersion: targetPatch, currentChampionList: newList };
+  const updates = { metaVersion: targetPatch, currentChampionList: championListToUse };
+  console.log(`[Meta] Progressing from ${currentMetaVersion} to ${targetPatch}`);
   setLeague(prev => ({ ...prev, ...updates }));
   updateLeague(league.id, updates);
 }, [
-  league?.matches?.filter(m => m.type === 'lck_split1_regular' && m.status === 'finished')?.length,
+  league?.matches?.filter(m => m.status === 'pending')?.length,
+  league?.matches?.filter(m => m.status === 'finished')?.length,
+  league?.metaVersion,
   Object.keys(league?.metaChampionLists || {}).length,
 ]);
 
-    // Check Season Status Helper
-    // LCK: grand final finished — identified by label NOT containing '진출전'.
-    // BracketManager may assign round:5 to both the qualifier (결승 진출전) and the final (결승전),
-    // so we must use the label to tell them apart.
-    const grandFinalMatch = league?.matches?.find(m =>
-        m.type === 'playoff' &&
-        !String(m.label || '').includes('진출') &&
-        (m.round === 5 || String(m.label || '').includes('결승전') || String(m.label || '').toUpperCase().includes('FINAL'))
-    );
-    const _myLgForSeason = league?.myLeague || 'LCK';
-    const isSeasonOver = (() => {
-      if (_myLgForSeason === 'LCK') return !!(grandFinalMatch && grandFinalMatch.status === 'finished');
-      const fMatches = league?.foreignMatches?.[_myLgForSeason] || [];
-      if (!Array.isArray(fMatches) || fMatches.length === 0) return false;
-      const isExplicitFinal = (m) => {
-        if (!m || m.type !== 'playoff') return false;
-        const id = String(m.id || '');
-        const label = String(m.label || m.roundName || '').trim().toUpperCase();
-        const round = Number(m.round || 0);
-        if (_myLgForSeason === 'LEC' && id === 'lec_po_final') return true;
-        if (_myLgForSeason === 'LPL' && id === 'lpl_po14') return true;
-        if (_myLgForSeason === 'LCS' && id === 'lcs_po8') return true;
-        if (_myLgForSeason === 'CBLOL' && id === 'cblol_po10') return true;
-        if (_myLgForSeason === 'LCP' && id.startsWith('lcp_') && round === 4) return true;
-        if (round === 5) return true;
-        // Use exact matches only — '결승' alone would match '결승 진출전' (qualifier), '결승전' is the actual grand final
-        if (label === '결승전' || label === 'GRAND FINAL') return true;
-        return false;
+// Check Season Status Helper
+// LCK: grand final finished — identified by label NOT containing '진출전'.
+// BracketManager may assign round:5 to both the qualifier (결승 진출전) and the final (결승전),
+// so we must use the label to tell them apart.
+const grandFinalMatch = league?.matches?.find(m =>
+    m.type === 'playoff' &&
+    !String(m.label || '').includes('진출') &&
+    (m.round === 5 || String(m.label || '').includes('결승전') || String(m.label || '').toUpperCase().includes('FINAL'))
+);
+const _myLgForSeason = league?.myLeague || 'LCK';
+const isSeasonOver = (() => {
+  if (_myLgForSeason === 'LCK') return !!(grandFinalMatch && grandFinalMatch.status === 'finished');
+  const fMatches = league?.foreignMatches?.[_myLgForSeason] || [];
+  if (!Array.isArray(fMatches) || fMatches.length === 0) return false;
+  const isExplicitFinal = (m) => {
+    if (!m || m.type !== 'playoff') return false;
+    const id = String(m.id || '');
+    const label = String(m.label || m.roundName || '').trim().toUpperCase();
+    const round = Number(m.round || 0);
+    if (_myLgForSeason === 'LEC' && id === 'lec_po_final') return true;
+    if (_myLgForSeason === 'LPL' && id === 'lpl_po14') return true;
+    if (_myLgForSeason === 'LCS' && id === 'lcs_po8') return true;
+    if (_myLgForSeason === 'CBLOL' && id === 'cblol_po10') return true;
+    if (_myLgForSeason === 'LCP' && id.startsWith('lcp_') && round === 4) return true;
+    if (round === 5) return true;
+    // Use exact matches only — '결승' alone would match '결승 진출전' (qualifier), '결승전' is the actual grand final
+    if (label === '결승전' || label === 'GRAND FINAL') return true;
+    return false;
+  };
+  const finalMatch = fMatches.find(isExplicitFinal);
+  return !!(finalMatch && finalMatch.status === 'finished');
+})();
+
+// ── [FOREIGN] Auto-draft LCK groups and generate LCK schedule (all pending)
+// Uses the same power-based draft as the real LCK mode:
+// GEN (id:1) = Baron captain, HLE (id:2) = Elder captain, rest drafted by power.
+const lckAutoRunRef = useRef(false);
+useEffect(() => {
+  if (!league) return;
+  const myLg = league.myLeague || 'LCK';
+  if (myLg === 'LCK') return;
+  if (lckAutoRunRef.current) return;
+  if ((league.matches || []).length > 0) return; // Already set up
+  lckAutoRunRef.current = true;
+
+  // Power-based pick (same as pickComputerTeam)
+  const pickByPower = (available) => {
+    const sorted = [...available].sort((a, b) => b.power - a.power);
+    const top = sorted[0];
+    let chance = 0.5;
+    if (top.power >= 84) chance = 0.90;
+    else if (top.power >= 80) chance = 0.70;
+    if (Math.random() < chance) return top;
+    const others = available.filter(t => t.id !== top.id);
+    return others.length > 0 ? others[Math.floor(Math.random() * others.length)] : top;
+  };
+
+  // GEN=1 → Baron, HLE=2 → Elder, draft the remaining 8 by power alternating
+  let pool = teams.filter(t => t.id !== 1 && t.id !== 2);
+  let baron = [1];
+  let elder = [2];
+  let turn = 0; // 0 = baron picks, 1 = elder picks
+  while (pool.length > 0) {
+    const picked = pickByPower(pool);
+    pool = pool.filter(t => t.id !== picked.id);
+    if (turn === 0) baron.push(picked.id);
+    else elder.push(picked.id);
+    turn = 1 - turn;
+  }
+  const groups = { baron, elder };
+
+  // Generate schedule with all matches PENDING — ScheduleTab sims them date by date
+  const pendingMatches = generateSchedule(baron, elder);
+
+  const updates = { groups, matches: pendingMatches };
+  updateLeague(league.id, updates);
+  setLeague(prev => ({ ...prev, ...updates }));
+  recalculateStandings({ ...league, ...updates });
+}, [league?.id, league?.myLeague]);
+
+// ── [LCS] On load: advance Swiss rounds and playoff bracket if TBD slots exist ──
+// This catches the case where the user reloads and the stored state still has
+// TBD team slots — without this, nextGlobalMatch returns null and no buttons show.
+const lcsOnLoadRef = useRef(false);
+useEffect(() => {
+  if (!league) return;
+  if ((league.myLeague || 'LCK') !== 'LCS') return;
+  if (lcsOnLoadRef.current) return;
+
+  const foreignMatches = league.foreignMatches?.['LCS'] || [];
+  if (foreignMatches.length === 0) return;
+
+  const isTBD = (v) => !v || String(v) === 'TBD' || String(v) === 'null' || String(v) === 'undefined';
+  const hasTBDSwiss = foreignMatches.some(m => m.type === 'regular' && (m.swissRound === 2 || m.swissRound === 3) && (isTBD(m.t1) || isTBD(m.t2)));
+  const hasTBDPlayoff = foreignMatches.some(m => (m.type === 'playoff' || m.type === 'playin') && (isTBD(m.t1) || isTBD(m.t2)));
+  const missingPlayoffs = foreignMatches.filter(m => m.type === 'regular').every(m => m.status === 'finished') &&
+                          !foreignMatches.some(m => m.type === 'playoff' || m.type === 'playin');
+
+  if (!hasTBDSwiss && !hasTBDPlayoff && !missingPlayoffs) return;
+  lcsOnLoadRef.current = true;
+
+  const lgTeams = FOREIGN_LEAGUES['LCS'] || [];
+  let updatedMatches = foreignMatches;
+  let lcsPoSeeds = null;
+
+  // Advance Swiss rounds first
+  if (hasTBDSwiss) {
+    const { matches: swissAdv, changed } = advanceLCSSwissRounds(updatedMatches, lgTeams);
+    if (changed) updatedMatches = swissAdv;
+  }
+
+  // Then build/advance playoff bracket
+  if (hasTBDPlayoff || missingPlayoffs) {
+    const { matches: poAdv, seeds: poSeeds, changed: poChanged } = advanceLCSPlayoffBracket(updatedMatches);
+    if (poChanged) {
+      updatedMatches = poAdv;
+      lcsPoSeeds = poSeeds;
+    }
+  }
+
+  if (updatedMatches !== foreignMatches) {
+    const updatedLeague = {
+      ...league,
+      foreignMatches: { ...league.foreignMatches, LCS: updatedMatches },
+      ...(lcsPoSeeds ? { foreignPlayoffSeeds: { ...(league.foreignPlayoffSeeds || {}), LCS: lcsPoSeeds } } : {}),
+    };
+    updateLeague(league.id, updatedLeague);
+    setLeague(updatedLeague);
+  }
+}, [league?.id, league?.foreignMatches?.LCS?.length]);
+
+// ── [LCK REGULAR SEASON SIMULATOR] ──
+// Only sims LCK 'regular' matches dated BEFORE the user's next foreign match.
+// This means LCK progresses in sync with the user's league, so by the time
+// the user finishes their own regular season, LCK's is also done → 16.02 fires.
+useEffect(() => {
+  if (!league) return;
+  const myLg = league.myLeague || 'LCK';
+  if (myLg === 'LCK') return;
+
+  const regularMatches = (league.matches || []).filter(m => m.type === 'regular');
+  if (regularMatches.length === 0) return;
+  if (regularMatches.every(m => m.status === 'finished')) return; // already done
+
+  // Gate: only sim LCK matches before the user's next foreign game
+  const myLeagueMatches = league.foreignMatches?.[myLg] || [];
+  const myPending = [...myLeagueMatches]
+    .filter(m => m.status === 'pending')
+    .sort((a, b) => {
+      const parse = (m) => {
+        const [mo, d] = (m.date || '').split(' ')[0].split('.').map(Number);
+        const [h, mi] = (m.time || '0:00').split(':').map(Number);
+        return (mo || 0) * 10000000 + (d || 0) * 100000 + (h || 0) * 100 + (mi || 0);
       };
-      const finalMatch = fMatches.find(isExplicitFinal);
-      return !!(finalMatch && finalMatch.status === 'finished');
-    })();
+      return parse(a) - parse(b);
+    });
 
-    // ── [FOREIGN] Auto-draft LCK groups and generate LCK schedule (all pending)
-    // Uses the same power-based draft as the real LCK mode:
-    // GEN (id:1) = Baron captain, HLE (id:2) = Elder captain, rest drafted by power.
-    const lckAutoRunRef = useRef(false);
-    useEffect(() => {
-        if (!league) return;
-        const myLg = league.myLeague || 'LCK';
-        if (myLg === 'LCK') return;
-        if (lckAutoRunRef.current) return;
-        if ((league.matches || []).length > 0) return; // Already set up
-        lckAutoRunRef.current = true;
+  // If user hasn't started their season yet, don't sim anything
+  if (myPending.length === 0 && myLeagueMatches.length === 0) return;
 
-        // Power-based pick (same as pickComputerTeam)
-        const pickByPower = (available) => {
-            const sorted = [...available].sort((a, b) => b.power - a.power);
-            const top = sorted[0];
-            let chance = 0.5;
-            if (top.power >= 84) chance = 0.90;
-            else if (top.power >= 80) chance = 0.70;
-            if (Math.random() < chance) return top;
-            const others = available.filter(t => t.id !== top.id);
-            return others.length > 0 ? others[Math.floor(Math.random() * others.length)] : top;
-        };
+  const gate = myPending.length > 0 ? myPending[0] : { date: '99.99', time: '23:59' };
 
-        // GEN=1 → Baron, HLE=2 → Elder, draft the remaining 8 by power alternating
-        let pool = teams.filter(t => t.id !== 1 && t.id !== 2);
-        let baron = [1];
-        let elder = [2];
-        let turn = 0; // 0 = baron picks, 1 = elder picks
-        while (pool.length > 0) {
-            const picked = pickByPower(pool);
-            pool = pool.filter(t => t.id !== picked.id);
-            if (turn === 0) baron.push(picked.id);
-            else elder.push(picked.id);
-            turn = 1 - turn;
+  const compareDates = (m, g) => {
+    const parse = (x) => {
+      const [mo, d] = (x.date || '').split(' ')[0].split('.').map(Number);
+      const [h, mi] = (x.time || '0:00').split(':').map(Number);
+      return (mo || 0) * 10000000 + (d || 0) * 100000 + (h || 0) * 100 + (mi || 0);
+    };
+    return parse(m) - parse(g);
+  };
+
+  const simable = regularMatches.filter(m =>
+    m.status === 'pending' &&
+    m.t1 && m.t2 &&
+    String(m.t1) !== 'TBD' && String(m.t2) !== 'TBD' &&
+    compareDates(m, gate) < 0
+  );
+  if (simable.length === 0) return;
+
+  let didUpdate = false;
+  const newMatches = league.matches.map(m => {
+    if (m.type !== 'regular' || m.status !== 'pending') return m; // regular only
+    if (!m.t1 || !m.t2 || String(m.t1) === 'TBD' || String(m.t2) === 'TBD') return m;
+    if (compareDates(m, gate) >= 0) return m;
+
+    const getId = v => typeof v === 'object' ? Number(v?.id) : Number(v);
+    const t1Obj = teams.find(t => t.id === getId(m.t1));
+    const t2Obj = teams.find(t => t.id === getId(m.t2));
+    if (!t1Obj || !t2Obj) return m;
+
+    try {
+      const t1 = { ...t1Obj, roster: getFullTeamRoster(t1Obj.name) };
+      const t2 = { ...t2Obj, roster: getFullTeamRoster(t2Obj.name) };
+      const sim = quickSimulateMatch(
+        t1,
+        t2,
+        m.format || 'BO3',
+        getChampionListForMatch(league, m)
+      );
+      const score = typeof sim.scoreString === 'string' ? sim.scoreString
+        : typeof sim.score === 'object'
+          ? `${Math.max(sim.score.A ?? 0, sim.score.B ?? 0)}-${Math.min(sim.score.A ?? 0, sim.score.B ?? 0)}`
+          : '2-0';
+      didUpdate = true;
+      return {
+        ...m, status: 'finished',
+        result: {
+          winner: sim.winner?.name || sim.winner,
+          score,
+          history: (sim.history || []).map(s => ({ ...s, logs: [] }))
         }
-        const groups = { baron, elder };
+      };
+    } catch (e) {
+      const t1Wins = (t1Obj.power || 80) + (Math.random() * 10 - 5) >=
+                     (t2Obj.power || 80) + (Math.random() * 10 - 5);
+      didUpdate = true;
+      return {
+        ...m, status: 'finished',
+        result: { winner: t1Wins ? t1Obj.name : t2Obj.name, score: '2-0', history: [] }
+      };
+    }
+  });
 
-        // Generate schedule with all matches PENDING — ScheduleTab sims them date by date
-        const pendingMatches = generateSchedule(baron, elder);
+  if (didUpdate) {
+    const updates = { matches: newMatches };
+    updateLeague(league.id, updates);
+    setLeague(prev => ({ ...prev, ...updates }));
+    recalculateStandings({ ...league, matches: newMatches });
+  }
+}, [league?.foreignMatches?.[league?.myLeague]?.filter(m => m.status === 'finished').length, league?.matches?.length, league?.myLeague]);
 
-        const updates = { groups, matches: pendingMatches };
-        updateLeague(league.id, updates);
-        setLeague(prev => ({ ...prev, ...updates }));
-        recalculateStandings({ ...league, ...updates });
-    }, [league?.id, league?.myLeague]);
+// ── [FOREIGN] Background LCK bracket generator ───────────────────────────
+// After super week is simmed, auto-generates LCK play-in → playoff brackets
+// so the LCK schedule tab shows results as the user plays through their season.
+useEffect(() => {
+  if (!league?.matches) return;
+  if ((league.myLeague || 'LCK') === 'LCK') return;
 
-    // ── [LCS] On load: advance Swiss rounds and playoff bracket if TBD slots exist ──
-    // This catches the case where the user reloads and the stored state still has
-    // TBD team slots — without this, nextGlobalMatch returns null and no buttons show.
-    const lcsOnLoadRef = useRef(false);
-    useEffect(() => {
-        if (!league) return;
-        if ((league.myLeague || 'LCK') !== 'LCS') return;
-        if (lcsOnLoadRef.current) return;
+  const allMatches = league.matches;
+  const regularDone = allMatches.filter(m => m.type === 'regular').every(m => m.status === 'finished');
+  const superMatches = allMatches.filter(m => m.type === 'super');
+  const superDone = superMatches.length > 0 && superMatches.every(m => m.status === 'finished');
+  if (!regularDone || !superDone) return;
 
-        const foreignMatches = league.foreignMatches?.['LCS'] || [];
-        if (foreignMatches.length === 0) return;
+  const hasPlayin = allMatches.some(m => m.type === 'playin');
+  const hasPlayoff = allMatches.some(m => m.type === 'playoff');
 
-        const isTBD = (v) => !v || String(v) === 'TBD' || String(v) === 'null' || String(v) === 'undefined';
-        const hasTBDSwiss = foreignMatches.some(m => m.type === 'regular' && (m.swissRound === 2 || m.swissRound === 3) && (isTBD(m.t1) || isTBD(m.t2)));
-        const hasTBDPlayoff = foreignMatches.some(m => (m.type === 'playoff' || m.type === 'playin') && (isTBD(m.t1) || isTBD(m.t2)));
-        const missingPlayoffs = foreignMatches.filter(m => m.type === 'regular').every(m => m.status === 'finished') &&
-                                !foreignMatches.some(m => m.type === 'playoff' || m.type === 'playin');
+  if (!hasPlayin) {
+    // Generate play-in bracket
+    const tempLeague = { ...league, matches: allMatches };
+    const standings = computeStandings(tempLeague);
+    const bWins = allMatches.filter(m => {
+      if ((m.type !== 'regular' && m.type !== 'super') || m.status !== 'finished') return false;
+      const wt = teams.find(t => t.name === m.result?.winner);
+      return wt && (league.groups?.baron || []).includes(wt.id);
+    }).length;
+    const eWins = allMatches.filter(m => {
+      if ((m.type !== 'regular' && m.type !== 'super') || m.status !== 'finished') return false;
+      const wt = teams.find(t => t.name === m.result?.winner);
+      return wt && (league.groups?.elder || []).includes(wt.id);
+    }).length;
 
-        if (!hasTBDSwiss && !hasTBDPlayoff && !missingPlayoffs) return;
-        lcsOnLoadRef.current = true;
+    try {
+      const { newMatches: piMatches, playInSeeds, seasonSummary } = createPlayInBracket(tempLeague, standings, teams, bWins, eWins);
+      const updates = { matches: [...allMatches, ...piMatches], playInSeeds, seasonSummary };
+      updateLeague(league.id, updates);
+      setLeague(prev => ({ ...prev, ...updates }));
+    } catch (e) { console.error('[LCK BG] Play-in bracket failed:', e); }
+    return;
+  }
 
-        const lgTeams = FOREIGN_LEAGUES['LCS'] || [];
-        let updatedMatches = foreignMatches;
-        let lcsPoSeeds = null;
+  // After play-in exists, auto-generate next play-in rounds + full playoffs progression.
+  // This prevents "only appears after refresh" issues for foreign players viewing LCK.
+  let currentMatches = allMatches;
+  let didUpdate = false;
+  const patchLeague = (partial) => {
+    didUpdate = true;
+    const next = { ...league, ...partial };
+    updateLeague(league.id, partial);
+    setLeague(prev => ({ ...prev, ...partial }));
+    // keep local ref in sync for sequential generation
+    if (partial.matches) currentMatches = partial.matches;
+  };
 
-        // Advance Swiss rounds first
-        if (hasTBDSwiss) {
-            const { matches: swissAdv, changed } = advanceLCSSwissRounds(updatedMatches, lgTeams);
-            if (changed) updatedMatches = swissAdv;
+  // 1) Ensure play-in rounds 2 and 3 are generated as soon as prerequisites finish.
+  try {
+    const playinMatches = currentMatches.filter(m => m.type === 'playin');
+    const r1 = playinMatches.filter(m => m.round === 1);
+    const r2Exists = playinMatches.some(m => m.round === 2);
+    const r3Exists = playinMatches.some(m => m.round === 3);
+
+    const r1Finished = r1.length > 0 && r1.every(m => m.status === 'finished');
+    if (r1Finished && !r2Exists) {
+      const playInSeeds = league.playInSeeds || [];
+      const seed1 = teams.find(t => t.id === (playInSeeds[0]?.id || 0));
+      const seed2 = teams.find(t => t.id === (playInSeeds[1]?.id || 0));
+      if (seed1 && seed2) {
+        const r1Winners = r1
+          .map(m => teams.find(t => t.name === m.result?.winner))
+          .filter(Boolean);
+        const winnersWithSeed = r1Winners.map(w => ({ ...w, seedIndex: playInSeeds.findIndex(s => s.id === w.id) }));
+        winnersWithSeed.sort((a, b) => a.seedIndex - b.seedIndex);
+        if (winnersWithSeed.length >= 2) {
+          const lowerSeedWinner = winnersWithSeed[1];
+          const higherSeedWinner = winnersWithSeed[0];
+          const pickedTeam = (Math.random() < 0.65) ? lowerSeedWinner : higherSeedWinner;
+          const remainingTeam = (pickedTeam.id === lowerSeedWinner.id) ? higherSeedWinner : lowerSeedWinner;
+          const newMatches = createPlayInRound2Matches(currentMatches, seed1, seed2, pickedTeam, remainingTeam);
+          patchLeague({ matches: newMatches });
         }
+      }
+    }
 
-        // Then build/advance playoff bracket
-        if (hasTBDPlayoff || missingPlayoffs) {
-            const { matches: poAdv, seeds: poSeeds, changed: poChanged } = advanceLCSPlayoffBracket(updatedMatches);
-            if (poChanged) {
-                updatedMatches = poAdv;
-                lcsPoSeeds = poSeeds;
-            }
-        }
+    const r2 = playinMatches.filter(m => m.round === 2);
+    const r2Finished = r2.length > 0 && r2.every(m => m.status === 'finished');
+    if (r2Finished && !r3Exists) {
+      const newMatches = createPlayInFinalMatch(currentMatches, teams);
+      patchLeague({ matches: newMatches });
+    }
+  } catch (e) {
+    console.error('[LCK BG] Play-in next-round generation failed:', e);
+  }
 
-        if (updatedMatches !== foreignMatches) {
-            const updatedLeague = {
-                ...league,
-                foreignMatches: { ...league.foreignMatches, LCS: updatedMatches },
-                ...(lcsPoSeeds ? { foreignPlayoffSeeds: { ...(league.foreignPlayoffSeeds || {}), LCS: lcsPoSeeds } } : {}),
-            };
-            updateLeague(league.id, updatedLeague);
-            setLeague(updatedLeague);
-        }
-    }, [league?.id, league?.foreignMatches?.LCS?.length]);
-    // Only sims LCK 'regular' matches dated BEFORE the user's next foreign match.
-    // This means LCK progresses in sync with the user's league, so by the time
-    // the user finishes their own regular season, LCK's is also done → 16.02 fires.
-    useEffect(() => {
-        if (!league) return;
-        const myLg = league.myLeague || 'LCK';
-        if (myLg === 'LCK') return;
+  // 2) Generate playoffs once play-in Final is finished.
+  if (!hasPlayoff) {
+    const playinMatches = currentMatches.filter(m => m.type === 'playin');
+    const r3 = playinMatches.filter(m => m.round === 3);
+    if (r3.length === 0 || !r3.every(m => m.status === 'finished')) return;
 
-        const regularMatches = (league.matches || []).filter(m => m.type === 'regular');
-        if (regularMatches.length === 0) return;
-        if (regularMatches.every(m => m.status === 'finished')) return; // already done
+    const directPO = league.seasonSummary?.poTeams || [];
 
-        // Gate: only sim LCK matches before the user's next foreign game
-        const myLeagueMatches = league.foreignMatches?.[myLg] || [];
-        const myPending = [...myLeagueMatches]
-            .filter(m => m.status === 'pending')
-            .sort((a, b) => {
-                const parse = (m) => {
-                    const [mo, d] = (m.date || '').split(' ')[0].split('.').map(Number);
-                    const [h, mi] = (m.time || '0:00').split(':').map(Number);
-                    return (mo || 0) * 10000000 + (d || 0) * 100000 + (h || 0) * 100 + (mi || 0);
-                };
-                return parse(a) - parse(b);
-            });
+    // ONLY collect winners from rounds 2 and 3 — NOT round 1.
+    const r2Winners = playinMatches
+      .filter(m => m.round === 2 && m.status === 'finished')
+      .map(m => teams.find(t => t.name === m.result?.winner))
+      .filter(Boolean)
+      .filter(w => !directPO.some(d => d.id === w.id));
 
-        // If user hasn't started their season yet, don't sim anything
-        if (myPending.length === 0 && myLeagueMatches.length === 0) return;
+    const r3Winners = playinMatches
+      .filter(m => m.round === 3 && m.status === 'finished')
+      .map(m => teams.find(t => t.name === m.result?.winner))
+      .filter(Boolean)
+      .filter(w => !directPO.some(d => d.id === w.id));
 
-        const gate = myPending.length > 0 ? myPending[0] : { date: '99.99', time: '23:59' };
+    const playInQualifiers = [...r2Winners, ...r3Winners]
+      .filter((w, i, arr) => arr.findIndex(a => a.id === w.id) === i) // deduplicate
+      .slice(0, 3)
+      .map((t, i) => {
+        const orig = league.playInSeeds?.find(s => s.id === t.id);
+        return { id: t.id, seed: 4 + i, originalSeed: orig?.seed || 99 };
+      });
 
-        const compareDates = (m, g) => {
-            const parse = (x) => {
-                const [mo, d] = (x.date || '').split(' ')[0].split('.').map(Number);
-                const [h, mi] = (x.time || '0:00').split(':').map(Number);
-                return (mo || 0) * 10000000 + (d || 0) * 100000 + (h || 0) * 100 + (mi || 0);
-            };
-            return parse(m) - parse(g);
-        };
+    const playoffSeeds = [...directPO, ...playInQualifiers].sort((a, b) => a.seed - b.seed);
+    if (playoffSeeds.length < 6) return;
 
-        const simable = regularMatches.filter(m =>
-            m.status === 'pending' &&
-            m.t1 && m.t2 &&
-            String(m.t1) !== 'TBD' && String(m.t2) !== 'TBD' &&
-            compareDates(m, gate) < 0
-        );
-        if (simable.length === 0) return;
+    const seed3 = playoffSeeds.find(s => s.seed === 3);
+    const playInPO = playoffSeeds.filter(s => s.seed >= 4);
+    if (!seed3 || playInPO.length < 3) return;
 
-        let didUpdate = false;
-        const newMatches = league.matches.map(m => {
-            if (m.type !== 'regular' || m.status !== 'pending') return m; // regular only
-            if (!m.t1 || !m.t2 || String(m.t1) === 'TBD' || String(m.t2) === 'TBD') return m;
-            if (compareDates(m, gate) >= 0) return m;
+    const pickedSeed = playInPO[playInPO.length - 1];
+    const remaining = playInPO.filter(s => s.id !== pickedSeed.id);
+    const r1m1 = { id: Date.now() + 300, round: 1, match: 1, label: '1라운드', t1: seed3.id, t2: pickedSeed.id, date: '2.11 (수)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' };
+    const r1m2 = { id: Date.now() + 301, round: 1, match: 2, label: '1라운드', t1: remaining[0]?.id, t2: remaining[1]?.id, date: '2.12 (목)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' };
+    const newMatches = [...currentMatches, r1m1, r1m2];
+    patchLeague({ matches: newMatches, playoffSeeds });
+    return;
+  }
 
-            const getId = v => typeof v === 'object' ? Number(v?.id) : Number(v);
-            const t1Obj = teams.find(t => t.id === getId(m.t1));
-            const t2Obj = teams.find(t => t.id === getId(m.t2));
-            if (!t1Obj || !t2Obj) return m;
+  // 3) If playoffs exist, generate subsequent rounds automatically as series finish.
+  try {
+    const playoffSeeds = league.playoffSeeds || [];
+    if (playoffSeeds.length === 0) return;
 
-            try {
-                const t1 = { ...t1Obj, roster: getFullTeamRoster(t1Obj.name) };
-                const t2 = { ...t2Obj, roster: getFullTeamRoster(t2Obj.name) };
-                const sim = quickSimulateMatch(
-                  t1,
-                  t2,
-                  m.format || 'BO3',
-                  getChampionListForMatch(league, m)
-                );
-                const score = typeof sim.scoreString === 'string' ? sim.scoreString
-                    : typeof sim.score === 'object'
-                        ? `${Math.max(sim.score.A ?? 0, sim.score.B ?? 0)}-${Math.min(sim.score.A ?? 0, sim.score.B ?? 0)}`
-                        : '2-0';
-                didUpdate = true;
-                return {
-                    ...m, status: 'finished',
-                    result: {
-                        winner: sim.winner?.name || sim.winner,
-                        score,
-                        history: (sim.history || []).map(s => ({ ...s, logs: [] }))
-                    }
-                };
-            } catch (e) {
-                const t1Wins = (t1Obj.power || 80) + (Math.random() * 10 - 5) >=
-                               (t2Obj.power || 80) + (Math.random() * 10 - 5);
-                didUpdate = true;
-                return {
-                    ...m, status: 'finished',
-                    result: { winner: t1Wins ? t1Obj.name : t2Obj.name, score: '2-0', history: [] }
-                };
-            }
-        });
+    const getWinnerId = (m) => teams.find(t => t.name === m.result?.winner)?.id;
+    const getLoserId = (m) => {
+      const wId = getWinnerId(m);
+      if (!wId) return null;
+      return (m.t1 === wId) ? m.t2 : m.t1;
+    };
 
-        if (didUpdate) {
-            const updates = { matches: newMatches };
-            updateLeague(league.id, updates);
-            setLeague(prev => ({ ...prev, ...updates }));
-            recalculateStandings({ ...league, matches: newMatches });
-        }
-    }, [league?.foreignMatches?.[league?.myLeague]?.filter(m => m.status === 'finished').length, league?.matches?.length, league?.myLeague]);
+    const r1 = currentMatches.filter(m => m.type === 'playoff' && m.round === 1);
+    const r2Exists = currentMatches.some(m => m.type === 'playoff' && m.round === 2);
+    const r1Finished = r1.length === 2 && r1.every(m => m.status === 'finished');
+    if (r1Finished && !r2Exists) {
+      const r1Winners = r1.map(m => ({ id: getWinnerId(m), fromMatch: m.match })).filter(w => !!w.id);
+      const r1Losers = r1.map(m => ({ id: getLoserId(m), fromMatch: m.match })).filter(l => !!l.id);
+      const seed1 = playoffSeeds.find(s => s.seed === 1)?.id;
+      const seed2 = playoffSeeds.find(s => s.seed === 2)?.id;
+      if (seed1 && seed2 && r1Winners.length === 2 && r1Losers.length === 2) {
+        const pickedWinner = r1Winners[Math.floor(Math.random() * r1Winners.length)];
+        const remainingWinner = r1Winners.find(w => w.id !== pickedWinner.id)?.id;
+        const newMatches = createPlayoffRound2Matches(currentMatches, seed1, seed2, pickedWinner.id, remainingWinner, r1Losers[0].id, r1Losers[1].id);
+        patchLeague({ matches: newMatches });
+        return;
+      }
+    }
 
-    // ── [FOREIGN] Background LCK bracket generator ───────────────────────────
-    // After super week is simmed, auto-generates LCK play-in → playoff brackets
-    // so the LCK schedule tab shows results as the user plays through their season.
-    useEffect(() => {
-        if (!league?.matches) return;
-        if ((league.myLeague || 'LCK') === 'LCK') return;
+    const r2w = currentMatches.filter(m => m.type === 'playoff' && m.round === 2);
+    const r2l = currentMatches.find(m => m.type === 'playoff' && m.round === 2.1);
+    const r3Exists = currentMatches.some(m => m.type === 'playoff' && m.round === 3);
+    const r2Finished = r2w.length === 2 && r2w.every(m => m.status === 'finished') && r2l?.status === 'finished';
+    if (r2Finished && !r3Exists) {
+      const newMatches = createPlayoffRound3Matches(currentMatches, playoffSeeds, teams);
+      patchLeague({ matches: newMatches });
+      return;
+    }
 
-        const allMatches = league.matches;
-        const regularDone = allMatches.filter(m => m.type === 'regular').every(m => m.status === 'finished');
-        const superMatches = allMatches.filter(m => m.type === 'super');
-        const superDone = superMatches.length > 0 && superMatches.every(m => m.status === 'finished');
-        if (!regularDone || !superDone) return;
+    const r2_2 = currentMatches.find(m => m.type === 'playoff' && m.round === 2.2);
+    const r3w = currentMatches.find(m => m.type === 'playoff' && m.round === 3);
+    const r3lExists = currentMatches.some(m => m.type === 'playoff' && m.round === 3.1);
+    if (r2_2?.status === 'finished' && r3w?.status === 'finished' && !r3lExists) {
+      const newMatches = createPlayoffLoserRound3Match(currentMatches, playoffSeeds, teams);
+      patchLeague({ matches: newMatches });
+      return;
+    }
 
-        const hasPlayin = allMatches.some(m => m.type === 'playin');
-        const hasPlayoff = allMatches.some(m => m.type === 'playoff');
+    const isQualifierMatchBg = (m) =>
+      m.type === 'playoff' &&
+      (String(m.label || '').includes('진출') || m.round === 4);
+    const r3l = currentMatches.find(m => m.type === 'playoff' && m.round === 3.1);
+    const r4Exists = currentMatches.some(isQualifierMatchBg);
+    if (r3l?.status === 'finished' && r3w?.status === 'finished' && !r4Exists) {
+      const newMatches = createPlayoffQualifierMatch(currentMatches, teams);
+      patchLeague({ matches: newMatches });
+      return;
+    }
 
-        if (!hasPlayin) {
-            // Generate play-in bracket
-            const tempLeague = { ...league, matches: allMatches };
-            const standings = computeStandings(tempLeague);
-            const bWins = allMatches.filter(m => {
-                if ((m.type !== 'regular' && m.type !== 'super') || m.status !== 'finished') return false;
-                const wt = teams.find(t => t.name === m.result?.winner);
-                return wt && (league.groups?.baron || []).includes(wt.id);
-            }).length;
-            const eWins = allMatches.filter(m => {
-                if ((m.type !== 'regular' && m.type !== 'super') || m.status !== 'finished') return false;
-                const wt = teams.find(t => t.name === m.result?.winner);
-                return wt && (league.groups?.elder || []).includes(wt.id);
-            }).length;
+    const r4 = currentMatches.find(isQualifierMatchBg);
+    const finalExists = currentMatches.some(m =>
+      m.type === 'playoff' &&
+      !String(m.label || '').includes('진출') &&
+      (m.round === 5 || String(m.label || '').includes('결승전') || String(m.label || '').toUpperCase().includes('FINAL'))
+    );
+    if (r4?.status === 'finished' && r3w?.status === 'finished' && !finalExists) {
+      const newMatches = createPlayoffFinalMatch(currentMatches, teams);
+      patchLeague({ matches: newMatches });
+    }
+  } catch (e) {
+    console.error('[LCK BG] Playoff progression failed:', e);
+  }
+}, [league?.matches?.filter(m => m.status === 'finished').length, league?.matches?.length]);
 
-            try {
-                const { newMatches: piMatches, playInSeeds, seasonSummary } = createPlayInBracket(tempLeague, standings, teams, bWins, eWins);
-                const updates = { matches: [...allMatches, ...piMatches], playInSeeds, seasonSummary }; // Fix: correctly append PlayIn!
-                updateLeague(league.id, updates);
-                setLeague(prev => ({ ...prev, ...updates }));
-            } catch (e) { console.error('[LCK BG] Play-in bracket failed:', e); }
-            return;
-        }
-
-        // After play-in exists, auto-generate next play-in rounds + full playoffs progression.
-        // This prevents "only appears after refresh" issues for foreign players viewing LCK.
-        let currentMatches = allMatches;
-        let didUpdate = false;
-        const patchLeague = (partial) => {
-          didUpdate = true;
-          const next = { ...league, ...partial };
-          updateLeague(league.id, partial);
-          setLeague(prev => ({ ...prev, ...partial }));
-          // keep local ref in sync for sequential generation
-          if (partial.matches) currentMatches = partial.matches;
-        };
-
-        // 1) Ensure play-in rounds 2 and 3 are generated as soon as prerequisites finish.
-        try {
-          const playinMatches = currentMatches.filter(m => m.type === 'playin');
-          const r1 = playinMatches.filter(m => m.round === 1);
-          const r2Exists = playinMatches.some(m => m.round === 2);
-          const r3Exists = playinMatches.some(m => m.round === 3);
-
-          const r1Finished = r1.length > 0 && r1.every(m => m.status === 'finished');
-          if (r1Finished && !r2Exists) {
-            const playInSeeds = league.playInSeeds || [];
-            const seed1 = teams.find(t => t.id === (playInSeeds[0]?.id || 0));
-            const seed2 = teams.find(t => t.id === (playInSeeds[1]?.id || 0));
-            if (seed1 && seed2) {
-              const r1Winners = r1
-                .map(m => teams.find(t => t.name === m.result?.winner))
-                .filter(Boolean);
-              const winnersWithSeed = r1Winners.map(w => ({ ...w, seedIndex: playInSeeds.findIndex(s => s.id === w.id) }));
-              winnersWithSeed.sort((a, b) => a.seedIndex - b.seedIndex);
-              if (winnersWithSeed.length >= 2) {
-                const lowerSeedWinner = winnersWithSeed[1];
-                const higherSeedWinner = winnersWithSeed[0];
-                const pickedTeam = (Math.random() < 0.65) ? lowerSeedWinner : higherSeedWinner;
-                const remainingTeam = (pickedTeam.id === lowerSeedWinner.id) ? higherSeedWinner : lowerSeedWinner;
-                const newMatches = createPlayInRound2Matches(currentMatches, seed1, seed2, pickedTeam, remainingTeam);
-                patchLeague({ matches: newMatches });
-              }
-            }
-          }
-
-          const r2 = playinMatches.filter(m => m.round === 2);
-          const r2Finished = r2.length > 0 && r2.every(m => m.status === 'finished');
-          if (r2Finished && !r3Exists) {
-            const newMatches = createPlayInFinalMatch(currentMatches, teams);
-            patchLeague({ matches: newMatches });
-          }
-        } catch (e) {
-          console.error('[LCK BG] Play-in next-round generation failed:', e);
-        }
-
-        // 2) Generate playoffs once play-in Final is finished.
-        if (!hasPlayoff) {
-            const playinMatches = currentMatches.filter(m => m.type === 'playin');
-            const r3 = playinMatches.filter(m => m.round === 3);
-            if (r3.length === 0 || !r3.every(m => m.status === 'finished')) return;
-
-            const directPO = league.seasonSummary?.poTeams || [];
-
-            // ONLY collect winners from rounds 2 and 3 — NOT round 1.
-            // Round 1 winners who then LOST round 2 are eliminated and must not get a playoff spot.
-            // The old code iterated ALL play-in matches chronologically, so R1 winners appeared
-            // first and .slice(0,3) picked them over the actual R2/R3 qualifiers (e.g. DNS who
-            // won R1 then lost R2 still occupied a slot, displacing the real R3 winner).
-            const r2Winners = playinMatches
-                .filter(m => m.round === 2 && m.status === 'finished')
-                .map(m => teams.find(t => t.name === m.result?.winner))
-                .filter(Boolean)
-                .filter(w => !directPO.some(d => d.id === w.id));
-
-            const r3Winners = playinMatches
-                .filter(m => m.round === 3 && m.status === 'finished')
-                .map(m => teams.find(t => t.name === m.result?.winner))
-                .filter(Boolean)
-                .filter(w => !directPO.some(d => d.id === w.id));
-
-            const playInQualifiers = [...r2Winners, ...r3Winners]
-                .filter((w, i, arr) => arr.findIndex(a => a.id === w.id) === i) // deduplicate
-                .slice(0, 3)
-                .map((t, i) => {
-                    const orig = league.playInSeeds?.find(s => s.id === t.id);
-                    return { id: t.id, seed: 4 + i, originalSeed: orig?.seed || 99 };
-                });
-
-            const playoffSeeds = [...directPO, ...playInQualifiers].sort((a, b) => a.seed - b.seed);
-            if (playoffSeeds.length < 6) return;
-
-            const seed3 = playoffSeeds.find(s => s.seed === 3);
-            const playInPO = playoffSeeds.filter(s => s.seed >= 4);
-            if (!seed3 || playInPO.length < 3) return;
-
-            const pickedSeed = playInPO[playInPO.length - 1];
-            const remaining = playInPO.filter(s => s.id !== pickedSeed.id);
-            const r1m1 = { id: Date.now() + 300, round: 1, match: 1, label: '1라운드', t1: seed3.id, t2: pickedSeed.id, date: '2.11 (수)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' };
-            const r1m2 = { id: Date.now() + 301, round: 1, match: 2, label: '1라운드', t1: remaining[0]?.id, t2: remaining[1]?.id, date: '2.12 (목)', time: '17:00', type: 'playoff', format: 'BO5', status: 'pending' };
-            const newMatches = [...currentMatches, r1m1, r1m2];
-            patchLeague({ matches: newMatches, playoffSeeds });
-            return;
-        }
-
-        // 3) If playoffs exist, generate subsequent rounds automatically as series finish.
-        try {
-          const playoffSeeds = league.playoffSeeds || [];
-          if (playoffSeeds.length === 0) return;
-
-          const getWinnerId = (m) => teams.find(t => t.name === m.result?.winner)?.id;
-          const getLoserId = (m) => {
-            const wId = getWinnerId(m);
-            if (!wId) return null;
-            return (m.t1 === wId) ? m.t2 : m.t1;
-          };
-
-          const r1 = currentMatches.filter(m => m.type === 'playoff' && m.round === 1);
-          const r2Exists = currentMatches.some(m => m.type === 'playoff' && m.round === 2);
-          const r1Finished = r1.length === 2 && r1.every(m => m.status === 'finished');
-          if (r1Finished && !r2Exists) {
-            const r1Winners = r1.map(m => ({ id: getWinnerId(m), fromMatch: m.match })).filter(w => !!w.id);
-            const r1Losers = r1.map(m => ({ id: getLoserId(m), fromMatch: m.match })).filter(l => !!l.id);
-            const seed1 = playoffSeeds.find(s => s.seed === 1)?.id;
-            const seed2 = playoffSeeds.find(s => s.seed === 2)?.id;
-            if (seed1 && seed2 && r1Winners.length === 2 && r1Losers.length === 2) {
-              const pickedWinner = r1Winners[Math.floor(Math.random() * r1Winners.length)];
-              const remainingWinner = r1Winners.find(w => w.id !== pickedWinner.id)?.id;
-              const newMatches = createPlayoffRound2Matches(currentMatches, seed1, seed2, pickedWinner.id, remainingWinner, r1Losers[0].id, r1Losers[1].id);
-              patchLeague({ matches: newMatches });
-              return;
-            }
-          }
-
-          const r2w = currentMatches.filter(m => m.type === 'playoff' && m.round === 2);
-          const r2l = currentMatches.find(m => m.type === 'playoff' && m.round === 2.1);
-          const r3Exists = currentMatches.some(m => m.type === 'playoff' && m.round === 3);
-          const r2Finished = r2w.length === 2 && r2w.every(m => m.status === 'finished') && r2l?.status === 'finished';
-          if (r2Finished && !r3Exists) {
-            const newMatches = createPlayoffRound3Matches(currentMatches, playoffSeeds, teams);
-            patchLeague({ matches: newMatches });
-            return;
-          }
-
-          const r2_2 = currentMatches.find(m => m.type === 'playoff' && m.round === 2.2);
-          const r3w = currentMatches.find(m => m.type === 'playoff' && m.round === 3);
-          const r3lExists = currentMatches.some(m => m.type === 'playoff' && m.round === 3.1);
-          if (r2_2?.status === 'finished' && r3w?.status === 'finished' && !r3lExists) {
-            const newMatches = createPlayoffLoserRound3Match(currentMatches, playoffSeeds, teams);
-            patchLeague({ matches: newMatches });
-            return;
-          }
-
-          const isQualifierMatchBg = (m) =>
-              m.type === 'playoff' &&
-              (String(m.label || '').includes('진출') || m.round === 4);
-          const r3l = currentMatches.find(m => m.type === 'playoff' && m.round === 3.1);
-          const r4Exists = currentMatches.some(isQualifierMatchBg);
-          if (r3l?.status === 'finished' && r3w?.status === 'finished' && !r4Exists) {
-            const newMatches = createPlayoffQualifierMatch(currentMatches, teams);
-            patchLeague({ matches: newMatches });
-            return;
-          }
-
-          const r4 = currentMatches.find(isQualifierMatchBg);
-          const finalExists = currentMatches.some(m =>
-              m.type === 'playoff' &&
-              !String(m.label || '').includes('진출') &&
-              (m.round === 5 || String(m.label || '').includes('결승전') || String(m.label || '').toUpperCase().includes('FINAL'))
-          );
-          if (r4?.status === 'finished' && r3w?.status === 'finished' && !finalExists) {
-            const newMatches = createPlayoffFinalMatch(currentMatches, teams);
-            patchLeague({ matches: newMatches });
-            return;
-          }
-        } catch (e) {
-          console.error('[LCK BG] Playoff next-round generation failed:', e);
-        }
-    }, [
-        league?.matches?.filter(m => m.status === 'finished').length,
-        league?.myLeague
-    ]);
     const hasFST = !!league?.fst;
     const isFSTReady = isSeasonOver && !hasFST;
     
