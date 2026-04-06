@@ -228,6 +228,37 @@ const getOvrBadgeStyle = (ovr) => {
           ? lg.currentChampionList
           : championList;
       }
+      
+      // Handle LCK Cup matches (regular and super types)
+      if (matchObj?.type === 'regular' || matchObj?.type === 'super') {
+        // Determine patch based on match progression for LCK Cup
+        const cupMatches = (lg.matches || []).filter(m => m.type === 'regular' || m.type === 'super');
+        if (cupMatches.length > 0) {
+          const sortedCup = [...cupMatches].sort((a, b) => (parseFloat((a.date || '').split(' ')[0]) || 0) - (parseFloat((b.date || '').split(' ')[0]) || 0));
+          const currentMatchIdx = sortedCup.findIndex(m => m.id === matchObj.id);
+          
+          if (currentMatchIdx >= 0) {
+            // Check if we're in super week (after all regular matches are finished)
+            const finishedRegular = cupMatches.filter(m => m.type === 'regular' && m.status === 'finished').length;
+            const totalRegular = cupMatches.filter(m => m.type === 'regular').length;
+            const allRegularFinished = finishedRegular === totalRegular && totalRegular > 0;
+            
+            const patch = allRegularFinished && matchObj.type === 'super' ? '16.02' : '16.01';
+            
+            if (patch) {
+              const targetIdx = PATCH_ORDER.indexOf(patch);
+              // Walk BACKWARD from the target patch to find the best available champion list
+              for (let i = Math.max(targetIdx, 0); i >= 0; i--) {
+                const saved = lg.metaChampionLists?.[PATCH_ORDER[i]];
+                if (Array.isArray(saved) && saved.length > 0) return saved;
+              }
+
+              const generated = buildPatchListOnTheFly(patch);
+              if (Array.isArray(generated) && generated.length > 0) return generated;
+            }
+          }
+        }
+      }
     
       // For other match types - always prefer currentChampionList if available
       if (Array.isArray(lg.currentChampionList) && lg.currentChampionList.length > 0) {
