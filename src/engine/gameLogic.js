@@ -671,7 +671,7 @@ export function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptio
             const champData = (currentChampionList || championList).find(c => c.name === p.champName);
             
             // [FIX] Look up tier from CURRENT champion list, not from cached pick object
-            const currentTier = champData?.tier ?? p.tier ?? 3;
+            const currentTier = champData?.tier;
             
             if (!playerData || !champData) {
               return { 
@@ -789,11 +789,21 @@ export function simulateMatch(teamA, teamB, format = 'BO3', simOptions) {
 }
 
 // --- HELPERS ---
-const picksToFullObj = (simplePicks, team) => {
+const picksToFullObj = (simplePicks, team, currentChampionList = []) => {
   return (simplePicks || []).map(p => {
       const player = (team?.roster || []).find(r => r.이름 === p.playerName);
-      return { playerData: player, role: player ? player.포지션 : 'MID', tier: p.tier, mastery: p.mastery, currentGold: 5000, level: p.level || 9, classType: '전사', dmgType: 'AD' };
-  });
+      const champData = currentChampionList.find(c => c.name === p.champName);
+      return { 
+        playerData: player, 
+        role: player ? player.포지션 : 'MID', 
+        tier: champData?.tier ?? 3, 
+        mastery: p.mastery, 
+        currentGold: 5000, 
+        level: p.level || 9, 
+        classType: '전사', 
+        dmgType: 'AD' 
+      };
+    });
 };
 
 export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampionList = []) => {
