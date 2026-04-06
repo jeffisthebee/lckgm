@@ -12,7 +12,7 @@ import { FOREIGN_LEAGUES, FOREIGN_PLAYERS } from '../data/foreignLeagues';
 import playersLCK from '../data/players.json';
 import { updateLeague } from '../engine/storage';
 import { championList } from '../data/constants'; 
-import { getLCKSplit1PatchVersionForDate } from '../engine/SeasonManager';
+import { getLCKSplit1PatchVersionForDate, updateChampionMeta } from '../engine/SeasonManager';
 
 const compareDatesObj = (a, b) => {
     if (!a || !b || !a.date || !b.date) return 0;
@@ -258,14 +258,55 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
         const getMetaForLCKMatch = (m) => {
             if (!m) return league?.currentChampionList || championList;
             const PATCH_ORDER = ['16.01', '16.02', '16.03', '16.04', '16.05', '16.06', '16.07'];
+            
+            // Helper to generate missing meta versions on-the-fly
+            const buildPatchListOnTheFly = (targetPatch) => {
+                const targetIdx = PATCH_ORDER.indexOf(targetPatch);
+                if (targetIdx < 0) return null;
+
+                // Find the best available starting point (walk backwards from target)
+                let rolling = null;
+                let startIdx = -1;
+                
+                // First, try to find a saved list we can build from
+                for (let i = targetIdx; i >= 0; i--) {
+                    const saved = league?.metaChampionLists?.[PATCH_ORDER[i]];
+                    if (Array.isArray(saved) && saved.length > 0) {
+                        rolling = saved.map(champ => ({ ...champ })); // Deep copy
+                        startIdx = i;
+                        break;
+                    }
+                }
+                
+                // If no saved list found, start from currentChampionList or base list
+                if (!rolling) {
+                    rolling = (Array.isArray(league?.currentChampionList) && league.currentChampionList.length > 0)
+                        ? league.currentChampionList.map(champ => ({ ...champ }))
+                        : championList.map(champ => ({ ...champ }));
+                    startIdx = PATCH_ORDER.indexOf(league?.metaVersion || '16.01');
+                    if (startIdx < 0) startIdx = 0;
+                }
+                
+                // Apply meta updates forward from our starting point to the target patch
+                for (let i = Math.max(startIdx + 1, 0); i <= targetIdx; i++) {
+                    rolling = updateChampionMeta(rolling);
+                }
+                
+                return rolling;
+            };
+            
             if (m.type === 'lck_split1_regular') {
                 const patch = getLCKSplit1PatchVersionForDate(m.date);
                 if (patch) {
                     const targetIdx = PATCH_ORDER.indexOf(patch);
+                    // First try to find a saved list
                     for (let i = Math.max(targetIdx, 0); i >= 0; i--) {
                         const saved = league?.metaChampionLists?.[PATCH_ORDER[i]];
                         if (Array.isArray(saved) && saved.length > 0) return saved;
                     }
+                    // Generate on-the-fly if no saved list found
+                    const generated = buildPatchListOnTheFly(patch);
+                    if (Array.isArray(generated) && generated.length > 0) return generated;
                 }
             }
             // For all other match types: always prefer the current meta champion list
@@ -411,14 +452,55 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
 
         const getMatchMeta = (matchObj) => {
             const PATCH_ORDER = ['16.01', '16.02', '16.03', '16.04', '16.05', '16.06', '16.07'];
+            
+            // Helper to generate missing meta versions on-the-fly
+            const buildPatchListOnTheFly = (targetPatch) => {
+                const targetIdx = PATCH_ORDER.indexOf(targetPatch);
+                if (targetIdx < 0) return null;
+
+                // Find the best available starting point (walk backwards from target)
+                let rolling = null;
+                let startIdx = -1;
+                
+                // First, try to find a saved list we can build from
+                for (let i = targetIdx; i >= 0; i--) {
+                    const saved = league?.metaChampionLists?.[PATCH_ORDER[i]];
+                    if (Array.isArray(saved) && saved.length > 0) {
+                        rolling = saved.map(champ => ({ ...champ })); // Deep copy
+                        startIdx = i;
+                        break;
+                    }
+                }
+                
+                // If no saved list found, start from currentChampionList or base list
+                if (!rolling) {
+                    rolling = (Array.isArray(league?.currentChampionList) && league.currentChampionList.length > 0)
+                        ? league.currentChampionList.map(champ => ({ ...champ }))
+                        : championList.map(champ => ({ ...champ }));
+                    startIdx = PATCH_ORDER.indexOf(league?.metaVersion || '16.01');
+                    if (startIdx < 0) startIdx = 0;
+                }
+                
+                // Apply meta updates forward from our starting point to the target patch
+                for (let i = Math.max(startIdx + 1, 0); i <= targetIdx; i++) {
+                    rolling = updateChampionMeta(rolling);
+                }
+                
+                return rolling;
+            };
+            
             if (matchObj?.type === 'lck_split1_regular') {
                 const patch = getLCKSplit1PatchVersionForDate(matchObj.date);
                 if (patch) {
                     const targetIdx = PATCH_ORDER.indexOf(patch);
+                    // First try to find a saved list
                     for (let i = Math.max(targetIdx, 0); i >= 0; i--) {
                         const saved = league?.metaChampionLists?.[PATCH_ORDER[i]];
                         if (Array.isArray(saved) && saved.length > 0) return saved;
                     }
+                    // Generate on-the-fly if no saved list found
+                    const generated = buildPatchListOnTheFly(patch);
+                    if (Array.isArray(generated) && generated.length > 0) return generated;
                 }
             }
             // For all other match types: always prefer the live currentChampionList

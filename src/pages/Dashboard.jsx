@@ -176,32 +176,39 @@ const getOvrBadgeStyle = (ovr) => {
       if (!lg) return championList;
 
       const PATCH_ORDER = ['16.01', '16.02', '16.03', '16.04', '16.05', '16.06', '16.07'];
+      // [FIX] Generate missing meta versions on-the-fly instead of falling back to base list
       const buildPatchListOnTheFly = (targetPatch) => {
         const targetIdx = PATCH_ORDER.indexOf(targetPatch);
         if (targetIdx < 0) return null;
 
-        const savedLists = lg?.metaChampionLists || {};
+        // Find the best available starting point (walk backwards from target)
+        let rolling = null;
+        let startIdx = -1;
+        
+        // First, try to find a saved list we can build from
         for (let i = targetIdx; i >= 0; i--) {
-          const saved = savedLists[PATCH_ORDER[i]];
+          const saved = lg?.metaChampionLists?.[PATCH_ORDER[i]];
           if (Array.isArray(saved) && saved.length > 0) {
-            let rolling = saved;
-            for (let j = i + 1; j <= targetIdx; j++) {
-              rolling = updateChampionMeta(rolling);
-            }
-            return rolling;
+            rolling = saved.map(champ => ({ ...champ })); // Deep copy
+            startIdx = i;
+            break;
           }
         }
-
-        // Final fallback: derive from currentChampionList/championList so CPU
-        // drafting still reflects the intended target patch rather than 16.01.
-        let rolling = (
-          Array.isArray(lg?.currentChampionList) && lg.currentChampionList.length > 0
-            ? lg.currentChampionList
-            : championList
-        );
-        for (let i = 0; i <= targetIdx; i++) {
+        
+        // If no saved list found, start from currentChampionList or base list
+        if (!rolling) {
+          rolling = (Array.isArray(lg?.currentChampionList) && lg.currentChampionList.length > 0)
+            ? lg.currentChampionList.map(champ => ({ ...champ }))
+            : championList.map(champ => ({ ...champ }));
+          startIdx = PATCH_ORDER.indexOf(lg?.metaVersion || '16.01');
+          if (startIdx < 0) startIdx = 0;
+        }
+        
+        // Apply meta updates forward from our starting point to the target patch
+        for (let i = Math.max(startIdx + 1, 0); i <= targetIdx; i++) {
           rolling = updateChampionMeta(rolling);
         }
+        
         return rolling;
       };
     
