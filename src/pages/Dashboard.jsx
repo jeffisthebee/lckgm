@@ -250,7 +250,7 @@ const getOvrBadgeStyle = (ovr) => {
             const totalRegular = cupMatches.filter(m => m.type === 'regular').length;
             const allRegularFinished = finishedRegular === totalRegular && totalRegular > 0;
             
-            const patch = allRegularFinished && matchObj.type === 'super' ? '16.02' : '16.01';
+            const patch = allRegularFinished && matchObj.type === 'super' ? getLCKSplit1PatchVersionForDate(matchObj.date) : getLCKSplit1PatchVersionForDate(matchObj.date);
             
             if (patch) {
               const targetIdx = PATCH_ORDER.indexOf(patch);
@@ -3339,9 +3339,7 @@ const handleMatchClick = (match) => {
       // CPU vs CPU → quickSimulateMatch with real rosters + 16.03 meta
       const t1 = buildFSTTeamWithRoster(t1Fst);
       const t2 = buildFSTTeamWithRoster(t2Fst);
-      const fstChampionList = (league?.metaChampionLists?.['16.03'] && league.metaChampionLists['16.03'].length > 0)
-        ? league.metaChampionLists['16.03']
-        : (league?.currentChampionList && league.currentChampionList.length > 0 ? league.currentChampionList : championList);
+      const fstChampionList = getChampionListForMatch(league, match);
 
       let result;
       try {
@@ -3377,9 +3375,7 @@ const handleMatchClick = (match) => {
       if (!t1Fst || !t2Fst) return;
       const t1Live = buildFSTTeamWithRoster(t1Fst);
       const t2Live = buildFSTTeamWithRoster(t2Fst);
-      const safeChampionList = (league?.metaChampionLists?.['16.03'] && league.metaChampionLists['16.03'].length > 0)
-        ? league.metaChampionLists['16.03']
-        : (league?.currentChampionList?.length > 0 ? league.currentChampionList : championList);
+      const safeChampionList = getChampionListForMatch(league, match);
       setLiveMatchData({
         match:        { ...match, isFSTMatch: true },
         teamA:        t1Live,
