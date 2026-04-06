@@ -643,11 +643,14 @@ useEffect(() => {
     try {
       const t1 = { ...t1Obj, roster: getFullTeamRoster(t1Obj.name) };
       const t2 = { ...t2Obj, roster: getFullTeamRoster(t2Obj.name) };
+      const championListForThisMatch = getChampionListForMatch(league, m);
+      console.log(`[DEBUG] Match ${m.id} (${m.date}): Using champion list with ${championListForThisMatch.length} champs`);
+      console.log(`[DEBUG] Sample champion tiers (1=best, 5=worst):`, championListForThisMatch.slice(0, 5).map(c => ({ name: c.name, tier: c.tier })));
       const sim = quickSimulateMatch(
         t1,
         t2,
         m.format || 'BO3',
-        getChampionListForMatch(league, m)
+        championListForThisMatch
       );
       const score = typeof sim.scoreString === 'string' ? sim.scoreString
         : typeof sim.score === 'object'
@@ -2297,11 +2300,14 @@ const handleMatchClick = (match) => {
 
         // --- 1. QUICK SIM (CPU Matches) ---
         if (!isPlayerMatch) {
+            const championListForThisMatch = getChampionListForMatch(league, match);
+            console.log(`[DEBUG] CPU Match ${match.id} (${match.date}): Using champion list with ${championListForThisMatch.length} champs`);
+            console.log(`[DEBUG] Sample champion tiers (1=best, 5=worst):`, championListForThisMatch.slice(0, 5).map(c => ({ name: c.name, tier: c.tier })));
             const result = quickSimulateMatch(
                 { ...t1Obj, roster: t1Roster }, 
                 { ...t2Obj, roster: t2Roster }, 
                 format,
-                getChampionListForMatch(league, match)
+                championListForThisMatch
             );
             
             return {

@@ -649,9 +649,9 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                     return picksList.map(p => {
                         const champData = typeof p === 'string' ? { championName: p } : p;
                         const champKey = champData.championName || champData.champion || '';
-                        const champInfo = championList.find(c => c.key === champKey) || {};
+                        const champInfo = activeChampionList.find(c => c.key === champKey) || {};
                         const champName = champInfo.name || champKey;
-                        const champTier = champInfo.tier || 'C';
+                        const tier = champInfo.tier || 3;
 
                         const pos = normalizePosition(champData.role || champData.position || '');
                         const rosterPlayer = roleMap[pos];
@@ -660,7 +660,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                         return {
                             ...p,
                             champName,
-                            tier: champTier,
+                            tier,
                             role: p.role || p.position || '',
                             playerName: resolvedName
                         };
@@ -670,6 +670,7 @@ export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatc
                 const picksA_UI = buildUIPickList(safeResult.picks?.A, blueTeam.roster || []);
                 const picksB_UI = buildUIPickList(safeResult.picks?.B, redTeam.roster || []);
 
+// ...
                 setSimulationData({ ...safeResult, blueTeam, redTeam, picks: { A: picksA_UI, B: picksB_UI } }); 
                 setLiveStats({
                     kills: { BLUE: 0, RED: 0 },
