@@ -256,7 +256,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
 
         let updated = false;
         const getMetaForLCKMatch = (m) => {
-            if (!m) return championList;
+            if (!m) return league?.currentChampionList || championList;
             const PATCH_ORDER = ['16.01', '16.02', '16.03', '16.04', '16.05', '16.06', '16.07'];
             if (m.type === 'lck_split1_regular') {
                 const patch = getLCKSplit1PatchVersionForDate(m.date);
@@ -268,11 +268,9 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                     }
                 }
             }
-            // For all other match types: always prefer the live currentChampionList
-            // over the hardcoded 16.01 base constant.
-            return Array.isArray(league?.currentChampionList) && league.currentChampionList.length > 0
-                ? league.currentChampionList
-                : championList;
+            // For all other match types: always prefer the current meta champion list
+            // Never fall back to hardcoded 16.01 base constant
+            return league?.currentChampionList || championList;
         };
         const newMatches = league.matches.map(m => {
             if (m.status !== 'pending') return m;

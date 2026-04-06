@@ -817,8 +817,8 @@ export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampion
         const draftResult = runDraftSimulation(teamA, teamB, currentFearlessBans, safeChampList);
         
         const picksA = draftResult.picks.A || []; const picksB = draftResult.picks.B || [];
-        const fullPicksA = picksToFullObj(picksA, teamA);
-        const fullPicksB = picksToFullObj(picksB, teamB);
+        const fullPicksA = picksToFullObj(picksA, teamA, safeChampList);
+        const fullPicksB = picksToFullObj(picksB, teamB, safeChampList);
   
         // --- PHASE 1: LANING PHASE (14 Minutes) ---
         // Checks raw laning stats. Winner gets small gold lead.
