@@ -197,6 +197,10 @@ const ENG_TO_KOR = {
 // Lookup: given an English mastery name, return the Korean champion name used in champions.json
 const toKor = (engName) => ENG_TO_KOR[engName] || null;
 
+// --- HELPERS ---
+
+// Returns only the mastery entries that count as "known" champions:
+// Season 2025 with 3+ games, or Career with 5+ games as a fallback signal.
 const getKnownPool = (playerData) => {
   if (!playerData?.pool) return new Set();
   const known = new Set();
@@ -211,11 +215,19 @@ const getKnownPool = (playerData) => {
   return known;
 };
 
+// Find mastery entry for a champion by its Korean name
 const findMastery = (playerData, korChampName) => {
   if (!playerData?.pool) return null;
+  // Find the entry whose English name maps to this Korean name
   return playerData.pool.find(m => toKor(m.name) === korChampName) || null;
 };
 
+// --- DRAFT LOGIC ---
+
+// Phase weights by pick order:
+// Phase 1 (orders 7-11):  mastery 1.25, counter 0.50, synergy 0.75, versatility 1.25
+// Phase 2 (orders 12-14): mastery 1.00, counter 1.00, synergy 1.25, versatility 1.00
+// Phase 3 (orders 17-20): mastery 0.75, counter 1.75, synergy 1.50, versatility 0.75
 const PICK_PHASE_WEIGHTS = {
   1: { mastery: 1.25, counter: 0.50, synergy: 0.75,  versatility: 1.25 },
   2: { mastery: 1.00, counter: 1.00, synergy: 1.25,  versatility: 1.00 },
@@ -228,26 +240,6 @@ const getPickPhase = (order) => {
   return 3;
 };
 
-// ─────────────────────────────────────────────────────────────
-// [FIX] Validate and sanitize champion list before using it
-// ─────────────────────────────────────────────────────────────
-const validateChampionList = (champList) => {
-  // Ensure it's an array with valid champion objects
-  if (!Array.isArray(champList) || champList.length === 0) {
-    console.warn('Invalid champion list provided, using fallback');
-    return [];
-  }
-  
-  // Validate each champion has required fields (name, tier, role)
-  // [FIX] Be more permissive - only filter out truly invalid entries
-  return champList.filter(c => {
-    return c && 
-           typeof c.name === 'string' && c.name.trim().length > 0 &&
-           (typeof c.tier === 'number' && c.tier >= 1 && c.tier <= 5) &&
-           typeof c.role === 'string' && c.role.trim().length > 0;
-  });
-};
-
 export function selectPickFromTop3(player, availableChampions, currentTeamPicks = [], enemyTeamPicks = [], pickOrder = 7, fearlessBans = []) {
   const phase = getPickPhase(pickOrder);
   const pw    = PICK_PHASE_WEIGHTS[phase];
@@ -255,12 +247,9 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
   const playerData = MASTERY_MAP[player.이름];
   const knownPool = getKnownPool(playerData);
 
-  // [FIX] Validate available champions before filtering
-  const validChampions = validateChampionList(availableChampions);
-  
   // Filter to role-appropriate champions
-  const roleChamps = validChampions.filter(c => c.role === player.포지션);
-  const basePool = roleChamps.length > 0 ? roleChamps : validChampions;
+  const roleChamps = availableChampions.filter(c => c.role === player.포지션);
+  const basePool = roleChamps.length > 0 ? roleChamps : availableChampions;
 
   if (basePool.length === 0) return null;
 
@@ -268,64 +257,73 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
   const knownChamps   = basePool.filter(c => knownPool.has(c.name));
   const unknownChamps = basePool.filter(c => !knownPool.has(c.name));
 
+  // Always use known champs as primary pool.
+  // Fall back to unknown only if known pool is too small (< 3).
   const MIN_POOL = 3;
   const pool = knownChamps.length >= MIN_POOL
     ? knownChamps
     : [...knownChamps, ...unknownChamps].slice(0, Math.max(MIN_POOL, knownChamps.length));
 
-  const availableNames   = new Set(validChampions.map(c => c.name));
+  const availableNames   = new Set(availableChampions.map(c => c.name));
   const currentTeamNames = currentTeamPicks.map(c => c.name);
 
+  // Use dmg_type (correct field from champions.json)
   const currentAD = currentTeamPicks.filter(c => c.dmg_type === 'AD').length;
   const currentAP = currentTeamPicks.filter(c => c.dmg_type === 'AP').length;
 
+  // --- FEARLESS POOL PRESERVATION ---
+  // Count how many known champs this player still has left after fearless bans.
+  // If the remaining pool is small (<=3), they are in "conservation mode" —
+  // apply a bonus to champs NOT yet used so they survive longer into the series.
   const fearlessSet = new Set(fearlessBans);
   const remainingKnown = [...knownPool].filter(name => !fearlessSet.has(name));
   const isConservationMode = remainingKnown.length <= 3;
-  
+  // In conservation mode, boost unused known champs and penalise already-used ones
   const getFearlessBonus = (champName) => {
     if (!isConservationMode) return 1.0;
-    if (fearlessSet.has(champName)) return 0.0;
-    if (knownPool.has(champName)) return 1.3;
-    return 0.5;
+    if (fearlessSet.has(champName)) return 0.0; // already used, can't pick anyway
+    if (knownPool.has(champName)) return 1.3;   // rare remaining known champ — save it wisely
+    return 0.5;                                  // unknown fallback in conservation mode
   };
 
   const scoredChamps = pool.map(champ => {
     const isKnown = knownPool.has(champ.name);
     const mastery = findMastery(playerData, champ.name);
 
+    // Unknown champs get a heavily penalized fallback mastery score
     const effectiveMastery = isKnown ? mastery : null;
     let score = calculateChampionScore(
       player,
       champ,
       effectiveMastery,
-      isKnown ? 1.0 : 0.3
+      isKnown ? 1.0 : 0.3   // fallback multiplier passed to calculateChampionScore
     );
+    // Phase 1: boost mastery score influence; Phase 3: reduce it
     score *= pw.mastery;
+
+    // Fearless pool preservation bonus
     score *= getFearlessBonus(champ.name);
 
     // --- [STEP 0] Tier Weighting + Versatility ---
-    // [FIX] Always use the current champion's tier value from the list
-    // This ensures meta shifts are respected - NO FALLBACK to old tier data
-    const tierChamp = validChampions.find(c => c.name === champ.name);
-    const currentTier = tierChamp?.tier ?? 3; // Only fallback to default tier, not old champ.tier
-    
+    // Versatility: early picks favour well-rounded (high stats sum) champs
     const statsSum = (champ.stats ? Object.values(champ.stats).reduce((a, v) => a + v, 0) : 0);
-    const versatilityScore = statsSum / 50;
+    const versatilityScore = statsSum / 50; // normalize
     score += versatilityScore * pw.versatility;
 
     let tierMultiplier = 1.0;
-    switch (currentTier) {  // Use currentTier (fresh lookup)
-      case 1: tierMultiplier = 1.25; break;
-      case 2: tierMultiplier = 1.1; break;
+    switch (champ.tier) {
+      case 1: tierMultiplier = 1.10; break;
+      case 2: tierMultiplier = 1.05; break;
       case 3: tierMultiplier = 1.00; break;
       case 4: tierMultiplier = 0.90; break;
-      case 5: tierMultiplier = 0.75; break;
+      case 5: tierMultiplier = 0.80; break;
       default: tierMultiplier = 1.0;
     }
     score *= tierMultiplier;
 
-    // --- [STEP 1] Damage Profile Balance ---
+    // --- [STEP 1] Damage Profile Balance + Comp Role Requirements ---
+
+    // A) Damage balance (fixed field: dmg_type, max 4 of same type)
     if (currentTeamPicks.length >= 3) {
       let compMultiplier = 1.0;
       if (currentAD >= 4 && champ.dmg_type === 'AD') compMultiplier = 0.5;
@@ -348,6 +346,7 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
         if (partners.every(p => availableNames.has(p))) synergyBonus *= 1.03;
       }
     });
+    // Scale synergy impact by phase weight
     const synergyImpact = synergyBonus - 1.0;
     score *= (1.0 + synergyImpact * pw.synergy);
 
@@ -357,6 +356,7 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
       if (champ.counters && champ.counters.includes(enemy.name)) counterBonus *= 0.85;
       if (enemy.counters && enemy.counters.includes(champ.name)) counterBonus *= 1.15;
     });
+    // Scale counter impact by phase weight
     const counterImpact = counterBonus - 1.0;
     score *= (1.0 + counterImpact * pw.counter);
 
@@ -376,6 +376,9 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
   return top3[0];
 }
 
+// Ban phase weights:
+// Phase 1 (orders 1-6):   mastery 1.25, tier 1.3, synergy_denial 0.5,  counter_denial 0.5
+// Phase 2 (orders 13-16): mastery 1.00, tier 1.2, synergy_denial 1.5,  counter_denial 1.5
 const BAN_PHASE_WEIGHTS = {
   1: { mastery: 1.25, tier: 1.3, synergy_denial: 0.5,  counter_denial: 0.5  },
   2: { mastery: 1.00, tier: 1.2, synergy_denial: 1.5,  counter_denial: 1.5  },
@@ -387,9 +390,6 @@ export function selectBanFromProbabilities(opponentTeam, availableChampions, tar
   const phase = getBanPhase(banOrder);
   const bw    = BAN_PHASE_WEIGHTS[phase];
 
-  // [FIX] Validate available champions before filtering
-  const validChampions = validateChampionList(availableChampions);
-
   let candidates = [];
 
   const targetPlayers   = opponentTeam.roster.filter(p => targetRoles.includes(p.포지션));
@@ -399,11 +399,13 @@ export function selectBanFromProbabilities(opponentTeam, availableChampions, tar
   targetPlayers.forEach(player => {
     const playerData = MASTERY_MAP[player.이름];
     const knownPool  = getKnownPool(playerData);
-    const roleChamps = validChampions.filter(c => c.role === player.포지션);
+    const roleChamps = availableChampions.filter(c => c.role === player.포지션);
 
+    // For bans: prioritize the opponent's known pool — ban what they actually play
     const knownRoleChamps   = roleChamps.filter(c => knownPool.has(c.name));
     const unknownRoleChamps = roleChamps.filter(c => !knownPool.has(c.name));
 
+    // Score known champs at full weight; include a few unknown high-tier as fallback
     const banPool = knownRoleChamps.length > 0
       ? knownRoleChamps
       : unknownRoleChamps.filter(c => c.tier <= 2).slice(0, 5);
@@ -412,23 +414,22 @@ export function selectBanFromProbabilities(opponentTeam, availableChampions, tar
       const isKnown = knownPool.has(c.name);
       const mastery = findMastery(playerData, c.name);
       let banScore  = calculateChampionScore(player, c, isKnown ? mastery : null, isKnown ? 1.0 : 0.3);
+      // Phase mastery weight
       banScore *= bw.mastery;
 
-      // [FIX] Use current tier from the validated champion list
-      const tierChamp = validChampions.find(ch => ch.name === c.name);
-      const currentTier = tierChamp?.tier; // Only use the current tier from the list
-      
+      // Tier Weighting scaled by phase
       let tierWeight = 1.0;
-      switch (currentTier) {  // Use currentTier
-        case 1: tierWeight = 1.25; break;
-        case 2: tierWeight = 1.1; break;
+      switch (c.tier) {
+        case 1: tierWeight = 1.10; break;
+        case 2: tierWeight = 1.05; break;
         case 3: tierWeight = 1.00; break;
         case 4: tierWeight = 0.90; break;
-        case 5: tierWeight = 0.75; break;
+        case 5: tierWeight = 0.80; break;
       }
       const tierImpact = tierWeight - 1.0;
       banScore *= (1.0 + tierImpact * bw.tier);
 
+      // Synergy Denial scaled by phase
       let synergyMultiplier = 1.0;
       SYNERGIES.forEach(syn => {
         if (syn.champions.includes(c.name)) {
@@ -439,6 +440,7 @@ export function selectBanFromProbabilities(opponentTeam, availableChampions, tar
       const synDenialImpact = synergyMultiplier - 1.0;
       banScore *= (1.0 + synDenialImpact * bw.synergy_denial);
 
+      // Counter Denial scaled by phase — ban things that counter my team
       let counterMultiplier = 1.0;
       myTeamPickNames.forEach(myPickName => {
         if (c.counters && c.counters.includes(myPickName)) counterMultiplier *= 1.2;
@@ -474,24 +476,6 @@ export function selectBanFromProbabilities(opponentTeam, availableChampions, tar
 }
 
 export function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChampionList) {
-  // [CRITICAL FIX] Don't just validate—ensure we're using FRESH tier data from the current list
-  // The champion list passed in should already have the current patch's tiers
-  // If it's empty, that's a real error (not a validation issue)
-  
-  if (!Array.isArray(currentChampionList) || currentChampionList.length === 0) {
-    console.error('Draft simulation failed: champion list is empty or null');
-    return {
-      picks: { A: [], B: [] },
-      bans: { A: [], B: [] },
-      draftLogs: ['Error: No champions available'],
-      fearlessBans: Array.isArray(fearlessBans) ? [...fearlessBans] : [],
-      usedChamps: []
-    };
-  }
-
-  // Use the list AS-IS (it should already be the correct meta version from Dashboard)
-  const champList = currentChampionList;
-
   let localBans = new Set([...fearlessBans]);
   let picks     = { BLUE: {}, RED: {} };
   let logs      = [];
@@ -507,9 +491,7 @@ export function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChamp
     const opponentTeam = step.side === 'BLUE' ? redTeam   : blueTeam;
     const mySide       = step.side;
     const opponentSide = step.side === 'BLUE' ? 'RED' : 'BLUE';
-    
-    // Filter from the CURRENT champion list (which should have current patch tiers)
-    const availableChamps = champList.filter(c => !localBans.has(c.name));
+    const availableChamps = currentChampionList.filter(c => !localBans.has(c.name));
 
     const currentMySidePicks = Object.values(picks[mySide]);
     const currentEnemyPicks  = Object.values(picks[opponentSide]);
@@ -573,16 +555,12 @@ export function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChamp
       const c = picks[side][pos];
       if (!c) return null;
       const p = teamRoster.find(pl => pl.포지션 === pos);
-      
-      // [FIX] Always look up the tier from the CURRENT champion list
-      const currentTier = champList.find(ch => ch.name === c.name)?.tier;
-      
       return {
-          champName:  c.name,
-          tier:       currentTier,  
-          mastery:    c.mastery,
-          playerName: p ? p.이름 : 'Unknown Player',
-          playerOvr:  p ? p.종합 : 70
+        champName:  c.name,
+        tier:       c.tier,
+        mastery:    c.mastery,
+        playerName: p ? p.이름 : 'Unknown Player',
+        playerOvr:  p ? p.종합 : 70
       };
     }).filter(Boolean);
 
