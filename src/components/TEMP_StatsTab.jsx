@@ -1,6 +1,6 @@
 // src/components/TEMP_StatsTab.jsx
 import React, { useState, useMemo, useEffect } from 'react';
-
+import { getLCKSplit1PatchVersionForDate } from '../engine/SeasonManager';
 
 // [NEW] 1. Import all the global players for team/position lookups!
 import playersLCK from '../data/players.json';
