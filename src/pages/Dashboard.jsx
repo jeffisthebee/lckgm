@@ -8,7 +8,7 @@ import LiveGamePlayer from '../components/LiveGamePlayer';
 import DetailedMatchResultModal from '../components/DetailedMatchResultModal';
 import playerList from '../data/players.json';
 import { computeStandings, calculateFinalStandings, calculateGroupPoints, sortGroupByStandings, createPlayInBracket, createPlayInRound2Matches, createPlayInFinalMatch, createPlayoffRound2Matches, createPlayoffRound3Matches, createPlayoffLoserRound3Match, createPlayoffQualifierMatch, createPlayoffFinalMatch, createFSTGroupWave2A, createFSTGroupWave2B, createFSTGroupWave3A, createFSTGroupWave3B, createFSTPlayoffs, createFSTFinals } from '../engine/BracketManager';
-import { updateChampionMeta, generateSuperWeekMatches, initFSTTournament, getLCKSplit1PatchVersionForDate } from '../engine/SeasonManager';
+import { updateChampionMeta, generateSuperWeekMatches, initFSTTournament, getLCKCupPatchVersionForDate } from '../engine/SeasonManager';
 import FSTTournamentTab from '../components/FSTTournamentTab';
 import FinalStandingsModal from '../components/FinalStandingsModal';
 import MatchupBox from '../components/MatchupBox';
@@ -250,7 +250,7 @@ const getOvrBadgeStyle = (ovr) => {
             const totalRegular = cupMatches.filter(m => m.type === 'regular').length;
             const allRegularFinished = finishedRegular === totalRegular && totalRegular > 0;
             
-            const patch = allRegularFinished && matchObj.type === 'super' ? getLCKSplit1PatchVersionForDate(matchObj.date) : getLCKSplit1PatchVersionForDate(matchObj.date);
+            const patch = allRegularFinished && matchObj.type === 'super' ? getLCKCupPatchVersionForDate(matchObj.date) : getLCKCupPatchVersionForDate(matchObj.date);
             
             if (patch) {
               const targetIdx = PATCH_ORDER.indexOf(patch);

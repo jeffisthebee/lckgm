@@ -62,6 +62,24 @@ export const getLCKSplit1PatchVersionForDate = (dateStr) => {
 };
 
 // ─────────────────────────────────────────────────────────────
+// LCK CUP PATCH CLOCK (16.01 → 16.02)
+// ─────────────────────────────────────────────────────────────
+// LCK Cup matches happen in January-February, before Split 1
+export const getLCKCupPatchVersionForDate = (dateStr) => {
+    const num = parseMonthDayNumFromDateStr(dateStr);
+    if (num == null) return null;
+
+    // LCK Cup runs from 1/14 to 2/1
+    if (num < 114) return null; // Before season starts
+    if (num < 121) return '16.01'; // Week 1: 1/14-1/18
+    if (num < 128) return '16.01'; // Week 2: 1/21-1/25
+    if (num < 201) return '16.01'; // Week 3: 1/28-2/1
+    if (num < 228) return '16.01'; // Week 4: 2/2-2/8
+    if (num < 231) return '16.02'; // Super Week starts: 2/9-2/11
+    return '16.02'; // All remaining dates in Super Week
+};
+
+// ─────────────────────────────────────────────────────────────
 // SUPER WEEK MATCH GENERATION
 // ─────────────────────────────────────────────────────────────
 export const generateSuperWeekMatches = (league) => {

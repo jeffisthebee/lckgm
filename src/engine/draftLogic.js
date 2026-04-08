@@ -239,8 +239,12 @@ const validateChampionList = (champList) => {
   }
   
   // Validate each champion has required fields (name, tier, role)
+  // [FIX] Be more permissive - only filter out truly invalid entries
   return champList.filter(c => {
-    return c && c.name && (c.tier !== undefined && c.tier !== null) && c.role;
+    return c && 
+           typeof c.name === 'string' && c.name.trim().length > 0 &&
+           (typeof c.tier === 'number' && c.tier >= 1 && c.tier <= 5) &&
+           typeof c.role === 'string' && c.role.trim().length > 0;
   });
 };
 
