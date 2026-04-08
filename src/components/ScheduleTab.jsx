@@ -503,16 +503,12 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                     if (Array.isArray(generated) && generated.length > 0) return generated;
                 }
             }
-            // For all other match types: always prefer the live currentChampionList
-            // over the hardcoded 16.01 base constant.
-            return Array.isArray(league?.currentChampionList) && league.currentChampionList.length > 0
-                ? league.currentChampionList
-                : championList;
+            // For all other match types: always prefer the current meta champion list
+            // Never fall back to hardcoded 16.01 base constant
+            return league?.currentChampionList || championList;
         };
 
         const simMatchIfPast = (matchObj) => {
-            if (matchObj.status === 'finished') return matchObj; 
-
             // CRITICAL: never auto-sim any playoff/playin match in the user's own league.
             // Those must be driven by the dashboard (handleProceedNextMatch / handleStartMyMatch).
             // Also never auto-sim any match involving the user's own team.

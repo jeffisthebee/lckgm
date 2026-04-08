@@ -1571,20 +1571,6 @@ useEffect(() => {
         if (!changed) return;
         updateLeague(league.id, { matches: updatedMatches });
         setLeague(prev => ({ ...prev, matches: updatedMatches }));
-    }, [
-        league?.matches?.filter(m => m.status === 'finished').length,
-        league?.matches?.length,
-        league?.myLeague
-    ]);
-    useEffect(() => {
-        if (!league || !league.matches) return;
-        if ((league.myLeague || 'LCK') !== 'LCK') return; // foreign: button handles it
-        if (meta1602Ref.current) return;
-        if (league.metaVersion === '16.02' || league.metaVersion === '16.03') return;
-
-        // Don't auto-apply 16.02 if LCK Split 1 is active
-        const hasSplit1Matches = league.matches.some(m => m.type === 'lck_split1_regular');
-        if (hasSplit1Matches) return;
 
         const regularMatches = league.matches.filter(m => m.type === 'regular');
         if (regularMatches.length === 0) return;
@@ -1595,35 +1581,31 @@ useEffect(() => {
         const newChampionList = updateChampionMeta(sourceList);
         const superMatches = generateSuperWeekMatches(league);
         const cleanMatches = league.matches.filter(m => m.type !== 'tbd');
-        const updatedMatches = [...cleanMatches, ...superMatches].sort((a, b) =>
+        const superWeekMatches = [...cleanMatches, ...superMatches].sort((a, b) =>
             (parseFloat((a.date || '').split(' ')[0]) || 0) - (parseFloat((b.date || '').split(' ')[0]) || 0)
         );
         const metaChampionLists = { ...(league.metaChampionLists || {}), '16.02': newChampionList };
-        const updates = { matches: updatedMatches, currentChampionList: newChampionList, metaVersion: '16.02', metaChampionLists };
+        const updates = { matches: superWeekMatches, currentChampionList: newChampionList, metaVersion: '16.02', metaChampionLists };
         setLeague(prev => ({ ...prev, ...updates }));
-        updateLeague(league.id, updates);
-    }, [league?.matches?.length, league?.metaVersion]);
-
-    // Handler for the foreign player's manual 16.02 button
-    // Also generates LCK super week so the LCK background sim can continue past regular season
-    const handleForeignMeta1602 = () => {
-        const sourceList = (league.currentChampionList?.length > 0) ? league.currentChampionList : championList;
-        const newChampionList = updateChampionMeta(sourceList);
-        // Generate LCK super week so ScheduleTab can sim it in the background
-        const superMatches = generateSuperWeekMatches(league);
-        const cleanMatches = (league.matches || []).filter(m => m.type !== 'tbd');
-        const updatedMatches = [...cleanMatches, ...superMatches].sort((a, b) =>
-            (parseFloat((a.date || '').split(' ')[0]) || 0) - (parseFloat((b.date || '').split(' ')[0]) || 0)
-        );
-        const metaChampionLists = { ...(league.metaChampionLists || {}), '16.02': newChampionList };
-        const updates = { matches: updatedMatches, currentChampionList: newChampionList, metaVersion: '16.02', metaChampionLists };
-        setLeague(prev => ({ ...prev, ...updates }));
-        updateLeague(league.id, updates);
+    });
+    const getL = (m) => {
+        const w = getW(m);
+        if (!w || !m) return null;
+        return String(m.t1) === String(w) ? m.t2 : m.t1;
     };
 
-    // ── LEC Playoff Seed Picking ─────────────────────────────────────────────
-    // Seeds 1, 2, 3 each pick their opponent from seeds 5-8 in order.
-    // If the player IS one of those seeds, show the opponentChoice modal.
+    // Higher-seed (lower seed number) loser of R2 upper → better team, gets bye to 3.1
+    // Lower-seed  (higher seed number) loser of R2 upper → worse team, must play through 2.2
+    const r2Losers = (() => {
+        const lA = getL(r2m1), lB = getL(r2m2);
+        const items = [lA, lB].filter(Boolean);
+        if (items.length < 2) return { better: items[0] || null, worse: items[0] || null };
+        const sA = seeds.find(s => String(s.id) === String(items[0]))?.seed ?? 99;
+        const sB = seeds.find(s => String(s.id) === String(items[1]))?.seed ?? 99;
+        return sA <= sB
+            ? { better: items[0], worse: items[1] }
+            : { better: items[1], worse: items[0] };
+    })();
     // CPU seeds use 80% rule (pick weakest available).
     const handleLECPlayoffStart = () => {
         if (myLeague !== 'LEC') return;
@@ -3984,19 +3966,18 @@ const handleMatchClick = (match) => {
                 <button 
                 onClick={handleGeneratePlayoffs} 
                 className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-yellow-500 hover:bg-yellow-600 text-white shadow-sm flex items-center gap-2 animate-bounce transition whitespace-nowrap"
-              >
-                  <span>👑</span> <span className="hidden sm:inline">PO 대진</span>
+             >
+                  <span>🏆</span> <span className="hidden sm:inline">플레이오프</span>
               </button>
             )}
-            
-            {(hasDrafted || isMyLeagueForeign) && nextGlobalMatch && !isMyNextMatch &&
-             !foreignMetaPending &&
-             !(nextGlobalMatch.type === 'super' && league.metaVersion !== '16.02') && (
+
+{(hasDrafted || isMyLeagueForeign) && nextGlobalMatch && !isMyNextMatch &&
+             !foreignMetaPending && (
                 <button 
                   onClick={handleProceedNextMatch} 
                   className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-2 animate-pulse transition whitespace-nowrap"
                 >
-                    <span>⏩</span> <span className="hidden sm:inline">다음 경기 ({t1?.name} vs {t2?.name})</span><span className="sm:hidden">진행</span>
+                  <span>⏩</span> <span className="hidden sm:inline">다음 경기 ({t1?.name} vs {t2?.name})</span><span className="sm:hidden">진행</span>
                 </button>
             )}
 
