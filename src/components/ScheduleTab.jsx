@@ -12,7 +12,6 @@ import { FOREIGN_LEAGUES, FOREIGN_PLAYERS } from '../data/foreignLeagues';
 import playersLCK from '../data/players.json';
 import { updateLeague } from '../engine/storage';
 import { championList } from '../data/constants'; 
-import { getLCKSplit1PatchVersionForDate } from '../engine/SeasonManager';
 
 const compareDatesObj = (a, b) => {
     if (!a || !b || !a.date || !b.date) return 0;
@@ -255,19 +254,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
         if (simable.length === 0) return;
 
         let updated = false;
-        const getMetaForLCKMatch = (m) => {
-            if (!m) return championList;
-            if (m.type === 'lck_split1_regular') {
-                const patch = getLCKSplit1PatchVersionForDate(m.date);
-                return (patch && league?.metaChampionLists?.[patch])
-                    ? league.metaChampionLists[patch]
-                    : (league?.currentChampionList || championList);
-            }
-            // Legacy handling for 16.02/16.03 meta inside this component
-            return (league.metaVersion === '16.02' || league.metaVersion === '16.03') && league.currentChampionList
-                ? league.currentChampionList
-                : championList;
-        };
         const newMatches = league.matches.map(m => {
             if (m.status !== 'pending') return m;
             if (compareDatesObj(m, currentPendingLCK) >= 0) return m;
@@ -278,18 +264,14 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
             const t2Obj = teams.find(t => t.id === getId(m.t2));
             if (!t1Obj || !t2Obj) return m;
 
+            const useMeta = (league.metaVersion === '16.02' || league.metaVersion === '16.03') && league.currentChampionList
+                ? league.currentChampionList : championList;
             const fmt = m.format || (m.type === 'playoff' ? 'BO5' : 'BO3'); // Fix format fallback
-
-            // Safety: ensure correct meta champion list is present before simulating.
-            if (m.type === 'lck_split1_regular') {
-                const patch = getLCKSplit1PatchVersionForDate(m.date);
-                if (!patch || !league?.metaChampionLists?.[patch]) return m;
-            }
 
             try {
                 const t1 = { ...t1Obj, roster: getSafeRoster(t1Obj, playersLCK) };
                 const t2 = { ...t2Obj, roster: getSafeRoster(t2Obj, playersLCK) };
-                const sim = quickSimulateMatch(t1, t2, fmt, getMetaForLCKMatch(m));
+                const sim = quickSimulateMatch(t1, t2, fmt, useMeta);
                 let score = typeof sim.scoreString === 'string' ? sim.scoreString
                     : typeof sim.score === 'object'
                         ? `${Math.max(sim.score.A ?? 0, sim.score.B ?? 0)}-${Math.min(sim.score.A ?? 0, sim.score.B ?? 0)}`
@@ -312,14 +294,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
             updateLeague(league.id, updatedLeague);
             if (setLeague) setLeague(updatedLeague);
         }
-    }, [
-        isMyLeagueForeign,
-        displayLeague,
-        currentPendingLCK.date,
-        league.matches?.length,
-        league.metaVersion,
-        Object.keys(league?.metaChampionLists || {}).length
-    ]);
+    }, [isMyLeagueForeign, displayLeague, currentPendingLCK.date, league.matches?.length, league.metaVersion]);
 
     useEffect(() => {
         if (!needsSync || !targetLeague) { setSyncDone(true); return; }
@@ -406,12 +381,6 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
         }
 
         const getMatchMeta = (matchObj) => {
-            if (matchObj?.type === 'lck_split1_regular') {
-                const patch = getLCKSplit1PatchVersionForDate(matchObj.date);
-                return (patch && league?.metaChampionLists?.[patch])
-                    ? league.metaChampionLists[patch]
-                    : (league?.currentChampionList || championList);
-            }
             const isLateSeason = matchObj.type === 'super' || matchObj.type === 'playoff' || matchObj.type === 'playin' || 
                                  (matchObj.date && (matchObj.date.startsWith('2.') || matchObj.date.startsWith('3.')));
             if (isLateSeason && league.metaVersion === '16.02' && league.currentChampionList) {
@@ -1224,7 +1193,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                 )}
                 {showFSTInTeamSchedule && fstMatches.length > 0 && (
                     <div className="text-xs font-black uppercase tracking-widest text-gray-500 mb-3 flex items-center gap-2">
-                        <span>🏆</span> {lckView === 'split1' ? 'LCK 정규 시즌' : 'LCK 컵'}
+                        <span>🏆</span> LCK 리그
                     </div>
                 )}
                 {activeMatches.length > 0 ? (

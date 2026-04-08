@@ -33,35 +33,6 @@ export const updateChampionMeta = (currentChamps) => {
 };
 
 // ─────────────────────────────────────────────────────────────
-// LCK SPLIT 1 PATCH CLOCK (16.04 → 16.07)
-// ─────────────────────────────────────────────────────────────
-// Match dates are stored like: "4.12 (일)".
-// Boundaries per user request:
-// - 16.04: from 4/1 (수) up to 4/14 (Mon-Thu/Fri- Sat) effectively before 4/15 (수)
-// - 16.05: 4/15 (수) .. before 4/29 (수)
-// - 16.06: 4/29 (수) .. before 5/13 (수)
-// - 16.07: 5/13 (수) and after
-export const parseMonthDayNumFromDateStr = (dateStr) => {
-    if (!dateStr || typeof dateStr !== 'string') return null;
-    const [month, day] = dateStr.split(' ')[0].split('.').map(Number);
-    if (!Number.isFinite(month) || !Number.isFinite(day)) return null;
-    return month * 100 + day;
-};
-
-export const getLCKSplit1PatchVersionForDate = (dateStr) => {
-    const num = parseMonthDayNumFromDateStr(dateStr);
-    if (num == null) return null;
-
-    // Split 1 starts at 4/1 in this project timeline.
-    if (num < 401) return null;
-
-    if (num < 415) return '16.04';
-    if (num < 429) return '16.05';
-    if (num < 513) return '16.06';
-    return '16.07';
-};
-
-// ─────────────────────────────────────────────────────────────
 // SUPER WEEK MATCH GENERATION
 // ─────────────────────────────────────────────────────────────
 export const generateSuperWeekMatches = (league) => {
