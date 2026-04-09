@@ -2418,6 +2418,10 @@ const handleMatchClick = (match) => {
         if (!nextGlobalMatch) { alert("진행할 경기가 없습니다."); return; }
 
         let t1Obj, t2Obj, t1Roster, t2Roster;
+        
+        const safeChampionList = (league.currentChampionList?.length > 0) 
+            ? league.currentChampionList 
+            : championList;
 
         if (isMyLeagueForeign) {
           // ── Foreign: team tokens are name strings ──────────────────────────
