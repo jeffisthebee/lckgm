@@ -1960,7 +1960,7 @@ const handleMatchClick = (match) => {
         }
 
         // --- 2. HEAVY SIM (Player Matches) ---
-        const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0) 
+        const safeChampionList = (league.currentChampionList?.length > 0) 
             ? league.currentChampionList 
             : championList;
   
@@ -2452,16 +2452,12 @@ const handleMatchClick = (match) => {
           const t2Id = typeof nextGlobalMatch.t2 === 'object' ? nextGlobalMatch.t2.id : Number(nextGlobalMatch.t2);
           t1Obj = teams.find(t => Number(t.id) === t1Id);
           t2Obj = teams.find(t => Number(t.id) === t2Id);
-          if (!t1Obj || !t2Obj) { alert(`팀 데이터 오류! T1 ID: ${t1Id}, T2 ID: ${t2Id}`); return; }
-          t1Roster = getFullTeamRoster(t1Obj.name);
-          t2Roster = getFullTeamRoster(t2Obj.name);
+          t1Roster = t1Obj.roster || [];
+          t2Roster = t2Obj.roster || [];
         }
 
-        const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0)
-          ? league.currentChampionList : championList;
-
         setLiveMatchData({
-          match: { ...nextGlobalMatch, blueSidePriority: t1Obj.id || t1Obj.name },
+          match: nextGlobalMatch,
           teamA: { ...t1Obj, roster: t1Roster },
           teamB: { ...t2Obj, roster: t2Roster },
           safeChampionList,
