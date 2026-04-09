@@ -1949,7 +1949,8 @@ const handleMatchClick = (match) => {
             const result = quickSimulateMatch(
                 { ...t1Obj, roster: t1Roster }, 
                 { ...t2Obj, roster: t2Roster }, 
-                format
+                format,
+                league.currentChampionList
             );
             
             return {
