@@ -809,7 +809,9 @@ const picksToFullObj = (simplePicks, team, currentChampionList = []) => {
 };
 
 export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampionList = []) => {
-    const safeChampList = (currentChampionList && currentChampionList.length > 0) ? currentChampionList : championList; 
+    // Only fall back to original championList if no currentChampionList is provided at all
+    // If currentChampionList is explicitly provided (even if empty), use it to avoid 16.01 fallback
+    const safeChampList = (currentChampionList !== undefined && currentChampionList !== null) ? currentChampionList : championList; 
     const targetWins = format === 'BO5' ? 3 : 2;
     let winsA = 0; let winsB = 0; let matchHistory = []; let currentSet = 1;
     let globalBanList = []; 
