@@ -1960,7 +1960,7 @@ const handleMatchClick = (match) => {
         }
 
         // --- 2. HEAVY SIM (Player Matches) ---
-        const safeChampionList = (league.currentChampionList?.length > 0) 
+        const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0) 
             ? league.currentChampionList 
             : championList;
   
@@ -2418,10 +2418,6 @@ const handleMatchClick = (match) => {
         if (!nextGlobalMatch) { alert("진행할 경기가 없습니다."); return; }
 
         let t1Obj, t2Obj, t1Roster, t2Roster;
-        
-        const safeChampionList = (league.currentChampionList?.length > 0) 
-            ? league.currentChampionList 
-            : championList;
 
         if (isMyLeagueForeign) {
           // ── Foreign: team tokens are name strings ──────────────────────────
@@ -2456,12 +2452,16 @@ const handleMatchClick = (match) => {
           const t2Id = typeof nextGlobalMatch.t2 === 'object' ? nextGlobalMatch.t2.id : Number(nextGlobalMatch.t2);
           t1Obj = teams.find(t => Number(t.id) === t1Id);
           t2Obj = teams.find(t => Number(t.id) === t2Id);
-          t1Roster = t1Obj.roster || [];
-          t2Roster = t2Obj.roster || [];
+          if (!t1Obj || !t2Obj) { alert(`팀 데이터 오류! T1 ID: ${t1Id}, T2 ID: ${t2Id}`); return; }
+          t1Roster = getFullTeamRoster(t1Obj.name);
+          t2Roster = getFullTeamRoster(t2Obj.name);
         }
 
+        const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0)
+          ? league.currentChampionList : championList;
+
         setLiveMatchData({
-          match: nextGlobalMatch,
+          match: { ...nextGlobalMatch, blueSidePriority: t1Obj.id || t1Obj.name },
           teamA: { ...t1Obj, roster: t1Roster },
           teamB: { ...t2Obj, roster: t2Roster },
           safeChampionList,
