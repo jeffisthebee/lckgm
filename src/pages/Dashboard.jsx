@@ -3375,7 +3375,7 @@ const handleMatchClick = (match) => {
         teamB={liveMatchData.teamB}
         isManualMode={liveMatchData.isManualMode} 
         simOptions={{
-            currentChampionList: league.currentChampionList || liveMatchData.safeChampionList,
+            currentChampionList: liveMatchData.safeChampionList || league.currentChampionList,
             difficulty: league.difficulty,
             playerTeamName: myTeam.name
         }}
