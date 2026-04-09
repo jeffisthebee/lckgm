@@ -2772,7 +2772,7 @@ const handleMatchClick = (match) => {
       }
 
       // 2. Apply 16.03 meta patch (same pattern as 16.02)
-      const sourceList = (league.currentChampionList?.length > 0) 
+      const sourceList = (league.currentChampionList && league.currentChampionList.length > 0)
           ? league.currentChampionList : championList;
       const newChampionList = updateChampionMeta(sourceList);
 
@@ -2952,7 +2952,7 @@ const handleMatchClick = (match) => {
       // CPU vs CPU → quickSimulateMatch with real rosters + 16.03 meta
       const t1 = buildFSTTeamWithRoster(t1Fst);
       const t2 = buildFSTTeamWithRoster(t2Fst);
-      const fstChampionList = league.currentChampionList?.length > 0
+      const fstChampionList = (league.currentChampionList && league.currentChampionList.length > 0)
         ? league.currentChampionList : championList;
 
       let result;
