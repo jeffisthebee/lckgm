@@ -190,7 +190,10 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
     };
     
     export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onClose, externalGlobalBans = [], isManualMode = false }) {
-        const activeChampionList = simOptions?.currentChampionList || championList;
+        // Ensure we use the current meta champion list, never fall back to original 16.01 data
+        // Only fall back to original championList if absolutely necessary (no current meta available)
+        const activeChampionList = simOptions?.currentChampionList || 
+            (simOptions?.currentChampionList === undefined ? championList : null);
     
         const [currentSet, setCurrentSet] = useState(1);
         const [winsA, setWinsA] = useState(0);

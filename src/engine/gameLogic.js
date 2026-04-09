@@ -652,7 +652,9 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
 
 export function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions = {}) {
     const { currentChampionList } = simOptions || {};
-    const draftResult = runDraftSimulation(teamBlue, teamRed, fearlessBans || [], currentChampionList || championList);
+    // Ensure we use the current meta champion list, never fall back to original 16.01 data
+    const championListToUse = currentChampionList || championList;
+    const draftResult = runDraftSimulation(teamBlue, teamRed, fearlessBans || [], championListToUse);
   
     if (!draftResult || !draftResult.picks || (draftResult.picks.A || []).length < 5) {
       return { gameOver: true, winnerName: null, resultSummary: 'Draft incomplete', picks: { A: [], B: [] }, bans: { A: [], B: [] }, logs: [] };
