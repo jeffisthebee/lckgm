@@ -312,11 +312,11 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
 
     let tierMultiplier = 1.0;
     switch (champ.tier) {
-      case 1: tierMultiplier = 1.10; break;
-      case 2: tierMultiplier = 1.05; break;
+      case 1: tierMultiplier = 1.25; break;
+      case 2: tierMultiplier = 1.10; break;
       case 3: tierMultiplier = 1.00; break;
-      case 4: tierMultiplier = 0.90; break;
-      case 5: tierMultiplier = 0.80; break;
+      case 4: tierMultiplier = 0.80; break;
+      case 5: tierMultiplier = 0.75; break;
       default: tierMultiplier = 1.0;
     }
     score *= tierMultiplier;
@@ -420,11 +420,11 @@ export function selectBanFromProbabilities(opponentTeam, availableChampions, tar
       // Tier Weighting scaled by phase
       let tierWeight = 1.0;
       switch (c.tier) {
-        case 1: tierWeight = 1.10; break;
-        case 2: tierWeight = 1.05; break;
+        case 1: tierWeight = 1.25; break;
+        case 2: tierWeight = 1.10; break;
         case 3: tierWeight = 1.00; break;
-        case 4: tierWeight = 0.90; break;
-        case 5: tierWeight = 0.80; break;
+        case 4: tierWeight = 0.80; break;
+        case 5: tierWeight = 0.75; break;
       }
       const tierImpact = tierWeight - 1.0;
       banScore *= (1.0 + tierImpact * bw.tier);
