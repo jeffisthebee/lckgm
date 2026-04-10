@@ -1259,7 +1259,7 @@ const getOvrBadgeStyle = (ovr) => {
         if (!regularMatches.every(m => m.status === 'finished')) return;
 
         meta1602Ref.current = true;
-        const sourceList = (league.currentChampionList?.length > 0) ? league.currentChampionList : championList;
+        const sourceList = championList;
         const newChampionList = updateChampionMeta(sourceList);
         const superMatches = generateSuperWeekMatches(league);
         const cleanMatches = league.matches.filter(m => m.type !== 'tbd');
@@ -1274,7 +1274,7 @@ const getOvrBadgeStyle = (ovr) => {
     // Handler for the foreign player's manual 16.02 button
     // Also generates LCK super week so the LCK background sim can continue past regular season
     const handleForeignMeta1602 = () => {
-        const sourceList = (league.currentChampionList?.length > 0) ? league.currentChampionList : championList;
+        const sourceList = championList;
         const newChampionList = updateChampionMeta(sourceList);
         // Generate LCK super week so ScheduleTab can sim it in the background
         const superMatches = generateSuperWeekMatches(league);
@@ -2756,8 +2756,7 @@ const handleMatchClick = (match) => {
       }
 
       // 1. Update Meta (Delegated to SeasonManager)
-      const sourceList = (league.currentChampionList && league.currentChampionList.length > 0) 
-          ? league.currentChampionList : championList;
+      const sourceList = championList;
       
       const newChampionList = updateChampionMeta(sourceList);
   
@@ -2797,8 +2796,7 @@ const handleMatchClick = (match) => {
       }
 
       // 2. Apply 16.03 meta patch (same pattern as 16.02)
-      const sourceList = (league.currentChampionList && league.currentChampionList.length > 0)
-          ? league.currentChampionList : championList;
+      const sourceList = championList;
       const newChampionList = updateChampionMeta(sourceList);
 
       // 3. Save everything
