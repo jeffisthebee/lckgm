@@ -321,7 +321,7 @@ const getOvrBadgeStyle = (ovr) => {
             try {
                 const t1 = { ...t1Obj, roster: getFullTeamRoster(t1Obj.name) };
                 const t2 = { ...t2Obj, roster: getFullTeamRoster(t2Obj.name) };
-                const sim = quickSimulateMatch(t1, t2, m.format || 'BO3');
+                const sim = quickSimulateMatch(t1, t2, m.format || 'BO3', (league.currentChampionList?.length > 0) ? league.currentChampionList : championList);
                 const score = typeof sim.scoreString === 'string' ? sim.scoreString
                     : typeof sim.score === 'object'
                         ? `${Math.max(sim.score.A ?? 0, sim.score.B ?? 0)}-${Math.min(sim.score.A ?? 0, sim.score.B ?? 0)}`
@@ -2358,7 +2358,8 @@ const handleMatchClick = (match) => {
         const result = quickSimulateMatch(
           { ...t1Obj, roster: resolveRoster(t1Obj.name) },
           { ...t2Obj, roster: resolveRoster(t2Obj.name) },
-          nextGlobalMatch.format || 'BO3'
+          nextGlobalMatch.format || 'BO3',
+          (league.currentChampionList?.length > 0) ? league.currentChampionList : championList
         );
 
         // Normalize score for BO1 — quickSimulateMatch may return '2-0' even for BO1
@@ -3399,7 +3400,7 @@ const handleMatchClick = (match) => {
         teamB={liveMatchData.teamB}
         isManualMode={liveMatchData.isManualMode} 
         simOptions={{
-            currentChampionList: liveMatchData.safeChampionList || league.currentChampionList,
+            currentChampionList: (league.currentChampionList?.length > 0) ? league.currentChampionList : liveMatchData.safeChampionList,
             difficulty: league.difficulty,
             playerTeamName: myTeam.name
         }}
