@@ -381,13 +381,11 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
         }
 
         const getMatchMeta = (matchObj) => {
-            const isLateSeason = matchObj.type === 'super' || matchObj.type === 'playoff' || matchObj.type === 'playin' || 
-                                 (matchObj.date && (matchObj.date.startsWith('2.') || matchObj.date.startsWith('3.')));
-            if (isLateSeason && league.metaVersion === '16.02' && league.currentChampionList) {
-                return league.currentChampionList;
-            }
-            return championList; 
-        };
+    // Use same logic as LCK auto-simulation for consistency
+    const useMeta = (league.metaVersion === '16.02' || league.metaVersion === '16.03') && league.currentChampionList
+        ? league.currentChampionList : championList;
+    return useMeta;
+};
 
         const simMatchIfPast = (matchObj) => {
             if (matchObj.status === 'finished') return matchObj; 
