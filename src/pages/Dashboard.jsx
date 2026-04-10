@@ -1282,7 +1282,7 @@ const getOvrBadgeStyle = (ovr) => {
         const updates = { matches: updatedMatches, currentChampionList: newChampionList, metaVersion: '16.02' };
         setLeague(prev => ({ ...prev, ...updates }));
         updateLeague(league.id, updates);
-    }, [league?.matches?.length, league?.metaVersion, league?.myLeague]);
+    }, [league?.matches?.length, league?.metaVersion, league?.myLeague, league?.matches?.filter(m => m.type === 'regular' && !m.type.includes('split1')).map(m => m.status)]);
 
     // Handler for the foreign player's manual 16.02 button
     // Also generates LCK super week so the LCK background sim can continue past regular season
