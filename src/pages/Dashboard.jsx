@@ -1235,7 +1235,7 @@ const getOvrBadgeStyle = (ovr) => {
         if (!regularMatches.every(m => m.status === 'finished')) return;
 
         meta1602Ref.current = true;
-        const sourceList = (league.currentChampionList?.length > 0) ? league.currentChampionList : championList;
+        const sourceList = league.currentChampionList;
         const newChampionList = updateChampionMeta(sourceList);
         const superMatches = generateSuperWeekMatches(league);
         const cleanMatches = league.matches.filter(m => m.type !== 'tbd');
@@ -1250,7 +1250,7 @@ const getOvrBadgeStyle = (ovr) => {
     // Handler for the foreign player's manual 16.02 button
     // Also generates LCK super week so the LCK background sim can continue past regular season
     const handleForeignMeta1602 = () => {
-        const sourceList = (league.currentChampionList?.length > 0) ? league.currentChampionList : championList;
+        const sourceList = league.currentChampionList;
         const newChampionList = updateChampionMeta(sourceList);
         // Generate LCK super week so ScheduleTab can sim it in the background
         const superMatches = generateSuperWeekMatches(league);
@@ -1961,9 +1961,7 @@ const handleMatchClick = (match) => {
         }
 
         // --- 2. HEAVY SIM (Player Matches) ---
-        const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0) 
-            ? league.currentChampionList 
-            : championList;
+        const safeChampionList = league.currentChampionList;
   
         const simOptions = {
           currentChampionList: safeChampionList,
