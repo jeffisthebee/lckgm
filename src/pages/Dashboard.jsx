@@ -95,7 +95,7 @@ const getOvrBadgeStyle = (ovr) => {
           const sanitizedLeague = {
               ...found,
               metaVersion: found.metaVersion || '16.01',
-              currentChampionList: found.currentChampionList
+              currentChampionList: (found.currentChampionList?.length > 0) ? found.currentChampionList : championList
           };
           setLeague(sanitizedLeague);
           updateLeague(leagueId, { lastPlayed: new Date().toISOString() });
@@ -1235,7 +1235,7 @@ const getOvrBadgeStyle = (ovr) => {
         if (!regularMatches.every(m => m.status === 'finished')) return;
 
         meta1602Ref.current = true;
-        const sourceList = league.currentChampionList;
+        const sourceList = (league.currentChampionList?.length > 0) ? league.currentChampionList : championList;
         const newChampionList = updateChampionMeta(sourceList);
         const superMatches = generateSuperWeekMatches(league);
         const cleanMatches = league.matches.filter(m => m.type !== 'tbd');
@@ -1250,7 +1250,7 @@ const getOvrBadgeStyle = (ovr) => {
     // Handler for the foreign player's manual 16.02 button
     // Also generates LCK super week so the LCK background sim can continue past regular season
     const handleForeignMeta1602 = () => {
-        const sourceList = league.currentChampionList;
+        const sourceList = (league.currentChampionList?.length > 0) ? league.currentChampionList : championList;
         const newChampionList = updateChampionMeta(sourceList);
         // Generate LCK super week so ScheduleTab can sim it in the background
         const superMatches = generateSuperWeekMatches(league);
@@ -2456,7 +2456,8 @@ const handleMatchClick = (match) => {
           t2Roster = getFullTeamRoster(t2Obj.name);
         }
 
-        const safeChampionList = league.currentChampionList;
+        const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0)
+          ? league.currentChampionList : championList;
 
         setLiveMatchData({
           match: { ...nextGlobalMatch, blueSidePriority: t1Obj.id || t1Obj.name },
@@ -2729,7 +2730,8 @@ const handleMatchClick = (match) => {
       }
 
       // 1. Update Meta (Delegated to SeasonManager)
-      const sourceList = league.currentChampionList;
+      const sourceList = (league.currentChampionList && league.currentChampionList.length > 0) 
+          ? league.currentChampionList : championList;
       
       const newChampionList = updateChampionMeta(sourceList);
   
@@ -2769,7 +2771,8 @@ const handleMatchClick = (match) => {
       }
 
       // 2. Apply 16.03 meta patch (same pattern as 16.02)
-      const sourceList = league.currentChampionList;
+      const sourceList = (league.currentChampionList && league.currentChampionList.length > 0)
+          ? league.currentChampionList : championList;
       const newChampionList = updateChampionMeta(sourceList);
 
       // 3. Save everything
@@ -2948,7 +2951,8 @@ const handleMatchClick = (match) => {
       // CPU vs CPU → quickSimulateMatch with real rosters + 16.03 meta
       const t1 = buildFSTTeamWithRoster(t1Fst);
       const t2 = buildFSTTeamWithRoster(t2Fst);
-      const fstChampionList = league.currentChampionList;
+      const fstChampionList = (league.currentChampionList && league.currentChampionList.length > 0)
+        ? league.currentChampionList : championList;
 
       let result;
       try {
@@ -2984,7 +2988,8 @@ const handleMatchClick = (match) => {
       if (!t1Fst || !t2Fst) return;
       const t1Live = buildFSTTeamWithRoster(t1Fst);
       const t2Live = buildFSTTeamWithRoster(t2Fst);
-      const safeChampionList = league.currentChampionList;
+      const safeChampionList = (league.currentChampionList?.length > 0)
+        ? league.currentChampionList : championList;
       setLiveMatchData({
         match:        { ...match, isFSTMatch: true },
         teamA:        t1Live,

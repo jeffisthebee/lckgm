@@ -100,21 +100,34 @@ const SynergiesView = () => {
 
 // ─── Main MetaTab ──────────────────────────────────────────────────────────────
 const MetaTab = ({ league, championList, metaRole, setMetaRole }) => {
-    const currentList = league.currentChampionList;
+    const currentList = league.currentChampionList || championList;
     const currentVersion = league.metaVersion || '16.01';
 
     const [activeView, setActiveView] = useState('meta'); // 'meta' | 'synergies'
     const [previousData, setPreviousData] = useState(null);
 
     useEffect(() => {
-        // Clear localStorage cache to prevent stale 16.01 meta data from persisting
+        const STORAGE_KEY_CURRENT = 'lck_meta_current';
+        const STORAGE_KEY_PREV = 'lck_meta_previous';
+
         try {
-            localStorage.removeItem('lck_meta_current');
-            localStorage.removeItem('lck_meta_previous');
+            const storedCurrent = localStorage.getItem(STORAGE_KEY_CURRENT);
+            const parsedCurrent = storedCurrent ? JSON.parse(storedCurrent) : null;
+
+            if (!parsedCurrent) {
+                localStorage.setItem(STORAGE_KEY_CURRENT, JSON.stringify({ version: currentVersion, list: currentList }));
+            } else if (parsedCurrent.version !== currentVersion) {
+                localStorage.setItem(STORAGE_KEY_PREV, JSON.stringify(parsedCurrent));
+                localStorage.setItem(STORAGE_KEY_CURRENT, JSON.stringify({ version: currentVersion, list: currentList }));
+                setPreviousData(parsedCurrent.list);
+            } else {
+                const storedPrev = localStorage.getItem(STORAGE_KEY_PREV);
+                if (storedPrev) setPreviousData(JSON.parse(storedPrev).list);
+            }
         } catch (error) {
-            console.error("Failed to clear meta cache:", error);
+            console.error("Failed to sync meta history:", error);
         }
-    }, [currentVersion]);
+    }, [currentVersion, currentList]);
 
     const getRankChange = (champId, currentRankIdx) => {
         if (!previousData) return { diff: null, isNew: false };
