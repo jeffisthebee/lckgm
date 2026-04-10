@@ -95,7 +95,7 @@ const getOvrBadgeStyle = (ovr) => {
           const sanitizedLeague = {
               ...found,
               metaVersion: found.metaVersion || '16.01',
-              currentChampionList: found.currentChampionList || championList
+              currentChampionList: found.currentChampionList
           };
           setLeague(sanitizedLeague);
           updateLeague(leagueId, { lastPlayed: new Date().toISOString() });

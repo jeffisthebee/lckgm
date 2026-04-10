@@ -670,7 +670,7 @@ export function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptio
     const addPlayerData = (picks, roster) => {
         return (picks || []).map(p => {
             const playerData = (roster || []).find(player => player && player.이름 === p.playerName);
-            const champData = (currentChampionList || championList).find(c => c.name === p.champName);
+            const champData = currentChampionList.find(c => c.name === p.champName);
             
             // [FIX] Look up tier from CURRENT champion list, not from cached pick object
             const currentTier = champData?.tier;
