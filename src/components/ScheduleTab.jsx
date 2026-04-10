@@ -264,9 +264,9 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
             const t2Obj = teams.find(t => t.id === getId(m.t2));
             if (!t1Obj || !t2Obj) return m;
 
-            const useMeta = (league.metaVersion === '16.02' || league.metaVersion === '16.03') 
-                ? (league.currentChampionList || championList) 
-                : championList;
+            const useMeta = (league.currentChampionList?.length > 0)
+            ? league.currentChampionList
+            : championList;
             const fmt = m.format || (m.type === 'playoff' ? 'BO5' : 'BO3'); // Fix format fallback
 
             try {
@@ -383,9 +383,9 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
 
         const getMatchMeta = (matchObj) => {
             // Use same logic as LCK auto-simulation for consistency
-            const useMeta = (league.metaVersion === '16.02' || league.metaVersion === '16.03') 
-                ? (league.currentChampionList || championList) 
-                : championList;
+            const useMeta = (league.currentChampionList?.length > 0)
+    ? league.currentChampionList
+    : championList;
             return useMeta;
         };
 
