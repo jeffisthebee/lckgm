@@ -1974,7 +1974,7 @@ const handleMatchClick = (match) => {
                 { ...t1Obj, roster: t1Roster }, 
                 { ...t2Obj, roster: t2Roster }, 
                 format,
-                league.currentChampionList
+                (league.currentChampionList?.length > 0) ? league.currentChampionList : championList
             );
             
             return {
@@ -1985,7 +1985,8 @@ const handleMatchClick = (match) => {
         }
 
         // --- 2. HEAVY SIM (Player Matches) ---
-        const safeChampionList = league.currentChampionList;
+        const safeChampionList = (league.currentChampionList?.length > 0)
+            ? league.currentChampionList : championList;
   
         const simOptions = {
           currentChampionList: safeChampionList,
@@ -3975,7 +3976,7 @@ const handleMatchClick = (match) => {
 {            activeTab === 'meta' && (
                 <MetaTab 
                     league={league}
-                    championList={championList}
+                    championList={(league.currentChampionList?.length > 0) ? league.currentChampionList : championList}
                     metaRole={metaRole}
                     setMetaRole={setMetaRole}
                 />
