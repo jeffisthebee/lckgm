@@ -1260,8 +1260,20 @@ const getOvrBadgeStyle = (ovr) => {
         if (!regularMatches.every(m => m.status === 'finished')) return;
 
         meta1602Ref.current = true;
+        console.log('🔥 META UPDATE TRIGGERED:', {
+            metaVersion: league.metaVersion,
+            regularMatchesCount: league.matches.filter(m => m.type === 'regular' && !m.type.includes('split1')).length,
+            allRegularFinished: league.matches.filter(m => m.type === 'regular' && !m.type.includes('split1')).every(m => m.status === 'finished'),
+            currentChampionListExists: !!league.currentChampionList,
+            currentChampionListLength: league.currentChampionList?.length || 0
+        });
         const sourceList = championList;
         const newChampionList = updateChampionMeta(sourceList);
+        console.log('🔥 META UPDATE RESULT:', {
+            sourceListLength: sourceList.length,
+            newChampionListLength: newChampionList.length,
+            sampleNewChampions: newChampionList.slice(0, 3).map(c => ({ name: c.name, tier: c.tier }))
+        });
         const superMatches = generateSuperWeekMatches(league);
         const cleanMatches = league.matches.filter(m => m.type !== 'tbd');
         const updatedMatches = [...cleanMatches, ...superMatches].sort((a, b) =>
@@ -1270,7 +1282,7 @@ const getOvrBadgeStyle = (ovr) => {
         const updates = { matches: updatedMatches, currentChampionList: newChampionList, metaVersion: '16.02' };
         setLeague(prev => ({ ...prev, ...updates }));
         updateLeague(league.id, updates);
-    }, [league?.matches?.length, league?.metaVersion]);
+    }, [league?.matches?.length, league?.metaVersion, league?.myLeague]);
 
     // Handler for the foreign player's manual 16.02 button
     // Also generates LCK super week so the LCK background sim can continue past regular season

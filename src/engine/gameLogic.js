@@ -809,8 +809,8 @@ const picksToFullObj = (simplePicks, team, currentChampionList = []) => {
 };
 
 export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampionList = []) => {
-    // Use only the provided currentChampionList - no fallback to original championList
-    const safeChampList = currentChampionList; 
+    // Use provided currentChampionList or fallback to base championList
+    const safeChampList = currentChampionList.length > 0 ? currentChampionList : championList; 
     const targetWins = format === 'BO5' ? 3 : 2;
     let winsA = 0; let winsB = 0; let matchHistory = []; let currentSet = 1;
     let globalBanList = []; 
