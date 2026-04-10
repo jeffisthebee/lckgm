@@ -1255,7 +1255,7 @@ const getOvrBadgeStyle = (ovr) => {
         if (league.metaVersion === '16.02' || league.metaVersion === '16.03') return;
 
         // Only check LCK CUP regular matches for meta update, exclude Split 1 matches
-        const regularMatches = league.matches.filter(m => m.type === 'regular' && !m.type.includes('split1') && m.cup === 'LCK CUP');
+        const regularMatches = league.matches.filter(m => m.type === 'regular' && !m.type.includes('split1'));
         if (regularMatches.length === 0) return;
         if (!regularMatches.every(m => m.status === 'finished')) return;
 
