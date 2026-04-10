@@ -92,10 +92,34 @@ const getOvrBadgeStyle = (ovr) => {
       const loadData = async () => {
         const found = await getLeagueById(leagueId);
         if (found) {
+          const metaVer = found.metaVersion || '16.01';
+
+          // --- SELF-HEALING REPAIR ---
+          // If currentChampionList is missing or empty (caused by a prior bug where
+          // updateChampionMeta received undefined and returned []), rebuild it from
+          // the static base list using the correct number of meta shifts for this save.
+          // This runs once per corrupted save and persists the result, so the meta
+          // version guard in the 16.02 useEffect never prevents recovery.
+          let currentChampionList = found.currentChampionList?.length > 0
+              ? found.currentChampionList
+              : null;
+
+          if (!currentChampionList) {
+              if (metaVer === '16.03') {
+                  currentChampionList = updateChampionMeta(updateChampionMeta(championList));
+              } else if (metaVer === '16.02') {
+                  currentChampionList = updateChampionMeta(championList);
+              } else {
+                  currentChampionList = [...championList];
+              }
+              // Persist the repaired list so this heal only runs once
+              updateLeague(leagueId, { currentChampionList });
+          }
+
           const sanitizedLeague = {
               ...found,
-              metaVersion: found.metaVersion || '16.01',
-              currentChampionList: (found.currentChampionList?.length > 0) ? found.currentChampionList : championList
+              metaVersion: metaVer,
+              currentChampionList,
           };
           setLeague(sanitizedLeague);
           updateLeague(leagueId, { lastPlayed: new Date().toISOString() });
