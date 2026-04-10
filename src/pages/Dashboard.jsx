@@ -2456,8 +2456,7 @@ const handleMatchClick = (match) => {
           t2Roster = getFullTeamRoster(t2Obj.name);
         }
 
-        const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0)
-          ? league.currentChampionList : championList;
+        const safeChampionList = league.currentChampionList;
 
         setLiveMatchData({
           match: { ...nextGlobalMatch, blueSidePriority: t1Obj.id || t1Obj.name },
@@ -2730,8 +2729,7 @@ const handleMatchClick = (match) => {
       }
 
       // 1. Update Meta (Delegated to SeasonManager)
-      const sourceList = (league.currentChampionList && league.currentChampionList.length > 0) 
-          ? league.currentChampionList : championList;
+      const sourceList = league.currentChampionList;
       
       const newChampionList = updateChampionMeta(sourceList);
   
@@ -2771,8 +2769,7 @@ const handleMatchClick = (match) => {
       }
 
       // 2. Apply 16.03 meta patch (same pattern as 16.02)
-      const sourceList = (league.currentChampionList && league.currentChampionList.length > 0)
-          ? league.currentChampionList : championList;
+      const sourceList = league.currentChampionList;
       const newChampionList = updateChampionMeta(sourceList);
 
       // 3. Save everything
@@ -2951,8 +2948,7 @@ const handleMatchClick = (match) => {
       // CPU vs CPU → quickSimulateMatch with real rosters + 16.03 meta
       const t1 = buildFSTTeamWithRoster(t1Fst);
       const t2 = buildFSTTeamWithRoster(t2Fst);
-      const fstChampionList = (league.currentChampionList && league.currentChampionList.length > 0)
-        ? league.currentChampionList : championList;
+      const fstChampionList = league.currentChampionList;
 
       let result;
       try {
@@ -2988,8 +2984,7 @@ const handleMatchClick = (match) => {
       if (!t1Fst || !t2Fst) return;
       const t1Live = buildFSTTeamWithRoster(t1Fst);
       const t2Live = buildFSTTeamWithRoster(t2Fst);
-      const safeChampionList = (league.currentChampionList?.length > 0)
-        ? league.currentChampionList : championList;
+      const safeChampionList = league.currentChampionList;
       setLiveMatchData({
         match:        { ...match, isFSTMatch: true },
         teamA:        t1Live,
