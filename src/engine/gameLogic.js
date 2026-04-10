@@ -797,21 +797,20 @@ const picksToFullObj = (simplePicks, team, currentChampionList = []) => {
       const champData = currentChampionList.find(c => c.name === p.champName);
       return { 
         playerData: player, 
-        role: player ? player.포지션 : 'MID', 
+        role: player ? player.porto : 'MID', 
         tier: champData?.tier ?? 3, 
         mastery: p.mastery, 
         currentGold: 5000, 
         level: p.level || 9, 
-        classType: '전사', 
+        classType: 'warrior', 
         dmgType: 'AD' 
       };
     });
 };
 
 export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampionList = []) => {
-    // Only fall back to original championList if no currentChampionList is provided at all
-    // If currentChampionList is explicitly provided (even if empty), use it to avoid 16.01 fallback
-    const safeChampList = (currentChampionList !== undefined && currentChampionList !== null) ? currentChampionList : championList; 
+    // Use only the provided currentChampionList - no fallback to original championList
+    const safeChampList = currentChampionList; 
     const targetWins = format === 'BO5' ? 3 : 2;
     let winsA = 0; let winsB = 0; let matchHistory = []; let currentSet = 1;
     let globalBanList = []; 
