@@ -225,8 +225,9 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
             );
             if (hasCorruptedFormat) {
                 const healedMatches = league.matches.map(m => {
-                    if (m.type === 'super')   return { ...m, format: 'BO3' }; // Fix 16.02 meta fallback
-                    if (m.type === 'regular') return { ...m, format: 'BO3' };
+                    if (m.type === 'super')              return { ...m, format: 'BO5' }; // Super Week = BO5
+                    if (m.type === 'regular')            return { ...m, format: 'BO3' };
+                    if (m.type === 'lck_split1_regular') return { ...m, format: m.format || 'BO3' };
                     if (m.type === 'playoff' && !m.format) return { ...m, format: 'BO5' };
                     return m;
                 });
@@ -381,12 +382,11 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
             });
         }
 
-        const getMatchMeta = (matchObj) => {
-            // Use same logic as LCK auto-simulation for consistency
-            const useMeta = (league.currentChampionList?.length > 0)
-    ? league.currentChampionList
-    : championList;
-            return useMeta;
+        const getMatchMeta = (_matchObj) => {
+            // Always use the current saved champion list (already reflects the active patch).
+            // The matchObj parameter is retained for future per-date patch selection
+            // (e.g. LCK Split 1 patches 16.04-16.07) without breaking the call sites.
+            return (league.currentChampionList?.length > 0) ? league.currentChampionList : championList;
         };
 
         const simMatchIfPast = (matchObj) => {
@@ -928,7 +928,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
         // Mark sync as complete regardless — avoids infinite loading when
         // some playoff matches are still TBD and can't be simulated yet.
         setSyncDone(true);
-    }, [needsSync, currentPendingLCK, targetLeague, activeMatches, league, setLeague, teams, forceRegen, setSyncDone]);
+    }, [needsSync, currentPendingLCK, targetLeague, activeMatches, league.id, league.foreignMatches, league.foreignPlayoffSeeds, league.metaVersion, setLeague, teams, forceRegen, setSyncDone]);
 
     return (
         <div className="bg-white rounded-lg border shadow-sm p-4 lg:p-8 min-h-[300px] lg:min-h-[600px] flex flex-col h-full lg:h-auto overflow-y-auto relative">
