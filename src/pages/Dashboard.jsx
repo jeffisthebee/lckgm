@@ -1136,7 +1136,7 @@ const getOvrBadgeStyle = (ovr) => {
     }, [isFSTOver, isFSTSavedInHistory]);
 
     // ── 16.02 PATCH HANDLER ──────────────────────────────────────────────────
-    // LCK players: auto-fires when all regular matches finish (same as before).
+    // LCK players: manual button click required (슈퍼위크 button)
     // Foreign players: button appears when LCK regular season is done → click to apply.
     const meta1602Ref = useRef(false);
 
@@ -1252,37 +1252,36 @@ const getOvrBadgeStyle = (ovr) => {
         if (!league || !league.matches) return;
         if ((league.myLeague || 'LCK') !== 'LCK') return; // foreign: button handles it
         if (meta1602Ref.current) return;
-        if (league.metaVersion === '16.02' || league.metaVersion === '16.03') return;
 
         // Only check LCK CUP regular matches for meta update, exclude Split 1 matches
         const regularMatches = league.matches.filter(m => m.type === 'regular' && !m.type.includes('split1'));
         if (regularMatches.length === 0) return;
         if (!regularMatches.every(m => m.status === 'finished')) return;
 
-        meta1602Ref.current = true;
-        console.log('🔥 META UPDATE TRIGGERED:', {
-            metaVersion: league.metaVersion,
-            regularMatchesCount: league.matches.filter(m => m.type === 'regular' && !m.type.includes('split1')).length,
-            allRegularFinished: league.matches.filter(m => m.type === 'regular' && !m.type.includes('split1')).every(m => m.status === 'finished'),
-            currentChampionListExists: !!league.currentChampionList,
-            currentChampionListLength: league.currentChampionList?.length || 0
-        });
-        const sourceList = championList;
-        const newChampionList = updateChampionMeta(sourceList);
-        console.log('🔥 META UPDATE RESULT:', {
-            sourceListLength: sourceList.length,
-            newChampionListLength: newChampionList.length,
-            sampleNewChampions: newChampionList.slice(0, 3).map(c => ({ name: c.name, tier: c.tier }))
-        });
-        const superMatches = generateSuperWeekMatches(league);
-        const cleanMatches = league.matches.filter(m => m.type !== 'tbd');
-        const updatedMatches = [...cleanMatches, ...superMatches].sort((a, b) =>
-            (parseFloat((a.date || '').split(' ')[0]) || 0) - (parseFloat((b.date || '').split(' ')[0]) || 0)
-        );
-        const updates = { matches: updatedMatches, currentChampionList: newChampionList, metaVersion: '16.02' };
-        setLeague(prev => ({ ...prev, ...updates }));
-        updateLeague(league.id, updates);
-    }, [league?.matches?.length, league?.metaVersion, league?.myLeague, league?.matches?.filter(m => m.type === 'regular' && !m.type.includes('split1')).map(m => m.status)]);
+        // meta1602Ref.current = true;
+        // console.log('🔥 META UPDATE TRIGGERED:', {
+        //     metaVersion: league.metaVersion,
+        //     regularMatchesCount: league.matches.filter(m => m.type === 'regular' && !m.type.includes('split1')).length,
+        //     allRegularFinished: league.matches.filter(m => m.type === 'regular' && !m.type.includes('split1')).every(m => m.status === 'finished'),
+        //     currentChampionListExists: !!league.currentChampionList,
+        //     currentChampionListLength: league.currentChampionList?.length || 0
+        // });
+        // const sourceList = championList;
+        // const newChampionList = updateChampionMeta(sourceList);
+        // console.log('🔥 META UPDATE RESULT:', {
+        //     sourceListLength: sourceList.length,
+        //     newChampionListLength: newChampionList.length,
+        //     sampleNewChampions: newChampionList.slice(0, 3).map(c => ({ name: c.name, tier: c.tier }))
+        // });
+        // const superMatches = generateSuperWeekMatches(league);
+        // const cleanMatches = league.matches.filter(m => m.type !== 'tbd');
+        // const updatedMatches = [...cleanMatches, ...superMatches].sort((a, b) =>
+        //     (parseFloat((a.date || '').split(' ')[0]) || 0) - (parseFloat((b.date || '').split(' ')[0]) || 0)
+        // );
+        // const updates = { matches: updatedMatches, currentChampionList: newChampionList, metaVersion: '16.02' };
+        // setLeague(prev => ({ ...prev, ...updates }));
+        // updateLeague(league.id, updates);
+    }, [league?.matches?.length, league?.myLeague, league?.matches?.filter(m => m.type === 'regular' && !m.type.includes('split1')).map(m => m.status)]);
 
     // Handler for the foreign player's manual 16.02 button
     // Also generates LCK super week so the LCK background sim can continue past regular season
@@ -2049,8 +2048,8 @@ const handleMatchClick = (match) => {
       };
       const getWinner = (m) => (m && m.status === 'finished' && m.result?.winner) ? resolveName(m.result.winner) : null;
       const getLoser = (m) => {
-        if (!m || m.status !== 'finished' || !m.result?.winner) return null;
-        const w = resolveName(m.result.winner);
+        if (!m || m.status !== 'finished') return null;
+        const w = getWinner(m);
         const t1 = resolveName(m.t1);
         const t2 = resolveName(m.t2);
         if (!w || !t1 || !t2) return null;
@@ -2136,7 +2135,7 @@ const handleMatchClick = (match) => {
 
       const updatedLeague = {
         ...leagueObj,
-        foreignMatches: { ...(leagueObj.foreignMatches || {}), [leagueName]: matches }
+        foreignMatches: { ...leagueObj.foreignMatches, [leagueName]: matches }
       };
       return { league: updatedLeague, didUpdate: true };
     };
@@ -2414,7 +2413,11 @@ const handleMatchClick = (match) => {
       }
 
       // ── LCK path ─────────────────────────────────────────────────────────
-      const getID = (val) => (val && typeof val === 'object' && val.id) ? val.id : val;
+      const getID = (val) => {
+          if (val && typeof val === 'object' && val.id) return Number(val.id);
+          return Number(val);
+      };
+  
       const myId = String(myTeam.id);
       
       const isPlayerMatch =
@@ -2993,7 +2996,13 @@ const handleMatchClick = (match) => {
 
       let result;
       try {
-        const sim = quickSimulateMatch(t1, t2, 'BO5', fstChampionList);
+        const sim = quickSimulateMatch(
+          t1, 
+          t2, 
+          'BO5', 
+          fstChampionList
+        );
+        
         const raw = sim.scoreString || sim.score;
         let scoreStr;
         if (typeof raw === 'object') {
