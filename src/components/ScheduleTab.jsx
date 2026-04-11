@@ -296,7 +296,10 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
             updateLeague(league.id, updatedLeague);
             if (setLeague) setLeague(updatedLeague);
         }
-    }, [isMyLeagueForeign, displayLeague, currentPendingLCK.date, league.matches?.length, league.metaVersion]);
+    }, [isMyLeagueForeign, displayLeague, currentPendingLCK.date, league.matches?.length, league.metaVersion,
+        // [FIX] Re-run when the champion list changes (e.g. 16.01 → 16.02) so CPU sims
+        // use the correct meta tier data instead of a stale closure.
+        league.currentChampionList?.length]);
 
     useEffect(() => {
         if (!needsSync || !targetLeague) { setSyncDone(true); return; }

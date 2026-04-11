@@ -652,8 +652,17 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
 
 export function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions = {}) {
     const { currentChampionList } = simOptions || {};
-    // Ensure we use the current meta champion list, never fall back to original 16.01 data
-    const championListToUse = currentChampionList && currentChampionList.length > 0 ? currentChampionList : championList;
+    // [FIX] Warn when falling back to 16.01 base list — helps catch stale simOptions
+    if (!currentChampionList || currentChampionList.length === 0) {
+        console.warn(
+            '[simulateSet] ⚠️ currentChampionList 없음 → 16.01 base fallback 발동!',
+            'simOptions:', simOptions,
+            '→ CPU가 16.01 메타로 드래프트합니다. Dashboard에서 currentChampionList 전달 확인 필요.'
+        );
+    }
+    const championListToUse = (currentChampionList && currentChampionList.length > 0)
+        ? currentChampionList
+        : championList;
     const draftResult = runDraftSimulation(teamBlue, teamRed, fearlessBans || [], championListToUse);
   
     if (!draftResult || !draftResult.picks || (draftResult.picks.A || []).length < 5) {
@@ -809,8 +818,16 @@ const picksToFullObj = (simplePicks, team, currentChampionList = []) => {
 };
 
 export const quickSimulateMatch = (teamA, teamB, format = 'BO3', currentChampionList = []) => {
-    // Use provided currentChampionList or fallback to base championList
-    const safeChampList = currentChampionList.length > 0 ? currentChampionList : championList; 
+    // [FIX] Warn when falling back to 16.01 base list
+    if (!currentChampionList || currentChampionList.length === 0) {
+        console.warn(
+            '[quickSimulateMatch] ⚠️ currentChampionList 없음 → 16.01 base fallback 발동!',
+            '→ CPU가 16.01 메타로 드래프트합니다. 호출부에서 league.currentChampionList 전달 확인 필요.'
+        );
+    }
+    const safeChampList = (currentChampionList && currentChampionList.length > 0)
+        ? currentChampionList
+        : championList;
     const targetWins = format === 'BO5' ? 3 : 2;
     let winsA = 0; let winsB = 0; let matchHistory = []; let currentSet = 1;
     let globalBanList = []; 

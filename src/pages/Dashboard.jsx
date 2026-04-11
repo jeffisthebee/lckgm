@@ -1982,11 +1982,15 @@ const handleMatchClick = (match) => {
 
         // --- 1. QUICK SIM (CPU Matches) ---
         if (!isPlayerMatch) {
+            // [FIX] Always guard against undefined/null currentChampionList
+            const champListForCpuSim = (league.currentChampionList && league.currentChampionList.length > 0)
+                ? league.currentChampionList
+                : championList;
             const result = quickSimulateMatch(
                 { ...t1Obj, roster: t1Roster }, 
                 { ...t2Obj, roster: t2Roster }, 
                 format,
-                league.currentChampionList
+                champListForCpuSim
             );
             
             return {
@@ -1997,7 +2001,10 @@ const handleMatchClick = (match) => {
         }
 
         // --- 2. HEAVY SIM (Player Matches) ---
-        const safeChampionList = league.currentChampionList;
+        // [FIX] Always use the freshest champion list — never silently pass undefined
+        const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0)
+            ? league.currentChampionList
+            : championList;
   
         const simOptions = {
           currentChampionList: safeChampionList,
@@ -2497,6 +2504,8 @@ const handleMatchClick = (match) => {
           t2Roster = getFullTeamRoster(t2Obj.name);
         }
 
+        // [FIX] Always guard: if currentChampionList is missing at capture time, use base list.
+        // This prevents stale 16.01 data being frozen into liveMatchData before 16.02 is applied.
         const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0)
           ? league.currentChampionList : championList;
 
@@ -3419,7 +3428,14 @@ const handleMatchClick = (match) => {
         teamB={liveMatchData.teamB}
         isManualMode={liveMatchData.isManualMode} 
         simOptions={{
-          currentChampionList: liveMatchData.safeChampionList || league.currentChampionList || championList,
+          // [FIX] Always prefer the live league.currentChampionList so 16.02 meta is
+          // never blocked by a stale liveMatchData.safeChampionList snapshot (truthy arrays
+          // would short-circuit the || chain even when they contain old 16.01 data).
+          currentChampionList: (league.currentChampionList?.length > 0)
+            ? league.currentChampionList
+            : (liveMatchData.safeChampionList?.length > 0
+                ? liveMatchData.safeChampionList
+                : championList),
             difficulty: league.difficulty,
             playerTeamName: myTeam.name
         }}
