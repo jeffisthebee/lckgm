@@ -652,8 +652,13 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
 
 export function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions = {}) {
     const { currentChampionList } = simOptions || {};
-    // Ensure we use the current meta champion list, never fall back to original 16.01 data
-    const championListToUse = currentChampionList;
+    // Always use the current meta champion list (16.02, 16.03, etc.).
+    // Fall back to the base championList only if simOptions didn't carry one —
+    // this prevents undefined from reaching runDraftSimulation and silently
+    // reverting draft picks to stale 16.01 tier data.
+    const championListToUse = (currentChampionList && currentChampionList.length > 0)
+        ? currentChampionList
+        : championList;
     const draftResult = runDraftSimulation(teamBlue, teamRed, fearlessBans || [], championListToUse);
   
     if (!draftResult || !draftResult.picks || (draftResult.picks.A || []).length < 5) {

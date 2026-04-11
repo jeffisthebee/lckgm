@@ -192,6 +192,10 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
     export default function LiveGamePlayer({ match, teamA, teamB, simOptions, onMatchComplete, onClose, externalGlobalBans = [], isManualMode = false }) {
         // Ensure we use the current meta champion list, never fall back to original 16.01 data
         const activeChampionList = simOptions?.currentChampionList;
+        // Keep a ref so closure-captured callbacks (handleCpuTurn, etc.) always
+        // read the LATEST champion list — avoids stale 16.01 tier data after a meta shift.
+        const activeChampionListRef = useRef(activeChampionList);
+        useEffect(() => { activeChampionListRef.current = activeChampionList; }, [activeChampionList]);
     
         const [currentSet, setCurrentSet] = useState(1);
         const [winsA, setWinsA] = useState(0);
@@ -903,7 +907,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                 return () => clearInterval(timer);
             }
     
-        }, [phase, draftStep, simulationData, isManualMode, manualTeams, manualPicks, filterRole, userSelectedRole, manualUserSide]);
+        }, [phase, draftStep, simulationData, isManualMode, manualTeams, manualPicks, filterRole, userSelectedRole, manualUserSide, activeChampionList]);
 
         // --- SOUND TRIGGER EFFECTS ---
 
@@ -938,25 +942,43 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
     
         // --- MANUAL MODE HELPER FUNCTIONS ---
         const handleCpuTurn = (stepInfo, team, side) => {
-            const availableChamps = activeChampionList.filter(c => !manualLockedChamps.has(c.name));
+            // Use the ref so we always read the CURRENT meta list (16.02, 16.03…),
+            // not a stale 16.01 closure captured when the effect first ran.
+            const freshChampList = activeChampionListRef.current || activeChampionList || [];
+            const availableChamps = freshChampList.filter(c => !manualLockedChamps.has(c.name));
             let selectedChamp = null;
         
             if (stepInfo.type === 'BAN') {
-                const opponentSide = side === 'BLUE' ? 'RED' : 'BLUE';
                 const opponentTeam = side === 'BLUE' ? manualTeams.red : manualTeams.blue;
                 const opponentOpenRoles = side === 'BLUE' 
                     ? ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].filter(r => !manualPicks.red[r])
                     : ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].filter(r => !manualPicks.blue[r]);
+
+                // Pass current side's picks so ban logic can also protect against counters
+                const myCurrentPicks  = Object.values(side === 'BLUE' ? manualPicks.blue : manualPicks.red);
+                const oppCurrentPicks = Object.values(side === 'BLUE' ? manualPicks.red  : manualPicks.blue);
                 
-                selectedChamp = selectBanFromProbabilities(opponentTeam || {}, availableChamps, opponentOpenRoles);
+                selectedChamp = selectBanFromProbabilities(
+                    opponentTeam || {},
+                    availableChamps,
+                    opponentOpenRoles,
+                    oppCurrentPicks,
+                    myCurrentPicks,
+                    stepInfo.order
+                );
                 
                 if (!selectedChamp) {
                     const idx = Math.floor(Math.random() * Math.min(10, availableChamps.length));
                     selectedChamp = availableChamps[idx];
                 }
             } else {
-                const currentPicks = side === 'BLUE' ? manualPicks.blue : manualPicks.red;
-                const remainingRoles = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].filter(r => !currentPicks[r]);
+                const currentPicks    = side === 'BLUE' ? manualPicks.blue : manualPicks.red;
+                const enemyPicks      = side === 'BLUE' ? manualPicks.red  : manualPicks.blue;
+                const remainingRoles  = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'].filter(r => !currentPicks[r]);
+
+                // Flatten picks objects into arrays for selectPickFromTop3
+                const myPicksArr    = Object.values(currentPicks).filter(Boolean);
+                const enemyPicksArr = Object.values(enemyPicks).filter(Boolean);
                 
                 let roleCandidates = [];
                 remainingRoles.forEach(role => {
@@ -966,7 +988,16 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                         positionMatches(p.role, role)
                     );
                     if (player) {
-                        const candidateChamp = selectPickFromTop3(player, availableChamps);
+                        // Pass all params so tier weighting, counter logic, and
+                        // synergy logic all use the current 16.02+ meta correctly.
+                        const candidateChamp = selectPickFromTop3(
+                            player,
+                            availableChamps,
+                            myPicksArr,
+                            enemyPicksArr,
+                            stepInfo.order,
+                            [] // fearlessBans not tracked in manual mode
+                        );
                         if (candidateChamp) {
                             roleCandidates.push({ role, champ: candidateChamp, score: candidateChamp.score || 0 });
                         }
