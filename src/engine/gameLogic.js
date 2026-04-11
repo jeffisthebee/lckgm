@@ -652,13 +652,8 @@ export function runGameTickEngine(teamBlue, teamRed, picksBlue, picksRed, simOpt
 
 export function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptions = {}) {
     const { currentChampionList } = simOptions || {};
-    // Always use the current meta champion list (16.02, 16.03, etc.).
-    // Fall back to the base championList only if simOptions didn't carry one —
-    // this prevents undefined from reaching runDraftSimulation and silently
-    // reverting draft picks to stale 16.01 tier data.
-    const championListToUse = (currentChampionList && currentChampionList.length > 0)
-        ? currentChampionList
-        : championList;
+    // Ensure we use the current meta champion list, never fall back to original 16.01 data
+    const championListToUse = currentChampionList;
     const draftResult = runDraftSimulation(teamBlue, teamRed, fearlessBans || [], championListToUse);
   
     if (!draftResult || !draftResult.picks || (draftResult.picks.A || []).length < 5) {
@@ -671,16 +666,27 @@ export function simulateSet(teamBlue, teamRed, setNumber, fearlessBans, simOptio
         const fluctuation = (Math.random() * variancePercent * 2) - variancePercent;
         return 1 + (fluctuation / 100);
     };
-  
+
     const addPlayerData = (picks, roster) => {
         return (picks || []).map(p => {
             const playerData = (roster || []).find(player => player && player.이름 === p.playerName);
-            const champData = currentChampionList.find(c => c.name === p.champName);
-            
+            const champData = championListToUse.find(c => c.name === p.champName);
+
             // [FIX] Look up tier from CURRENT champion list, not from cached pick object
             const currentTier = champData?.tier;
-            
+
             if (!playerData || !champData) {
+                return { 
+                    ...p, 
+                    tier: currentTier,  // Use fresh tier
+                    dmgType: 'AD', 
+                    classType: '전사', 
+                    playerData: playerData || { 이름: p.playerName, 포지션: 'TOP', 상세: { 안정성: 50 }, 종합: 70 }, 
+                    conditionModifier: 1.0, 
+                    stats: { kills: 0, deaths: 0, assists: 0, damage: 0, takenDamage: 0 }, 
+                    currentGold: 500, 
+                    level: 1 
+                };
               return { 
                   ...p, 
                   tier: currentTier,  // ← Use fresh tier
