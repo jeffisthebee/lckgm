@@ -321,7 +321,7 @@ const getOvrBadgeStyle = (ovr) => {
             try {
                 const t1 = { ...t1Obj, roster: getFullTeamRoster(t1Obj.name) };
                 const t2 = { ...t2Obj, roster: getFullTeamRoster(t2Obj.name) };
-                const sim = quickSimulateMatch(t1, t2, m.format || 'BO3', (league.currentChampionList?.length > 0) ? league.currentChampionList : championList);
+                const sim = quickSimulateMatch(t1, t2, m.format || 'BO3', league.currentChampionList || championList);
                 const score = typeof sim.scoreString === 'string' ? sim.scoreString
                     : typeof sim.score === 'object'
                         ? `${Math.max(sim.score.A ?? 0, sim.score.B ?? 0)}-${Math.min(sim.score.A ?? 0, sim.score.B ?? 0)}`
@@ -1986,7 +1986,7 @@ const handleMatchClick = (match) => {
                 { ...t1Obj, roster: t1Roster }, 
                 { ...t2Obj, roster: t2Roster }, 
                 format,
-                (league.currentChampionList?.length > 0) ? league.currentChampionList : championList
+                league.currentChampionList
             );
             
             return {
@@ -1997,8 +1997,7 @@ const handleMatchClick = (match) => {
         }
 
         // --- 2. HEAVY SIM (Player Matches) ---
-        const safeChampionList = (league.currentChampionList?.length > 0)
-            ? league.currentChampionList : championList;
+        const safeChampionList = league.currentChampionList;
   
         const simOptions = {
           currentChampionList: safeChampionList,
