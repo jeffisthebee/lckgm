@@ -931,7 +931,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
         // Mark sync as complete regardless — avoids infinite loading when
         // some playoff matches are still TBD and can't be simulated yet.
         setSyncDone(true);
-    }, [needsSync, currentPendingLCK, targetLeague, activeMatches, league.id, league.foreignMatches, league.foreignPlayoffSeeds, league.metaVersion, setLeague, teams, forceRegen, setSyncDone]);
+    }, [needsSync, currentPendingLCK, targetLeague, activeMatches, league.id, league.foreignMatches, league.foreignPlayoffSeeds, league.metaVersion, league.currentChampionList?.length, setLeague, teams, forceRegen, setSyncDone]);
 
     return (
         <div className="bg-white rounded-lg border shadow-sm p-4 lg:p-8 min-h-[300px] lg:min-h-[600px] flex flex-col h-full lg:h-auto overflow-y-auto relative">

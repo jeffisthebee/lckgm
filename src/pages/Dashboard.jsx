@@ -1961,7 +1961,9 @@ const handleMatchClick = (match) => {
     }
   };
   
-    const runSimulationForMatch = (match, isPlayerMatch) => {
+    // [FIX] champList is passed explicitly by callers so the function never reads
+    // from a potentially stale `league` closure captured before setLeague resolved.
+    const runSimulationForMatch = (match, isPlayerMatch, champList) => {
       try {
         const getID = (val) => {
             if (val && typeof val === 'object' && val.id) return Number(val.id);
@@ -1980,17 +1982,21 @@ const handleMatchClick = (match) => {
         const t2Roster = getTeamRoster(t2Obj.name);
         const format = match.format || 'BO3';
 
-        // --- 1. QUICK SIM (CPU Matches) ---
-        if (!isPlayerMatch) {
-            // [FIX] Always guard against undefined/null currentChampionList
-            const champListForCpuSim = (league.currentChampionList && league.currentChampionList.length > 0)
+        // Resolve champion list: prefer the explicitly-passed value, then the live league
+        // state, then the static 16.01 base as a last resort.
+        const resolvedChampList = (champList && champList.length > 0)
+            ? champList
+            : (league.currentChampionList && league.currentChampionList.length > 0)
                 ? league.currentChampionList
                 : championList;
+
+        // --- 1. QUICK SIM (CPU Matches) ---
+        if (!isPlayerMatch) {
             const result = quickSimulateMatch(
                 { ...t1Obj, roster: t1Roster }, 
                 { ...t2Obj, roster: t2Roster }, 
                 format,
-                champListForCpuSim
+                resolvedChampList
             );
             
             return {
@@ -2001,13 +2007,8 @@ const handleMatchClick = (match) => {
         }
 
         // --- 2. HEAVY SIM (Player Matches) ---
-        // [FIX] Always use the freshest champion list — never silently pass undefined
-        const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0)
-            ? league.currentChampionList
-            : championList;
-  
         const simOptions = {
-          currentChampionList: safeChampionList,
+          currentChampionList: resolvedChampList,
           difficulty: isPlayerMatch ? league.difficulty : undefined,
           playerTeamName: isPlayerMatch ? myTeam.name : undefined
         };
@@ -2431,7 +2432,13 @@ const handleMatchClick = (match) => {
         String(getID(nextGlobalMatch.t2)) === myId;
   
       if (!isPlayerMatch) {
-        const result = runSimulationForMatch(nextGlobalMatch, false);
+        // [FIX] Snapshot the champion list at click-time so we never rely on a stale
+        // closure.  setLeague is async; if the user clicks this button immediately after
+        // pressing 슈퍼위크 the league closure may still hold the old 16.01 list.
+        const currentChampList = (league.currentChampionList && league.currentChampionList.length > 0)
+            ? league.currentChampionList
+            : championList;
+        const result = runSimulationForMatch(nextGlobalMatch, false, currentChampList);
         if (!result) throw new Error("Simulation returned null");
   
         let scoreStr = "2:0"; 
