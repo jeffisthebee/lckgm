@@ -476,9 +476,22 @@ export function selectBanFromProbabilities(opponentTeam, availableChampions, tar
 }
 
 export function runDraftSimulation(blueTeam, redTeam, fearlessBans, currentChampionList) {
+  // ── META FINGERPRINT ─────────────────────────────────────────────────────
+  // Picks 3 stable reference champions and logs their tier so you can compare
+  // with MetaTab. If these tiers match MetaTab → 16.02 is being used correctly.
+  // If they match the BASE champions.json tiers → 16.01 fallback fired somehow.
+  const PROBE_NAMES = ['아리', '제드', '진'];
+  const probeSummary = PROBE_NAMES.map(n => {
+    const c = (currentChampionList || []).find(ch => ch.name === n);
+    return c ? `${n}(${c.tier}티어)` : `${n}(?)`;
+  }).join(', ');
+  const metaFingerprint = `📋 드래프트 메타 — 총 ${(currentChampionList || []).length}개 챔피언 | 샘플: ${probeSummary}`;
+  // Also log to console for F12 DevTools
+  console.log(`[runDraftSimulation] ${metaFingerprint}`);
+
   let localBans = new Set([...fearlessBans]);
   let picks     = { BLUE: {}, RED: {} };
-  let logs      = [];
+  let logs      = [metaFingerprint];   // ← fingerprint is FIRST line of draft log (visible in 상세보기)
   let blueBans  = [];
   let redBans   = [];
   let remainingRoles = {

@@ -2509,6 +2509,13 @@ const handleMatchClick = (match) => {
         const safeChampionList = (league.currentChampionList && league.currentChampionList.length > 0)
           ? league.currentChampionList : championList;
 
+        // [DEBUG] LiveGamePlayer에 전달되는 챔피언 리스트 확인
+        const _liveT1 = safeChampionList.filter(c => c.tier === 1).map(c => c.name);
+        console.log('%c[LiveGamePlayer 시작] 전달할 챔피언 리스트:', 'color:#00b894;font-weight:bold;');
+        console.log('  Tier 1:', _liveT1.join(', ') || '없음');
+        console.log('  리스트 크기:', safeChampionList.length);
+        console.log('  league.metaVersion:', league.metaVersion);
+
         setLiveMatchData({
           match: { ...nextGlobalMatch, blueSidePriority: t1Obj.id || t1Obj.name },
           teamA: { ...t1Obj, roster: t1Roster },
@@ -2782,13 +2789,39 @@ const handleMatchClick = (match) => {
       // 1. Update Meta (Delegated to SeasonManager)
       const sourceList = championList;
       
+      // [DEBUG] 16.02 패치 전 Tier 1 목록 확인
+      const _before = sourceList.filter(c => c.tier === 1).map(c => c.name);
+      console.log('%c[슈퍼위크] 🔵 16.01 Tier 1 (패치 전):', 'color:#0984e3;font-weight:bold;', _before.join(', '));
+
       const newChampionList = updateChampionMeta(sourceList);
+
+      // [DEBUG] 16.02 패치 후 Tier 1 목록 확인 — 이 목록이 드래프트에서도 보여야 함
+      const _after = newChampionList.filter(c => c.tier === 1).map(c => c.name);
+      console.log('%c[슈퍼위크] 🔴 16.02 Tier 1 (패치 후):', 'color:#d63031;font-weight:bold;', _after.join(', '));
+      console.log('[슈퍼위크] 저장할 리스트 크기:', newChampionList.length);
   
       // 2. Generate Schedule (Delegated to SeasonManager)
+      // [FIX] If super week matches already exist but were simmed with 16.01 (stale),
+      // reset them to 'pending' so they re-sim with the new 16.02 champion list.
+      const existingStaleSuper = (league.matches || []).filter(
+          m => m.type === 'super' && m.status === 'finished'
+      );
+      if (existingStaleSuper.length > 0) {
+          console.warn(
+              `[슈퍼위크] ⚠️ ${existingStaleSuper.length}개의 슈퍼위크 경기가 이미 완료됨 → 16.02 메타로 재시뮬 위해 pending으로 초기화`
+          );
+      }
       const newMatches = generateSuperWeekMatches(league);
       
       // 3. Merge & Sort
-      const cleanMatches = league.matches ? league.matches.filter(m => m.type !== 'tbd') : [];
+      // [FIX] Reset any stale 'finished' super week matches back to 'pending'
+      // so they get re-simulated with the 16.02 champion list.
+      const cleanMatches = (league.matches ? league.matches.filter(m => m.type !== 'tbd') : []).map(m => {
+          if (m.type === 'super' && m.status === 'finished') {
+              return { ...m, status: 'pending', result: null };
+          }
+          return m;
+      });
       const updatedMatches = [...cleanMatches, ...newMatches].sort((a, b) => {
           const parse = (d) => parseFloat(d.split(' ')[0]);
           return parse(a.date) - parse(b.date);
