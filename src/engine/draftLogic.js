@@ -259,10 +259,19 @@ export function selectPickFromTop3(player, availableChampions, currentTeamPicks 
 
   // Always use known champs as primary pool.
   // Fall back to unknown only if known pool is too small (< 3).
+  // IMPORTANT: sort unknownChamps by tier (best first) before any slicing so that
+  // list-order accidents (e.g. a Tier 4 champ sitting right after two Tier 1 champs
+  // in champions.json) can never put a low-tier pick into the candidate pool.
+  const unknownByTier = unknownChamps.slice().sort((a, b) => a.tier - b.tier);
+
   const MIN_POOL = 3;
   const pool = knownChamps.length >= MIN_POOL
     ? knownChamps
-    : [...knownChamps, ...unknownChamps].slice(0, Math.max(MIN_POOL, knownChamps.length));
+    : knownChamps.length === 0
+      // No mastery data at all (player missing from index): use the full role pool sorted
+      // by tier so tier/meta scoring drives the pick, not arbitrary list order.
+      ? unknownByTier
+      : [...knownChamps, ...unknownByTier].slice(0, Math.max(MIN_POOL, knownChamps.length));
 
   const availableNames   = new Set(availableChampions.map(c => c.name));
   const currentTeamNames = currentTeamPicks.map(c => c.name);
