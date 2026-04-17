@@ -8,7 +8,7 @@ import LiveGamePlayer from '../components/LiveGamePlayer';
 import DetailedMatchResultModal from '../components/DetailedMatchResultModal';
 import playerList from '../data/players.json';
 import { computeStandings, calculateFinalStandings, calculateGroupPoints, sortGroupByStandings, createPlayInBracket, createPlayInRound2Matches, createPlayInFinalMatch, createPlayoffRound2Matches, createPlayoffRound3Matches, createPlayoffLoserRound3Match, createPlayoffQualifierMatch, createPlayoffFinalMatch, createFSTGroupWave2A, createFSTGroupWave2B, createFSTGroupWave3A, createFSTGroupWave3B, createFSTPlayoffs, createFSTFinals } from '../engine/BracketManager';
-import { updateChampionMeta, generateSuperWeekMatches, initFSTTournament } from '../engine/SeasonManager';
+import { updateChampionMeta, generateSuperWeekMatches, initFSTTournament, getLCKSplit1PatchVersionForDate } from '../engine/SeasonManager';
 import FSTTournamentTab from '../components/FSTTournamentTab';
 import FinalStandingsModal from '../components/FinalStandingsModal';
 import MatchupBox from '../components/MatchupBox';
@@ -1602,14 +1602,54 @@ const handleMatchClick = (match) => {
       return (month || 0) * 10000000 + (day || 0) * 100000 + (h || 0) * 100 + (min || 0);
     };
 
+    // ── LCK Split 1 patch-boundary gate ─────────────────────────────────────
+    // Each patch window ends on 4/14 (→ 16.05), 4/28 (→ 16.06), 5/12 (→ 16.07).
+    // Once ALL split1 matches up to the boundary date are finished and the player
+    // hasn't confirmed the next meta yet, we:
+    //   (a) block nextGlobalMatch from returning any match dated ≥ blockFrom
+    //   (b) surface a "메타 확인" button in the header and a prompt in the match card
+    const split1MetaBlockDate = (() => {
+      if (isMyLeagueForeign) return null;
+      const split1Matches = (league?.matches || []).filter(m => m.type === 'lck_split1_regular');
+      if (split1Matches.length === 0) return null;
+      const getDateNum = (dateStr) => {
+        const [mo, d] = (dateStr || '').split(' ')[0].split('.').map(Number);
+        return (mo || 0) * 100 + (d || 0);
+      };
+      const boundaries = [
+        { meta: '16.04', boundary: 414, blockFrom: 415, next: '16.05' },
+        { meta: '16.05', boundary: 428, blockFrom: 429, next: '16.06' },
+        { meta: '16.06', boundary: 512, blockFrom: 513, next: '16.07' },
+      ];
+      const currentMeta = league.metaVersion || '16.01';
+      const b = boundaries.find(x => x.meta === currentMeta);
+      if (!b) return null;
+      // Only block once every split1 match ON or BEFORE the boundary is finished
+      const matchesUpToBoundary = split1Matches.filter(m => getDateNum(m.date) <= b.boundary);
+      if (matchesUpToBoundary.length === 0) return null;
+      if (!matchesUpToBoundary.every(m => m.status === 'finished')) return null;
+      // Check at least one match past boundary exists (otherwise nothing to block)
+      if (!split1Matches.some(m => getDateNum(m.date) >= b.blockFrom)) return null;
+      return { blockFrom: b.blockFrom, nextVersion: b.next };
+    })();
+
     const nextGlobalMatch = (() => {
       const matchPool = isMyLeagueForeign
         ? (league.foreignMatches?.[myLeague] || [])
         : (league.matches || []);
       return [...matchPool]
-        .filter(m => m.status === 'pending' && m.t1 && m.t2 &&
-          String(m.t1) !== 'null' && String(m.t2) !== 'null' &&
-          String(m.t1) !== 'TBD' && String(m.t2) !== 'TBD')
+        .filter(m => {
+          if (m.status !== 'pending') return false;
+          if (!m.t1 || !m.t2) return false;
+          if (String(m.t1) === 'null' || String(m.t2) === 'null') return false;
+          if (String(m.t1) === 'TBD'  || String(m.t2) === 'TBD')  return false;
+          // Block split1 matches dated on or after the patch boundary until meta is confirmed
+          if (split1MetaBlockDate && m.type === 'lck_split1_regular') {
+            const [mo, d] = (m.date || '').split(' ')[0].split('.').map(Number);
+            if (((mo || 0) * 100 + (d || 0)) >= split1MetaBlockDate.blockFrom) return false;
+          }
+          return true;
+        })
         .sort((a, b) => parseDateTime(a) - parseDateTime(b))[0] || null;
     })();
 
@@ -2894,11 +2934,13 @@ const handleMatchClick = (match) => {
         }));
 
         const updatedMatches = [...(league.matches || []), ...split1Matches];
-        const updates = { matches: updatedMatches };
+        // Apply 16.04 meta when Split 1 opens — continues the chain 16.01→02→03→04
+        const newChampionList1604 = updateChampionMeta(league.currentChampionList || championList);
+        const updates = { matches: updatedMatches, currentChampionList: newChampionList1604, metaVersion: '16.04' };
         setLeague(prev => ({ ...prev, ...updates }));
         updateLeague(league.id, updates);
         setActiveTab('schedule');
-        alert(`🏆 LCK 정규 시즌 스플릿 1 개막!\n${split1Matches.length}개 경기 생성됨 (4/1 ~ 5/31)`);
+        alert(`🏆 LCK 정규 시즌 스플릿 1 개막!\n${split1Matches.length}개 경기 생성됨 (4/1 ~ 5/31)\n📋 패치 16.04 메타 적용 완료!`);
       } catch (err) {
         console.error('[LCK Split 1] 일정 생성 오류:', err);
         alert(`❌ 스플릿 1 일정 생성 실패:\n${err.message}`);
@@ -2938,6 +2980,22 @@ const handleMatchClick = (match) => {
         console.error('[LCK Split 1] 재편성 오류:', err);
         alert(`❌ 재편성 실패:\n${err.message}`);
       }
+    };
+
+    // ── LCK 스플릿 1 메타 패치 (16.05 / 16.06 / 16.07) ─────────────────────────
+    // Called by the manual "메타 확인" button. Applies one meta shift and bumps
+    // metaVersion, which unblocks nextGlobalMatch for the next patch window.
+    const handleApplySplit1MetaPatch = (newVersion) => {
+      if (league.metaVersion === newVersion) {
+        alert(`이미 ${newVersion} 메타 패치가 적용되어 있습니다.`);
+        return;
+      }
+      const sourceList = league.currentChampionList || championList;
+      const newChampionList = updateChampionMeta(sourceList);
+      const updates = { currentChampionList: newChampionList, metaVersion: newVersion };
+      setLeague(prev => ({ ...prev, ...updates }));
+      updateLeague(league.id, updates);
+      alert(`📋 패치 ${newVersion} 메타 업데이트 완료!\n새로운 챔피언 티어가 반영되었습니다.`);
     };
 
     const checkAndAdvanceFST = (updatedFstMatches, fstTeams) => {
@@ -3311,6 +3369,10 @@ const handleMatchClick = (match) => {
       if (parts.length < 2) return 0;
       return parseFloat(parts[0]) * 100 + parseFloat(parts[1]);
     };
+
+    // Derived from split1MetaBlockDate (computed above near nextGlobalMatch).
+    // Non-null whenever all matches up to a boundary date are done and meta not yet confirmed.
+    const pendingSplit1MetaVersion = split1MetaBlockDate?.nextVersion || null;
   
     let effectiveDate;
     if (isSeasonOver && !isMyLeagueForeign && hasLCKSplit1) {
@@ -3640,6 +3702,20 @@ const handleMatchClick = (match) => {
               </button>
             )}
 
+            {/* 스플릿 1 메타 패치 확인 (16.05 / 16.06 / 16.07)
+                Appears only after ALL split1 matches up to the boundary date are finished.
+                Must be pressed before matches past the boundary become playable. */}
+            {!isMyLeagueForeign && pendingSplit1MetaVersion && (
+              <button
+                onClick={() => handleApplySplit1MetaPatch(pendingSplit1MetaVersion)}
+                className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white shadow-lg flex items-center gap-2 animate-pulse transition border border-purple-400 whitespace-nowrap"
+              >
+                <span>📋</span>
+                <span className="hidden sm:inline">{pendingSplit1MetaVersion} 메타 확인</span>
+                <span className="sm:hidden">메타 확인</span>
+              </button>
+            )}
+
             {/* FST next match: CPU game → ⏩ auto-sim, Player game → 🎮 start */}
             {hasFST && !isFSTOver && nextFSTMatch && !isMyNextFSTMatch && (
               <button
@@ -3813,7 +3889,7 @@ const handleMatchClick = (match) => {
                                   </div>
                               )}
                             </div>
-                          ) : <div className="text-xs font-bold text-blue-600">{isSeasonOver ? '시즌 종료' : isMyLeagueForeign ? `▶ ${myLeague} 시즌 시작 버튼을 클릭하세요` : '대진 생성 대기 중'}</div>}
+                          ) : <div className="text-xs font-bold text-blue-600">{isSeasonOver ? '시즌 종료' : isMyLeagueForeign ? `▶ ${myLeague} 시즌 시작 버튼을 클릭하세요` : pendingSplit1MetaVersion ? `패치 ${pendingSplit1MetaVersion} 메타 확인 필요` : '대진 생성 대기 중'}</div>}
                         </div>
                         <div className="text-center w-1/3">
                             <div className="text-lg lg:text-4xl font-black text-gray-800 mb-2 truncate">{t2 ? t2.name : '?'}</div>
