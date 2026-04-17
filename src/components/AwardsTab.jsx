@@ -847,10 +847,7 @@ export default function AwardsTab({ league, teams, myLeague: myLeagueProp }) {
     // ── LCK Phase Detection & Split ──────────────────────────────────────
     const hasSplit1Matches = useMemo(() => {
         if (!isLCK) return false;
-        return (league?.matches || []).some(m => {
-            const month = parseInt((m.date || '').split('.')[0]);
-            return !isNaN(month) && month >= 4;
-        });
+        return (league?.matches || []).some(m => m.type === 'lck_split1_regular');
     }, [isLCK, league]);
 
     // Pages: split1 shown first when available; cup is always present
@@ -877,10 +874,11 @@ export default function AwardsTab({ league, teams, myLeague: myLeagueProp }) {
 
     const lckSplit1LeagueData = useMemo(() => {
         if (!isLCK || !hasSplit1Matches) return null;
-        const s1Matches = (league?.matches || []).filter(m => {
-            const month = parseInt((m.date || '').split('.')[0]);
-            return !isNaN(month) && month >= 4;
-        });
+        // Filter to only split1 matches, then remap the type to 'regular' so
+        // computeAwards (which filters on type === 'regular') can see them.
+        const s1Matches = (league?.matches || [])
+            .filter(m => m.type === 'lck_split1_regular')
+            .map(m => ({ ...m, type: 'regular' }));
         return { ...league, matches: s1Matches };
     }, [isLCK, hasSplit1Matches, league]);
 
@@ -907,16 +905,11 @@ export default function AwardsTab({ league, teams, myLeague: myLeagueProp }) {
         return computeAwards(lckSplit1LeagueData, teams);
     }, [isLCK, lckSplit1LeagueData, teams]);
 
-    const lckSplit1POFinished = useMemo(() => {
-        if (!isLCK || !lckSplit1LeagueData) return false;
-        const po = (lckSplit1LeagueData.matches || []).filter(m => m.type === 'playoff');
-        return po.length > 0 && po.every(m => m.status === 'finished');
-    }, [isLCK, lckSplit1LeagueData]);
+    // Split 1 has no playoffs — the regular/playoff toggle must never appear on this page.
+    const lckSplit1POFinished = false;
 
-    const lckSplit1PlayoffData = useMemo(() => {
-        if (!isLCK || !lckSplit1POFinished || !lckSplit1LeagueData) return null;
-        return computePlayoffAwards(lckSplit1LeagueData, teams);
-    }, [isLCK, lckSplit1POFinished, lckSplit1LeagueData, teams]);
+    // No playoff data for Split 1 (no playoffs exist in this phase)
+    const lckSplit1PlayoffData = null;
 
     // ── Resolve active data (LCK uses page-specific data; others use existing) ──
     const resolvedIsPlayoffsFinished = isLCK
