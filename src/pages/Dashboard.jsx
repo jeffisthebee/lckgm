@@ -23,8 +23,7 @@ import {updateLeague, getLeagueById } from '../engine/storage';
 import { 
     generateLPLRegularSchedule, generateLECRegularSchedule,
     generateLCSRegularSchedule, generateLCPRegularSchedule, generateCBLOLRegularSchedule,
-    generateLCSPlayoffs, generateLCKSplit1Schedule, rescheduleLCKSplit1,
-    computeSplit1Standings, generateLCKRoadToMSIMatches
+    generateLCSPlayoffs, generateLCKSplit1Schedule, rescheduleLCKSplit1
 } from '../engine/scheduleLogic';
 import AwardsTab from '../components/AwardsTab';
 import HistoryTab from '../components/HistoryTab'; 
@@ -82,7 +81,6 @@ const getOvrBadgeStyle = (ovr) => {
     const [showFinalStandings, setShowFinalStandings] = useState(false);
     // FST player match — pending mode choice (manual vs auto)
     const [fstMatchPending, setFstMatchPending] = useState(null);
-    const [rtmMatchPending, setRtmMatchPending] = useState(null);
 
     // Define this helper before it is used in useEffect
     const recalculateStandings = (lg) => {
@@ -1686,18 +1684,13 @@ const handleMatchClick = (match) => {
     
   
     const applyMatchResult = (targetMatch, result) => {
-      let updatedMatches = league.matches.map(m => {
+      const updatedMatches = league.matches.map(m => {
           if (m.id === targetMatch.id) {
               return { ...m, status: 'finished', result: { winner: result.winner, score: result.scoreString } };
           }
           return m;
       });
   
-      // Advance RTM bracket if this was an RTM match played by the user
-      if (targetMatch.type === 'lck_rtm') {
-        updatedMatches = checkAndAdvanceRTMBracket(updatedMatches);
-      }
-
       const updatedLeague = { ...league, matches: updatedMatches };
       updateLeague(league.id, { matches: updatedMatches });
       setLeague(updatedLeague);
@@ -3005,145 +2998,6 @@ const handleMatchClick = (match) => {
       alert(`📋 패치 ${newVersion} 메타 업데이트 완료!\n새로운 챔피언 티어가 반영되었습니다.`);
     };
 
-    // ── LCK Road to MSI ────────────────────────────────────────────────────
-    /**
-     * checkAndAdvanceRTMBracket
-     * Called after every RTM match result. Fills in the TBD slots in
-     * R2, R4, R5 as their prerequisite rounds complete.
-     *
-     *   R1 winner  → R2.t2 (red side)
-     *   R2 winner  → R4.t2 (red side)
-     *   R3 loser   → R5.t1 (blue side — 1st/2nd seed, higher standing)
-     *   R4 winner  → R5.t2 (red side)
-     */
-    const checkAndAdvanceRTMBracket = (currentMatches) => {
-        let updated = [...currentMatches];
-
-        const rtm      = (r) => updated.find(m => m.type === 'lck_rtm' && m.round === r);
-        const getWinner = (m) => {
-            if (!m || m.status !== 'finished' || !m.result?.winner) return null;
-            return teams.find(t => t.name === m.result.winner)?.id ?? null;
-        };
-        const getLoser = (m) => {
-            if (!m || m.status !== 'finished' || !m.result?.winner) return null;
-            const winnerId = getWinner(m);
-            const getId   = v => (typeof v === 'object' ? Number(v?.id) : Number(v));
-            return getId(m.t1) === winnerId ? getId(m.t2) : getId(m.t1);
-        };
-
-        const patch = (round, field, value) => {
-            updated = updated.map(m =>
-                (m.type === 'lck_rtm' && m.round === round)
-                    ? { ...m, [field]: value }
-                    : m
-            );
-        };
-
-        const r1 = rtm(1), r2 = rtm(2), r3 = rtm(3), r4 = rtm(4), r5 = rtm(5);
-
-        // R1 done → fill R2.t2
-        if (r1?.status === 'finished' && r2 && !r2.t2) {
-            patch(2, 't2', getWinner(r1));
-        }
-
-        // R2 done → fill R4.t2
-        if (r2?.status === 'finished' && r4 && !r4.t2) {
-            patch(4, 't2', getWinner(r2));
-        }
-
-        // R3 done → fill R5.t1 (loser = blue side, higher standing)
-        if (r3?.status === 'finished' && r5 && !r5.t1) {
-            patch(5, 't1', getLoser(r3));
-        }
-
-        // R4 done → fill R5.t2
-        if (r4?.status === 'finished' && r5 && !r5.t2) {
-            patch(5, 't2', getWinner(r4));
-        }
-
-        return updated;
-    };
-
-    // Create Road to MSI: apply 16.08 meta + generate bracket
-    const handleCreateLCKRoadToMSI = () => {
-        if (!allSplit1Finished || hasLCKRoadToMSI) return;
-
-        try {
-            const standings = computeSplit1Standings(league.matches || [], teams);
-            if (standings.length < 6) {
-                alert('❌ Split 1 스탠딩을 계산할 수 없습니다. 경기 결과를 확인해주세요.');
-                return;
-            }
-
-            const rtmMatches = generateLCKRoadToMSIMatches(standings);
-            const newChampionList = updateChampionMeta(league.currentChampionList || championList);
-            const updatedMatches = [...(league.matches || []), ...rtmMatches];
-
-            const updates = {
-                matches:             updatedMatches,
-                currentChampionList: newChampionList,
-                metaVersion:         '16.08',
-                split1Standings:     standings,   // cache for later reference
-            };
-            setLeague(prev => ({ ...prev, ...updates }));
-            updateLeague(league.id, updates);
-            setActiveTab('schedule');
-
-            const top6 = standings.slice(0, 6).map((t, i) => `${i + 1}위 ${t.name}`).join(' / ');
-            alert(
-                `🏆 LCK Road to MSI 개막!\n` +
-                `📋 패치 16.08 메타 적용 완료!\n\n` +
-                `[ Split 1 최종 순위 ]\n${top6}\n\n` +
-                `6/6(토) ~ 6/14(토) · 전 경기 BO5`
-            );
-        } catch (err) {
-            console.error('[RTM] 생성 오류:', err);
-            alert(`❌ Road to MSI 생성 실패:\n${err.message}`);
-        }
-    };
-
-    // CPU sim for a single RTM match (mirrors handleFSTSimulate pattern)
-    const handleRTMSimulate = (match) => {
-        if (!match || match.status === 'finished') return;
-
-        const getId = v => (typeof v === 'object' ? Number(v?.id) : Number(v));
-        const t1Obj = teams.find(t => t.id === getId(match.t1));
-        const t2Obj = teams.find(t => t.id === getId(match.t2));
-        if (!t1Obj || !t2Obj) return;
-
-        try {
-            const t1w = { ...t1Obj, roster: getFullTeamRoster(t1Obj.name) };
-            const t2w = { ...t2Obj, roster: getFullTeamRoster(t2Obj.name) };
-            const sim = quickSimulateMatch(t1w, t2w, 'BO5', league.currentChampionList || championList);
-            const score = typeof sim.scoreString === 'string'
-                ? sim.scoreString
-                : `${Math.max(sim.score?.A ?? 0, sim.score?.B ?? 0)}-${Math.min(sim.score?.A ?? 0, sim.score?.B ?? 0)}`;
-
-            const resultData = { winner: sim.winner?.name || sim.winner, score };
-            let updatedMatches = (league.matches || []).map(m =>
-                m.id === match.id
-                    ? { ...m, status: 'finished', result: resultData }
-                    : m
-            );
-            updatedMatches = checkAndAdvanceRTMBracket(updatedMatches);
-
-            const updates = { matches: updatedMatches };
-            setLeague(prev => ({ ...prev, ...updates }));
-            updateLeague(league.id, updates);
-        } catch (e) {
-            console.error('[RTM] 시뮬레이션 오류:', e);
-            const fallbackWinner = (t1Obj.power || 80) >= (t2Obj.power || 80) ? t1Obj : t2Obj;
-            const resultData = { winner: fallbackWinner.name, score: '3-0' };
-            let updatedMatches = (league.matches || []).map(m =>
-                m.id === match.id ? { ...m, status: 'finished', result: resultData } : m
-            );
-            updatedMatches = checkAndAdvanceRTMBracket(updatedMatches);
-            const updates = { matches: updatedMatches };
-            setLeague(prev => ({ ...prev, ...updates }));
-            updateLeague(league.id, updates);
-        }
-    };
-
     const checkAndAdvanceFST = (updatedFstMatches, fstTeams) => {
       let current = [...updatedFstMatches];
 
@@ -3300,45 +3154,6 @@ const handleMatchClick = (match) => {
       setIsLiveGameMode(true);
     };
 
-    // ── RTM: Launch LiveGame ───────────────────────────────────
-    const launchRTMLiveGame = (match, mode) => {
-      const getId = v => (typeof v === 'object' ? Number(v?.id) : Number(v));
-      const t1Obj = teams.find(t => t.id === getId(match.t1));
-      const t2Obj = teams.find(t => t.id === getId(match.t2));
-      if (!t1Obj || !t2Obj) return;
-      const safeChampionList = (league.currentChampionList?.length > 0)
-        ? league.currentChampionList : championList;
-      setLiveMatchData({
-        match:        { ...match, isRTMMatch: true, blueSidePriority: match.t1 },
-        teamA:        { ...t1Obj, roster: getFullTeamRoster(t1Obj.name) },
-        teamB:        { ...t2Obj, roster: getFullTeamRoster(t2Obj.name) },
-        safeChampionList,
-        isManualMode: mode === 'manual',
-        isRTMMatch:   true,
-      });
-      setRtmMatchPending(null);
-      setIsLiveGameMode(true);
-    };
-
-    // ── RTM: LiveGame completion callback ─────────────────────
-    const handleRTMLiveMatchComplete = (match, resultData) => {
-      const resultEntry = {
-        winner:  resultData.winner,
-        score:   resultData.scoreString,
-        history: resultData.history,
-      };
-      let updatedMatches = (league.matches || []).map(m =>
-        m.id === match.id ? { ...m, status: 'finished', result: resultEntry } : m
-      );
-      updatedMatches = checkAndAdvanceRTMBracket(updatedMatches);
-      const updates = { matches: updatedMatches };
-      setLeague(prev => ({ ...prev, ...updates }));
-      updateLeague(league.id, updates);
-      setIsLiveGameMode(false);
-      setLiveMatchData(null);
-      setTimeout(() => alert(`✈️ Road to MSI ${match.round}라운드 종료!\n승리: ${resultData.winner}`), 100);
-    };
-
     // ── FST: LiveGame completion callback ─────────────────────
     const handleFSTLiveMatchComplete = (match, resultData) => {
       applyFSTResult(match.id, {
@@ -3410,47 +3225,6 @@ const handleMatchClick = (match) => {
     // so existing season-over / super-week / play-in guards (which check type === 'regular')
     // are never accidentally triggered by Split 1 matches.
     const hasLCKSplit1 = !!(league?.matches?.some(m => m.type === 'lck_split1_regular'));
-
-    // ── LCK Road to MSI derived state ────────────────────────────────────────
-    // allSplit1Finished: every lck_split1_regular match is done
-    const allSplit1Finished = hasLCKSplit1 &&
-        (league?.matches || [])
-            .filter(m => m.type === 'lck_split1_regular')
-            .every(m => m.status === 'finished');
-
-    // hasLCKRoadToMSI: Road to MSI matches have been generated
-    const hasLCKRoadToMSI = !!(league?.matches?.some(m => m.type === 'lck_rtm'));
-
-    // RTM matches and progress
-    const rtmMatches = (league?.matches || []).filter(m => m.type === 'lck_rtm');
-    const isRTMOver  = hasLCKRoadToMSI && rtmMatches.every(m => m.status === 'finished');
-
-    // MSI qualifier: winner of R5
-    const rtmR5 = rtmMatches.find(m => m.round === 5);
-    const msiQualifier = (rtmR5?.status === 'finished')
-        ? teams.find(t => t.name === rtmR5.result?.winner) || null
-        : null;
-
-    // Next pending RTM match (with both teams filled)
-    const nextRTMMatch = hasLCKRoadToMSI && !isRTMOver
-        ? [...rtmMatches]
-            .filter(m => m.status === 'pending' && m.t1 && m.t2)
-            .sort((a, b) => {
-                const pd = (m) => {
-                    const [mo, d] = (m.date || '').split(' ')[0].split('.').map(Number);
-                    return (mo || 0) * 100 + (d || 0);
-                };
-                return pd(a) - pd(b);
-            })[0] || null
-        : null;
-
-    const isMyNextRTMMatch = nextRTMMatch
-        ? (safeId(nextRTMMatch.t1) === safeId(myTeam?.id) ||
-           safeId(nextRTMMatch.t2) === safeId(myTeam?.id))
-        : false;
-
-    const rtmT1 = nextRTMMatch ? teams.find(t => t.id === safeId(nextRTMMatch.t1)) : null;
-    const rtmT2 = nextRTMMatch ? teams.find(t => t.id === safeId(nextRTMMatch.t2)) : null;
 
     // Detect scheduling violations in the pending Split 1 matches:
     // 1. Same team playing twice on the same day
@@ -3601,17 +3375,7 @@ const handleMatchClick = (match) => {
     const pendingSplit1MetaVersion = split1MetaBlockDate?.nextVersion || null;
   
     let effectiveDate;
-    if (isSeasonOver && !isMyLeagueForeign && hasLCKRoadToMSI) {
-      // Road to MSI active — show next RTM match date or completion state
-      if (isRTMOver) {
-        effectiveDate = msiQualifier ? `${msiQualifier.name} MSI 진출 확정` : 'Road to MSI 종료';
-      } else {
-        const nextRTM = (league.matches || [])
-          .filter(m => m.type === 'lck_rtm' && m.status === 'pending' && m.t1 && m.t2)
-          .sort((a, b) => parseDate(a.date) - parseDate(b.date))[0];
-        effectiveDate = nextRTM ? nextRTM.date : 'Road to MSI 진행 중';
-      }
-    } else if (isSeasonOver && !isMyLeagueForeign && hasLCKSplit1) {
+    if (isSeasonOver && !isMyLeagueForeign && hasLCKSplit1) {
       // Split 1 is active — show the next pending split1 match date
       const nextSplit1 = (league.matches || [])
         .filter(m => m.type === 'lck_split1_regular' && m.status === 'pending')
@@ -3758,49 +3522,6 @@ const handleMatchClick = (match) => {
     </div>
   );
 })()}
-
-{/* ── Road to MSI: Manual/Auto 선택 모달 ── */}
-{rtmMatchPending && (() => {
-  const getId = v => (typeof v === 'object' ? Number(v?.id) : Number(v));
-  const t1Rtm = teams.find(t => t.id === getId(rtmMatchPending.t1));
-  const t2Rtm = teams.find(t => t.id === getId(rtmMatchPending.t2));
-  const roundLabels = { 1:'1라운드 (5위 vs 6위)', 2:'2라운드', 3:'3라운드 (1위 vs 2위)', 4:'4라운드', 5:'최종전 (MSI 진출)' };
-  return (
-    <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl p-6 lg:p-10 max-w-md w-full text-center shadow-2xl">
-        <div className="text-3xl mb-3">✈️</div>
-        <h2 className="text-xl lg:text-2xl font-black mb-1">Road to MSI</h2>
-        <p className="text-xs font-bold text-cyan-600 mb-1 uppercase tracking-wide">
-          {roundLabels[rtmMatchPending.round] || `${rtmMatchPending.round}라운드`}
-        </p>
-        <p className="text-gray-500 text-sm mb-2">
-          🔵 {t1Rtm?.name || '?'} vs {t2Rtm?.name || '?'} 🔴
-        </p>
-        <p className="text-[11px] text-gray-400 mb-5">{rtmMatchPending.date} · BO5</p>
-        <div className="flex flex-col gap-3">
-          <button
-            onClick={() => launchRTMLiveGame(rtmMatchPending, 'manual')}
-            className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl shadow transition flex items-center justify-center gap-2"
-          >
-            <span>🎮</span> 직접 경기하기 (MANUAL)
-          </button>
-          <button
-            onClick={() => launchRTMLiveGame(rtmMatchPending, 'auto')}
-            className="w-full py-3 bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded-xl shadow transition flex items-center justify-center gap-2"
-          >
-            <span>📺</span> AI 자동 진행 (AUTO)
-          </button>
-          <button
-            onClick={() => setRtmMatchPending(null)}
-            className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold rounded-xl transition text-sm"
-          >
-            취소
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-})()}
   
 {isLiveGameMode && liveMatchData && (
     <LiveGamePlayer 
@@ -3821,11 +3542,7 @@ const handleMatchClick = (match) => {
             playerTeamName: myTeam.name
         }}
         externalGlobalBans={[]} 
-        onMatchComplete={
-          liveMatchData.isFSTMatch  ? handleFSTLiveMatchComplete :
-          liveMatchData.isRTMMatch  ? handleRTMLiveMatchComplete :
-          handleLiveMatchComplete
-        }
+        onMatchComplete={liveMatchData.isFSTMatch ? handleFSTLiveMatchComplete : handleLiveMatchComplete}
         onClose={() => { setIsLiveGameMode(false); setLiveMatchData(null); }}
     />
   )}
@@ -3997,54 +3714,6 @@ const handleMatchClick = (match) => {
                 <span className="hidden sm:inline">{pendingSplit1MetaVersion} 메타 확인</span>
                 <span className="sm:hidden">메타 확인</span>
               </button>
-            )}
-
-            {/* ── Road to MSI 개막 버튼: Split 1 완료 후, RTM 미생성 시 ── */}
-            {!isMyLeagueForeign && allSplit1Finished && !hasLCKRoadToMSI && (
-              <button
-                onClick={handleCreateLCKRoadToMSI}
-                className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-gradient-to-r from-cyan-600 to-blue-700 hover:from-cyan-500 hover:to-blue-600 text-white shadow-lg flex items-center gap-2 animate-pulse transition border border-cyan-400 whitespace-nowrap"
-              >
-                <span>✈️</span>
-                <span className="hidden sm:inline">Road to MSI 개막</span>
-                <span className="sm:hidden">RTM 개막</span>
-              </button>
-            )}
-
-            {/* ── Road to MSI 진행 중: CPU 경기 자동 시뮬, 내 경기 → 🎮 ── */}
-            {!isMyLeagueForeign && hasLCKRoadToMSI && !isRTMOver && nextRTMMatch && !isMyNextRTMMatch && (
-              <button
-                onClick={() => handleRTMSimulate(nextRTMMatch)}
-                className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-cyan-700 hover:bg-cyan-600 text-white shadow-sm flex items-center gap-2 animate-pulse transition whitespace-nowrap"
-              >
-                <span>⏩</span>
-                <span className="hidden sm:inline">
-                  RTM {nextRTMMatch.round}R: {rtmT1?.name || '?'} vs {rtmT2?.name || '?'}
-                </span>
-                <span className="sm:hidden">RTM 진행</span>
-              </button>
-            )}
-
-            {!isMyLeagueForeign && hasLCKRoadToMSI && !isRTMOver && nextRTMMatch && isMyNextRTMMatch && (
-              <button
-                onClick={() => setRtmMatchPending(nextRTMMatch)}
-                className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-lg flex items-center gap-2 animate-bounce transition whitespace-nowrap"
-              >
-                <span>🎮</span>
-                <span className="hidden sm:inline">
-                  RTM {nextRTMMatch.round}R: {rtmT1?.name || '?'} vs {rtmT2?.name || '?'}
-                </span>
-                <span className="sm:hidden">RTM 시작</span>
-              </button>
-            )}
-
-            {/* ── Road to MSI 완료: MSI 진출팀 표시 ── */}
-            {!isMyLeagueForeign && isRTMOver && msiQualifier && (
-              <div className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-gradient-to-r from-yellow-500 to-orange-500 text-white shadow-lg flex items-center gap-2 border border-yellow-300 whitespace-nowrap">
-                <span>🌏</span>
-                <span className="hidden sm:inline">{msiQualifier.name} MSI 진출!</span>
-                <span className="sm:hidden">MSI 확정</span>
-              </div>
             )}
 
             {/* FST next match: CPU game → ⏩ auto-sim, Player game → 🎮 start */}
