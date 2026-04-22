@@ -58,7 +58,9 @@ export const getLCKSplit1PatchVersionForDate = (dateStr) => {
     if (num < 415) return '16.04';
     if (num < 429) return '16.05';
     if (num < 513) return '16.06';
-    return '16.07';
+    if (num < 601) return '16.07';
+    // Road to MSI patch (6/1 and beyond)
+    return '16.08';
 };
 
 // ─────────────────────────────────────────────────────────────

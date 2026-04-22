@@ -1077,3 +1077,150 @@ export const generateLCKSplit1Schedule = (teams) => {
 // Regenerates the entire LCK Split 1 schedule from scratch.
 // Every call produces a fresh, independently valid schedule (shuffle-seeded).
 export const rescheduleLCKSplit1 = (teams) => generateLCKSplit1Schedule(teams);
+// ─────────────────────────────────────────────────────────────
+// LCK ROAD TO MSI — STANDINGS + MATCH GENERATION
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * computeSplit1Standings
+ * ──────────────────────────────────────────────────────────────
+ * Derives final standings from finished lck_split1_regular matches.
+ * Returns an array of team objects sorted by:
+ *   1. Wins (desc)   2. Game-wins (desc)   3. Game-losses (asc)
+ *
+ * @param {Array}  matches   Full league.matches array
+ * @param {Array}  teams     LCK team objects (each with id, name)
+ * @returns {Array}          Sorted team objects, index 0 = 1st place
+ */
+export const computeSplit1Standings = (matches, teams) => {
+    const finished = matches.filter(
+        m => m.type === 'lck_split1_regular' && m.status === 'finished'
+    );
+
+    const stats = {};
+    teams.forEach(t => {
+        stats[t.id] = { team: t, wins: 0, losses: 0, gameWins: 0, gameLosses: 0 };
+    });
+
+    finished.forEach(m => {
+        const winnerTeam = teams.find(t => t.name === m.result?.winner);
+        if (!winnerTeam) return;
+
+        const getId = v => (typeof v === 'object' ? Number(v?.id) : Number(v));
+        const t1Id = getId(m.t1);
+        const t2Id = getId(m.t2);
+        const loserId = winnerTeam.id === t1Id ? t2Id : t1Id;
+
+        const scoreStr = m.result?.score || '2-0';
+        const parts = String(scoreStr).split(/[-:]/).map(Number);
+        const highScore = Math.max(parts[0] || 2, parts[1] || 0);
+        const lowScore  = Math.min(parts[0] || 2, parts[1] || 0);
+
+        if (stats[winnerTeam.id]) {
+            stats[winnerTeam.id].wins++;
+            stats[winnerTeam.id].gameWins   += highScore;
+            stats[winnerTeam.id].gameLosses += lowScore;
+        }
+        if (stats[loserId]) {
+            stats[loserId].losses++;
+            stats[loserId].gameWins   += lowScore;
+            stats[loserId].gameLosses += highScore;
+        }
+    });
+
+    return Object.values(stats)
+        .sort((a, b) =>
+            b.wins - a.wins ||
+            b.gameWins - a.gameWins ||
+            a.gameLosses - b.gameLosses
+        )
+        .map((s, i) => ({ ...s.team, split1Seed: i + 1, split1Wins: s.wins, split1Losses: s.losses }));
+};
+
+/**
+ * generateLCKRoadToMSIMatches
+ * ──────────────────────────────────────────────────────────────
+ * Builds the 5-round Road to MSI bracket.
+ * t1 is always the BLUE-SIDE team (higher Split 1 standing).
+ * Rounds 2, 4, 5 have one TBD slot — filled by checkAndAdvanceRTMBracket.
+ *
+ * @param {Array} split1Standings  Result of computeSplit1Standings (index 0 = 1st)
+ * @returns {Array}                Five match objects with type 'lck_rtm'
+ */
+export const generateLCKRoadToMSIMatches = (split1Standings) => {
+    const seed = (n) => split1Standings[n - 1]; // 1-indexed seed lookup
+
+    const base = {
+        type:   'lck_rtm',
+        format: 'BO5',
+        status: 'pending',
+    };
+
+    return [
+        // R1 — 6/6: 5th (blue) vs 6th (red)
+        {
+            ...base,
+            id:    'rtm_r1',
+            round: 1,
+            label: 'Road to MSI 1라운드',
+            date:  '6.6 (토)',
+            time:  '17:00',
+            t1: seed(5).id,   // blue side = higher standing
+            t2: seed(6).id,
+            blueSide: seed(5).id,
+            seedInfo: { blue: 5, red: 6 },
+        },
+        // R2 — 6/7: 4th (blue) vs Winner(R1) (red)
+        {
+            ...base,
+            id:    'rtm_r2',
+            round: 2,
+            label: 'Road to MSI 2라운드',
+            date:  '6.7 (일)',
+            time:  '17:00',
+            t1: seed(4).id,   // blue side = 4th seed
+            t2: null,          // filled after R1 finishes
+            blueSide: seed(4).id,
+            seedInfo: { blue: 4, red: 'winner_r1' },
+        },
+        // R3 — 6/12: 1st (blue) vs 2nd (red)
+        {
+            ...base,
+            id:    'rtm_r3',
+            round: 3,
+            label: 'Road to MSI 3라운드',
+            date:  '6.12 (목)',
+            time:  '17:00',
+            t1: seed(1).id,
+            t2: seed(2).id,
+            blueSide: seed(1).id,
+            seedInfo: { blue: 1, red: 2 },
+        },
+        // R4 — 6/13: 3rd (blue) vs Winner(R2) (red)
+        {
+            ...base,
+            id:    'rtm_r4',
+            round: 4,
+            label: 'Road to MSI 4라운드',
+            date:  '6.13 (금)',
+            time:  '17:00',
+            t1: seed(3).id,   // blue side = 3rd seed
+            t2: null,          // filled after R2 finishes
+            blueSide: seed(3).id,
+            seedInfo: { blue: 3, red: 'winner_r2' },
+        },
+        // R5 — 6/14: Loser(R3) (blue) vs Winner(R4) (red)
+        // R3 loser is always 1st or 2nd seed → higher standing → blue side
+        {
+            ...base,
+            id:    'rtm_r5',
+            round: 5,
+            label: 'Road to MSI 최종전 (MSI 진출)',
+            date:  '6.14 (토)',
+            time:  '17:00',
+            t1: null,   // filled after R3 finishes (loser = blue)
+            t2: null,   // filled after R4 finishes (winner = red)
+            seedInfo: { blue: 'loser_r3', red: 'winner_r4' },
+        },
+    ];
+};
