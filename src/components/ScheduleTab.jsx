@@ -123,17 +123,20 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
     const [syncDone, setSyncDone] = useState(false);
     const [selectedTeam, setSelectedTeam] = useState(null); // null = show all
 
-    // LCK has two sub-views: 'cup' (regular season) and 'split1' (Split 1)
-    // Default to split1 when it exists, otherwise cup
-    const hasLCKSplit1Matches = (league?.matches || []).some(m => m.type === 'lck_split1_regular');
-    const hasLCKCupMatches    = (league?.matches || []).some(m => m.type === 'regular' || m.type === 'super' || m.type === 'playoff' || m.type === 'playin');
-    const [lckView, setLckView] = useState(hasLCKSplit1Matches ? 'split1' : 'cup');
+    // LCK has three sub-views: 'cup' (regular season), 'split1' (Split 1), 'road_to_msi'
+    // Default to the most recent view that has matches
+    const hasLCKSplit1Matches    = (league?.matches || []).some(m => m.type === 'lck_split1_regular');
+    const hasLCKRoadToMSIMatches = (league?.matches || []).some(m => m.type === 'road_to_msi');
+    const hasLCKCupMatches       = (league?.matches || []).some(m => m.type === 'regular' || m.type === 'super' || m.type === 'playoff' || m.type === 'playin');
+    const defaultLckView = hasLCKRoadToMSIMatches ? 'road_to_msi' : (hasLCKSplit1Matches ? 'split1' : 'cup');
+    const [lckView, setLckView] = useState(defaultLckView);
 
-    // Keep lckView in sync if split1 is added after initial render
+    // Keep lckView in sync if new stages are added after initial render
     useEffect(() => {
-        if (hasLCKSplit1Matches && lckView === 'cup' && !hasLCKCupMatches) setLckView('split1');
-        if (!hasLCKSplit1Matches) setLckView('cup');
-    }, [hasLCKSplit1Matches, hasLCKCupMatches]);
+        if (hasLCKRoadToMSIMatches && lckView !== 'road_to_msi') setLckView('road_to_msi');
+        else if (!hasLCKRoadToMSIMatches && hasLCKSplit1Matches && lckView === 'cup' && !hasLCKCupMatches) setLckView('split1');
+        else if (!hasLCKSplit1Matches && !hasLCKRoadToMSIMatches) setLckView('cup');
+    }, [hasLCKSplit1Matches, hasLCKRoadToMSIMatches, hasLCKCupMatches]);
 
     const targetLeague = ['LPL', 'LCP', 'CBLOL', 'LCS', 'LEC'].includes(displayLeague) ? displayLeague : null;
 
@@ -142,9 +145,14 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
 
     const rawLCKMatches = league.matches || [];
     const activeMatches = displayLeague === 'LCK'
-        ? (lckView === 'split1'
-            ? rawLCKMatches.filter(m => m.type === 'lck_split1_regular')
-            : rawLCKMatches.filter(m => m.type !== 'lck_split1_regular'))
+        ? (activeTab === 'team_schedule'
+            // Team schedule: show ALL LCK match types in chronological order
+            ? rawLCKMatches
+            : (lckView === 'split1'
+                ? rawLCKMatches.filter(m => m.type === 'lck_split1_regular')
+                : lckView === 'road_to_msi'
+                    ? rawLCKMatches.filter(m => m.type === 'road_to_msi')
+                    : rawLCKMatches.filter(m => m.type !== 'lck_split1_regular' && m.type !== 'road_to_msi')))
         : (league.foreignMatches?.[displayLeague] || []);
     const pendingLCK = league.matches ? league.matches.filter(m => m.status === 'pending').sort(compareDatesObj) : [];
     const lckPlayoffMatches = league.matches?.filter(m => m.type === 'playoff') || [];
@@ -221,13 +229,14 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
     useEffect(() => {
         if (displayLeague === 'LCK' && league.matches) {
             const hasCorruptedFormat = league.matches.some(m =>
-                m.type !== 'playoff' && (!m.format || m.format === 'BO1')
+                m.type !== 'playoff' && m.type !== 'road_to_msi' && (!m.format || m.format === 'BO1')
             );
             if (hasCorruptedFormat) {
                 const healedMatches = league.matches.map(m => {
-                    if (m.type === 'super')              return { ...m, format: 'BO5' }; // Super Week = BO5
+                    if (m.type === 'super')              return { ...m, format: 'BO5' };
                     if (m.type === 'regular')            return { ...m, format: 'BO3' };
                     if (m.type === 'lck_split1_regular') return { ...m, format: m.format || 'BO3' };
+                    if (m.type === 'road_to_msi')        return { ...m, format: m.format || 'BO5' };
                     if (m.type === 'playoff' && !m.format) return { ...m, format: 'BO5' };
                     return m;
                 });
@@ -248,6 +257,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
 
         const simable = league.matches.filter(m =>
             m.status === 'pending' &&
+            m.type !== 'road_to_msi' &&   // Road to MSI played through normal match flow
             m.t1 && m.t2 &&
             String(m.t1) !== 'TBD' && String(m.t2) !== 'TBD' &&
             compareDatesObj(m, currentPendingLCK) < 0
@@ -1026,29 +1036,40 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                             : displayLeague === 'FST'
                                 ? '🌍 FST 월드 토너먼트 일정'
                                 : displayLeague === 'LCK'
-                                    ? (lckView === 'split1' ? 'LCK 정규 일정' : 'LCK 컵 전체 일정')
+                                    ? (lckView === 'road_to_msi'
+                                        ? '🚀 LCK Road to MSI 일정'
+                                        : lckView === 'split1'
+                                            ? 'LCK 정규 일정'
+                                            : 'LCK 컵 전체 일정')
                                     : `2026 ${displayLeague} 전체 일정`}
                     </h2>
-                    {/* < > toggle: only shown when both Cup and Split 1 exist */}
-                    {displayLeague === 'LCK' && hasLCKCupMatches && hasLCKSplit1Matches && (
-                        <div className="flex items-center gap-1">
-                            <button
-                                onClick={() => setLckView(v => v === 'cup' ? 'split1' : 'cup')}
-                                className="p-1 rounded hover:bg-gray-100 text-gray-500 transition"
-                                title="이전"
-                            >
-                                ‹
-                            </button>
-                            <span className="text-[10px] font-bold text-gray-400 whitespace-nowrap">
-                                {lckView === 'cup' ? '1 / 2' : '2 / 2'}
-                            </span>
-                            <button
-                                onClick={() => setLckView(v => v === 'cup' ? 'split1' : 'cup')}
-                                className="p-1 rounded hover:bg-gray-100 text-gray-500 transition"
-                                title="다음"
-                            >
-                                ›
-                            </button>
+                    {/* Sub-view toggle: shown when LCK has multiple stages */}
+                    {displayLeague === 'LCK' && (hasLCKCupMatches || hasLCKSplit1Matches || hasLCKRoadToMSIMatches) && (
+                        <div className="flex bg-gray-100 p-0.5 rounded-lg gap-0.5">
+                            {hasLCKCupMatches && (
+                                <button
+                                    onClick={() => setLckView('cup')}
+                                    className={`px-2 py-1 rounded-md text-[10px] lg:text-xs font-bold whitespace-nowrap transition ${lckView === 'cup' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                >
+                                    LCK 컵
+                                </button>
+                            )}
+                            {hasLCKSplit1Matches && (
+                                <button
+                                    onClick={() => setLckView('split1')}
+                                    className={`px-2 py-1 rounded-md text-[10px] lg:text-xs font-bold whitespace-nowrap transition ${lckView === 'split1' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                >
+                                    스플릿 1
+                                </button>
+                            )}
+                            {hasLCKRoadToMSIMatches && (
+                                <button
+                                    onClick={() => setLckView('road_to_msi')}
+                                    className={`px-2 py-1 rounded-md text-[10px] lg:text-xs font-bold whitespace-nowrap transition ${lckView === 'road_to_msi' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                >
+                                    🚀 MSI
+                                </button>
+                            )}
                         </div>
                     )}
                 </div>
@@ -1237,14 +1258,27 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                                 let badgeColor = 'text-gray-500';
                                 let badgeText = '정규시즌';
                                 if (m.type === 'lck_split1_regular') { badgeColor = 'text-gray-500'; badgeText = '정규시즌'; }
+                                else if (m.type === 'road_to_msi') {
+                                    badgeColor = 'text-emerald-600';
+                                    // Flag which rounds are MSI-seeding matches
+                                    if (m.round === 3) badgeText = '🚀 MSI 1시드 결정';
+                                    else if (m.round === 5) badgeText = '🚀 MSI 2시드 결정';
+                                    else badgeText = `🚀 Road to MSI ${m.label || ''}`;
+                                }
                                 else if (m.type === 'super') { badgeColor = 'text-purple-600'; badgeText = '🔥 슈퍼위크'; }
                                 else if (m.type === 'playin') { badgeColor = 'text-indigo-600'; badgeText = m.label || '플레이-인'; }
                                 else if (m.type === 'playoff') { badgeColor = 'text-yellow-600'; badgeText = m.label || '플레이오프'; }
 
                                 const expectedFallbackScore = m.format === 'BO1' ? '1-0' : (m.format === 'BO5' ? '3-0' : '2-0');
+                                const isRtM = m.type === 'road_to_msi';
+                                const rtmCardClass = isRtM
+                                    ? (m.round === 3 || m.round === 5)
+                                        ? 'bg-gradient-to-br from-emerald-50 to-cyan-50 border-emerald-300 ring-1 ring-emerald-200'
+                                        : 'bg-emerald-50 border-emerald-200'
+                                    : '';
 
                                 return (
-                                    <div key={i} className={`p-3 lg:p-4 rounded-lg border flex flex-col gap-1 lg:gap-2 ${isMyMatch ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-200' : 'bg-white border-gray-200'}`}>
+                                    <div key={i} className={`p-3 lg:p-4 rounded-lg border flex flex-col gap-1 lg:gap-2 ${isMyMatch ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-200' : isRtM ? rtmCardClass : 'bg-white border-gray-200'}`}>
                                         <div className="flex justify-between text-[10px] lg:text-xs font-bold text-gray-500">
                                             <span>{m.date} {m.time}</span>
                                             <span className={`font-bold ${badgeColor}`}>{badgeText}</span>
@@ -1252,6 +1286,7 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                                         <div className="flex justify-between items-center mt-1 lg:mt-2">
                                             <div className="flex flex-col items-center w-1/3">
                                                 <span className={`font-bold text-xs lg:text-base text-center break-keep leading-tight ${isMyMatch && (m.t1 === myTeam.id || m.t1 === myTeam.name) ? 'text-blue-600' : 'text-gray-800'}`}>{t1Name === 'TBD' ? 'TBD' : t1Name}</span>
+                                                {isRtM && !isFinished && <span className="text-[9px] text-blue-400 font-bold mt-0.5">청</span>}
                                                 {isFinished && m.result?.winner === t1.name && <span className="text-[10px] lg:text-xs text-blue-500 font-bold mt-1">WIN</span>}
                                             </div>
                                             <div className="text-center font-bold flex flex-col items-center shrink-0 w-1/4">
@@ -1273,9 +1308,19 @@ const ScheduleTab = ({ activeTab, league, setLeague, teams, myTeam, myLeague: my
                                             </div>
                                             <div className="flex flex-col items-center w-1/3">
                                                 <span className={`font-bold text-xs lg:text-base text-center break-keep leading-tight ${isMyMatch && (m.t2 === myTeam.id || m.t2 === myTeam.name) ? 'text-blue-600' : 'text-gray-800'}`}>{t2Name === 'TBD' ? 'TBD' : t2Name}</span>
+                                                {isRtM && !isFinished && <span className="text-[9px] text-red-400 font-bold mt-0.5">홍</span>}
                                                 {isFinished && m.result?.winner === t2.name && <span className="text-[10px] lg:text-xs text-blue-500 font-bold mt-1">WIN</span>}
                                             </div>
                                         </div>
+                                        {/* Road to MSI: MSI seed outcome note */}
+                                        {isRtM && (
+                                            <div className={`text-[10px] font-bold mt-1 text-center ${isFinished ? 'text-emerald-700' : 'text-emerald-500'}`}>
+                                                {m.round === 3 && isFinished && `🥇 MSI 1시드: ${m.result?.winner}`}
+                                                {m.round === 5 && isFinished && `🥈 MSI 2시드: ${m.result?.winner}`}
+                                                {m.round === 3 && !isFinished && '★ 승자 = MSI 1시드 직행'}
+                                                {m.round === 5 && !isFinished && '★ 승자 = MSI 2시드 확정'}
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             })}

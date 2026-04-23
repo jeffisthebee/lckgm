@@ -8,7 +8,7 @@ import LiveGamePlayer from '../components/LiveGamePlayer';
 import DetailedMatchResultModal from '../components/DetailedMatchResultModal';
 import playerList from '../data/players.json';
 import { computeStandings, calculateFinalStandings, calculateGroupPoints, sortGroupByStandings, createPlayInBracket, createPlayInRound2Matches, createPlayInFinalMatch, createPlayoffRound2Matches, createPlayoffRound3Matches, createPlayoffLoserRound3Match, createPlayoffQualifierMatch, createPlayoffFinalMatch, createFSTGroupWave2A, createFSTGroupWave2B, createFSTGroupWave3A, createFSTGroupWave3B, createFSTPlayoffs, createFSTFinals } from '../engine/BracketManager';
-import { updateChampionMeta, generateSuperWeekMatches, initFSTTournament, getLCKSplit1PatchVersionForDate } from '../engine/SeasonManager';
+import { updateChampionMeta, generateSuperWeekMatches, initFSTTournament, getLCKSplit1PatchVersionForDate, generateRoadToMSIMatches } from '../engine/SeasonManager';
 import FSTTournamentTab from '../components/FSTTournamentTab';
 import FinalStandingsModal from '../components/FinalStandingsModal';
 import MatchupBox from '../components/MatchupBox';
@@ -2496,6 +2496,7 @@ const handleMatchClick = (match) => {
         recalculateStandings(updatedLeague); 
         checkAndGenerateNextPlayInRound(updatedMatches);
         checkAndGenerateNextPlayoffRound(updatedMatches);
+        checkAndAdvanceRoadToMSI(updatedMatches);
         return;
       }
   
@@ -2650,6 +2651,7 @@ const handleMatchClick = (match) => {
       if (!isMyLeagueForeign) {
         checkAndGenerateNextPlayInRound(updatedLeague.matches);
         checkAndGenerateNextPlayoffRound(updatedLeague.matches);
+        checkAndAdvanceRoadToMSI(updatedLeague.matches);
       }
 
       setTimeout(() => alert(`경기 종료! 승리: ${resultData.winner}`), 100);
@@ -2946,6 +2948,197 @@ const handleMatchClick = (match) => {
         alert(`❌ 스플릿 1 일정 생성 실패:\n${err.message}`);
       }
     };
+    // ── LCK Road to MSI ──────────────────────────────────────────────────────
+
+    // Compute final Split 1 standings (W/L from lck_split1_regular matches).
+    // Returns teams sorted best → worst. Used to seed the Road to MSI bracket.
+    const computeSplit1Standings = () => {
+      const split1Matches = (league?.matches || []).filter(
+        m => m.type === 'lck_split1_regular' && m.status === 'finished'
+      );
+      const getID = (val) => typeof val === 'object' ? Number(val?.id) : Number(val);
+      const records = {};
+      teams.forEach(t => { records[t.id] = { id: t.id, w: 0, l: 0, diff: 0, h2h: {} }; });
+
+      split1Matches.forEach(m => {
+        const t1id = getID(m.t1);
+        const t2id = getID(m.t2);
+        const winnerObj = teams.find(t => t.name === m.result?.winner);
+        if (!winnerObj) return;
+        const winnerId = winnerObj.id;
+        const loserId = winnerId === t1id ? t2id : t1id;
+        if (records[winnerId]) {
+          records[winnerId].w++;
+          records[winnerId].diff++;
+          if (!records[winnerId].h2h[loserId]) records[winnerId].h2h[loserId] = { w: 0, l: 0 };
+          records[winnerId].h2h[loserId].w++;
+        }
+        if (records[loserId]) {
+          records[loserId].l++;
+          records[loserId].diff--;
+          if (!records[loserId].h2h[winnerId]) records[loserId].h2h[winnerId] = { w: 0, l: 0 };
+          records[loserId].h2h[winnerId].l++;
+        }
+      });
+
+      return teams
+        .map(t => ({ ...t, ...records[t.id] }))
+        .sort((a, b) => {
+          if (b.w !== a.w) return b.w - a.w;
+          // H2H tiebreaker
+          const aWinsVsB = a.h2h?.[b.id]?.w || 0;
+          const bWinsVsA = b.h2h?.[a.id]?.w || 0;
+          if (aWinsVsB !== bWinsVsA) return bWinsVsA - aWinsVsB;
+          return b.diff - a.diff;
+        });
+    };
+
+    // Initialises the Road to MSI tournament.
+    // Called by the header button after all Split 1 matches are finished.
+    // - Applies 16.08 meta patch
+    // - Generates R1 (5th vs 6th, 6/6) and R3 (1st vs 2nd, 6/12)
+    // - Stores the 1–6 seed table in league.roadToMSISeeds
+    const handleCreateRoadToMSI = () => {
+      if (!isSplit1Finished || hasRoadToMSI) return;
+      try {
+        const sorted = computeSplit1Standings();
+        const top6 = sorted.slice(0, 6);
+        if (top6.length < 6) {
+          alert('스플릿 1 참가팀이 부족합니다. (최소 6팀 필요)');
+          return;
+        }
+
+        const newMeta = updateChampionMeta(league.currentChampionList || championList);
+        const rtmMatches = generateRoadToMSIMatches(top6);
+        const roadToMSISeeds = top6.map((t, i) => ({ id: t.id, seed: i + 1, name: t.name }));
+
+        const updatedMatches = [...(league.matches || []), ...rtmMatches];
+        const updates = {
+          matches: updatedMatches,
+          currentChampionList: newMeta,
+          metaVersion: '16.08',
+          roadToMSISeeds,
+        };
+        setLeague(prev => ({ ...prev, ...updates }));
+        updateLeague(league.id, updates);
+        setActiveTab('schedule');
+
+        alert(
+          `🚀 LCK Road to MSI 개막!\n` +
+          `📋 16.08 메타 패치 적용 완료\n\n` +
+          `스플릿 1 최종 순위:\n` +
+          top6.map((t, i) => `  ${i + 1}위. ${t.name} (${t.w}승 ${t.l}패)`).join('\n') +
+          `\n\n6/6 — 1라운드: ${top6[4].name} vs ${top6[5].name}\n` +
+          `6/12 — 3라운드: ${top6[0].name} vs ${top6[1].name}`
+        );
+      } catch (err) {
+        console.error('[Road to MSI] 생성 오류:', err);
+        alert(`❌ Road to MSI 생성 실패:\n${err.message}`);
+      }
+    };
+
+    // Called after every match result is committed.
+    // Checks which Road to MSI round can now be generated and creates it.
+    const checkAndAdvanceRoadToMSI = (currentMatches) => {
+      const rtmMatches = currentMatches.filter(m => m.type === 'road_to_msi');
+      if (rtmMatches.length === 0) return;
+
+      const seeds = league.roadToMSISeeds || [];
+      const getSeedId = (n) => seeds.find(s => s.seed === n)?.id;
+      const getID = (val) => typeof val === 'object' ? Number(val?.id) : Number(val);
+
+      const r1 = rtmMatches.find(m => m.round === 1);
+      const r2 = rtmMatches.find(m => m.round === 2);
+      const r3 = rtmMatches.find(m => m.round === 3);
+      const r4 = rtmMatches.find(m => m.round === 4);
+      const r5 = rtmMatches.find(m => m.round === 5);
+      const now = Date.now();
+
+      // ── R1 finished → create R2 (4th vs R1 winner, 6/7) ─────────────────
+      if (r1?.status === 'finished' && !r2) {
+        const r1WinnerObj = teams.find(t => t.name === r1.result?.winner);
+        if (!r1WinnerObj) return;
+        const seed4id = getSeedId(4);
+        const newR2 = {
+          id: `rtm_r2_${now}`,
+          round: 2,
+          label: '2라운드',
+          t1: seed4id,          // 4th = blue (higher standing)
+          t2: r1WinnerObj.id,   // R1 winner = red
+          date: '6.7 (일)',
+          time: '17:00',
+          type: 'road_to_msi',
+          format: 'BO5',
+          status: 'pending',
+          blueSidePriority: seed4id,
+        };
+        const updates = { matches: [...currentMatches, newR2] };
+        updateLeague(league.id, updates);
+        setLeague(prev => ({ ...prev, ...updates }));
+        return;
+      }
+
+      // ── R3 + R2 both finished → create R4 (3rd vs R2 winner, 6/13) ──────
+      if (r3?.status === 'finished' && r2?.status === 'finished' && !r4) {
+        const r2WinnerObj = teams.find(t => t.name === r2.result?.winner);
+        if (!r2WinnerObj) return;
+        const seed3id = getSeedId(3);
+        const newR4 = {
+          id: `rtm_r4_${now}`,
+          round: 4,
+          label: '4라운드',
+          t1: seed3id,            // 3rd = blue (higher standing)
+          t2: r2WinnerObj.id,     // R2 winner = red
+          date: '6.13 (금)',
+          time: '17:00',
+          type: 'road_to_msi',
+          format: 'BO5',
+          status: 'pending',
+          blueSidePriority: seed3id,
+        };
+        const updates = { matches: [...currentMatches, newR4] };
+        updateLeague(league.id, updates);
+        setLeague(prev => ({ ...prev, ...updates }));
+        return;
+      }
+
+      // ── R4 finished → create R5 (R4 winner vs R3 loser, 6/14) ───────────
+      if (r4?.status === 'finished' && r3?.status === 'finished' && !r5) {
+        const r4WinnerObj = teams.find(t => t.name === r4.result?.winner);
+        const r3WinnerObj = teams.find(t => t.name === r3.result?.winner);
+        const r3T1id = getID(r3.t1);
+        const r3T2id = getID(r3.t2);
+        const r3LoserObj = r3WinnerObj?.id === r3T1id
+          ? teams.find(t => t.id === r3T2id)
+          : teams.find(t => t.id === r3T1id);
+        if (!r4WinnerObj || !r3LoserObj) return;
+
+        // Blue side = higher split1 standing (lower seed number)
+        const r4WinnerSeed = (seeds.find(s => s.id === r4WinnerObj.id)?.seed) || 99;
+        const r3LoserSeed  = (seeds.find(s => s.id === r3LoserObj.id)?.seed)  || 99;
+        const blueTeam = r3LoserSeed < r4WinnerSeed ? r3LoserObj : r4WinnerObj;
+        const redTeam  = blueTeam.id === r3LoserObj.id ? r4WinnerObj : r3LoserObj;
+
+        const newR5 = {
+          id: `rtm_r5_${now}`,
+          round: 5,
+          label: '5라운드',
+          t1: blueTeam.id,
+          t2: redTeam.id,
+          date: '6.14 (토)',
+          time: '17:00',
+          type: 'road_to_msi',
+          format: 'BO5',
+          status: 'pending',
+          blueSidePriority: blueTeam.id,
+        };
+        const updates = { matches: [...currentMatches, newR5] };
+        updateLeague(league.id, updates);
+        setLeague(prev => ({ ...prev, ...updates }));
+        return;
+      }
+    };
+
     // ── LCK 스플릿 1 재편성 ──────────────────────────────────────────────────
     // Strips all existing lck_split1_regular matches (pending only — finished ones
     // are kept so in-progress seasons aren't broken) and regenerates from scratch.
@@ -3226,6 +3419,14 @@ const handleMatchClick = (match) => {
     // are never accidentally triggered by Split 1 matches.
     const hasLCKSplit1 = !!(league?.matches?.some(m => m.type === 'lck_split1_regular'));
 
+    // Road to MSI flags
+    const isSplit1Finished = hasLCKSplit1 && !!(
+        (league?.matches || []).filter(m => m.type === 'lck_split1_regular').every(m => m.status === 'finished') &&
+        (league?.matches || []).filter(m => m.type === 'lck_split1_regular').length > 0
+    );
+    const hasRoadToMSI = !!(league?.matches?.some(m => m.type === 'road_to_msi'));
+    const isRoadToMSIFinished = hasRoadToMSI && (league?.matches || []).filter(m => m.type === 'road_to_msi').every(m => m.status === 'finished');
+
     // Detect scheduling violations in the pending Split 1 matches:
     // 1. Same team playing twice on the same day
     // 2. A team playing on back-to-back days (e.g. 수 and 목)
@@ -3375,7 +3576,13 @@ const handleMatchClick = (match) => {
     const pendingSplit1MetaVersion = split1MetaBlockDate?.nextVersion || null;
   
     let effectiveDate;
-    if (isSeasonOver && !isMyLeagueForeign && hasLCKSplit1) {
+    if (isSeasonOver && !isMyLeagueForeign && hasRoadToMSI) {
+      // Road to MSI is active — show next RtM match date
+      const nextRtM = (league.matches || [])
+        .filter(m => m.type === 'road_to_msi' && m.status === 'pending')
+        .sort((a, b) => parseDate(a.date) - parseDate(b.date))[0];
+      effectiveDate = nextRtM ? nextRtM.date : 'Road to MSI 진행 중';
+    } else if (isSeasonOver && !isMyLeagueForeign && hasLCKSplit1) {
       // Split 1 is active — show the next pending split1 match date
       const nextSplit1 = (league.matches || [])
         .filter(m => m.type === 'lck_split1_regular' && m.status === 'pending')
@@ -3702,6 +3909,19 @@ const handleMatchClick = (match) => {
               </button>
             )}
 
+            {/* LCK Road to MSI: unlocks after ALL Split 1 matches are finished.
+                Applies 16.08 meta and opens the 5-round tournament seeded by Split 1 standings. */}
+            {!isMyLeagueForeign && isSplit1Finished && !hasRoadToMSI && (
+              <button
+                onClick={handleCreateRoadToMSI}
+                className="px-3 lg:px-5 py-1.5 rounded-full font-bold text-xs lg:text-sm bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white shadow-lg flex items-center gap-2 animate-pulse transition border border-emerald-400 whitespace-nowrap"
+              >
+                <span>🚀</span>
+                <span className="hidden sm:inline">Road to MSI 개막</span>
+                <span className="sm:hidden">MSI</span>
+              </button>
+            )}
+
             {/* 스플릿 1 메타 패치 확인 (16.05 / 16.06 / 16.07)
                 Appears only after ALL split1 matches up to the boundary date are finished.
                 Must be pressed before matches past the boundary become playable. */}
@@ -3944,16 +4164,72 @@ const handleMatchClick = (match) => {
                           
                           <div className="flex justify-between items-center mb-4">
                               <h3 className="font-bold text-gray-800 text-sm">
-                                  {hasPlayoffsGenerated ? '👑 플레이오프' : (hasPlayInGenerated ? '🛡️ 플레이-인' : '순위표')}
+                                  {hasRoadToMSI ? '🚀 Road to MSI' : hasPlayoffsGenerated ? '👑 플레이오프' : (hasPlayInGenerated ? '🛡️ 플레이-인' : '순위표')}
                               </h3>
-                              {(hasPlayInGenerated && !hasPlayoffsGenerated) && (
+                              {hasRoadToMSI && (
+                                  <button onClick={() => setActiveTab('schedule')} className="text-xs text-blue-600 hover:underline font-bold">전체 보기</button>
+                              )}
+                              {(hasPlayInGenerated && !hasPlayoffsGenerated && !hasRoadToMSI) && (
                                   <button onClick={() => setShowPlayInBracket(!showPlayInBracket)} className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-200 font-bold">
                                       {showPlayInBracket ? '순위표 보기' : '대진표 보기'}
                                   </button>
                               )}
                           </div>
-  
-                          {(hasPlayoffsGenerated || (hasPlayInGenerated && showPlayInBracket)) ? (
+
+                          {/* ─── Road to MSI bracket ─────────────────────────── */}
+                          {hasRoadToMSI ? (
+                              <div className="flex-1 space-y-2 overflow-y-auto">
+                                {/* MSI Seeds summary row */}
+                                {(() => {
+                                  const rtmAll = (league.matches || []).filter(m => m.type === 'road_to_msi');
+                                  const r3 = rtmAll.find(m => m.round === 3);
+                                  const r5 = rtmAll.find(m => m.round === 5);
+                                  const seed1 = r3?.status === 'finished' ? r3.result?.winner : null;
+                                  const seed2 = r5?.status === 'finished' ? r5.result?.winner : null;
+                                  if (!seed1 && !seed2) return null;
+                                  return (
+                                    <div className="mb-2 p-2 bg-gradient-to-r from-yellow-50 to-green-50 border border-yellow-200 rounded-lg text-xs font-bold">
+                                      {seed1 && <div className="text-yellow-700">🥇 MSI 1시드: {seed1}</div>}
+                                      {seed2 && <div className="text-green-700">🥈 MSI 2시드: {seed2}</div>}
+                                    </div>
+                                  );
+                                })()}
+                                {[...(league.matches || [])]
+                                  .filter(m => m.type === 'road_to_msi')
+                                  .sort((a, b) => a.round - b.round)
+                                  .map(m => {
+                                    const tA = teams.find(t => t.id === m.t1);
+                                    const tB = teams.find(t => t.id === m.t2);
+                                    const isFinished = m.status === 'finished';
+                                    const isMsiSeed1 = m.round === 3 && isFinished;
+                                    const isMsiSeed2 = m.round === 5 && isFinished;
+                                    return (
+                                      <div key={m.id} className={`border rounded-lg p-2 text-xs ${isFinished ? 'bg-gray-50' : 'bg-white ring-1 ring-blue-100'}`}>
+                                        <div className="flex justify-between text-gray-400 font-bold mb-1">
+                                          <span>{m.label}</span>
+                                          <span>{m.date}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                          <span className={`font-bold ${isFinished && m.result?.winner === tA?.name ? 'text-green-600' : 'text-gray-700'}`}>
+                                            {tA ? tA.name : (m.t1 ? '진행 중' : 'TBD')}
+                                            {m.round <= 2 && !isFinished && tA && (
+                                              <span className="ml-1 text-[9px] text-blue-400 font-normal">(청)</span>
+                                            )}
+                                          </span>
+                                          <span className="text-gray-400 font-bold px-1">{isFinished ? (m.result?.score || '-') : 'vs'}</span>
+                                          <span className={`font-bold text-right ${isFinished && m.result?.winner === tB?.name ? 'text-green-600' : 'text-gray-700'}`}>
+                                            {tB ? tB.name : (m.t2 ? '진행 중' : 'TBD')}
+                                          </span>
+                                        </div>
+                                        {isMsiSeed1 && <div className="mt-1 text-[10px] text-yellow-600 font-bold">🥇 MSI 1시드 확정</div>}
+                                        {isMsiSeed2 && <div className="mt-1 text-[10px] text-cyan-600 font-bold">🥈 MSI 2시드 확정</div>}
+                                        {m.round === 3 && !isFinished && <div className="mt-1 text-[10px] text-purple-500 font-bold">★ 승자 = MSI 1시드</div>}
+                                        {m.round === 5 && !isFinished && <div className="mt-1 text-[10px] text-blue-500 font-bold">★ 승자 = MSI 2시드</div>}
+                                      </div>
+                                    );
+                                  })}
+                              </div>
+                          ) : (hasPlayoffsGenerated || (hasPlayInGenerated && showPlayInBracket)) ? (
                               <div className="flex-1 space-y-3">
                                   {[...(league.matches || [])]
                                       .filter(Boolean)

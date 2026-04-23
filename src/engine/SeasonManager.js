@@ -181,6 +181,60 @@ const makeFSTTeam = (teamObj, league, slot) => {
  * @param {Object} league  Full league state from Dashboard
  * @returns {Object|null}  Initial fst state or null if data is missing
  */
+// ─────────────────────────────────────────────────────────────
+// LCK ROAD TO MSI — Match Generation
+// ─────────────────────────────────────────────────────────────
+/**
+ * generateRoadToMSIMatches
+ * ─────────────────────────────────────────────────────────────
+ * Creates the two "fixed" matches known at tournament start:
+ *   R1 (6/6): 5th vs 6th     — higher standing = blue side
+ *   R3 (6/12): 1st vs 2nd    — higher standing = blue side
+ *
+ * R2, R4, R5 are generated dynamically in Dashboard as results come in.
+ *
+ * @param {Array} split1Standings  Sorted [1st, 2nd, 3rd, 4th, 5th, 6th] team objects
+ * @returns {Array} match objects with type 'road_to_msi'
+ */
+export const generateRoadToMSIMatches = (split1Standings) => {
+    const seed = (n) => split1Standings[n - 1];
+    if (!seed(6)) {
+        console.warn('[RoadToMSI] Not enough teams in standings');
+        return [];
+    }
+    const now = Date.now();
+    return [
+        {
+            id: `rtm_r1_${now}`,
+            round: 1,
+            label: '1라운드',
+            // 5th = blue side (higher standing beats lower)
+            t1: seed(5).id,
+            t2: seed(6).id,
+            date: '6.6 (토)',
+            time: '17:00',
+            type: 'road_to_msi',
+            format: 'BO5',
+            status: 'pending',
+            blueSidePriority: seed(5).id,
+        },
+        {
+            id: `rtm_r3_${now + 1}`,
+            round: 3,
+            label: '3라운드',
+            // 1st = blue side
+            t1: seed(1).id,
+            t2: seed(2).id,
+            date: '6.12 (목)',
+            time: '17:00',
+            type: 'road_to_msi',
+            format: 'BO5',
+            status: 'pending',
+            blueSidePriority: seed(1).id,
+        },
+    ];
+};
+
 export const initFSTTournament = (league) => {
 
     // ── 1. Verify LCK season is over ─────────────────────────
