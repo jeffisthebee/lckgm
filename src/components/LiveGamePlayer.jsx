@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-    import { calculateIndividualIncome, simulateSet, runGameTickEngine, selectPickFromTop3, selectBanFromProbabilities } from '../engine/simEngine';
+    import { calculateIndividualIncome, simulateSet, runGameTickEngine, selectPickFromTop3, selectBanFromProbabilities, resolvePickMastery } from '../engine/simEngine';
     import { DRAFT_SEQUENCE, championList } from '../data/constants'; 
     import { SYNERGIES } from '../data/synergies'; 
     import { validateLineup, getDefaultLineup } from '../engine/rosterLogic';
@@ -1113,15 +1113,18 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
                         종합: 75, 
                         상세: { 라인전: 75, 무력: 75, 한타: 75, 성장: 75, 안정성: 75, 운영: 75 } 
                     };
+
+                    const champName = safeChamp.name || safeChamp.champName || 'Unknown';
+                    const freshChamp = activeChampionList.find(ch => ch.name === champName);
     
                     return {
-                        champName: safeChamp.name || 'Unknown',
-                        tier: safeChamp.tier || 3,
+                        champName,
+                        tier: freshChamp?.tier ?? safeChamp.tier ?? 3,
                         role: pos,
                         side: teamSide,
                         classType: safeChamp.class || '전사',
                         dmgType: safeChamp.dmg_type || 'AD',
-                        mastery: { games: 0, winRate: 50, kda: 3.0 },
+                        mastery: resolvePickMastery(safePlayerData, champName),
                         playerName: safePlayerData.이름 || safePlayerData.name || safePlayerData.playerName || 'Unknown',
                         playerOvr: safePlayerData.종합,
                         playerData: safePlayerData,

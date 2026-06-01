@@ -222,6 +222,17 @@ const findMastery = (playerData, korChampName) => {
   return playerData.pool.find(m => toKor(m.name) === korChampName) || null;
 };
 
+/** Mastery pool entry for in-game sim (manual draft). Returns null if unknown — mechanics falls back to OVR. */
+export function resolvePickMastery(player, korChampName) {
+  if (!korChampName) return null;
+  const keys = [player?.이름, player?.name, player?.playerName, player?.id].filter(Boolean);
+  for (const key of keys) {
+    const entry = findMastery(MASTERY_MAP[key], korChampName);
+    if (entry) return entry;
+  }
+  return null;
+}
+
 // --- DRAFT LOGIC ---
 
 // Phase weights by pick order:
