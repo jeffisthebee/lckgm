@@ -202,7 +202,8 @@
       "msi": 1,
       "msi_years": ["2023 · Gen.G"],
       "lck": 2,
-      "lck_years": ["2023 · Gen.G", "2024 · Gen.G"]
+      "lck_years": ["2023 · Gen.G", "2024 · Gen.G"],
+      "other": []
     },
     "individual_awards": [
       {"year": 2022, "award": "LCK Best Jungle", "team": "Gen.G"},
@@ -254,7 +255,8 @@
       "lck_years": [],
       "other": []
     },
-    "individual_awards": [],
+    "individual_awards": [
+    ],
     "career_stats": {"pro_years": 3},
     "선수_경력": [
       {"팀": "KT", "기간": "2023.2~현재"}
@@ -392,7 +394,8 @@
       "lck_years": [],
       "other": ["케스파 컵 (2024, KT)"]
     },
-    "individual_awards": [],
+    "individual_awards": [
+    ],
     "career_stats": {"pro_years": 3},
     "선수_경력": [
       {"팀": "BRO 챌린저스", "기간": "2022.7~2024.2"},
@@ -822,7 +825,8 @@
       "lck_years": [],
       "other": ["ASI (2025, BNK)"]
     },
-    "individual_awards": [],
+    "individual_awards": [
+    ],
     "career_stats": {"pro_years": 4},
     "선수_경력": [
       {"팀": "BRO 챌린저스", "기간": "2021.12~2023.11"},
@@ -1002,7 +1006,8 @@
       "lck_years": [],
       "other": ["LCK CL 서머 (2023, NS 챌린저스)"]
     },
-    "individual_awards": [],
+    "individual_awards": [
+    ],
     "career_stats": {"pro_years": 3},
     "선수_경력": [
       {"팀": "NS 챌린저스", "기간": "2023.1~2025.4"},
@@ -1021,7 +1026,8 @@
       "lck_years": [],
       "other": []
     },
-    "individual_awards": [],
+    "individual_awards": [
+    ],
     "career_stats": {"pro_years": 5},
     "선수_경력": [
       {"팀": "DRX 챌린저스", "기간": "2021.1~2021.7"},
@@ -1128,7 +1134,8 @@
       "lck_years": [],
       "other": ["LCK CL (2025, BNK)"]
     },
-    "individual_awards": [],
+    "individual_awards": [
+    ],
     "career_stats": {"pro_years": 5},
     "선수_경력": [
       {"팀": "HLE 아카데미", "기간": "2021.5~2021.7"},
@@ -1150,7 +1157,8 @@
       "lck_years": ["2018 서머 · KT"],
       "other": []
     },
-    "individual_awards": [],
+    "individual_awards": [
+    ],
     "career_stats": {"pro_years": 8},
     "선수_경력": [
       {"팀": "KT", "기간": "2017.5~2018.11"},
@@ -1173,7 +1181,8 @@
       "lck_years": [],
       "other": ["LCK CL (2022, NS 아카데미)"]
     },
-    "individual_awards": [],
+    "individual_awards": [
+    ],
     "career_stats": {"pro_years": 4},
     "선수_경력": [
       {"팀": "NS 아카데미", "기간": "2022.5~2023.6"},
@@ -1193,7 +1202,8 @@
       "lck_years": [],
       "other": []
     },
-    "individual_awards": [],
+    "individual_awards": [
+    ],
     "career_stats": {"pro_years": 2},
     "선수_경력": [
       {"팀": "KDF", "기간": "2023.6~2024.11"},
@@ -1235,7 +1245,8 @@
       "lck_years": [],
       "other": []
     },
-    "individual_awards": [],
+    "individual_awards": [
+    ],
     "career_stats": {"pro_years": 5},
     "선수_경력": [
       {"팀": "KT 챌린저스", "기간": "2020.12~2021.2"},
@@ -1258,7 +1269,8 @@
       "lck_years": [],
       "other": []
     },
-    "individual_awards": [],
+    "individual_awards": [
+    ],
     "career_stats": {"pro_years": 1},
     "선수_경력": [
       {"팀": "BRO", "기간": "2025~현재"}
@@ -1329,7 +1341,8 @@
       "lck_years": [],
       "other": []
     },
-    "individual_awards": [],
+    "individual_awards": [
+    ],
     "career_stats": {"pro_years": 2},
     "선수_경력": [
       {"팀": "Gen.G 아카데미", "기간": "2023.11~2025.11"},
@@ -1348,7 +1361,8 @@
       "lck_years": [],
       "other": []
     },
-    "individual_awards": [],
+    "individual_awards": [
+    ],
     "career_stats": {"pro_years": 5},
     "선수_경력": [
       {"팀": "HLE", "기간": "2020.5~2022.12"},
@@ -1442,7 +1456,8 @@
       "lck_years": [],
       "other": ["LCK CL 서머 (2022, NS 아카데미)"]
     },
-    "individual_awards": [],
+    "individual_awards": [
+    ],
     "career_stats": {"pro_years": 4},
     "선수_경력": [
       {"팀": "NS 아카데미", "기간": "2021.5~2024.11"},
@@ -1476,6 +1491,31 @@
       {"팀": "HLE", "기간": "2022.11~2023.11"},
       {"팀": "FPX", "기간": "2023.12~2024.11"},
       {"팀": "DNS", "기간": "2024.11~현재"}
+    ]
+  },
+  {
+    "id": "Effort",
+    "name": "에포트",
+    "team_titles": {
+      "worlds": 0,
+      "worlds_years": [],
+      "msi": 0,
+      "msi_years": [],
+      "lck": 3,
+      "lck_years": ["2019 스프링 · T1", "2019 서머 · T1", "2020 스프링 · T1"],
+      "other": []
+    },
+    "individual_awards": [
+      {"year": 2020, "award": "LCK 스프링 세컨 팀", "team": "T1"},
+      {"year": 2021, "award": "LCK 서머 서드 팀", "team": "BNK"}
+    ],
+    "career_stats": {"pro_years": 8},
+    "선수_경력": [
+      {"팀": "T1", "기간": "2017.1~2020.12"},
+      {"팀": "BNK", "기간": "2020.12~2021.11"},
+      {"팀": "NS", "기간": "2021.11~2022.11"},
+      {"팀": "BRO", "기간": "2022.11~2024.11"},
+      {"팀": "KT", "기간": "2025.11~현재"}
     ]
   }
 ]
