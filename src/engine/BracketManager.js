@@ -66,6 +66,73 @@ export const computeStandings = (league) => {
     return newStandings;
 };
 
+// LCK Split 1 regular season standings (type: lck_split1_regular)
+export const computeSplit1Standings = (league) => {
+    const st = {};
+    teams.forEach(t => {
+        st[t.id] = { w: 0, l: 0, diff: 0, h2h: {}, defeatedOpponents: [] };
+    });
+
+    if (!league?.matches) return st;
+
+    league.matches
+        .filter(m => m.type === 'lck_split1_regular' && m.status === 'finished' && m.result?.winner)
+        .forEach(m => {
+            const t1Id = typeof m.t1 === 'object' ? m.t1.id : Number(m.t1);
+            const t2Id = typeof m.t2 === 'object' ? m.t2.id : Number(m.t2);
+            const t1 = teams.find(t => t.id === t1Id);
+            const t2 = teams.find(t => t.id === t2Id);
+            if (!t1 || !t2) return;
+
+            const wName = m.result.winner;
+            const winnerId = t1.name === wName ? t1Id : t2Id;
+            const loserId = t1.name === wName ? t2Id : t1Id;
+
+            let diffVal = 0;
+            if (m.result.score) {
+                const parts = String(m.result.score).split(/[-:]/).map(Number);
+                if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                    diffVal = Math.abs(parts[0] - parts[1]);
+                }
+            }
+
+            if (st[winnerId]) {
+                st[winnerId].w++;
+                st[winnerId].diff += diffVal;
+                st[winnerId].defeatedOpponents.push(loserId);
+                if (!st[winnerId].h2h[loserId]) st[winnerId].h2h[loserId] = { w: 0, l: 0 };
+                st[winnerId].h2h[loserId].w++;
+            }
+            if (st[loserId]) {
+                st[loserId].l++;
+                st[loserId].diff -= diffVal;
+                if (!st[loserId].h2h[winnerId]) st[loserId].h2h[winnerId] = { w: 0, l: 0 };
+                st[loserId].h2h[winnerId].l++;
+            }
+        });
+
+    return st;
+};
+
+export const sortSplit1Teams = (standings, teamsList = teams) => {
+    return [...teamsList].sort((a, b) => {
+        const recA = standings[a.id] || { w: 0, l: 0, diff: 0, h2h: {}, defeatedOpponents: [] };
+        const recB = standings[b.id] || { w: 0, l: 0, diff: 0, h2h: {}, defeatedOpponents: [] };
+
+        if (recB.w !== recA.w) return recB.w - recA.w;
+        if (recB.diff !== recA.diff) return recB.diff - recA.diff;
+
+        const aWvsB = recA.h2h[b.id]?.w || 0;
+        const bWvsA = recB.h2h[a.id]?.w || 0;
+        if (aWvsB !== bWvsA) return bWvsA - aWvsB;
+
+        let sovA = 0, sovB = 0;
+        (recA.defeatedOpponents || []).forEach(id => { sovA += (standings[id]?.w || 0); });
+        (recB.defeatedOpponents || []).forEach(id => { sovB += (standings[id]?.w || 0); });
+        return sovB - sovA;
+    });
+};
+
 export const calculateFinalStandings = (league) => {
     if (!league || !league.matches) return [];
 

@@ -7,7 +7,7 @@ import { getFullTeamRoster } from '../engine/rosterLogic';
 import LiveGamePlayer from '../components/LiveGamePlayer';
 import DetailedMatchResultModal from '../components/DetailedMatchResultModal';
 import playerList from '../data/players.json';
-import { computeStandings, calculateFinalStandings, calculateGroupPoints, sortGroupByStandings, createPlayInBracket, createPlayInRound2Matches, createPlayInFinalMatch, createPlayoffRound2Matches, createPlayoffRound3Matches, createPlayoffLoserRound3Match, createPlayoffQualifierMatch, createPlayoffFinalMatch, createFSTGroupWave2A, createFSTGroupWave2B, createFSTGroupWave3A, createFSTGroupWave3B, createFSTPlayoffs, createFSTFinals } from '../engine/BracketManager';
+import { computeStandings, computeSplit1Standings, sortSplit1Teams, calculateFinalStandings, calculateGroupPoints, sortGroupByStandings, createPlayInBracket, createPlayInRound2Matches, createPlayInFinalMatch, createPlayoffRound2Matches, createPlayoffRound3Matches, createPlayoffLoserRound3Match, createPlayoffQualifierMatch, createPlayoffFinalMatch, createFSTGroupWave2A, createFSTGroupWave2B, createFSTGroupWave3A, createFSTGroupWave3B, createFSTPlayoffs, createFSTFinals } from '../engine/BracketManager';
 import { updateChampionMeta, generateSuperWeekMatches, initFSTTournament, getLCKSplit1PatchVersionForDate, generateRoadToMSIMatches } from '../engine/SeasonManager';
 import FSTTournamentTab from '../components/FSTTournamentTab';
 import FinalStandingsModal from '../components/FinalStandingsModal';
@@ -2805,7 +2805,15 @@ const handleMatchClick = (match) => {
     ];
     
     const myRecord = (() => {
-      if (!isMyLeagueForeign) return computedStandings[myTeam.id] || { w: 0, l: 0, diff: 0 };
+      if (!isMyLeagueForeign) {
+        const split1Active = (league?.matches || []).some(m => m.type === 'lck_split1_regular')
+          && !(league?.matches || []).some(m => m.type === 'road_to_msi');
+        if (split1Active) {
+          const split1St = computeSplit1Standings(league);
+          return split1St[myTeam.id] || { w: 0, l: 0, diff: 0 };
+        }
+        return computedStandings[myTeam.id] || { w: 0, l: 0, diff: 0 };
+      }
       // For foreign: compute W/L from their league's finished matches
       const fMatches = (league.foreignMatches?.[myLeague] || [])
         .filter(m => (m.type === 'regular' || m.type === 'super') && m.status === 'finished');
@@ -2950,47 +2958,10 @@ const handleMatchClick = (match) => {
     };
     // ── LCK Road to MSI ──────────────────────────────────────────────────────
 
-    // Compute final Split 1 standings (W/L from lck_split1_regular matches).
     // Returns teams sorted best → worst. Used to seed the Road to MSI bracket.
-    const computeSplit1Standings = () => {
-      const split1Matches = (league?.matches || []).filter(
-        m => m.type === 'lck_split1_regular' && m.status === 'finished'
-      );
-      const getID = (val) => typeof val === 'object' ? Number(val?.id) : Number(val);
-      const records = {};
-      teams.forEach(t => { records[t.id] = { id: t.id, w: 0, l: 0, diff: 0, h2h: {} }; });
-
-      split1Matches.forEach(m => {
-        const t1id = getID(m.t1);
-        const t2id = getID(m.t2);
-        const winnerObj = teams.find(t => t.name === m.result?.winner);
-        if (!winnerObj) return;
-        const winnerId = winnerObj.id;
-        const loserId = winnerId === t1id ? t2id : t1id;
-        if (records[winnerId]) {
-          records[winnerId].w++;
-          records[winnerId].diff++;
-          if (!records[winnerId].h2h[loserId]) records[winnerId].h2h[loserId] = { w: 0, l: 0 };
-          records[winnerId].h2h[loserId].w++;
-        }
-        if (records[loserId]) {
-          records[loserId].l++;
-          records[loserId].diff--;
-          if (!records[loserId].h2h[winnerId]) records[loserId].h2h[winnerId] = { w: 0, l: 0 };
-          records[loserId].h2h[winnerId].l++;
-        }
-      });
-
-      return teams
-        .map(t => ({ ...t, ...records[t.id] }))
-        .sort((a, b) => {
-          if (b.w !== a.w) return b.w - a.w;
-          // H2H tiebreaker
-          const aWinsVsB = a.h2h?.[b.id]?.w || 0;
-          const bWinsVsA = b.h2h?.[a.id]?.w || 0;
-          if (aWinsVsB !== bWinsVsA) return bWinsVsA - aWinsVsB;
-          return b.diff - a.diff;
-        });
+    const getSplit1StandingsSorted = () => {
+      const st = computeSplit1Standings(league);
+      return sortSplit1Teams(st).map(t => ({ ...t, ...st[t.id] }));
     };
 
     // Initialises the Road to MSI tournament.
@@ -3001,7 +2972,7 @@ const handleMatchClick = (match) => {
     const handleCreateRoadToMSI = () => {
       if (!isSplit1Finished || hasRoadToMSI) return;
       try {
-        const sorted = computeSplit1Standings();
+        const sorted = getSplit1StandingsSorted();
         const top6 = sorted.slice(0, 6);
         if (top6.length < 6) {
           alert('스플릿 1 참가팀이 부족합니다. (최소 6팀 필요)');
@@ -4164,10 +4135,15 @@ const handleMatchClick = (match) => {
                           
                           <div className="flex justify-between items-center mb-4">
                               <h3 className="font-bold text-gray-800 text-sm">
-                                  {hasRoadToMSI ? '🚀 Road to MSI' : hasPlayoffsGenerated ? '👑 플레이오프' : (hasPlayInGenerated ? '🛡️ 플레이-인' : '순위표')}
+                                  {hasRoadToMSI ? '🚀 Road to MSI' : hasLCKSplit1 ? '🏆 스플릿 1 순위' : hasPlayoffsGenerated ? '👑 플레이오프' : (hasPlayInGenerated ? '🛡️ 플레이-인' : '순위표')}
                               </h3>
-                              {hasRoadToMSI && (
-                                  <button onClick={() => setActiveTab('schedule')} className="text-xs text-blue-600 hover:underline font-bold">전체 보기</button>
+                              {(hasRoadToMSI || hasLCKSplit1) && (
+                                  <button
+                                    onClick={() => setActiveTab(hasRoadToMSI ? 'schedule' : 'standings')}
+                                    className="text-xs text-blue-600 hover:underline font-bold"
+                                  >
+                                    전체 보기
+                                  </button>
                               )}
                               {(hasPlayInGenerated && !hasPlayoffsGenerated && !hasRoadToMSI) && (
                                   <button onClick={() => setShowPlayInBracket(!showPlayInBracket)} className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-200 font-bold">
@@ -4229,6 +4205,41 @@ const handleMatchClick = (match) => {
                                     );
                                   })}
                               </div>
+                          ) : hasLCKSplit1 ? (
+                              (() => {
+                                const split1St = computeSplit1Standings(league);
+                                const sorted = sortSplit1Teams(split1St);
+                                return (
+                                  <table className="w-full text-xs flex-1">
+                                    <thead className="bg-gray-50 text-gray-400 sticky top-0">
+                                      <tr>
+                                        <th className="p-1.5 text-center w-6">#</th>
+                                        <th className="p-1.5 text-left">팀</th>
+                                        <th className="p-1.5 text-center w-12">W-L</th>
+                                        <th className="p-1.5 text-center w-10">득실</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {sorted.map((t, idx) => {
+                                        const rec = split1St[t.id] || { w: 0, l: 0, diff: 0 };
+                                        const isMe = t.id === myTeam.id;
+                                        return (
+                                          <tr
+                                            key={t.id}
+                                            onClick={() => setViewingTeamId(t.id)}
+                                            className={`cursor-pointer border-b last:border-0 ${isMe ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                                          >
+                                            <td className="p-1.5 text-center font-bold text-gray-400">{idx + 1}</td>
+                                            <td className={`p-1.5 font-bold truncate ${isMe ? 'text-blue-700' : 'text-gray-800'}`}>{t.fullName || t.name}</td>
+                                            <td className="p-1.5 text-center text-gray-600 whitespace-nowrap">{rec.w} - {rec.l}</td>
+                                            <td className="p-1.5 text-center text-gray-400 whitespace-nowrap">{rec.diff > 0 ? `+${rec.diff}` : rec.diff}</td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                );
+                              })()
                           ) : (hasPlayoffsGenerated || (hasPlayInGenerated && showPlayInBracket)) ? (
                               <div className="flex-1 space-y-3">
                                   {[...(league.matches || [])]
